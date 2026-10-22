@@ -1,4 +1,5 @@
 package de.augmentia.oc.engine.core;
+import de.augmentia.oc.engine.core.pattern.Wildcard;
 
 import org.junit.jupiter.api.Test;
 

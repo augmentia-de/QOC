@@ -1,4 +1,5 @@
 package de.augmentia.oc.engine.core;
+import de.augmentia.oc.engine.core.json.*;
 
 import org.junit.jupiter.api.Test;
 
