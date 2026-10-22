@@ -76,6 +76,20 @@ public final class SqlSessions implements SessionReader {
         });
     }
 
+    public List<SessionInfo> list() {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "select * from session order by time_created")) {
+            try (ResultSet resultSet = statement.executeQuery()) {
+                List<SessionInfo> sessions = new ArrayList<>();
+                while (resultSet.next()) sessions.add(readInfo(resultSet));
+                return List.copyOf(sessions);
+            }
+        } catch (java.sql.SQLException e) {
+            throw new StoreFailure("cannot list sessions", e);
+        }
+    }
+
     @Override
     public Option<SessionInfo> info(SessionId session) {
         try (Connection connection = dataSource.getConnection();

@@ -53,14 +53,8 @@ public class Engine {
     @Inject
     AgentCatalogue agentCatalogue;
 
-    @ConfigProperty(name = "engine.model.provider", defaultValue = "openai")
-    String providerId;
-
-    @ConfigProperty(name = "engine.model.id", defaultValue = "gpt-4o-mini")
-    String modelId;
-
-    @ConfigProperty(name = "engine.workspace", defaultValue = ".")
-    String workspace;
+    @Inject
+    EngineConfig config;
 
     private Clock clock;
     private SqlJournal journal;
@@ -93,7 +87,7 @@ public class Engine {
     }
 
     public SessionId createSession() {
-        Path directory = Path.of(workspace).toAbsolutePath().normalize();
+        Path directory = Path.of(config.workspace()).toAbsolutePath().normalize();
         Location location = new Location(directory, ProjectId.create(), Option.none());
         AgentId agent = agentCatalogue.primaryId();
         Instant now = clock.now();
@@ -172,12 +166,34 @@ public class Engine {
     }
 
     public ConfigDto config() {
-        return new ConfigDto(providerId, modelId, workspace);
+        return new ConfigDto(config.provider(), config.model(), config.workspace());
+    }
+
+    public List<EngineConfig.ConfigEntry> configEntries() {
+        return config.entries();
     }
 
     public ModelDto model() {
-        return new ModelDto(providerId, modelId, 128_000, 8_192);
+        return new ModelDto(config.provider(), config.model(), 128_000, 8_192);
     }
+
+    public LocationDto location() {
+        SessionId first = listSessions().stream().map(SessionInfo::id).findFirst().orElse(null);
+        Path directory = Path.of(config.workspace()).toAbsolutePath().normalize();
+        String project = first == null ? ProjectId.create().value()
+                : sessions.info(first).map(info -> info.projectId().value()).orElse(ProjectId.create().value());
+        return new LocationDto(directory.toString(),
+                new ProjectDto(project, directory.toString(), directory.toString()));
+    }
+
+    public List<SessionInfo> listSessions() {
+        return sessions.list();
+    }
+
+    public record LocationDto(String directory, ProjectDto project) {}
+
+    public record ProjectDto(String id, String directory, String canonical) {}
+
 
     private void publishNew(SessionId id, long before) {
         journal.history(id.value(), Seq.of(Math.max(0, before))).forEach(eventBus::publish);

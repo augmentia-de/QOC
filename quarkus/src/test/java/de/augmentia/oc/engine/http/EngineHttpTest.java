@@ -55,8 +55,8 @@ class EngineHttpTest {
                 .body("interrupted", equalTo(false));
 
         given().get("/api/agent").then().statusCode(200).body(containsString("build"));
-        given().get("/api/config").then().statusCode(200).body("model", equalTo("gpt-4o-mini"));
-        given().get("/api/model").then().statusCode(200).body("context", equalTo(128000));
+        given().get("/api/config").then().statusCode(200).body("[1].value", equalTo("gpt-4o-mini"));
+        given().get("/api/model").then().statusCode(200).body("data[0].context", equalTo(128000));
     }
 
     @Test
