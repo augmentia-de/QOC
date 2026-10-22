@@ -3,51 +3,49 @@ package de.augmentia.oc.engine.contract;
 import de.augmentia.oc.engine.core.model.ProjectId;
 import de.augmentia.oc.engine.core.model.SavedApproval;
 import de.augmentia.oc.engine.core.port.store.ApprovalStore;
-import de.augmentia.oc.engine.testing.InMemoryApprovals;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Contract of {@link ApprovalStore}. */
+/** Contract of ApprovalStore, run against the fake and PostgreSQL. */
 class ApprovalStoreContract {
 
-    private InMemoryApprovals approvals;
-    private ProjectId project;
-
-    @BeforeEach
-    void setUp() {
-        approvals = new InMemoryApprovals();
-        project = ProjectId.create();
-    }
-
-    @Test
-    void addedApprovalIsListedForItsProject() {
+    @ParameterizedTest
+    @MethodSource("de.augmentia.oc.engine.contract.Contracts#approvals")
+    void addedApprovalIsListedForItsProject(ApprovalStore approvals) {
+        ProjectId project = ProjectId.create();
         approvals.add(project, "shell", "git status *");
+
         assertThat(approvals.list(project))
                 .extracting(SavedApproval::action, SavedApproval::resource)
                 .containsExactly(org.assertj.core.groups.Tuple.tuple("shell", "git status *"));
         assertThat(approvals.list(ProjectId.create())).isEmpty();
     }
 
-    @Test
-    void sameApprovalIsStoredOnlyOnce() {
+    @ParameterizedTest
+    @MethodSource("de.augmentia.oc.engine.contract.Contracts#approvals")
+    void sameApprovalIsStoredOnlyOnce(ApprovalStore approvals) {
+        ProjectId project = ProjectId.create();
         approvals.add(project, "read", "*");
         approvals.add(project, "read", "*");
         assertThat(approvals.list(project)).hasSize(1);
-        assertThat(approvals.size()).isEqualTo(1);
     }
 
-    @Test
-    void removedApprovalDisappears() {
+    @ParameterizedTest
+    @MethodSource("de.augmentia.oc.engine.contract.Contracts#approvals")
+    void removedApprovalDisappears(ApprovalStore approvals) {
+        ProjectId project = ProjectId.create();
         approvals.add(project, "read", "*.txt");
         approvals.remove(project, "read", "*.txt");
         assertThat(approvals.list(project)).isEmpty();
     }
 
-    @Test
-    void differentResourcesAreDifferentApprovals() {
+    @ParameterizedTest
+    @MethodSource("de.augmentia.oc.engine.contract.Contracts#approvals")
+    void differentResourcesAreDifferentApprovals(ApprovalStore approvals) {
+        ProjectId project = ProjectId.create();
         approvals.add(project, "read", "*.txt");
         approvals.add(project, "read", "*.md");
         assertThat(approvals.list(project)).hasSize(2);

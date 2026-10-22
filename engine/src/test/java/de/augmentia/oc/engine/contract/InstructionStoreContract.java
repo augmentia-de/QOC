@@ -4,69 +4,63 @@ import de.augmentia.oc.engine.core.model.InstructionEntry;
 import de.augmentia.oc.engine.core.model.InstructionState;
 import de.augmentia.oc.engine.core.model.Seq;
 import de.augmentia.oc.engine.core.model.SessionId;
-import de.augmentia.oc.engine.core.port.store.InstructionStore;
-import de.augmentia.oc.engine.testing.InMemoryInstructions;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Contract of {@link InstructionStore}. */
+/** Contract of InstructionStore, run against the fake and PostgreSQL. */
 class InstructionStoreContract {
 
-    private InstructionStore store;
-    private SessionId session;
-
-    @BeforeEach
-    void setUp() {
-        store = new InMemoryInstructions();
-        session = SessionId.create();
-    }
-
-    @Test
-    void stateIsStoredPerSession() {
+    @ParameterizedTest
+    @MethodSource("de.augmentia.oc.engine.contract.Contracts#instructions")
+    void stateIsStoredPerSession(Contracts.InstructionFixture fixture) {
         InstructionState state = new InstructionState(Seq.of(1), Seq.of(5),
                 Map.of("a", "1"), Map.of("a", "2"));
-        store.putState(session, state);
+        fixture.store().putState(fixture.session(), state);
 
-        assertThat(store.state(session).orElseThrow()).isEqualTo(state);
-        assertThat(store.state(SessionId.create()).isEmpty()).isTrue();
+        assertThat(fixture.store().state(fixture.session()).orElseThrow()).isEqualTo(state);
+        assertThat(fixture.store().state(SessionId.create()).isEmpty()).isTrue();
     }
 
-    @Test
-    void entriesAreUpsertedByKey() {
-        store.putEntry(session, new InstructionEntry("key", "one", "h1"));
-        store.putEntry(session, new InstructionEntry("key", "two", "h2"));
-        store.putEntry(session, new InstructionEntry("other", "three", "h3"));
+    @ParameterizedTest
+    @MethodSource("de.augmentia.oc.engine.contract.Contracts#instructions")
+    void entriesAreUpsertedByKey(Contracts.InstructionFixture fixture) {
+        fixture.store().putEntry(fixture.session(), new InstructionEntry("key", "one", "h1"));
+        fixture.store().putEntry(fixture.session(), new InstructionEntry("key", "two", "h2"));
+        fixture.store().putEntry(fixture.session(), new InstructionEntry("other", "three", "h3"));
 
-        assertThat(store.entries(session)).hasSize(2);
-        assertThat(store.entries(session))
+        assertThat(fixture.store().entries(fixture.session())).hasSize(2);
+        assertThat(fixture.store().entries(fixture.session()))
                 .filteredOn(entry -> entry.key().equals("key"))
                 .singleElement()
                 .extracting(InstructionEntry::value)
                 .isEqualTo("two");
     }
 
-    @Test
-    void entryCanBeRemoved() {
-        store.putEntry(session, new InstructionEntry("key", "value", "hash"));
-        store.removeEntry(session, "key");
-        assertThat(store.entries(session)).isEmpty();
+    @ParameterizedTest
+    @MethodSource("de.augmentia.oc.engine.contract.Contracts#instructions")
+    void entryCanBeRemoved(Contracts.InstructionFixture fixture) {
+        fixture.store().putEntry(fixture.session(), new InstructionEntry("key", "value", "hash"));
+        fixture.store().removeEntry(fixture.session(), "key");
+        assertThat(fixture.store().entries(fixture.session())).isEmpty();
     }
 
-    @Test
-    void blobsAreStoredByHash() {
-        store.putBlob("hash", "text");
-        assertThat(store.blob("hash").orElseThrow()).isEqualTo("text");
-        assertThat(store.blob("missing").isEmpty()).isTrue();
+    @ParameterizedTest
+    @MethodSource("de.augmentia.oc.engine.contract.Contracts#instructions")
+    void blobsAreStoredByHash(Contracts.InstructionFixture fixture) {
+        fixture.store().putBlob("hash", "text");
+        assertThat(fixture.store().blob("hash").orElseThrow()).isEqualTo("text");
+        assertThat(fixture.store().blob("missing").isEmpty()).isTrue();
     }
 
-    @Test
-    void sessionsAreSeparated() {
-        store.putEntry(session, new InstructionEntry("key", "value", "hash"));
-        assertThat(store.entries(SessionId.create())).isEmpty();
+    @ParameterizedTest
+    @MethodSource("de.augmentia.oc.engine.contract.Contracts#instructions")
+    void sessionsAreSeparated(Contracts.InstructionFixture fixture) {
+        fixture.store().putEntry(fixture.session(), new InstructionEntry("key", "value", "hash"));
+        assertThat(fixture.store().entries(SessionId.create())).isEmpty();
     }
 }
