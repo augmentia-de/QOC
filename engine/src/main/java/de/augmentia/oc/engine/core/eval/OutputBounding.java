@@ -30,6 +30,14 @@ public final class OutputBounding {
         record Truncated(ToolResult result, String fullText, Path outputPath) implements Result {}
     }
 
+    public static Result boundStoring(ToolResult result, java.util.function.Function<String, Path> saver) {
+        if (saver == null) throw new IllegalArgumentException("saver must not be null");
+        Result probe = bound(result, Path.of(""));
+        if (!(probe instanceof Result.Truncated truncated)) return probe;
+        Path path = saver.apply(truncated.fullText());
+        return bound(result, path);
+    }
+
     public static Result bound(ToolResult result, Path outputPath) {
         if (result == null) throw new IllegalArgumentException("result must not be null");
         if (outputPath == null) throw new IllegalArgumentException("outputPath must not be null");
