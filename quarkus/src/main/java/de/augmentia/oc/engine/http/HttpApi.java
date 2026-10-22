@@ -86,8 +86,8 @@ public class HttpApi {
             if (!live) return Multi.createFrom().items(replay.stream());
             return Multi.createFrom().emitter(emitter -> {
                 // Subscribe before replay so no event can fall into the gap.
-                Runnable unsubscribe = eventBus.subscribe(id.value(),
-                        event -> emitter.emit(engine.encode(event)));
+                Runnable unsubscribe = eventBus.subscribeLive(id.value(),
+                        json -> emitter.emit(json));
                 replay.forEach(emitter::emit);
                 emitter.onTermination(unsubscribe::run);
             });

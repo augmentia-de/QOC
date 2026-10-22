@@ -1,5 +1,6 @@
 package de.augmentia.oc.engine.http;
 
+import de.augmentia.oc.engine.core.contract.provider.ModelEvent;
 import de.augmentia.oc.engine.core.contract.provider.ModelInfo;
 import de.augmentia.oc.engine.core.contract.provider.Modality;
 import de.augmentia.oc.engine.core.contract.tool.Hooks;
@@ -7,6 +8,8 @@ import de.augmentia.oc.engine.core.contract.tool.ToolCall;
 import de.augmentia.oc.engine.core.contract.tool.ToolContext;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
 import de.augmentia.oc.engine.core.contract.tool.ToolSnapshot;
+import de.augmentia.oc.engine.core.event.ContractCodec;
+import de.augmentia.oc.engine.core.json.Json;
 import de.augmentia.oc.engine.core.event.EventCodec;
 import de.augmentia.oc.engine.core.json.Json;
 import de.augmentia.oc.engine.core.json.JsonValue;

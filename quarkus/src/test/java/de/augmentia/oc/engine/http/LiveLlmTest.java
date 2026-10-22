@@ -77,7 +77,6 @@ class LiveLlmTest {
 
         System.out.println("File-create finish: " + response.jsonPath().getString("finish"));
         System.out.println("File-create text: " + response.jsonPath().getString("text"));
-        System.out.println("File-create body: " + response.body().asString());
 
         assertThat(response.statusCode()).isEqualTo(200);
         // The tool was advertised; whether the model chose it is model-dependent.

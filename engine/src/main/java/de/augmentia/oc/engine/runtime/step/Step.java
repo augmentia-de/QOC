@@ -15,37 +15,49 @@ import de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
- * One model step: build nothing here (the {@link Prepared} request is frozen),
- * consume the event stream completely, execute requested tools through the
- * tool runtime and return one terminal result.
+ * One model step: consume the stream completely, publish live events, execute
+ * requested tools and return one terminal result.
  */
 public final class Step {
 
     private final ProviderAdapter provider;
     private final ToolRuntime tools;
     private final OverflowCompaction overflow = new OverflowCompaction();
+    private final Consumer<ModelEvent> liveSink;
 
     public Step(ProviderAdapter provider, ToolRuntime tools) {
+        this(provider, tools, null);
+    }
+
+    public Step(ProviderAdapter provider, ToolRuntime tools, Consumer<ModelEvent> liveSink) {
         if (provider == null || tools == null) {
             throw new IllegalArgumentException("provider and tools must not be null");
         }
         this.provider = provider;
         this.tools = tools;
+        this.liveSink = liveSink;
     }
 
     public StepResult run(Prepared prepared, ToolContext context) {
+        return run(prepared, context, null);
+    }
+
+    public StepResult run(Prepared prepared, ToolContext context, Consumer<ModelEvent> liveSink) {
         if (prepared == null || context == null) {
             throw new IllegalArgumentException("prepared and context must not be null");
         }
 
+        Consumer<ModelEvent> sink = liveSink == null ? this.liveSink : liveSink;
         List<ModelEvent> events = provider.stream(prepared.toRequest()).toList();
         List<StepResult.ToolCallOutcome> outcomes = new ArrayList<>();
         FinishReason finish = null;
         TokenCount usage = TokenCount.zero();
 
         for (ModelEvent event : events) {
+            publish(event, sink);
             switch (event) {
                 case ModelEvent.ToolCallRequested call -> {
                     ToolOutcome outcome = tools.execute(
@@ -75,5 +87,11 @@ public final class Step {
                     "stream ended without a finish event");
         }
         return new StepResult.Finished(finish, usage, events, outcomes);
+    }
+
+    private void publish(ModelEvent event, Consumer<ModelEvent> sink) {
+        if (sink != null) {
+            sink.accept(event);
+        }
     }
 }
