@@ -47,6 +47,12 @@ public class Engine {
     @Inject
     de.augmentia.oc.engine.core.contract.provider.ProviderAdapter provider;
 
+    @Inject
+    EventBus eventBus;
+
+    @Inject
+    AgentCatalogue agentCatalogue;
+
     @ConfigProperty(name = "engine.model.provider", defaultValue = "openai")
     String providerId;
 
@@ -64,6 +70,8 @@ public class Engine {
     private ContextBuilder contextBuilder;
     private Step step;
     private final EventCodec codec = EventCodec.standard();
+    private final java.util.concurrent.ConcurrentHashMap<SessionId, Thread> running =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     @PostConstruct
     void wire() {
@@ -87,7 +95,7 @@ public class Engine {
     public SessionId createSession() {
         Path directory = Path.of(workspace).toAbsolutePath().normalize();
         Location location = new Location(directory, ProjectId.create(), Option.none());
-        AgentId agent = AgentId.create();
+        AgentId agent = agentCatalogue.primaryId();
         Instant now = clock.now();
         SessionId id = sessionService.create(location, agent, Option.none(), now);
         sessions.put(new SessionInfo(id, location.projectId(), location, "New session", agent,
@@ -105,6 +113,17 @@ public class Engine {
         Option<SessionInfo> found = sessions.info(id);
         if (found.isEmpty()) throw new IllegalArgumentException("unknown session: " + id);
 
+        long before = journal.history(id.value(), Seq.zero()).size();
+        running.put(id, Thread.currentThread());
+        try {
+            return runPrompt(id, text);
+        } finally {
+            running.remove(id);
+            publishNew(id, before);
+        }
+    }
+
+    private PromptResult runPrompt(SessionId id, String text) {
         InboxId inboxId = InboxId.create();
         InboxItem item = new InboxItem.UserItem(text, List.of(), List.of(), List.of(), Map.of());
         sessionService.enqueue(id, inboxId, item);
@@ -135,6 +154,33 @@ public class Engine {
 
     public List<StoredEvent> events(SessionId id, long after) {
         return journal.history(id.value(), Seq.of(Math.max(0, after)));
+    }
+
+    public List<Message> messages(SessionId id) {
+        return conversation.messages(id, Seq.zero());
+    }
+
+    public boolean interrupt(SessionId id) {
+        Thread thread = running.get(id);
+        if (thread == null) return false;
+        thread.interrupt();
+        return true;
+    }
+
+    public List<AgentCatalogue.AgentDto> agents() {
+        return agentCatalogue.list();
+    }
+
+    public ConfigDto config() {
+        return new ConfigDto(providerId, modelId, workspace);
+    }
+
+    public ModelDto model() {
+        return new ModelDto(providerId, modelId, 128_000, 8_192);
+    }
+
+    private void publishNew(SessionId id, long before) {
+        journal.history(id.value(), Seq.of(Math.max(0, before))).forEach(eventBus::publish);
     }
 
     public String encode(StoredEvent event) {
@@ -186,4 +232,8 @@ public class Engine {
     }
 
     public record PromptResult(String finish, long inputTokens, long outputTokens, String text) {}
+
+    public record ConfigDto(String provider, String model, String workspace) {}
+
+    public record ModelDto(String provider, String model, int context, int output) {}
 }

@@ -15,11 +15,13 @@ import java.util.Map;
 /** HTTP/SSE surface of the engine (M14). */
 @Path("/api")
 @Produces(MediaType.APPLICATION_JSON)
-@Consumes(MediaType.APPLICATION_JSON)
 public class HttpApi {
 
     @Inject
     Engine engine;
+
+    @Inject
+    EventBus eventBus;
 
     @POST
     @Path("/session")
@@ -46,6 +48,7 @@ public class HttpApi {
 
     @POST
     @Path("/session/{id}/prompt")
+    @Consumes(MediaType.APPLICATION_JSON)
     public Response prompt(@PathParam("id") String id, PromptRequest request) {
         if (request == null || request.text() == null || request.text().isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST)
@@ -67,14 +70,67 @@ public class HttpApi {
     @Path("/event")
     @Produces(MediaType.SERVER_SENT_EVENTS)
     public Multi<String> events(@QueryParam("session") String session,
-                                @QueryParam("after") @DefaultValue("0") long after) {
+                                @QueryParam("after") @DefaultValue("0") long after,
+                                @QueryParam("live") @DefaultValue("true") boolean live) {
         try {
             SessionId id = SessionId.parse(session);
-            List<String> events = engine.events(id, after).stream().map(engine::encode).toList();
-            return Multi.createFrom().items(events.stream());
+            List<String> replay = engine.events(id, after).stream().map(engine::encode).toList();
+            if (!live) return Multi.createFrom().items(replay.stream());
+            return Multi.createFrom().emitter(emitter -> {
+                // Subscribe before replay so no event can fall into the gap.
+                Runnable unsubscribe = eventBus.subscribe(id.value(),
+                        event -> emitter.emit(engine.encode(event)));
+                replay.forEach(emitter::emit);
+                emitter.onTermination(unsubscribe::run);
+            });
         } catch (IllegalArgumentException e) {
             return Multi.createFrom().failure(e);
         }
+    }
+
+    @GET
+    @Path("/session/{id}/messages")
+    public Response messages(@PathParam("id") String id) {
+        try {
+            SessionId session = SessionId.parse(id);
+            List<MessageDto> messages = engine.messages(session).stream()
+                    .map(message -> new MessageDto(message.id().value(),
+                            message.getClass().getSimpleName(), text(message)))
+                    .toList();
+            return Response.ok(messages).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "invalid session id")).build();
+        }
+    }
+
+    @POST
+    @Path("/session/{id}/interrupt")
+    public Response interrupt(@PathParam("id") String id) {
+        try {
+            return Response.ok(Map.of("interrupted", engine.interrupt(SessionId.parse(id)))).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "invalid session id")).build();
+        }
+    }
+
+    @GET
+    @Path("/agent")
+    public List<AgentCatalogue.AgentDto> agents() {
+        return engine.agents();
+    }
+
+    @GET
+    @Path("/config")
+    public Engine.ConfigDto config() {
+        return engine.config();
+    }
+
+    @GET
+    @Path("/model")
+    public Engine.ModelDto model() {
+        return engine.model();
     }
 
     public record PromptRequest(String text) {}
@@ -83,4 +139,21 @@ public class HttpApi {
 
     public record SessionDto(String id, String title, String agent, String directory,
                              String cost, long tokens) {}
+
+    public record MessageDto(String id, String type, String text) {}
+
+    private static String text(de.augmentia.oc.engine.core.model.Message message) {
+        return switch (message) {
+            case de.augmentia.oc.engine.core.model.Message.UserMessage user -> user.text();
+            case de.augmentia.oc.engine.core.model.Message.SyntheticMessage synthetic -> synthetic.text();
+            case de.augmentia.oc.engine.core.model.Message.SystemMessage system -> system.text();
+            case de.augmentia.oc.engine.core.model.Message.SkillMessage skill -> skill.text();
+            case de.augmentia.oc.engine.core.model.Message.AssistantMessage assistant ->
+                    assistant.content().stream()
+                            .filter(item -> item instanceof de.augmentia.oc.engine.core.model.Content.TextContent)
+                            .map(item -> ((de.augmentia.oc.engine.core.model.Content.TextContent) item).text())
+                            .reduce("", String::concat);
+            default -> "";
+        };
+    }
 }

@@ -38,11 +38,25 @@ class EngineHttpTest {
                 .body("directory", containsString("qoc"));
 
         given()
+                .get("/api/session/" + id + "/messages")
+                .then().statusCode(200)
+                .body(containsString("Hallo"));
+
+        given()
                 .accept("text/event-stream")
-                .get("/api/event?session=" + id)
+                .get("/api/event?session=" + id + "&live=false")
                 .then().statusCode(200)
                 .body(containsString("SessionCreated"))
                 .body(containsString("InboxDelivered"));
+
+        given()
+                .post("/api/session/" + id + "/interrupt")
+                .then().statusCode(200)
+                .body("interrupted", equalTo(false));
+
+        given().get("/api/agent").then().statusCode(200).body(containsString("build"));
+        given().get("/api/config").then().statusCode(200).body("model", equalTo("gpt-4o-mini"));
+        given().get("/api/model").then().statusCode(200).body("context", equalTo(128000));
     }
 
     @Test
