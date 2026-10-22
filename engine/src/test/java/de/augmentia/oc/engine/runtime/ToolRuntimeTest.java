@@ -2,7 +2,6 @@ package de.augmentia.oc.engine.runtime;
 
 import de.augmentia.oc.engine.core.contract.permission.PermissionDenied;
 import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
-import de.augmentia.oc.engine.core.contract.permission.PermissionRequest;
 import de.augmentia.oc.engine.core.contract.tool.Hooks;
 import de.augmentia.oc.engine.core.contract.tool.ToolCall;
 import de.augmentia.oc.engine.core.contract.tool.ToolContext;
@@ -27,7 +26,6 @@ import de.augmentia.oc.engine.testing.InMemoryToolOutput;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;

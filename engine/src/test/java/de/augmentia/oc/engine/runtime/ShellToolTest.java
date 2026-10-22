@@ -15,7 +15,6 @@ import de.augmentia.oc.engine.testing.FakeProcess;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
