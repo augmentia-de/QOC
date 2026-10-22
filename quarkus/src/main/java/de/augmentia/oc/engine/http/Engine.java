@@ -17,6 +17,7 @@ import de.augmentia.oc.engine.adapter.sql.*;
 import de.augmentia.oc.engine.adapter.time.SystemClock;
 import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Option;
+import de.augmentia.oc.engine.core.model.CompactionReason;
 import de.augmentia.oc.engine.core.model.Rule;
 import de.augmentia.oc.engine.runtime.tool.fs.EditTool;
 import de.augmentia.oc.engine.runtime.tool.fs.GlobTool;
@@ -30,6 +31,8 @@ import de.augmentia.oc.engine.core.port.store.*;
 import de.augmentia.oc.engine.core.port.runtime.SessionWake;
 import de.augmentia.oc.engine.runtime.context.AgentProfile;
 import de.augmentia.oc.engine.runtime.context.ContextBuilder;
+import de.augmentia.oc.engine.runtime.compaction.Compaction;
+import de.augmentia.oc.engine.runtime.compaction.CompactionService;
 import de.augmentia.oc.engine.runtime.session.core.SessionService;
 import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
 import de.augmentia.oc.engine.runtime.step.Step;
@@ -76,6 +79,8 @@ public class Engine {
     private ContextBuilder contextBuilder;
     private Step step;
     private ToolSnapshot toolSnapshot;
+    private InstructionStore instructions;
+    private CompactionService compaction;
     private final EventCodec codec = EventCodec.standard();
     private final java.util.concurrent.ConcurrentHashMap<SessionId, Thread> running =
             new java.util.concurrent.ConcurrentHashMap<>();
@@ -88,7 +93,7 @@ public class Engine {
         sessions = new SqlSessions(dataSource);
         ClaimStore claims = new SqlClaims(dataSource);
         ApprovalStore approvals = new SqlApprovals(dataSource);
-        InstructionStore instructions = new SqlInstructions(dataSource);
+        instructions = new SqlInstructions(dataSource);
         ToolOutputStore toolOutput = new SqlToolOutput(dataSource, Path.of("tool-output"));
         SessionWake wake = session -> { };
 
@@ -110,6 +115,8 @@ public class Engine {
                 request -> { }, noopHooks(), toolOutput);
         contextBuilder = new ContextBuilder(conversation, SkillCatalog.empty());
         step = new Step(provider, toolRuntime);
+        compaction = new CompactionService(journal, conversation, instructions,
+                new Compaction(journal, provider), clock, 8);
     }
 
     public SessionId createSession() {
@@ -233,6 +240,10 @@ public class Engine {
                 "version", JsonValue.of(event.version()),
                 "data", codec.encode(event.payload()),
                 "created", JsonValue.of(event.time().toString()))));
+    }
+
+    private ModelRef preparedModel(SessionInfo info, ModelInfo model) {
+        return info.model().orElse(new ModelRef(model.providerId(), model.id()));
     }
 
     private ModelInfo modelInfo() {
