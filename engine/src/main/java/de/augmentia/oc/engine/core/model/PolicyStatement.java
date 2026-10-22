@@ -1,6 +1,5 @@
-package de.augmentia.oc.engine.core.eval;
+package de.augmentia.oc.engine.core.model;
 
-import de.augmentia.oc.engine.core.model.Effect;
 
 /**
  * A binary organization rule. It has final authority and is applied after all

@@ -7,7 +7,6 @@ import de.augmentia.oc.engine.core.eval.PermissionCheck;
 import de.augmentia.oc.engine.core.eval.PermissionDecision;
 import de.augmentia.oc.engine.core.eval.PermissionRules;
 import de.augmentia.oc.engine.core.eval.PolicyRules;
-import de.augmentia.oc.engine.core.eval.PolicyStatement;
 import de.augmentia.oc.engine.core.json.DecodeError;
 import de.augmentia.oc.engine.core.json.Result;
 import de.augmentia.oc.engine.core.model.*;

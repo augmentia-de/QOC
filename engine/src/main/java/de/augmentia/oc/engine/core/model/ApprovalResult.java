@@ -1,6 +1,5 @@
-package de.augmentia.oc.engine.core.contract.permission;
+package de.augmentia.oc.engine.core.model;
 
-import de.augmentia.oc.engine.core.model.Option;
 
 /** Result of a HITL approval. Denial may carry human feedback. */
 public sealed interface ApprovalResult {

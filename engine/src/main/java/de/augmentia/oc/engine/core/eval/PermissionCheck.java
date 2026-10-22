@@ -3,6 +3,7 @@ package de.augmentia.oc.engine.core.eval;
 import de.augmentia.oc.engine.core.contract.permission.PermissionRequest;
 import de.augmentia.oc.engine.core.model.AgentId;
 import de.augmentia.oc.engine.core.model.Option;
+import de.augmentia.oc.engine.core.model.PolicyStatement;
 import de.augmentia.oc.engine.core.model.Rule;
 import de.augmentia.oc.engine.core.model.SavedApproval;
 

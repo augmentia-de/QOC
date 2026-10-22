@@ -1,4 +1,4 @@
-package de.augmentia.oc.engine.core.contract.permission;
+package de.augmentia.oc.engine.core.model;
 
 import java.util.List;
 
