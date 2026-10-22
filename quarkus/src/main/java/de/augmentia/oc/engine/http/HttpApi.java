@@ -158,6 +158,27 @@ public class HttpApi {
     }
 
     @GET
+    @Path("/files")
+    public Response files(@QueryParam("path") String path) {
+        try {
+            return Response.ok(Map.of("data", engine.listFiles(path))).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @GET
+    @Path("/file")
+    public Response file(@QueryParam("path") String path) {
+        try {
+            String content = engine.readFile(path);
+            return Response.ok(Map.of("data", Map.of("path", path, "content", content))).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @GET
     @Path("/agent")
     public Response agents() {
         return Response.ok(Map.of("location", engine.location(), "data", engine.agents())).build();

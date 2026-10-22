@@ -31,6 +31,7 @@ import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
 import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
 import de.augmentia.oc.engine.core.port.runtime.Clock;
 import de.augmentia.oc.engine.core.port.store.*;
+import de.augmentia.oc.engine.core.port.world.FileSystem;
 import de.augmentia.oc.engine.core.port.runtime.SessionWake;
 import de.augmentia.oc.engine.runtime.context.AgentProfile;
 import de.augmentia.oc.engine.runtime.context.ContextBuilder;
@@ -82,6 +83,7 @@ public class Engine {
     private ContextBuilder contextBuilder;
     private Step step;
     private ToolSnapshot toolSnapshot;
+    private NioFileSystem fileSystem;
     private InstructionStore instructions;
     private CompactionService compaction;
     private final EventCodec codec = EventCodec.standard();
@@ -103,15 +105,16 @@ public class Engine {
         sessionService = new SessionService(journal, sessions, wake, sessions::removeInbox);
 
         Path workspacePath = Path.of(config.workspace()).toAbsolutePath().normalize();
-        NioFileSystem fileSystem = new NioFileSystem(workspacePath);
-        FileAccess access = new FileAccess(fileSystem, workspacePath, workspacePath);
+        fileSystem = new NioFileSystem(workspacePath);
+        NioFileSystem fs = fileSystem;
+        FileAccess access = new FileAccess(fs, workspacePath, workspacePath);
         ToolRegistry registry = new ToolRegistry();
-        registry.register(ReadTool.definition(fileSystem, access));
-        registry.register(WriteTool.definition(fileSystem, access));
-        registry.register(EditTool.definition(fileSystem, access));
-        registry.register(PatchTool.definition(fileSystem, access));
-        registry.register(GlobTool.definition(fileSystem, access));
-        registry.register(GrepTool.definition(fileSystem, access));
+        registry.register(ReadTool.definition(fs, access));
+        registry.register(WriteTool.definition(fs, access));
+        registry.register(EditTool.definition(fs, access));
+        registry.register(PatchTool.definition(fs, access));
+        registry.register(GlobTool.definition(fs, access));
+        registry.register(GrepTool.definition(fs, access));
         List<Rule> allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
         toolSnapshot = registry.snapshot(allowAll);
         ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
@@ -236,6 +239,26 @@ public class Engine {
         journal.history(id.value(), Seq.of(Math.max(0, before))).forEach(eventBus::publish);
     }
 
+    public List<FileEntry> listFiles(String path) {
+        String target = (path == null || path.isBlank()) ? "." : path;
+        Path resolved = fileSystem.realPath(Path.of(config.workspace()).toAbsolutePath().normalize().resolve(target));
+        List<FileEntry> entries = new ArrayList<>();
+        for (Path child : fileSystem.list(resolved)) {
+            try {
+                FileSystem.FileStat stat = fileSystem.stat(child);
+                entries.add(new FileEntry(child.getFileName().toString(), child.toString(),
+                        stat.directory(), stat.size()));
+            } catch (Exception ignored) { }
+        }
+        return entries;
+    }
+
+    public String readFile(String path) {
+        if (path == null || path.isBlank()) throw new IllegalArgumentException("path must not be blank");
+        Path resolved = fileSystem.realPath(Path.of(config.workspace()).toAbsolutePath().normalize().resolve(path));
+        return fileSystem.readText(resolved);
+    }
+
     public String encode(StoredEvent event) {
         return Json.encode(JsonValue.of(Map.of(
                 "seq", JsonValue.of(event.seq().value()),
@@ -289,6 +312,8 @@ public class Engine {
     }
 
     public record PromptResult(String finish, long inputTokens, long outputTokens, String text) {}
+
+    public record FileEntry(String name, String path, boolean directory, long size) {}
 
     public record ConfigDto(String provider, String model, String workspace) {}
 

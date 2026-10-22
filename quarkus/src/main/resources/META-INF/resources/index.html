@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenCode Engine</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --border:#2a2f3a; --fg:#e6e6e6; --muted:#9aa0a6; --accent:#4f8cff; --ok:#3fb950; --warn:#d29922; --err:#f85149; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--fg); height:100vh; display:flex; flex-direction:column; }
+  header { display:flex; gap:1rem; align-items:center; padding:.75rem 1rem; border-bottom:1px solid var(--border); background:var(--panel); flex-wrap:wrap; }
+  header h1 { margin:0; font-size:1.1rem; }
+  header select, header button { background:#0b0d12; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.35rem .6rem; }
+  header .status { margin-left:auto; color:var(--muted); font-size:.85rem; }
+  main { display:grid; grid-template-columns: 1fr 360px; flex:1; overflow:hidden; }
+  .chat { display:flex; flex-direction:column; border-right:1px solid var(--border); }
+  .messages { flex:1; overflow:auto; padding:1rem; display:flex; flex-direction:column; gap:.75rem; }
+  .msg { padding:.6rem .8rem; border-radius:8px; max-width:90%; white-space:pre-wrap; word-break:break-word; }
+  .msg.user { background:#1f2937; align-self:flex-end; }
+  .msg.assistant { background:#111827; border:1px solid var(--border); align-self:flex-start; }
+  .msg.tool { background:#0b1a12; border:1px solid #1f3a2a; align-self:flex-start; font-family: ui-monospace, monospace; font-size:.85rem; }
+  .msg.error { background:#2a1215; border:1px solid #5a1f24; color:#ffb4b4; }
+  .inputbar { display:flex; gap:.5rem; padding:.75rem 1rem; border-top:1px solid var(--border); background:var(--panel); }
+  .inputbar textarea { flex:1; background:#0b0d12; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.5rem; resize:none; height:60px; font-family:inherit; }
+  .inputbar button { background:var(--accent); color:#fff; border:none; border-radius:6px; padding:0 .9rem; cursor:pointer; }
+  .inputbar button:disabled { opacity:.5; cursor:not-allowed; }
+  .side { display:flex; flex-direction:column; overflow:hidden; }
+  .section { padding:.75rem 1rem; border-bottom:1px solid var(--border); }
+  .section h2 { margin:0 0 .5rem; font-size:.9rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .filetree { flex:1; overflow:auto; padding:.5rem 1rem; font-family: ui-monospace, monospace; font-size:.85rem; }
+  .filetree .entry { cursor:pointer; padding:.15rem 0; }
+  .filetree .entry:hover { color:var(--accent); }
+  .filetree .dir::before { content:"📁 "; }
+  .filetree .file::before { content:"📄 "; }
+  .viewer { height:40%; overflow:auto; padding:.75rem 1rem; border-top:1px solid var(--border); }
+  .viewer pre { margin:0; white-space:pre-wrap; word-break:break-word; font-family: ui-monospace, monospace; font-size:.85rem; }
+  .logs { height:120px; overflow:auto; border-top:1px solid var(--border); padding:.5rem 1rem; font-family: ui-monospace, monospace; font-size:.75rem; color:var(--muted); }
+  .logs details { margin:.25rem 0; }
+  .logs summary { cursor:pointer; }
+  .badge { display:inline-block; padding:.1rem .4rem; border-radius:4px; font-size:.7rem; background:#2a2f3a; margin-left:.4rem; }
+  .badge.ok { background:#1f3a2a; color:var(--ok); }
+  .badge.err { background:#3a1f24; color:var(--err); }
+</style>
+</head>
+<body>
+<header>
+  <h1>OpenCode Engine</h1>
+  <label>Agent <select id="agent"></select></label>
+  <label>Model <select id="model"></select></label>
+  <label>Provider <select id="provider"></select></label>
+  <span class="status" id="status">bereit</span>
+</header>
+<main>
+  <div class="chat">
+    <div class="messages" id="messages"></div>
+    <div class="inputbar">
+      <textarea id="input" placeholder="Prompt eingeben… (Strg+Enter senden)"></textarea>
+      <button id="send">Senden</button>
+    </div>
+  </div>
+  <aside class="side">
+    <div class="section">
+      <h2>Arbeitsverzeichnis</h2>
+      <div class="filetree" id="filetree"></div>
+    </div>
+    <div class="section viewer">
+      <h2>Datei</h2>
+      <pre id="viewer">Datei auswählen…</pre>
+    </div>
+    <div class="logs">
+      <h2 style="margin:0 0 .25rem;font-size:.8rem;color:var(--muted)">Ereignisse</h2>
+      <div id="logs"></div>
+    </div>
+  </aside>
+</main>
+<script>
+const messages = document.getElementById('messages');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('send');
+const status = document.getElementById('status');
+const filetree = document.getElementById('filetree');
+const viewer = document.getElementById('viewer');
+const logs = document.getElementById('logs');
+
+let sessionId = null;
+let es = null;
+let currentAssistant = null;
+
+function logEvent(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  logs.appendChild(d);
+  logs.scrollTop = logs.scrollHeight;
+}
+
+function addMessage(role, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+  return div;
+}
+
+async function init() {
+  try {
+    const res = await fetch('/api/session', {method:'POST'});
+    const data = await res.json();
+    sessionId = data.id;
+    status.textContent = 'Session ' + sessionId.slice(0,12) + '…';
+    connectSSE();
+    await loadFiles('.');
+    await loadSelectors();
+  } catch (e) {
+    status.textContent = 'Fehler: ' + e.message;
+  }
+}
+
+function connectSSE() {
+  if (es) es.close();
+  es = new EventSource('/api/event?session=' + encodeURIComponent(sessionId) + '&live=true');
+  es.onmessage = (e) => {
+    let ev;
+    try { ev = JSON.parse(e.data); } catch { return; }
+    if (ev._type) {
+      switch (ev._type) {
+        case 'TextStarted':
+          currentAssistant = addMessage('assistant', '');
+          break;
+        case 'TextDelta':
+          if (currentAssistant) { currentAssistant.textContent += ev.text; messages.scrollTop = messages.scrollHeight; }
+          break;
+        case 'TextEnded':
+          if (currentAssistant && !currentAssistant.textContent) currentAssistant.textContent = ev.text;
+          currentAssistant = null;
+          break;
+        case 'ToolCallRequested':
+          addMessage('tool', '🔧 ' + ev.name + '(' + JSON.stringify(ev.input) + ')');
+          break;
+        case 'ToolFailed':
+          addMessage('error', '⚠ ' + ev.message);
+          break;
+        case 'Finished':
+          logEvent('Fertig: ' + ev.reason);
+          loadFiles('.');
+          break;
+        case 'ProviderFailed':
+          addMessage('error', 'Provider-Fehler: ' + ev.message);
+          break;
+      }
+    } else if (ev.type) {
+      logEvent(ev.type + (ev.data && ev.data.text ? ': ' + ev.data.text.slice(0,80) : ''));
+    }
+  };
+  es.onerror = () => { status.textContent = 'SSE getrennt'; };
+}
+
+async function send() {
+  const text = input.value.trim();
+  if (!text || !sessionId) return;
+  addMessage('user', text);
+  input.value = '';
+  sendBtn.disabled = true;
+  status.textContent = 'Denke…';
+  currentAssistant = null;
+  try {
+    const res = await fetch('/api/session/' + sessionId + '/prompt', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({text})
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({}));
+      addMessage('error', 'Fehler: ' + (err.error || res.status));
+    } else {
+      const data = await res.json();
+      if (data.text && !currentAssistant) addMessage('assistant', data.text);
+    }
+  } catch (e) {
+    addMessage('error', 'Netzwerkfehler: ' + e.message);
+  } finally {
+    sendBtn.disabled = false;
+    status.textContent = 'bereit';
+    loadFiles('.');
+  }
+}
+
+async function loadSelectors() {
+  try {
+    const agents = await (await fetch('/api/agent')).json();
+    const models = await (await fetch('/api/model')).json();
+    const providers = await (await fetch('/api/provider')).json();
+    fill('agent', (agents.data||[]).map(a=>({value:a.id,label:a.name})));
+    fill('model', (models.data||[]).map(m=>({value:m.id||m.model,label:m.model||m.id})));
+    fill('provider', (providers.data||[]).map(p=>({value:p.id,label:p.name})));
+  } catch (e) { /* ignore */ }
+}
+
+function fill(id, items) {
+  const sel = document.getElementById(id);
+  sel.innerHTML = '';
+  if (!items.length) { const o=document.createElement('option'); o.textContent='(keine)'; sel.appendChild(o); return; }
+  items.forEach(it => { const o=document.createElement('option'); o.value=it.value; o.textContent=it.label; sel.appendChild(o); });
+}
+
+async function loadFiles(path) {
+  try {
+    const res = await fetch('/api/files?path=' + encodeURIComponent(path||'.'));
+    const data = await res.json();
+    filetree.innerHTML = '';
+    (data.data||[]).forEach(e => {
+      const div = document.createElement('div');
+      div.className = 'entry ' + (e.directory ? 'dir' : 'file');
+      div.textContent = e.name;
+      div.onclick = () => e.directory ? loadFiles(e.path) : viewFile(e.path);
+      filetree.appendChild(div);
+    });
+    if (!(data.data||[]).length) filetree.textContent = '(leer)';
+  } catch (e) { filetree.textContent = 'Fehler: ' + e.message; }
+}
+
+async function viewFile(path) {
+  try {
+    const res = await fetch('/api/file?path=' + encodeURIComponent(path));
+    const data = await res.json();
+    viewer.textContent = data.data ? data.data.content : JSON.stringify(data);
+  } catch (e) { viewer.textContent = 'Fehler: ' + e.message; }
+}
+
+sendBtn.onclick = send;
+input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey||e.metaKey)) { e.preventDefault(); send(); } });
+
+init();
+</script>
+</body>
+</html>
+EOF
