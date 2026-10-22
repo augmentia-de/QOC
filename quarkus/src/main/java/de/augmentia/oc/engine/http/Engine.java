@@ -11,8 +11,20 @@ import de.augmentia.oc.engine.core.event.EventCodec;
 import de.augmentia.oc.engine.core.json.Json;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.model.*;
+import de.augmentia.oc.engine.runtime.tool.fs.FileAccess;
+import de.augmentia.oc.engine.adapter.fs.NioFileSystem;
 import de.augmentia.oc.engine.adapter.sql.*;
 import de.augmentia.oc.engine.adapter.time.SystemClock;
+import de.augmentia.oc.engine.core.model.Effect;
+import de.augmentia.oc.engine.core.model.Option;
+import de.augmentia.oc.engine.core.model.Rule;
+import de.augmentia.oc.engine.runtime.tool.fs.EditTool;
+import de.augmentia.oc.engine.runtime.tool.fs.GlobTool;
+import de.augmentia.oc.engine.runtime.tool.fs.GrepTool;
+import de.augmentia.oc.engine.runtime.tool.fs.PatchTool;
+import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
+import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
+import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
 import de.augmentia.oc.engine.core.port.runtime.Clock;
 import de.augmentia.oc.engine.core.port.store.*;
 import de.augmentia.oc.engine.core.port.runtime.SessionWake;
@@ -63,6 +75,7 @@ public class Engine {
     private SessionService sessionService;
     private ContextBuilder contextBuilder;
     private Step step;
+    private ToolSnapshot toolSnapshot;
     private final EventCodec codec = EventCodec.standard();
     private final java.util.concurrent.ConcurrentHashMap<SessionId, Thread> running =
             new java.util.concurrent.ConcurrentHashMap<>();
@@ -80,8 +93,21 @@ public class Engine {
         SessionWake wake = session -> { };
 
         sessionService = new SessionService(journal, sessions, wake, sessions::removeInbox);
-        ToolRuntime toolRuntime = new ToolRuntime(ToolSnapshot.empty(),
-                ToolAuthorizer.defaultAuthorizer(), request -> { }, noopHooks(), toolOutput);
+
+        Path workspacePath = Path.of(config.workspace()).toAbsolutePath().normalize();
+        NioFileSystem fileSystem = new NioFileSystem(workspacePath);
+        FileAccess access = new FileAccess(fileSystem, workspacePath, workspacePath);
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(ReadTool.definition(fileSystem, access));
+        registry.register(WriteTool.definition(fileSystem, access));
+        registry.register(EditTool.definition(fileSystem, access));
+        registry.register(PatchTool.definition(fileSystem, access));
+        registry.register(GlobTool.definition(fileSystem, access));
+        registry.register(GrepTool.definition(fileSystem, access));
+        List<Rule> allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
+        toolSnapshot = registry.snapshot(allowAll);
+        ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
+                request -> { }, noopHooks(), toolOutput);
         contextBuilder = new ContextBuilder(conversation, SkillCatalog.empty());
         step = new Step(provider, toolRuntime);
     }
@@ -131,9 +157,10 @@ public class Engine {
         conversation.insert(id, seq, new Message.UserMessage(MessageId.create(), text,
                 List.of(), List.of(), List.of(), Map.of(), clock.now()));
 
-        AgentProfile agent = new AgentProfile(info.agent(), Option.none(), 10, List.of());
+        AgentProfile agent = new AgentProfile(info.agent(), Option.none(), 10,
+                List.of(new Rule("*", "*", Effect.ALLOW)));
         ModelInfo model = modelInfo();
-        var prepared = contextBuilder.prepare(info, agent, model, ToolSnapshot.empty(), Seq.zero(), 1);
+        var prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), 1);
         ToolContext context = new ToolContext(id, info.agent(), MessageId.create(), CallId.create());
         StepResult result = step.run(prepared, context);
         return switch (result) {

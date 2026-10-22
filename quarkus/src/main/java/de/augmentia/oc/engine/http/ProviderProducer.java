@@ -32,7 +32,8 @@ public class ProviderProducer {
             EngineConfig config) {
         if (scripted) return scripted();
         return new HttpProviderAdapter(new JdkHttpTransport(), URI.create(config.url()),
-                Map.of("authorization", "Bearer " + apiKey),
+                Map.of("authorization", "Bearer " + apiKey,
+                        "User-Agent", "opencode-engine/1.0"),
                 new OpenAiRequestEncoder(config.model()),
                 new SseReader(), OpenAiEventTranslator::new, new ProviderErrorClassifier(),
                 Duration.ofMinutes(2));
