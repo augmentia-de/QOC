@@ -164,6 +164,20 @@ contract (18 + command endpoint), wiring, provider adapter, live feed, agent
 catalogue (L-1), config (L-2).
 Commit: `feat(engine): M14 httpapi and wiring (end-to-end prompt)`
 
+### 2.2 Hints (not mandatory)
+
+- **First LLM test with a skill:** possible from **M8** onward (step-level,
+  with M5 provider + M6 `tool.skill` + M7 runtime green); session-level from
+  **M9**; end-to-end over HTTP/SSE from **M14**.
+- **Compaction / revert / MCP / skills** are optional for a first green run:
+  they live in `runtime` but can be stubbed until the core path (M0–M9, M12)
+  is green.
+- **ArchUnit** can only be added once the affected packages exist; add the
+  rules incrementally, not all at once.
+- **Pure-Java boundary:** `engine` must not depend on Quarkus/CDI/HTTP. If a
+  new dependency seems to require Quarkus, it belongs in `quarkus`, not in
+  `engine`.
+
 ## 3. Java-Impl phases (coarse milestones)
 
 From `Java-Impl.md` §13 (functional chain, not parallelisable):
