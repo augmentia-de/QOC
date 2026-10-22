@@ -123,7 +123,7 @@ class HttpProviderAdapterTest {
 
     private HttpProviderAdapter adapter(HttpTransport transport) {
         return new HttpProviderAdapter(transport, ENDPOINT, Map.of("authorization", "Bearer x"),
-                request -> "{}", new SseReader(), new JsonEventTranslator(),
+                request -> "{}", new SseReader(), JsonEventTranslator::new,
                 new ProviderErrorClassifier(), Duration.ofSeconds(5));
     }
 

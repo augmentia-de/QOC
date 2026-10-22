@@ -53,4 +53,8 @@ public sealed interface Option<T> {
     default <R> Option<R> map(Function<? super T, ? extends R> mapper) {
         return this instanceof Some<T> s ? Option.of(mapper.apply(s.value())) : Option.none();
     }
+
+    default void ifPresent(java.util.function.Consumer<? super T> consumer) {
+        if (this instanceof Some<T> s) consumer.accept(s.value());
+    }
 }

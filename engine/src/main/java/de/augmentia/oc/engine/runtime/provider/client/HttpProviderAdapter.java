@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
@@ -36,16 +37,16 @@ public final class HttpProviderAdapter implements ProviderAdapter {
     private final Map<String, String> headers;
     private final Function<ModelRequest, String> encoder;
     private final SseReader sseReader;
-    private final EventTranslator translator;
+    private final Supplier<EventTranslator> translatorFactory;
     private final ProviderErrorClassifier classifier;
     private final Duration timeout;
 
     public HttpProviderAdapter(HttpTransport transport, URI endpoint, Map<String, String> headers,
                                Function<ModelRequest, String> encoder, SseReader sseReader,
-                               EventTranslator translator, ProviderErrorClassifier classifier,
+                               Supplier<EventTranslator> translatorFactory, ProviderErrorClassifier classifier,
                                Duration timeout) {
         if (transport == null || endpoint == null || encoder == null || sseReader == null
-                || translator == null || classifier == null || timeout == null) {
+                || translatorFactory == null || classifier == null || timeout == null) {
             throw new IllegalArgumentException("adapter dependencies must not be null");
         }
         this.transport = transport;
@@ -53,7 +54,7 @@ public final class HttpProviderAdapter implements ProviderAdapter {
         this.headers = headers == null ? Map.of() : Map.copyOf(headers);
         this.encoder = encoder;
         this.sseReader = sseReader;
-        this.translator = translator;
+        this.translatorFactory = translatorFactory;
         this.classifier = classifier;
         this.timeout = timeout;
     }
@@ -71,6 +72,7 @@ public final class HttpProviderAdapter implements ProviderAdapter {
             }
 
             List<SseReader.SseFrame> frames = sseReader.read(response.body());
+            EventTranslator translator = translatorFactory.get();
             List<ModelEvent> events = new ArrayList<>();
             for (SseReader.SseFrame frame : frames) {
                 events.addAll(translator.translate(frame));
