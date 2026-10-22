@@ -1,16 +1,26 @@
 package de.augmentia.oc.engine.core.contract.permission;
-import de.augmentia.oc.engine.core.model.*;
+
+import de.augmentia.oc.engine.core.model.AgentId;
+import de.augmentia.oc.engine.core.model.Effect;
+import de.augmentia.oc.engine.core.model.Option;
+import de.augmentia.oc.engine.core.model.SessionId;
 
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Input and result of the permission extension hook. The hook may change the
+ * effect and the message; it is the only place where an extension may reverse
+ * a decision.
+ */
 public record PermissionEvaluation(
         SessionId sessionId,
         Option<AgentId> agent,
         String action,
         List<String> resources,
         Map<String, Object> metadata,
-        Effect effect) {
+        Effect effect,
+        Option<String> message) {
 
     public PermissionEvaluation {
         if (sessionId == null) throw new IllegalArgumentException("sessionId must not be null");
@@ -18,5 +28,11 @@ public record PermissionEvaluation(
         resources = resources == null ? List.of() : List.copyOf(resources);
         metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
         if (effect == null) throw new IllegalArgumentException("effect must not be null");
+        if (message == null) message = Option.none();
+    }
+
+    public PermissionEvaluation(SessionId sessionId, Option<AgentId> agent, String action,
+                                List<String> resources, Map<String, Object> metadata, Effect effect) {
+        this(sessionId, agent, action, resources, metadata, effect, Option.none());
     }
 }

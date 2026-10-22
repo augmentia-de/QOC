@@ -39,4 +39,29 @@ class WildcardTest {
         assertThat(Wildcard.match("xx.env", "*.env")).isTrue();
         assertThat(Wildcard.match("prefixx.envy", "*.env")).isFalse();
     }
+
+    @Test
+    void onlyStarAndQuestionAreSpecial() {
+        assertThat(Wildcard.match("a{b,c}", "a{b,c}")).isTrue();
+        assertThat(Wildcard.match("ab", "a{b,c}")).isFalse();
+        assertThat(Wildcard.match("a[b]", "a[b]")).isTrue();
+        assertThat(Wildcard.match("aXb", "a[b]")).isFalse();
+        assertThat(Wildcard.match("a.b", "a.b")).isTrue();
+        assertThat(Wildcard.match("axb", "a.b")).isFalse();
+    }
+
+    @Test
+    void emptyValuesAndPatterns() {
+        assertThat(Wildcard.match("", "")).isTrue();
+        assertThat(Wildcard.match("a", "")).isFalse();
+        assertThat(Wildcard.match("", "*")).isTrue();
+        assertThat(Wildcard.match("anything", "**")).isTrue();
+    }
+
+    @Test
+    void starAtTheEndWithoutSpaceAlsoMatchesEmptySuffix() {
+        assertThat(Wildcard.match("git status", "git status*")).isTrue();
+        assertThat(Wildcard.match("git statusX", "git status*")).isTrue();
+        assertThat(Wildcard.match("git statu", "git status*")).isFalse();
+    }
 }
