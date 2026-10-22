@@ -193,22 +193,22 @@ present). The remaining open points lie in the
 
 | Question | Decision |
 |---|---|
-| Build form | **One artifact**, root `de.augmentia.oc.engine` |
-| Ordering | **Nine stages `S0…S8`** + `adapter.*` (outside the stages) |
-| Enforcement | **ArchUnit** in the build, not Maven module boundaries |
+| Build form | **Two modules**: `engine` (pure Java) + `quarkus` (outer skin), root `de.augmentia.oc.engine` |
+| Ordering | **Nine stages `S0…S8`** + `adapter.*` (outside the stages), all inside `engine` |
+| Enforcement | **ArchUnit** in the build (inside `engine`), plus the Maven module boundary `engine` ↔ `quarkus` |
 | Binding file | [`spec/java-packages.md`](./spec/java-packages.md) |
 | Outdated | The Maven multi-module sketch `engine-core`/`-runtime`/… in `Java-Impl.md` §4 |
 
 `Java-Impl.md` §4 was reworked: one table maps each stage to its
 packages and mentions the earlier module name only as origin. The
-build plan in §13 now starts with `model`, `error`, `json`, `event`,
-`port.store`, `adapter.sql` instead of "module `engine-core`".
+build plan in §13 now starts with `core`, `runtime`, `http`,
+`adapter.sql` instead of "module `engine-core`".
 
-**Rationale for not using Maven modules:** The stage ordering is an
-architecture rule, not a build split. ArchUnit checks it on every build —
-even within one artifact. Maven modules only check that no import crosses
-a module boundary, and pay for that with six `pom.xml`, six test runs
-and a Quarkus wiring that knows each module individually. A later split
+**Rationale for the two-module split (decided 2026-10-22):** `engine` stays
+pure Java (no Quarkus/CDI/HTTP) so it builds and tests without the Quarkus
+runtime; `quarkus` is the outer skin and depends on `engine`. The stage
+ordering remains an architecture rule enforced by ArchUnit inside `engine`;
+Maven only separates pure Java from the Quarkus runtime. A finer split
 remains possible **without moving a package boundary**.
 
 ### 6.2 What changes relative to §3 of this analysis

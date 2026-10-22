@@ -88,13 +88,12 @@ In particular `provider.*` knows **neither** `session.*` nor `tool.*` nor
 `permission.*`, and `session.core` knows **neither** `step` nor
 `provider.contract` – the trigger runs through the port `SessionWake`.
 
-> **Why one artifact instead of Maven modules:** The stage order is an
-> architecture rule, not a build split. ArchUnit checks it on every build,
-> even for packages within the same artifact; Maven modules only check that no
-> import crosses a module boundary – and pay for that with six `pom.xml`, six
-> test runs and a Quarkus wiring that knows every module individually. If build
-> time later forces it, the **same** order can be mapped onto modules without
-> moving a single package boundary.
+> **Maven split (decided 2026-10-22):** two modules – `engine` (pure Java,
+> no Quarkus/CDI/HTTP) and `quarkus` (outer skin). The stage order remains an
+> architecture rule enforced by ArchUnit *inside* `engine`; Maven modules only
+> separate pure Java from the Quarkus runtime. `engine` has no Quarkus
+> dependency; `quarkus` depends on `engine`. If build time later forces finer
+> splits, the **same** package boundaries apply.
 
 **Ownership (owns vs. calls):**
 
