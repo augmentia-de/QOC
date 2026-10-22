@@ -47,7 +47,7 @@ public sealed interface Option<T> {
         if (this instanceof Some<T> s) {
             return s.value();
         }
-        throw new IllegalStateException("option is empty");
+        throw new java.util.NoSuchElementException("option is empty");
     }
 
     default <R> Option<R> map(Function<? super T, ? extends R> mapper) {

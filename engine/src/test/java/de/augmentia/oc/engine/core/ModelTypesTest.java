@@ -201,7 +201,7 @@ class ModelTypesTest {
         assertThat(some.map(String::length).orElse(0)).isEqualTo(1);
         assertThat(none.map(String::length).isEmpty()).isTrue();
         assertThat(Option.of(null).isEmpty()).isTrue();
-        assertThatThrownBy(() -> none.orElseThrow()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> none.orElseThrow()).isInstanceOf(java.util.NoSuchElementException.class);
         assertThatThrownBy(() -> none.orElseThrow(() -> new IllegalArgumentException("empty")))
                 .isInstanceOf(IllegalArgumentException.class);
     }

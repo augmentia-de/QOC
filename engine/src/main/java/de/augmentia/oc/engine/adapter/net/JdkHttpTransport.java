@@ -1,5 +1,6 @@
 package de.augmentia.oc.engine.adapter.net;
 
+import de.augmentia.oc.engine.core.error.Defect;
 import de.augmentia.oc.engine.core.port.world.HttpTransport;
 
 import java.io.IOException;
@@ -90,7 +91,7 @@ public final class JdkHttpTransport implements HttpTransport {
         @Override
         public void send(String text) {
             WebSocket current = socket;
-            if (current == null) throw new IllegalStateException("channel is not connected yet");
+            if (current == null) throw new Defect("channel is not connected yet");
             current.sendText(text == null ? "" : text, true).join();
         }
 
