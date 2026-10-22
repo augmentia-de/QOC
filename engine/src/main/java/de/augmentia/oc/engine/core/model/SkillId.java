@@ -4,9 +4,13 @@ import java.security.SecureRandom;
 import java.util.HexFormat;
 import java.util.regex.Pattern;
 
+/**
+ * Skill identifier. Unlike the other opaque IDs it is a readable name: the
+ * directory name or the flat file name without {@code .md} (betrieb/02 §2).
+ */
 public final class SkillId {
 
-    private static final Pattern PATTERN = Pattern.compile("skl_[0-9a-f]{64}");
+    private static final Pattern PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]*");
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final String value;
@@ -15,6 +19,7 @@ public final class SkillId {
         this.value = value;
     }
 
+    /** Random ID for callers that need one without a source name. */
     public static SkillId create() {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);

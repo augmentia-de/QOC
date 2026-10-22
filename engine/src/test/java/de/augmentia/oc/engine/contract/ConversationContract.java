@@ -2,7 +2,6 @@ package de.augmentia.oc.engine.contract;
 
 import de.augmentia.oc.engine.core.model.Message;
 import de.augmentia.oc.engine.core.model.MessageId;
-import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.Seq;
 import de.augmentia.oc.engine.core.model.SessionId;
 import de.augmentia.oc.engine.core.port.store.Conversation;
