@@ -85,11 +85,42 @@ Jeder Prompt hat eine ID, Version und Checksumme. Die Manifest-Datei
 ihrem Dateipfad. Ein fehlender Prompt ist ein Startfehler (Defect), kein
 Fallback.
 
-## 8. Verbleibende Arbeit
+## 8. Implementierungsstatus (Stand nach M14 + Prompt-Logik)
 
-- `CTX-SUMMARY-UPDATE`, `CTX-NUDGE`, `CTX-CHECKPOINT`, `TTL-MESSAGE`, `TTL-CONVERSATION`,
-  `MODE-PLAN-ENTER/LEAVE`, `SYS-GUIDE` (tool-spezifisch) sind noch nicht
-  implementiert – sie existieren nur in der Spec.
-- `SYS-BASE`-Text ist produkt-spezifisch (OpenCode-Branding) und kann ersetzt
-  werden, solange PR-2…PR-13 eingehalten werden.
-- Gold-Tests für Prompt-Änderungen (PR-10) fehlen noch.
+### Implementiert und verdrahtet
+- `CTX-SUMMARY` – CompactionService (vollständiger Fluss)
+- `CTX-SUMMARY-UPDATE` – CompactionService (Vorgänger-Erkennung, PR-8)
+- `CTX-NUDGE` – CompactionService (Format-Prüfung + Re-Prompt)
+- `CTX-CHECKPOINT` – ContextBuilder (CompactionMessage → `<conversation-checkpoint>`)
+- `SYS-BASE` – ContextBuilder.basePrompt (aus `prompts/base-prompt.txt`)
+- `SYS-GUIDE` – ContextBuilder (tool-abhängige Hinweise aus Snapshot)
+- `STEP_LIMIT` (CTX-MAX-STEPS) – ContextBuilder (Assistant-Message, Tools gesperrt)
+- `MODE-PLAN-ENTER/LEAVE` – ContextBuilder (Insert vor letzter User-Message)
+- `TTL-MESSAGE/TTL-CONVERSATION` – TitleGenerator + `POST /api/session/{id}/title`
+- `NO-SKILLS` – SkillCatalog
+- `SERVER-RESTARTED` – Recovery
+- `UNABLE-TO-LOAD-SKILL` – SkillTool
+- `BOUNDING-HINT` – OutputBounding
+- `MCP-INSTRUCTIONS` – McpInstructions
+- `SKILL-GUIDANCE` – SkillCatalog
+
+### Noch nicht verdrahtet
+- `MODE-PLAN`: Agent-Modus-Feld (`planMode`) wird auto-detected, aber kein Agent
+  heißt "plan" im Standard-Catalogue. Plan-Modus-Reminder werden nur eingefügt,
+  wenn `planMode=true`.
+- `TTL`: Titel wird nach dem ersten Prompt generiert, aber `titleGenerator` nutzt
+  einen zufälligen `ModelRef` (funktioniert mit scripted provider, nicht mit
+  echtem Provider).
+- `CTX-CHECKPOINT`: in ContextBuilder, aber nicht in einer dedizierten
+  Message-Folding-Pipeline (Conversation-Projektion fehlt).
+- `CTX-NUDGE`: Utility vorhanden und in CompactionService verdrahtet, aber der
+  Re-Prompt erfordert einen Provider (funktioniert nur mit echtem Provider).
+- `CTX-SUMMARY-UPDATE`: Logik vorhanden, aber noch nicht end-to-end getestet.
+
+### Gold-Tests (PR-10)
+- `PromptGoldenTest` (14 Tests) pinnt die wichtigsten Prompt-Texte.
+- Tool-Beschreibungen (15 Tools) sind noch nicht golden-getestet.
+
+### SYS-BASE
+- Text ist produkt-spezifisch (OpenCode-Branding) und kann ersetzt werden,
+  solange PR-2…PR-13 eingehalten werden.
