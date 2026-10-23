@@ -8,7 +8,6 @@ import java.util.regex.Pattern;
 public final class EventId {
 
     private static final Pattern PATTERN = Pattern.compile("evt_[0-9a-f]{64}");
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final String value;
 
@@ -18,7 +17,7 @@ public final class EventId {
 
     public static EventId create() {
         byte[] bytes = new byte[32];
-        RANDOM.nextBytes(bytes);
+        new SecureRandom().nextBytes(bytes);
         return new EventId("evt_" + HexFormat.of().formatHex(bytes));
     }
 

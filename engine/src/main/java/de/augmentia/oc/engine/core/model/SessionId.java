@@ -10,7 +10,6 @@ import java.util.regex.Pattern;
 public final class SessionId {
 
     private static final Pattern PATTERN = Pattern.compile("ses_[0-9a-f]{64}");
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final String value;
 
@@ -20,7 +19,7 @@ public final class SessionId {
 
     public static SessionId create() {
         byte[] bytes = new byte[32];
-        RANDOM.nextBytes(bytes);
+        new SecureRandom().nextBytes(bytes);
         return new SessionId("ses_" + HexFormat.of().formatHex(bytes));
     }
 

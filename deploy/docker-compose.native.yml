@@ -1,0 +1,19 @@
+services:
+  qoc-native:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.native
+    image: qoc-engine:native
+    container_name: qoc-engine-native
+    restart: unless-stopped
+    ports:
+      - "${QOC_PORT:-8334}:8080"
+    volumes:
+      - /home/torsten/dev/my-projects/2oc/dws:/workspace
+      - /home/torsten/dev/my-projects/2oc/qoc/data:/data
+    env_file:
+      - .env
+    environment:
+      - ENGINE_WORKSPACE=/workspace
+      - LOG_DIR=/data/log
+

@@ -7,7 +7,6 @@ import java.util.regex.Pattern;
 public final class InboxId {
 
     private static final Pattern PATTERN = Pattern.compile("inb_[0-9a-f]{64}");
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final String value;
 
@@ -17,7 +16,7 @@ public final class InboxId {
 
     public static InboxId create() {
         byte[] bytes = new byte[32];
-        RANDOM.nextBytes(bytes);
+        new SecureRandom().nextBytes(bytes);
         return new InboxId("inb_" + HexFormat.of().formatHex(bytes));
     }
 

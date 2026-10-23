@@ -9,9 +9,7 @@ services:
     ports:
       - "${QOC_PORT:-8333}:8080"
     volumes:
-      - qoc-data:/data
+      - /home/torsten/dev/my-projects/2oc/qoc/data:/data
     env_file:
       - .env
 
-volumes:
-  qoc-data:

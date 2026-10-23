@@ -11,7 +11,6 @@ import java.util.regex.Pattern;
 public final class SkillId {
 
     private static final Pattern PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]*");
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final String value;
 
@@ -22,7 +21,7 @@ public final class SkillId {
     /** Random ID for callers that need one without a source name. */
     public static SkillId create() {
         byte[] bytes = new byte[32];
-        RANDOM.nextBytes(bytes);
+        new SecureRandom().nextBytes(bytes);
         return new SkillId("skl_" + HexFormat.of().formatHex(bytes));
     }
 
