@@ -43,6 +43,23 @@ public final class SqlConversation implements ConversationStore {
         });
     }
 
+
+    @Override
+    public Seq nextSeq(SessionId session) {
+        if (session == null) throw new IllegalArgumentException("session must not be null");
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "select coalesce(max(seq), 0) + 1 from session_message where session_id = ?")) {
+            statement.setString(1, session.value());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return Seq.of(resultSet.getLong(1));
+            }
+        } catch (java.sql.SQLException e) {
+            throw new StoreFailure("cannot allocate conversation sequence", e);
+        }
+    }
+
     @Override
     public List<Message> messages(SessionId session, Seq afterSeq) {
         Seq from = afterSeq == null ? Seq.zero() : afterSeq;

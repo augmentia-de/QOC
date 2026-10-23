@@ -313,7 +313,7 @@ public class Engine {
         SessionInfo info = sessions.info(id).orElseThrow();
         LOG.debugf("runPrompt session=%s agent=%s", id.value(), info.agent());
 
-        Seq seq = Seq.of(conversation.messages(id, Seq.zero()).size() + 1L);
+        Seq seq = conversation.nextSeq(id);
         conversation.insert(id, seq, new Message.UserMessage(MessageId.create(), text,
                 List.of(), List.of(), List.of(), Map.of(), clock.now()));
 
@@ -392,7 +392,7 @@ public class Engine {
                         new ToolCard(call.id(), call.name(), call.input(), state, true, clock.now())));
             }
             if (!assistantContent.isEmpty()) {
-                Seq assistantSeq = Seq.of(conversation.messages(id, Seq.zero()).size() + 1L + stepNo);
+                Seq assistantSeq = conversation.nextSeq(id);
                 conversation.insert(id, assistantSeq, new Message.AssistantMessage(
                         MessageId.create(), info.agent(),
                         info.model().orElse(new ModelRef(model.providerId(), model.id())),
