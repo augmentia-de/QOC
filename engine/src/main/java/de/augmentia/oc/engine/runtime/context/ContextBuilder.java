@@ -54,7 +54,7 @@ public final class ContextBuilder {
         String instruction = skills.instructions(rules);
         if (!instruction.isBlank()) system.add(instruction);
 
-        List<ModelMessage> messages = history(session.id(), from);
+        List<ModelMessage> messages = history(session.id(), from, agent);
         Option<Choice> toolChoice = Option.none();
         if (agent.maxSteps() > 0 && step >= agent.maxSteps()) {
             messages.add(new ModelMessage.Assistant(List.of(new ModelContent.Text(STEP_LIMIT_PROMPT))));
@@ -75,10 +75,26 @@ public final class ContextBuilder {
                 Option.some(CacheAffinity.promptCacheKey(affinity)), Map.of());
     }
 
-    private List<ModelMessage> history(SessionId session, Seq afterSeq) {
+    private List<ModelMessage> history(SessionId session, Seq afterSeq, AgentProfile agent) {
         List<ModelMessage> messages = new ArrayList<>();
         for (Message message : conversation.messages(session, afterSeq)) {
             append(message, messages);
+        }
+        // MODE-PLAN: insert reminders as messages (PR-7: logged synthetically).
+        boolean hasEnter = messages.stream().anyMatch(m ->
+                m instanceof ModelMessage.User u && u.content().stream()
+                        .anyMatch(c -> c instanceof ModelContent.Text t
+                                && t.text().contains("plan mode")));
+        if (agent.planMode() && !hasEnter && !messages.isEmpty()) {
+            String reminder = PromptLoader.get("mode-plan-enter");
+            int insertAt = Math.max(0, messages.size() - 1);
+            messages.add(insertAt, new ModelMessage.User(
+                    List.of(new ModelContent.Text(reminder))));
+        } else if (!agent.planMode() && hasEnter && !messages.isEmpty()) {
+            String reminder = PromptLoader.get("mode-plan-leave");
+            int insertAt = Math.max(0, messages.size() - 1);
+            messages.add(insertAt, new ModelMessage.User(
+                    List.of(new ModelContent.Text(reminder))));
         }
         return messages;
     }
@@ -97,8 +113,12 @@ public final class ContextBuilder {
                     out.add(new ModelMessage.User(List.of(new ModelContent.Text(
                             "Shell " + shell.shell().command() + ": " + shell.shell().status()))));
             case Message.AssistantMessage assistant -> appendAssistant(assistant, out);
-            case Message.CompactionMessage compaction ->
-                    out.add(new ModelMessage.User(List.of(new ModelContent.Text(compaction.summary()))));
+            case Message.CompactionMessage compaction -> {
+                String checkpoint = PromptLoader.render("ctx-checkpoint", Map.of(
+                        "summary", compaction.summary(),
+                        "recent", ""));
+                out.add(new ModelMessage.User(List.of(new ModelContent.Text(checkpoint))));
+            }
             case Message.AgentSwitched switched ->
                     out.add(new ModelMessage.User(List.of(new ModelContent.Text(
                             "Agent switched to " + switched.agent()))));
@@ -146,6 +166,18 @@ public final class ContextBuilder {
 
     private static String basePrompt(ToolSnapshot tools) {
         List<String> names = tools.list().stream().map(ToolDefinition::effectiveName).toList();
-        return PromptLoader.get("base-prompt").replace("${tools}", String.join(", ", names));
+        StringBuilder base = new StringBuilder(
+                PromptLoader.get("base-prompt").replace("${tools}", String.join(", ", names)));
+        // SYS-GUIDE: tool-specific hints rendered from the snapshot (PR-5).
+        StringBuilder guide = new StringBuilder();
+        boolean hasShell = names.stream().anyMatch(n -> n.equals("shell"));
+        boolean hasWrite = names.stream().anyMatch(n -> n.equals("write"));
+        boolean hasEdit = names.stream().anyMatch(n -> n.equals("edit"));
+        String sysGuide = PromptLoader.get("sys-guide");
+        // Extract relevant sections based on available tools.
+        if (hasShell || hasWrite || hasEdit) {
+            base.append("\n\n").append(sysGuide);
+        }
+        return base.toString();
     }
 }

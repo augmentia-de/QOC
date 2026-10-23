@@ -1,0 +1,7 @@
+Here is the conversation so far:
+
+<conversation>
+{text}
+</conversation>
+
+Reply with only the title.

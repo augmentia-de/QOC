@@ -36,6 +36,7 @@ import de.augmentia.oc.engine.core.model.TokenCount;
 public final class CompactionService {
 
     public static final String CTX_SUMMARY = PromptLoader.get("ctx-summary");
+    public static final String CTX_SUMMARY_UPDATE = PromptLoader.get("ctx-summary-update");
 
     private final Journal journal;
     private final Conversation conversation;
@@ -85,9 +86,19 @@ public final class CompactionService {
                     .append(messageText(message)).append('\n');
         }
 
+        // CTX-SUMMARY-UPDATE when a previous compaction exists (PR-8).
+        boolean hasPredecessor = hasPredecessor(session);
+        String prompt = hasPredecessor ? CTX_SUMMARY_UPDATE : CTX_SUMMARY;
+        if (hasPredecessor) {
+            InstructionState prev = instructions.state(session).orElse(null);
+            if (prev != null) {
+                body.insert(0, "Previous summary (update it):\n" + prev.currentValues() + "\n\n");
+            }
+        }
+
         ModelRequest request = new ModelRequest(
                 model,
-                List.of(CTX_SUMMARY),
+                List.of(prompt),
                 List.of(new ModelMessage.User(List.of(new ModelContent.Text(body.toString())))),
                 List.of(),
                 Option.some(new Choice.None()),
@@ -104,6 +115,11 @@ public final class CompactionService {
             advanceEpoch(session, throughSeq, compacted.summary());
         }
         return result;
+    }
+
+    private boolean hasPredecessor(SessionId session) {
+        return instructions.state(session).isPresent()
+                && instructions.state(session).orElseThrow().epochStart().value() > 0;
     }
 
     private void advanceEpoch(SessionId session, Seq throughSeq, String summary) {

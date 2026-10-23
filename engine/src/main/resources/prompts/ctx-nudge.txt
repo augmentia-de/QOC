@@ -1,0 +1,1 @@
+The previous response did not fill in the required summary template. Do not call tools. Return the summary as text using the exact section headings from the template.

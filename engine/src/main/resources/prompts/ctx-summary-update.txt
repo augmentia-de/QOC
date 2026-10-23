@@ -1,0 +1,7 @@
+Update the existing checkpoint in the conversation above into one consolidated summary.
+
+Newer history always takes precedence over the existing checkpoint. Preserve previous information unless newer history clearly contradicts, supersedes, resolves, or makes it stale. If something is no longer relevant to continuing the work, you may remove it.
+
+Incorporate newer requirements, decisions, progress, and context. Reconcile Work State and Next Move: move completed work out of Active, remove resolved blockers and answered questions, and preserve unresolved or pending work.
+
+Return only the updated Markdown sections. Do not reproduce the <conversation-checkpoint>, <summary>, or <recent-context> wrapper tags from the previous checkpoint.

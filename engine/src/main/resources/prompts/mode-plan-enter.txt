@@ -1,0 +1,1 @@
+You are now in plan mode. Do not edit files. Write your plan to ~/.opencode/plan/<name>.md. Only the paths in that file may be edited.<|end|>

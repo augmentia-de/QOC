@@ -1,0 +1,7 @@
+Here is the first message of the conversation:
+
+<message>
+{text}
+</message>
+
+Reply with only the title.

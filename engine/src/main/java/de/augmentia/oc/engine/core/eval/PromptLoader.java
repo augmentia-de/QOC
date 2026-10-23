@@ -42,7 +42,7 @@ public final class PromptLoader {
             if (input == null) {
                 throw new IllegalArgumentException("missing prompt: " + id);
             }
-            return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8).stripTrailing();
         } catch (IOException e) {
             throw new IllegalArgumentException("cannot load prompt: " + id, e);
         }
