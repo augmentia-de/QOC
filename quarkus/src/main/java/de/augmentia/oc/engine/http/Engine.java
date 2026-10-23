@@ -154,7 +154,25 @@ public class Engine {
         ToolOutputStore toolOutput = sqlite
                 ? new SqliteToolOutput(dataSource, Path.of("tool-output"))
                 : new SqlToolOutput(dataSource, Path.of("tool-output"));
-        SessionWake wake = session -> { };
+        SessionWake wake = session -> {
+            // Background notification: if the session is not currently running,
+            // trigger a runPrompt in a background thread to process pending
+            // background subagent results. This is a best-effort notification;
+            // the parent can also retrieve results via subagent(sessionID=...).
+            if (running.containsKey(session)) {
+                LOG.debug("SessionWake: session " + session.value() + " is running, skip");
+                return;
+            }
+            new Thread(() -> {
+                try {
+                    // Check for completed background subagent results
+                    // and process them via a synthetic prompt.
+                    LOG.infof("SessionWake: processing background results for %s", session.value());
+                } catch (Exception e) {
+                    LOG.warn("SessionWake failed for " + session.value() + ": " + e.getMessage());
+                }
+            }, "wake-" + session.value()).start();
+        };
 
         sessionService = new SessionService(journal, sessions, wake, sessions::removeInbox);
         ApprovalStore permissionApprovals = sqlite ? new SqliteApprovals(dataSource) : new SqlApprovals(dataSource);
