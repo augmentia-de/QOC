@@ -15,6 +15,10 @@ import de.augmentia.oc.engine.core.json.Json;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.*;
+import de.augmentia.oc.engine.core.contract.permission.PermissionRequest;
+import de.augmentia.oc.engine.core.contract.permission.Reply;
+import de.augmentia.oc.engine.core.model.ProjectId;
+import de.augmentia.oc.engine.runtime.permission.engine.ReplyOutcome;
 import de.augmentia.oc.engine.core.model.SessionEvent;
 import de.augmentia.oc.engine.core.port.store.Conversation;
 import de.augmentia.oc.engine.runtime.tool.fs.FileAccess;
@@ -25,6 +29,7 @@ import de.augmentia.oc.engine.adapter.sql.*;
 import de.augmentia.oc.engine.adapter.time.SystemClock;
 import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Option;
+import de.augmentia.oc.engine.core.model.ApprovalResult;
 import de.augmentia.oc.engine.core.model.CompactionReason;
 import de.augmentia.oc.engine.core.model.Rule;
 import de.augmentia.oc.engine.runtime.tool.fs.EditTool;
@@ -34,9 +39,11 @@ import de.augmentia.oc.engine.runtime.tool.fs.PatchTool;
 import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
 import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
+import de.augmentia.oc.engine.runtime.permission.engine.PermissionEngine;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpInstructions;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpServerManager;
 import de.augmentia.oc.engine.core.port.runtime.Clock;
+import de.augmentia.oc.engine.core.port.human.PolicySource;
 import de.augmentia.oc.engine.core.port.store.*;
 import de.augmentia.oc.engine.core.port.world.FileSystem;
 import de.augmentia.oc.engine.core.port.runtime.SessionWake;
@@ -49,6 +56,8 @@ import de.augmentia.oc.engine.runtime.session.core.SessionService;
 import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
 import de.augmentia.oc.engine.runtime.step.Step;
 import de.augmentia.oc.engine.runtime.step.StepResult;
+import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
+import de.augmentia.oc.engine.core.eval.PermissionCheck;
 import de.augmentia.oc.engine.runtime.tool.runtime.ToolAuthorizer;
 import de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime;
 
@@ -83,6 +92,9 @@ public class Engine {
     @Inject
     EngineConfig config;
 
+    @Inject
+    WebApprovalSource approvalSource;
+
     private Clock clock;
     private SqlJournal journal;
     private SqlConversation conversation;
@@ -97,6 +109,7 @@ public class Engine {
     private CompactionService compaction;
     private McpServerManager mcp;
     private List<Rule> allowAll;
+    private PermissionEngine permissionEngine;
     private final EventCodec codec = EventCodec.standard();
     private final java.util.concurrent.ConcurrentHashMap<SessionId, Thread> running =
             new java.util.concurrent.ConcurrentHashMap<>();
@@ -114,6 +127,8 @@ public class Engine {
         SessionWake wake = session -> { };
 
         sessionService = new SessionService(journal, sessions, wake, sessions::removeInbox);
+        permissionEngine = new PermissionEngine(Option.some(new SqlApprovals(dataSource)),
+                Option.some(approvalSource), Option.some((PolicySource) () -> List.of()), Option.none());
 
         Path workspacePath = Path.of(config.workspace()).toAbsolutePath().normalize();
         fileSystem = new NioFileSystem(workspacePath);
@@ -133,8 +148,14 @@ public class Engine {
             mcp.add(server);
         }
         toolSnapshot = registry.snapshot(allowAll);
+        PermissionGate permissionGate = request -> {
+            SessionInfo info = sessions.info(request.sessionId()).orElse(null);
+            List<Rule> sessionRules = info == null ? List.of() : info.permissions();
+            permissionEngine.assertAllowed(new PermissionCheck(request, Option.none(),
+                    List.of(new Rule("*", "*", Effect.ALLOW), new Rule("shell", "*", Effect.ASK)), sessionRules, List.of(), List.of()));
+        };
         ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
-                request -> { }, noopHooks(), toolOutput);
+                permissionGate, noopHooks(), toolOutput);
         contextBuilder = new ContextBuilder(conversation, SkillCatalog.empty());
         modelRef = new ModelRef(ProviderId.create(), ModelId.create());
         titleGenerator = new TitleGenerator(provider, modelRef);
@@ -167,6 +188,29 @@ public class Engine {
 
     public Option<SessionInfo> session(SessionId id) {
         return sessions.info(id);
+    }
+
+    public List<PermissionRequest> pendingPermissions(SessionId id) {
+        return permissionEngine.pending().list(id);
+    }
+
+    public List<PermissionRequest> allPendingPermissions() {
+        return permissionEngine.pending().list(null);
+    }
+
+    public Option<ReplyOutcome> replyPermission(SessionId id, PermissionRequestId requestId,
+                                                Reply reply, Option<String> feedback) {
+        ProjectId project = sessions.info(id).map(SessionInfo::projectId).orElse(ProjectId.create());
+        return permissionEngine.reply(id, requestId, reply, feedback, project);
+    }
+    public void resolvePermission(SessionId id, PermissionRequestId requestId, Reply reply, Option<String> feedback) {
+        ApprovalResult result;
+        if (reply == Reply.REJECT) {
+            result = new ApprovalResult.Denied(feedback == null ? Option.none() : feedback);
+        } else {
+            result = new ApprovalResult.Approved();
+        }
+        approvalSource.resolve(id.value(), requestId.value(), result);
     }
 
     public String generateTitle(SessionId id) {
@@ -218,7 +262,7 @@ public class Engine {
 
         String agentName = agentCatalogue.nameOf(info.agent());
         AgentProfile agent = AgentProfile.forAgent(info.agent(), Option.none(), 10,
-                List.of(new Rule("*", "*", Effect.ALLOW)), agentName);
+                List.of(new Rule("*", "*", Effect.ALLOW), new Rule("shell", "*", Effect.ASK)), agentName);
 
         // MODE-PLAN: log synthetic message when entering/leaving plan mode (PR-7).
         if (agent.planMode()) {
@@ -230,7 +274,18 @@ public class Engine {
         ModelInfo model = modelInfo();
         var prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), 1);
         ToolContext context = new ToolContext(id, info.agent(), MessageId.create(), CallId.create());
-        StepResult result = step.run(prepared, context);
+        var liveSink = (java.util.function.Consumer<de.augmentia.oc.engine.core.contract.provider.ModelEvent>) event ->
+                eventBus.publishLive(id.value(), Json.encode(ContractCodec.encode(event,
+                        de.augmentia.oc.engine.core.contract.provider.ModelEvent.class)));
+        StepResult result = step.run(prepared, context, liveSink);
+        if (result instanceof StepResult.NeedsCompaction) {
+            // Automatic compaction (I-07, I-09): exactly one per step.
+            compaction.compact(id, CompactionReason.OVERFLOW, preparedModel(info, model),
+                    Option.none(), Seq.of(journal.history(id.value(), Seq.zero()).size()),
+                    clock.now());
+            prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), 1);
+            result = step.run(prepared, context, liveSink);
+        }
         PromptResult promptResult = switch (result) {
             case StepResult.Finished finished -> new PromptResult(finished.reason().name(),
                     finished.usage().input(), finished.usage().output(), text(finished.events()));

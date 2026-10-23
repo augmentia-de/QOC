@@ -131,6 +131,7 @@ let es = null;
 let currentAssistant = null;
 let currentFile = null;
 let pendingPermission = null;
+let permPoll = null;
 
 function logEvent(text) {
   const d = document.createElement('div');
@@ -272,6 +273,8 @@ async function send() {
   input.value = '';
   sendBtn.disabled = true;
   status.textContent = 'Denke…';
+  if (permPoll) clearInterval(permPoll);
+  permPoll = setInterval(checkPermissions, 700);
   currentAssistant = null;
   try {
     const res = await fetch('/api/session/' + sessionId + '/prompt', {
@@ -288,6 +291,7 @@ async function send() {
   } catch (e) {
     addMessage('error', 'Netzwerkfehler: ' + e.message);
   } finally {
+    if (permPoll) { clearInterval(permPoll); permPoll = null; }
     sendBtn.disabled = false;
     status.textContent = 'bereit';
     loadFiles('.');
@@ -407,6 +411,37 @@ document.getElementById('compact').onclick = () => {
 document.getElementById('revert').onclick = () => {
   if (sessionId) { logEvent('Revert angefordert'); handleCommand('/revert'); }
 };
+
+document.getElementById('permOnce').onclick = () => replyPermission('ONCE');
+document.getElementById('permAlways').onclick = () => replyPermission('ALWAYS');
+document.getElementById('permReject').onclick = () => replyPermission('REJECT');
+
+async function replyPermission(reply) {
+  if (!pendingPermission || !sessionId) return;
+  try {
+    await fetch('/api/session/' + sessionId + '/permission/' + pendingPermission.id + '/reply', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({reply})
+    });
+  } catch (e) { logEvent('Permission reply error: ' + e.message); }
+  document.getElementById('permModal').classList.remove('open');
+  pendingPermission = null;
+}
+
+async function checkPermissions() {
+  if (!sessionId) return;
+  try {
+    const res = await fetch('/api/session/' + sessionId + '/permission');
+    const data = await res.json();
+    const list = data.data || [];
+    if (list.length && !pendingPermission) {
+      pendingPermission = list[0];
+      document.getElementById('permContext').textContent =
+        pendingPermission.action + ' — ' + (pendingPermission.resources||[]).join(', ');
+      document.getElementById('permModal').classList.add('open');
+    }
+  } catch (e) { /* ignore */ }
+}
 
 sendBtn.onclick = send;
 input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey||e.metaKey)) { e.preventDefault(); send(); } });

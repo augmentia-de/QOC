@@ -73,7 +73,7 @@ public final class PermissionEngine {
                     throw new Defect("no approval source configured for an ask decision");
                 }
                 ApprovalResult answer = approvalSource.orElseThrow()
-                        .request(request.action(), context(check));
+                        .request(request.id(), request.sessionId(), request.action(), context(check));
                 pending.remove(request.sessionId(), request.id());
                 switch (answer) {
                     case ApprovalResult.Approved approved -> {

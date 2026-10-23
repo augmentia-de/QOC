@@ -1,6 +1,9 @@
 package de.augmentia.oc.engine.testing;
 
+import de.augmentia.oc.engine.core.contract.permission.PermissionRequest;
 import de.augmentia.oc.engine.core.model.ApprovalResult;
+import de.augmentia.oc.engine.core.model.PermissionRequestId;
+import de.augmentia.oc.engine.core.model.SessionId;
 import de.augmentia.oc.engine.core.port.human.ApprovalSource;
 
 import java.util.ArrayDeque;
@@ -23,7 +26,7 @@ public final class ScriptedApproval implements ApprovalSource {
     }
 
     @Override
-    public synchronized ApprovalResult request(String action, String context) {
+    public synchronized ApprovalResult request(PermissionRequestId requestId, SessionId sessionId, String action, String context) {
         actions.add(action);
         ApprovalResult answer = answers.pollFirst();
         if (answer == null) throw new IllegalStateException("ScriptedApproval has no answer left");
