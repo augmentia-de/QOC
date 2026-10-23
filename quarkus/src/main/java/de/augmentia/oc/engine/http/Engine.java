@@ -16,6 +16,8 @@ import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.model.*;
 import de.augmentia.oc.engine.runtime.tool.fs.FileAccess;
 import de.augmentia.oc.engine.adapter.fs.NioFileSystem;
+import de.augmentia.oc.engine.adapter.net.JdkHttpTransport;
+import de.augmentia.oc.engine.adapter.process.JdkProcessRunner;
 import de.augmentia.oc.engine.adapter.sql.*;
 import de.augmentia.oc.engine.adapter.time.SystemClock;
 import de.augmentia.oc.engine.core.model.Effect;
@@ -29,6 +31,8 @@ import de.augmentia.oc.engine.runtime.tool.fs.PatchTool;
 import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
 import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
+import de.augmentia.oc.engine.runtime.tool.mcp.McpInstructions;
+import de.augmentia.oc.engine.runtime.tool.mcp.McpServerManager;
 import de.augmentia.oc.engine.core.port.runtime.Clock;
 import de.augmentia.oc.engine.core.port.store.*;
 import de.augmentia.oc.engine.core.port.world.FileSystem;
@@ -86,6 +90,8 @@ public class Engine {
     private NioFileSystem fileSystem;
     private InstructionStore instructions;
     private CompactionService compaction;
+    private McpServerManager mcp;
+    private List<Rule> allowAll;
     private final EventCodec codec = EventCodec.standard();
     private final java.util.concurrent.ConcurrentHashMap<SessionId, Thread> running =
             new java.util.concurrent.ConcurrentHashMap<>();
@@ -115,7 +121,11 @@ public class Engine {
         registry.register(PatchTool.definition(fs, access));
         registry.register(GlobTool.definition(fs, access));
         registry.register(GrepTool.definition(fs, access));
-        List<Rule> allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
+        allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
+        mcp = new McpServerManager(registry, new JdkHttpTransport(), new JdkProcessRunner());
+        for (de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig server : config.mcpServers()) {
+            mcp.add(server);
+        }
         toolSnapshot = registry.snapshot(allowAll);
         ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
                 request -> { }, noopHooks(), toolOutput);

@@ -55,6 +55,35 @@ class EngineConfigTest {
     }
 
     @Test
+    void parsesLocalAndRemoteMcpServers() throws Exception {
+        Files.writeString(workspace.resolve("opencode.json"), """
+                {
+                  "mcp": {
+                    "github": {"type": "remote", "url": "https://example.test/mcp", "codemode": false,
+                               "headers": {"x-token": "abc"}},
+                    "fs": {"type": "local", "command": ["mcp-fs", "--root", "."],
+                           "environment": {"A": "B"}}
+                  }
+                }
+                """);
+
+        EngineConfig config = config();
+        config.load();
+
+        assertThat(config.mcpServers()).hasSize(2);
+        var github = (de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig.Remote)
+                config.mcpServers().stream().filter(s -> s.name().equals("github")).findFirst().orElseThrow();
+        assertThat(github.url()).isEqualTo("https://example.test/mcp");
+        assertThat(github.codemode()).isFalse();
+        assertThat(github.headers()).containsEntry("x-token", "abc");
+
+        var fs = (de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig.Local)
+                config.mcpServers().stream().filter(s -> s.name().equals("fs")).findFirst().orElseThrow();
+        assertThat(fs.command()).containsExactly("mcp-fs", "--root", ".");
+        assertThat(fs.environment()).containsEntry("A", "B");
+    }
+
+    @Test
     void invalidJsonIsADefect() throws Exception {
         Files.writeString(workspace.resolve("opencode.json"), "{not json");
         EngineConfig config = config();

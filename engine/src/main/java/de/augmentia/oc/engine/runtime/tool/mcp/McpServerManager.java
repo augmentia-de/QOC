@@ -53,6 +53,16 @@ public final class McpServerManager {
         return entry == null ? List.of() : List.copyOf(entry.tools);
     }
 
+    public Map<String, List<McpRegistrar.McpToolSpec>> discoveredAll() {
+        Map<String, List<McpRegistrar.McpToolSpec>> all = new LinkedHashMap<>();
+        for (Map.Entry<String, ServerEntry> entry : servers.entrySet()) {
+            if (!entry.getValue().tools.isEmpty()) {
+                all.put(entry.getKey(), List.copyOf(entry.getValue().tools));
+            }
+        }
+        return all;
+    }
+
     public String error(String name) {
         ServerEntry entry = servers.get(name);
         return entry == null ? null : entry.error;

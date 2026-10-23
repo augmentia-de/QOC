@@ -27,7 +27,7 @@ public class EngineConfig {
 
     private static final Logger LOG = Logger.getLogger(EngineConfig.class.getName());
     private static final List<String> KNOWN = List.of(
-            "model", "provider", "workspace", "auth", "agents");
+            "model", "provider", "workspace", "auth", "agents", "mcp");
 
     @Inject
     @ConfigProperty(name = "engine.workspace", defaultValue = ".")
@@ -56,6 +56,7 @@ public class EngineConfig {
     private String url;
     private String password;
     private List<AgentConfig> agents;
+    private List<de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig> mcpServers;
     private final List<ConfigEntry> entries = new ArrayList<>();
 
     @PostConstruct
@@ -66,6 +67,7 @@ public class EngineConfig {
         url = urlProperty;
         password = passwordProperty.orElse("");
         agents = new ArrayList<>();
+        mcpServers = new ArrayList<>();
 
         Map<String, JsonValue> merged = new LinkedHashMap<>();
         merge(merged, read(globalFile()));
@@ -99,6 +101,12 @@ public class EngineConfig {
         if (agents.isEmpty()) {
             agents.add(new AgentConfig("build", null, false));
         }
+        if (merged.get("mcp") instanceof JsonValue.Obj mcp) {
+            for (Map.Entry<String, JsonValue> entry : mcp.values().entrySet()) {
+                if (!(entry.getValue() instanceof JsonValue.Obj server)) continue;
+                mcpServers.add(parseMcp(entry.getKey(), server));
+            }
+        }
 
         entries.add(new ConfigEntry("model.provider", provider, "config"));
         entries.add(new ConfigEntry("model.id", model, "config"));
@@ -113,6 +121,9 @@ public class EngineConfig {
     public String url() { return url; }
     public String password() { return password == null ? "" : password; }
     public List<AgentConfig> agents() { return List.copyOf(agents); }
+    public List<de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig> mcpServers() {
+        return List.copyOf(mcpServers);
+    }
     public List<ConfigEntry> entries() { return List.copyOf(entries); }
 
     private JsonValue read(Path file) {
@@ -126,6 +137,46 @@ public class EngineConfig {
         } catch (java.io.IOException e) {
             throw new Defect("cannot read configuration " + file, e);
         }
+    }
+
+    private static de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig parseMcp(
+            String name, JsonValue.Obj server) {
+        String type = string(server, "type", server.values().containsKey("url") ? "remote" : "local");
+        boolean disabled = Boolean.TRUE.equals(bool(server, "disabled"));
+        boolean codemode = !Boolean.FALSE.equals(bool(server, "codemode"));
+        int startup = (int) number(server, "startupTimeoutMs", 10_000);
+        int catalog = (int) number(server, "catalogTimeoutMs", 10_000);
+        int execution = (int) number(server, "executionTimeoutMs", 30_000);
+        if ("remote".equals(type)) {
+            return new de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig.Remote(
+                    name, string(server, "url", ""), stringMap(server, "headers"),
+                    Boolean.TRUE.equals(bool(server, "oauth")), disabled, codemode,
+                    startup, catalog, execution);
+        }
+        return new de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig.Local(
+                name, stringList(server, "command"), string(server, "cwd", "."),
+                stringMap(server, "environment"), disabled, codemode, startup, catalog, execution);
+    }
+
+    private static Map<String, String> stringMap(JsonValue.Obj object, String key) {
+        if (!(object.values().get(key) instanceof JsonValue.Obj values)) return Map.of();
+        Map<String, String> map = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonValue> entry : values.values().entrySet()) {
+            if (entry.getValue() instanceof JsonValue.Str str) map.put(entry.getKey(), str.value());
+        }
+        return map;
+    }
+
+    private static List<String> stringList(JsonValue.Obj object, String key) {
+        if (!(object.values().get(key) instanceof JsonValue.Arr values)) return List.of();
+        return values.values().stream()
+                .filter(JsonValue.Str.class::isInstance)
+                .map(value -> ((JsonValue.Str) value).value())
+                .toList();
+    }
+
+    private static long number(JsonValue.Obj object, String key, long fallback) {
+        return object.values().get(key) instanceof JsonValue.Num num ? num.value().longValue() : fallback;
     }
 
     private Path globalFile() {

@@ -29,6 +29,14 @@ public record Prepared(ModelRef model, List<String> system, List<ModelMessage> m
         providerOptions = providerOptions == null ? Map.of() : Map.copyOf(providerOptions);
     }
 
+    public Prepared withSystem(String extra) {
+        if (extra == null || extra.isBlank()) return this;
+        java.util.List<String> combined = new java.util.ArrayList<>(system);
+        combined.add(extra);
+        return new Prepared(model, combined, messages, tools, toolChoice, generation,
+                headers, cacheKey, providerOptions);
+    }
+
     public ModelRequest toRequest() {
         return new ModelRequest(model, system, messages, tools, toolChoice, generation,
                 providerOptions, headers, cacheKey);
