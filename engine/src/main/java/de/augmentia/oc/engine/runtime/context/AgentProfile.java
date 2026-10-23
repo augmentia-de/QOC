@@ -1,6 +1,7 @@
 package de.augmentia.oc.engine.runtime.context;
 
 import de.augmentia.oc.engine.core.model.AgentId;
+import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.Rule;
 
@@ -24,6 +25,11 @@ public record AgentProfile(AgentId id, Option<String> system, int maxSteps, List
     public static AgentProfile forAgent(AgentId id, Option<String> system, int maxSteps,
                                         List<Rule> permissions, String name) {
         boolean plan = "plan".equalsIgnoreCase(name);
+        // Auto-detect plan mode: if "edit" is denied, it's plan mode.
+        if (!plan && permissions != null) {
+            plan = permissions.stream().anyMatch(r ->
+                    "edit".equalsIgnoreCase(r.action()) && r.effect() == Effect.DENY);
+        }
         return new AgentProfile(id, system, maxSteps, permissions, plan);
     }
 }
