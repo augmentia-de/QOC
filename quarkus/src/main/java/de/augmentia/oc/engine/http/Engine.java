@@ -6,6 +6,8 @@ import de.augmentia.oc.engine.core.contract.provider.Modality;
 import de.augmentia.oc.engine.core.contract.tool.Hooks;
 import de.augmentia.oc.engine.core.contract.tool.ToolCall;
 import de.augmentia.oc.engine.core.contract.tool.ToolContext;
+import de.augmentia.oc.engine.core.contract.tool.ToolCall;
+import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
 import de.augmentia.oc.engine.core.contract.tool.ToolSnapshot;
 import de.augmentia.oc.engine.core.event.ContractCodec;
@@ -15,6 +17,7 @@ import de.augmentia.oc.engine.core.json.Json;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.*;
+import de.augmentia.oc.engine.core.model.Content;
 import de.augmentia.oc.engine.core.contract.permission.PermissionRequest;
 import de.augmentia.oc.engine.core.contract.permission.Reply;
 import de.augmentia.oc.engine.core.model.ProjectId;
@@ -29,6 +32,7 @@ import de.augmentia.oc.engine.adapter.sql.*;
 import de.augmentia.oc.engine.adapter.time.SystemClock;
 import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Option;
+import de.augmentia.oc.engine.core.model.ToolName;
 import de.augmentia.oc.engine.core.model.AgentId;
 import de.augmentia.oc.engine.core.model.ApprovalResult;
 import de.augmentia.oc.engine.core.model.CompactionReason;
@@ -70,6 +74,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import javax.sql.DataSource;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -274,28 +279,75 @@ public class Engine {
         }
 
         ModelInfo model = modelInfo();
-        var prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), 1);
-        ToolContext context = new ToolContext(id, info.agent(), MessageId.create(), CallId.create());
         var liveSink = (java.util.function.Consumer<de.augmentia.oc.engine.core.contract.provider.ModelEvent>) event ->
                 eventBus.publishLive(id.value(), Json.encode(ContractCodec.encode(event,
                         de.augmentia.oc.engine.core.contract.provider.ModelEvent.class)));
-        StepResult result = step.run(prepared, context, liveSink);
-        if (result instanceof StepResult.NeedsCompaction) {
-            // Automatic compaction (I-07, I-09): exactly one per step.
-            compaction.compact(id, CompactionReason.OVERFLOW, preparedModel(info, model),
-                    Option.none(), Seq.of(journal.history(id.value(), Seq.zero()).size()),
-                    clock.now());
-            prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), 1);
-            result = step.run(prepared, context, liveSink);
+
+        int stepNo = 1;
+        StepResult.Finished finished = null;
+        FinishReason finishReason = FinishReason.NORMAL;
+        TokenCount usage = TokenCount.zero();
+        String finalText = "";
+
+        while (true) {
+            var prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), stepNo);
+            ToolContext context = new ToolContext(id, info.agent(), MessageId.create(), CallId.create());
+            StepResult result = step.run(prepared, context, liveSink);
+            if (result instanceof StepResult.NeedsCompaction) {
+                // Automatic compaction (I-07, I-09): exactly one per step.
+                compaction.compact(id, CompactionReason.OVERFLOW, preparedModel(info, model),
+                        Option.none(), Seq.of(journal.history(id.value(), Seq.zero()).size()),
+                        clock.now());
+                prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), stepNo);
+                result = step.run(prepared, context, liveSink);
+            }
+            if (result instanceof StepResult.Failed failed) {
+                throw new IllegalStateException("model call failed: " + failed.message());
+            }
+            if (!(result instanceof StepResult.Finished done)) {
+                throw new IllegalStateException("context overflow: compaction required");
+            }
+            finished = done;
+            finishReason = done.reason();
+            usage = done.usage();
+            String stepText = text(done.events());
+            if (!stepText.isBlank()) finalText = stepText;
+
+            // Persist the assistant turn (text + tool calls/results) so the next step sees it.
+            List<Content> assistantContent = new ArrayList<>();
+            if (!stepText.isBlank()) {
+                assistantContent.add(new Content.TextContent(stepText, clock.now()));
+            }
+            for (StepResult.ToolCallOutcome outcome : done.toolCalls()) {
+                ToolCall call = outcome.call();
+                ToolState state;
+                if (outcome.outcome() instanceof ToolOutcome.Ok ok) {
+                    state = new ToolState.Completed(call.input(), ok.result().content(), ok.result().metadata());
+                } else if (outcome.outcome() instanceof ToolOutcome.Failed failed) {
+                    state = new ToolState.Failed(call.input(), failed.error(), Option.none(), Map.of());
+                } else {
+                    state = new ToolState.Completed(call.input(), List.of(), Map.of());
+                }
+                assistantContent.add(new Content.ToolCardContent(
+                        new ToolCard(call.id(), call.name(), call.input(), state, true, clock.now())));
+            }
+            if (!assistantContent.isEmpty()) {
+                Seq assistantSeq = Seq.of(journal.history(id.value(), Seq.zero()).size() + 1L + stepNo);
+                conversation.insert(id, assistantSeq, new Message.AssistantMessage(
+                        MessageId.create(), info.agent(),
+                        info.model().orElse(new ModelRef(model.providerId(), model.id())),
+                        assistantContent, Option.some(finishReason), Option.none(), Option.none(),
+                        Option.none(), Money.zero(), usage, AssistantTime.started(clock.now())));
+            }
+
+            boolean hasToolCalls = !done.toolCalls().isEmpty();
+            if (!hasToolCalls) break;
+            if (stepNo >= agent.maxSteps()) break;
+            stepNo++;
         }
-        PromptResult promptResult = switch (result) {
-            case StepResult.Finished finished -> new PromptResult(finished.reason().name(),
-                    finished.usage().input(), finished.usage().output(), text(finished.events()));
-            case StepResult.Failed failed ->
-                    throw new IllegalStateException("model call failed: " + failed.message());
-            case StepResult.NeedsCompaction ignored ->
-                    throw new IllegalStateException("context overflow: compaction required");
-        };
+
+        PromptResult promptResult = new PromptResult(finishReason.name(),
+                usage.input(), usage.output(), finalText);
 
         // Generate title after the first successful prompt if not yet set.
         // Generate title after the first successful prompt if not yet set.
