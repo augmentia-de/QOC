@@ -43,6 +43,7 @@ import de.augmentia.oc.engine.runtime.tool.fs.GlobTool;
 import de.augmentia.oc.engine.runtime.tool.fs.GrepTool;
 import de.augmentia.oc.engine.runtime.tool.fs.PatchTool;
 import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
+import de.augmentia.oc.engine.runtime.tool.shell.ShellTool;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
 import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
 import de.augmentia.oc.engine.runtime.permission.engine.PermissionEngine;
@@ -162,20 +163,6 @@ public class Engine {
         fileSystem = new NioFileSystem(workspacePath);
         NioFileSystem fs = fileSystem;
         FileAccess access = new FileAccess(fs, workspacePath, workspacePath);
-        ToolRegistry registry = new ToolRegistry();
-        registry.register(ReadTool.definition(fs, access));
-        registry.register(WriteTool.definition(fs, access));
-        registry.register(EditTool.definition(fs, access));
-        registry.register(PatchTool.definition(fs, access));
-        registry.register(GlobTool.definition(fs, access));
-        registry.register(GrepTool.definition(fs, access));
-        allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
-        mcp = new McpServerManager(registry, new JdkHttpTransport(), new JdkProcessRunner(),
-                Option.some(credentialStore));
-        for (de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig server : config.mcpServers()) {
-            mcp.add(server);
-        }
-        toolSnapshot = registry.snapshot(allowAll);
         PermissionGate permissionGate = request -> {
             SessionInfo info = sessions.info(request.sessionId()).orElse(null);
             List<Rule> sessionRules = info == null ? List.of() : info.permissions();
@@ -192,6 +179,21 @@ public class Engine {
             pspan.end();
             }
         };
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(ReadTool.definition(fs, access, permissionGate));
+        registry.register(WriteTool.definition(fs, access, permissionGate));
+        registry.register(EditTool.definition(fs, access, permissionGate));
+        registry.register(PatchTool.definition(fs, access, permissionGate));
+        registry.register(GlobTool.definition(fs, access, permissionGate));
+        registry.register(GrepTool.definition(fs, access, permissionGate));
+        registry.register(ShellTool.definition(new JdkProcessRunner(), workspacePath, workspacePath, null, permissionGate));
+        allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
+        mcp = new McpServerManager(registry, new JdkHttpTransport(), new JdkProcessRunner(),
+                Option.some(credentialStore));
+        for (de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig server : config.mcpServers()) {
+            mcp.add(server);
+        }
+        toolSnapshot = registry.snapshot(allowAll);
         ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
                 permissionGate, noopHooks(), toolOutput);
         contextBuilder = new ContextBuilder(conversation, SkillCatalog.empty());

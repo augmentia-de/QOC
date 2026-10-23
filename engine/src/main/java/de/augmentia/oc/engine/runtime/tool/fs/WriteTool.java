@@ -1,5 +1,7 @@
 package de.augmentia.oc.engine.runtime.tool.fs;
 
+import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
+import de.augmentia.oc.engine.core.contract.permission.PermissionRequest;
 import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
@@ -22,11 +24,35 @@ public final class WriteTool {
     private WriteTool() {}
 
     public static ToolDefinition definition(FileSystem fileSystem, FileAccess access) {
+        return definition(fileSystem, access, null);
+    }
+
+    public static ToolDefinition definition(FileSystem fileSystem, FileAccess access, PermissionGate permissionGate) {
         if (fileSystem == null || access == null) throw new IllegalArgumentException("dependencies must not be null");
         Schema input = Schema.obj(Map.of("path", Schema.str(), "content", Schema.str()));
         return new ToolDefinition(new ToolName("write"), "Write a file",
                 input, Option.none(),
-                (value, context) -> execute(fileSystem, access, value), null);
+                (value, context) -> {
+                    if (permissionGate != null) {
+                        try {
+                            String raw = JsonArgs.requiredString(value, "path");
+                            FileAccess.Resolved resolved = access.resolve(raw, false);
+                            if (resolved.external()) {
+                                PermissionRequest req = new PermissionRequest(
+                                        de.augmentia.oc.engine.core.model.PermissionRequestId.create(),
+                                        context.sessionId(),
+                                        "external_directory",
+                                        List.of(resolved.boundary().toString()),
+                                        List.of(resolved.boundary().toString() + "/*"),
+                                        Map.of("tool", "write", "path", raw),
+                                        null, null);
+                                permissionGate.assertAllowed(req);
+                            }
+                        } catch (IllegalArgumentException ignored) {
+                        }
+                    }
+                    return execute(fileSystem, access, value);
+                }, null);
     }
 
     static ToolOutcome execute(FileSystem fileSystem, FileAccess access, JsonValue value) {

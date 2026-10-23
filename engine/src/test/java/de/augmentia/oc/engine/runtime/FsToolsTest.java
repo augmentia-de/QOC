@@ -15,6 +15,7 @@ import de.augmentia.oc.engine.runtime.tool.fs.PatchTool;
 import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
 import de.augmentia.oc.engine.testing.FakeFileSystem;
+import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -198,5 +199,22 @@ class FsToolsTest {
         assertThat(outcome).isInstanceOf(ToolOutcome.Ok.class);
         return ((de.augmentia.oc.engine.core.model.ToolContent.TextItem)
                 ((ToolOutcome.Ok) outcome).result().content().getFirst()).text();
+    }
+
+    @Test
+    void externalPathsConsultPermissionGate() {
+        PermissionGate allow = request -> { };
+        ReadTool.definition(fs, access, allow).execute().execute(
+                args(Map.of("path", JsonValue.of("/tmp/outside.txt"))), context);
+        WriteTool.definition(fs, access, allow).execute().execute(
+                args(Map.of("path", JsonValue.of("/tmp/outside.txt"), "content", JsonValue.of("x"))), context);
+        EditTool.definition(fs, access, allow).execute().execute(
+                args(Map.of("path", JsonValue.of("/tmp/outside.txt"), "old", JsonValue.of("a"), "new", JsonValue.of("b"))), context);
+        PatchTool.definition(fs, access, allow).execute().execute(
+                args(Map.of("path", JsonValue.of("/tmp/outside.txt"), "patch", JsonValue.of("@@"))), context);
+        GlobTool.definition(fs, access, allow).execute().execute(
+                args(Map.of("pattern", JsonValue.of("*"), "path", JsonValue.of("/tmp"))), context);
+        GrepTool.definition(fs, access, allow).execute().execute(
+                args(Map.of("pattern", JsonValue.of("x"), "path", JsonValue.of("/tmp"))), context);
     }
 }

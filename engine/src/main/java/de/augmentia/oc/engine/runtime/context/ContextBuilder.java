@@ -99,36 +99,6 @@ public final class ContextBuilder {
         return messages;
     }
 
-    private void appendAssistant(Message.AssistantMessage assistant, List<ModelMessage> out) {
-        List<ModelContent> content = new ArrayList<>();
-        List<ModelMessage> results = new ArrayList<>();
-        for (Content item : assistant.content()) {
-            switch (item) {
-                case Content.TextContent text -> content.add(new ModelContent.Text(text.text()));
-                case Content.ReasoningContent reasoning -> content.add(new ModelContent.Text(reasoning.text()));
-                case Content.ToolCardContent card -> {
-                    ToolCard toolCard = card.card();
-                    content.add(new ModelContent.ToolCall(toolCard.id(), toolCard.name(), toolCard.input()));
-                    appendToolResult(toolCard, results);
-                }
-            }
-        }
-        out.add(new ModelMessage.Assistant(content));
-        out.addAll(results);
-    }
-
-    private void appendToolResult(ToolCard card, List<ModelMessage> out) {
-        switch (card.state()) {
-            case ToolState.Completed completed -> out.add(new ModelMessage.ToolResult(card.id(), card.name(),
-                    new OutcomePayload.Content(completed.content(), Option.some(completed.metadata()))));
-            case ToolState.Failed failed -> out.add(new ModelMessage.ToolResult(card.id(), card.name(),
-                    new OutcomePayload.Text(failed.error().message())));
-            default -> {
-                // Streaming/running calls have no result yet.
-            }
-        }
-    }
-
     private static String basePrompt(ToolSnapshot tools) {
         List<String> names = tools.list().stream().map(ToolDefinition::effectiveName).toList();
         StringBuilder base = new StringBuilder(

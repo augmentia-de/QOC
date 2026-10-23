@@ -1,11 +1,15 @@
 package de.augmentia.oc.engine.runtime.tool.shell;
 
+import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
+import de.augmentia.oc.engine.core.contract.permission.PermissionRequest;
 import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.json.Schema;
 import de.augmentia.oc.engine.core.model.Option;
+import de.augmentia.oc.engine.core.model.PermissionRequestId;
+import de.augmentia.oc.engine.core.model.SessionId;
 import de.augmentia.oc.engine.core.model.ToolContent;
 import de.augmentia.oc.engine.core.model.ToolName;
 import de.augmentia.oc.engine.core.port.world.ProcessRunner;
@@ -21,7 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** {@code shell}: scan first (W-50), then run; output is truncated on demand. */
+/** {@code shell}: scan first (W-50), then check external_directory, then run; output is truncated. */
 public final class ShellTool {
 
     public static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(2);
@@ -30,7 +34,13 @@ public final class ShellTool {
     private ShellTool() {}
 
     public static ToolDefinition definition(ProcessRunner processes, Path location, Scanner scanner) {
+        return definition(processes, location, location, scanner, null);
+    }
+
+    public static ToolDefinition definition(ProcessRunner processes, Path location, Path projectRoot,
+                                           Scanner scanner, PermissionGate permissionGate) {
         if (processes == null || location == null) throw new IllegalArgumentException("dependencies must not be null");
+        Path root = projectRoot == null ? location : projectRoot;
         Scanner effective = scanner == null ? new PortableScanner() : scanner;
         Schema input = Schema.obj(Map.of(
                 "command", Schema.str(),
@@ -39,15 +49,16 @@ public final class ShellTool {
                 "background", Schema.opt(Schema.bool())));
         return new ToolDefinition(new ToolName("shell"), "Run a shell command",
                 input, Option.none(),
-                (value, context) -> execute(processes, location, effective, value, context), null);
+                (value, context) -> execute(processes, location, root, effective, value, context, permissionGate), null);
     }
 
     public static ScanResult scan(String command, Path cwd) {
         return new PortableScanner().scan(command, shellName(), cwd);
     }
 
-    static ToolOutcome execute(ProcessRunner processes, Path location, Scanner scanner, JsonValue value,
-                               de.augmentia.oc.engine.core.contract.tool.ToolContext context) {
+    static ToolOutcome execute(ProcessRunner processes, Path location, Path projectRoot, Scanner scanner,
+                               JsonValue value, de.augmentia.oc.engine.core.contract.tool.ToolContext context,
+                               PermissionGate permissionGate) {
         try {
             String command = JsonArgs.requiredString(value, "command");
             String workdir = JsonArgs.string(value, "workdir");
@@ -58,6 +69,28 @@ public final class ShellTool {
             ScanResult scan = scanner.scan(command, shellName(), cwd);
             if (scan.commands().isEmpty()) {
                 return ReadTool.failure("shell", "command cannot be analyzed");
+            }
+
+            // External-directory check: any scanned directory outside the
+            // location/project root requires an explicit permission decision.
+            if (permissionGate != null) {
+                for (Path dir : scan.directories()) {
+                    Path normalized = dir.toAbsolutePath().normalize();
+                    boolean internal = normalized.startsWith(location.toAbsolutePath().normalize())
+                            || normalized.startsWith(projectRoot.toAbsolutePath().normalize());
+                    if (!internal) {
+                        PermissionRequest request = new PermissionRequest(
+                                PermissionRequestId.create(),
+                                context.sessionId(),
+                                "external_directory",
+                                List.of(normalized.toString()),
+                                List.of(normalized.toString() + "/*"),
+                                Map.of("tool", "shell", "command", command),
+                                null,
+                                null);
+                        permissionGate.assertAllowed(request);
+                    }
+                }
             }
 
             Duration timeout = background ? Duration.ZERO
@@ -92,6 +125,10 @@ public final class ShellTool {
                     List.of(new ToolContent.TextItem(output)), metadata));
         } catch (IllegalArgumentException e) {
             return ReadTool.failure("shell", e.getMessage());
+        } catch (de.augmentia.oc.engine.core.contract.permission.PermissionDenied e) {
+            return ReadTool.failure("shell", "permission denied: " + e.getMessage());
+        } catch (de.augmentia.oc.engine.core.error.Aborted e) {
+            return ReadTool.failure("shell", "aborted: " + e.getMessage());
         }
     }
 

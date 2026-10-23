@@ -56,8 +56,8 @@ public final class SqliteToolOutput implements ToolOutputStore {
     @Override
     public void sweep(Instant olderThan) {
         Sqlite.transaction(dataSource, connection -> {
-            Sqlite.execute(connection, "delete from tool_output where created_at < ?",
-                    java.sql.Timestamp.from(olderThan));
+            Sqlite.execute(connection, "delete from tool_output where created_at < datetime(?, 'unixepoch')",
+                    olderThan.getEpochSecond());
             return null;
         });
     }

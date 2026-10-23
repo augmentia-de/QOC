@@ -8,6 +8,7 @@ import de.augmentia.oc.engine.core.model.CallId;
 import de.augmentia.oc.engine.core.model.MessageId;
 import de.augmentia.oc.engine.core.model.SessionId;
 import de.augmentia.oc.engine.core.port.world.ProcessRunner;
+import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
 import de.augmentia.oc.engine.core.shell.scan.ScanResult;
 import de.augmentia.oc.engine.runtime.tool.shell.ShellTool;
 import de.augmentia.oc.engine.testing.FakeProcess;
@@ -47,6 +48,16 @@ class ShellToolTest {
         FakeProcess process = new FakeProcess(new ProcessRunner.Exit(2, "", "bad", false));
         assertThat(execute(process, args("false", null, null, false)))
                 .isInstanceOf(ToolOutcome.Failed.class);
+    }
+
+    @Test
+    void externalWorkdirConsultsPermissionGate() {
+        FakeProcess process = new FakeProcess(new ProcessRunner.Exit(0, "ok", "", false));
+        ToolContext context = new ToolContext(SessionId.create(), AgentId.create(),
+                MessageId.create(), CallId.create());
+        PermissionGate allow = request -> { };
+        ShellTool.definition(process, ROOT, ROOT, null, allow).execute().execute(
+                args("echo hi", "/tmp", null, false), context);
     }
 
     @Test
