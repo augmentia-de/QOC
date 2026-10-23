@@ -348,6 +348,19 @@ public final class ContractCodec {
     }
 
     private static Class<?> sealedSubtype(Class<?> type, String name) {
+        // Native images may not expose permitted subclasses without extra
+        // reflection metadata. Try the conventional nested and top-level names
+        // first; both are present in the registered reflection configuration.
+        try {
+            return Class.forName(type.getName() + "$" + name);
+        } catch (ClassNotFoundException ignored) {
+            // try top-level
+        }
+        try {
+            return Class.forName(type.getPackageName() + "." + name);
+        } catch (ClassNotFoundException ignored) {
+            // fall back to permitted subclasses
+        }
         for (Class<?> subtype : type.getPermittedSubclasses()) {
             if (subtype.getSimpleName().equals(name)
                     || subtype.getName().equals(name)
