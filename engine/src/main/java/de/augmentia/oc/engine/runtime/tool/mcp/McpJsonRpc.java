@@ -42,7 +42,24 @@ public final class McpJsonRpc {
         if (body == null || body.isBlank()) {
             return new Result.Err<>(new de.augmentia.oc.engine.core.json.DecodeError("$", "empty response"));
         }
-        return Json.parse(body);
+        String payload = body;
+        // Server-Sent Events responses (application/x-event-stream style) carry the
+        // JSON-RPC payload in "data:" lines.
+        if (body.contains("data:")) {
+            StringBuilder json = new StringBuilder();
+            for (String line : body.split("\r?\n")) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("data:")) {
+                    String value = trimmed.substring(5).trim();
+                    if (!value.isEmpty()) {
+                        if (json.length() > 0) json.append("\n");
+                        json.append(value);
+                    }
+                }
+            }
+            if (json.length() > 0) payload = json.toString();
+        }
+        return Json.parse(payload);
     }
 
     /** Returns the error message if the response is an error, otherwise empty. */

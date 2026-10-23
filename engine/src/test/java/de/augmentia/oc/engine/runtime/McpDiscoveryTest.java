@@ -149,6 +149,23 @@ class McpDiscoveryTest {
                 .containsExactly("list");
     }
 
+    @Test
+    void remoteDiscoveryHandlesSseResponses() {
+        String initSse = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{}}}";
+        String toolsSse = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":["
+                + "{\"name\":\"search\",\"description\":\"search code\",\"inputSchema\":{\"type\":\"object\"}}]}}";
+        ScriptedHttp transport = new ScriptedHttp(
+                new ScriptedHttp.Response(200, Map.of("Mcp-Session-Id", List.of("sid")), initSse.getBytes()),
+                new ScriptedHttp.Response(200, Map.of(), toolsSse.getBytes()));
+        McpDiscoveryClient client = new McpDiscoveryClient(transport,
+                new McpServerConfig.Remote("github", "https://example.test/mcp", Map.of(),
+                        false, false, true, 5_000, 5_000, 5_000));
+
+        assertThat(client.listTools()).extracting(McpRegistrar.McpToolSpec::name)
+                .containsExactly("search");
+    }
+
+
     private static final class Schema {
         static de.augmentia.oc.engine.core.json.Schema obj(Map<String, de.augmentia.oc.engine.core.json.Schema> fields) {
             return de.augmentia.oc.engine.core.json.Schema.obj(fields);

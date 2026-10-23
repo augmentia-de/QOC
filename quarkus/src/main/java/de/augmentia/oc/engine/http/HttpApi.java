@@ -239,7 +239,11 @@ public class HttpApi {
     @GET
     @Path("/mcp/{server}/status")
     public Response mcpStatus(@PathParam("server") String server) {
-        return Response.ok(Map.of("status", engine.mcpStatus(server), "error", engine.mcpError(server))).build();
+        String error = engine.mcpError(server);
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("status", engine.mcpStatus(server));
+        if (error != null && !error.isBlank()) body.put("error", error);
+        return Response.ok(body).build();
     }
 
     @GET

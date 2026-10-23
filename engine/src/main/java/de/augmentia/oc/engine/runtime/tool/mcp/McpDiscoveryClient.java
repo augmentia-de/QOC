@@ -26,6 +26,7 @@ public final class McpDiscoveryClient implements McpClient {
     private final Option<CredentialStore> credentials;
     private final String integrationId;
     private volatile List<McpRegistrar.McpToolSpec> discovered;
+    private volatile String sessionId;
 
     public McpDiscoveryClient(HttpTransport transport, McpServerConfig.Remote config) {
         this(transport, config, Option.none(), "mcp:" + config.name());
@@ -78,6 +79,7 @@ public final class McpDiscoveryClient implements McpClient {
             throw new McpNeedsAuth("oauth required for " + config.name());
         }
         String initText = readBody(initResponse);
+        sessionId = header(initResponse, "mcp-session-id");
         initResponse.close();
         Result<JsonValue> initParsed = McpJsonRpc.parse(initText);
         if (initParsed instanceof Result.Err<JsonValue> error) throw new McpFailure(error.error().message());
@@ -169,6 +171,10 @@ public final class McpDiscoveryClient implements McpClient {
 
     private Map<String, String> headers() {
         Map<String, String> headers = new java.util.LinkedHashMap<>(config.headers());
+        headers.putIfAbsent("Accept", "application/json, text/event-stream");
+        if (sessionId != null && !sessionId.isBlank()) {
+            headers.putIfAbsent("Mcp-Session-Id", sessionId);
+        }
         if (credentials.isPresent()) {
             for (Credential credential : credentials.orElseThrow().saved(integrationId)) {
                 if (credential.active() && credential.secret().isPresent()) {
@@ -178,6 +184,17 @@ public final class McpDiscoveryClient implements McpClient {
             }
         }
         return Map.copyOf(headers);
+    }
+
+    private static String header(HttpTransport.ResponseStream response, String name) {
+        if (response == null || name == null) return null;
+        for (Map.Entry<String, List<String>> entry : response.headers().entrySet()) {
+            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(name)
+                    && entry.getValue() != null && !entry.getValue().isEmpty()) {
+                return entry.getValue().get(0);
+            }
+        }
+        return null;
     }
 
     private static String readBody(HttpTransport.ResponseStream response) {
