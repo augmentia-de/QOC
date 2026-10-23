@@ -13,6 +13,7 @@
 | [`persistence/`](./persistence/README.md) | What does the database structure look like? Tables, transactions, indexes, migrations | 3 files |
 | [`betrieb/`](./betrieb/README.md) | What does the smallest runnable environment look like? HTTP/SSE, skills, credentials | 4 files |
 | [`qualitaet/`](./qualitaet/README.md) | How does a rule become evidence? Tests, architecture gates, check matrix, implementability | 4 files |
+| [`agents/`](./agents/README.md) | Agent profiles, tool restrictions, MCP scoping, workflows | 5 files |
 
 **Cross-cutting:** [`module-plan.md`](./module-plan.md) sorts all modules
 topologically by dependencies, defines the interfaces between them and describes

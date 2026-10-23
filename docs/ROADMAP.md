@@ -245,3 +245,13 @@ rules.
 > (`overview`, `packages`, `01-use-cases`, `02-data-flow`, `03-bounded-contexts`,
 > `04-change-impact`, `flow-db-service`, `08`/`09`, `13`) is reference and is read
 > only when a concrete question arises.
+## 3. Future milestones (M15+)
+
+| # | Stage | Modules | Key deliverable | Done when |
+|---|---|---|---|---|
+| **M15** | S8 | `http`, `runtime` | Agent-specific config (tools, permissions, MCP, model, maxSteps) | agent with deny cannot call tool |
+| **M16** | S4/S8 | `runtime` (tool.runtime), `http` | Agent-scoped tool snapshot and permission rules | filtered tools in prompt request |
+| **M17** | S3/S8 | `runtime` (tool.mcp), `http` | MCP server subsets per agent | MCP tools filtered by agent |
+| **M18** | S7/S8 | `runtime` (execution), `http` | Multi-agent workflow handoff | workflow runs plan → build → review |
+
+These milestones extend M0–M14 without changing their invariants.
