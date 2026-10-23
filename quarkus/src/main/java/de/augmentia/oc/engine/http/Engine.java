@@ -142,9 +142,19 @@ public class Engine {
     }
 
     public SessionId createSession() {
+        return createSession(null);
+    }
+
+    public SessionId createSession(String agentName) {
         Path directory = Path.of(config.workspace()).toAbsolutePath().normalize();
         Location location = new Location(directory, ProjectId.create(), Option.none());
-        AgentId agent = agentCatalogue.primaryId();
+        AgentId agent = agentName == null ? agentCatalogue.primaryId()
+                : agentCatalogue.list().stream()
+                        .filter(a -> a.name().equalsIgnoreCase(agentName))
+                        .findFirst()
+                        .map(AgentCatalogue.AgentDto::id)
+                        .map(AgentId::parse)
+                        .orElse(agentCatalogue.primaryId());
         Instant now = clock.now();
         SessionId id = sessionService.create(location, agent, Option.none(), now);
         sessions.put(new SessionInfo(id, location.projectId(), location, "New session", agent,
@@ -220,11 +230,9 @@ public class Engine {
         };
 
         // Generate title after the first successful prompt if not yet set.
+        // Generate title after the first successful prompt if not yet set.
         if (info.title().equals("New session") || info.title().isBlank()) {
-            String title = generateTitle(id);
-            if (title != null && !title.isBlank()) {
-                // Title was generated and stored; no change to the result.
-            }
+            generateTitle(id);
         }
         return promptResult;
     }

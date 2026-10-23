@@ -316,6 +316,8 @@ public class HttpApi {
 
     public record PromptRequest(String text) {}
 
+    public record CreateSessionRequest(String agent) {}
+
     public record CommandRequest(String name, String arguments) {}
 
     public record PromptResponse(String finish, long inputTokens, long outputTokens, String text) {}

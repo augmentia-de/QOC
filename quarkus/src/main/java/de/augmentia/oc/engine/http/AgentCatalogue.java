@@ -20,8 +20,14 @@ public class AgentCatalogue {
 
     @PostConstruct
     void load() {
-        for (EngineConfig.AgentConfig agent : config.agents()) {
-            agents.add(new Agent(AgentId.create(), agent.name(), agent.hidden()));
+        List<EngineConfig.AgentConfig> agents = config.agents();
+        if (agents.isEmpty()) {
+            agents = List.of(
+                    new EngineConfig.AgentConfig("build", null, false),
+                    new EngineConfig.AgentConfig("plan", "You are in plan mode. Do not edit files.", true));
+        }
+        for (EngineConfig.AgentConfig agent : agents) {
+            this.agents.add(new Agent(AgentId.create(), agent.name(), agent.hidden()));
         }
     }
 
