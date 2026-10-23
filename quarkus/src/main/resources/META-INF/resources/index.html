@@ -8,38 +8,63 @@
   :root { --bg:#0f1115; --panel:#171a21; --border:#2a2f3a; --fg:#e6e6e6; --muted:#9aa0a6; --accent:#4f8cff; --ok:#3fb950; --warn:#d29922; --err:#f85149; }
   * { box-sizing:border-box; }
   body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--fg); height:100vh; display:flex; flex-direction:column; }
-  header { display:flex; gap:1rem; align-items:center; padding:.75rem 1rem; border-bottom:1px solid var(--border); background:var(--panel); flex-wrap:wrap; }
-  header h1 { margin:0; font-size:1.1rem; }
-  header select, header button { background:#0b0d12; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.35rem .6rem; }
-  header .status { margin-left:auto; color:var(--muted); font-size:.85rem; }
-  main { display:grid; grid-template-columns: 1fr 360px; flex:1; overflow:hidden; }
+  header { display:flex; gap:.75rem; align-items:center; padding:.6rem 1rem; border-bottom:1px solid var(--border); background:var(--panel); flex-wrap:wrap; }
+  header h1 { margin:0; font-size:1.05rem; }
+  header select, header button, header input { background:#0b0d12; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.3rem .55rem; font-size:.85rem; }
+  header button { cursor:pointer; }
+  header button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  header button.danger { background:#3a1f24; border-color:#5a1f24; color:#ffb4b4; }
+  header .status { margin-left:auto; color:var(--muted); font-size:.8rem; display:flex; align-items:center; gap:.4rem; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .dot.ok { background:var(--ok); }
+  .dot.err { background:var(--err); }
+  main { display:grid; grid-template-columns: 1fr 380px; flex:1; overflow:hidden; }
   .chat { display:flex; flex-direction:column; border-right:1px solid var(--border); }
   .messages { flex:1; overflow:auto; padding:1rem; display:flex; flex-direction:column; gap:.75rem; }
-  .msg { padding:.6rem .8rem; border-radius:8px; max-width:90%; white-space:pre-wrap; word-break:break-word; }
+  .msg { padding:.6rem .8rem; border-radius:8px; max-width:92%; }
   .msg.user { background:#1f2937; align-self:flex-end; }
   .msg.assistant { background:#111827; border:1px solid var(--border); align-self:flex-start; }
-  .msg.tool { background:#0b1a12; border:1px solid #1f3a2a; align-self:flex-start; font-family: ui-monospace, monospace; font-size:.85rem; }
+  .msg.tool { background:#0b1a12; border:1px solid #1f3a2a; align-self:flex-start; font-family: ui-monospace, monospace; font-size:.8rem; }
   .msg.error { background:#2a1215; border:1px solid #5a1f24; color:#ffb4b4; }
+  .msg .meta { font-size:.7rem; color:var(--muted); margin-top:.3rem; }
+  .msg details { margin-top:.4rem; }
+  .msg details summary { cursor:pointer; color:var(--muted); font-size:.75rem; }
+  .msg details pre { margin:.4rem 0 0; padding:.5rem; background:#0b0d12; border-radius:4px; overflow:auto; max-height:200px; }
   .inputbar { display:flex; gap:.5rem; padding:.75rem 1rem; border-top:1px solid var(--border); background:var(--panel); }
-  .inputbar textarea { flex:1; background:#0b0d12; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.5rem; resize:none; height:60px; font-family:inherit; }
+  .inputbar textarea { flex:1; background:#0b0d12; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.5rem; resize:none; height:70px; font-family:inherit; font-size:.9rem; }
   .inputbar button { background:var(--accent); color:#fff; border:none; border-radius:6px; padding:0 .9rem; cursor:pointer; }
   .inputbar button:disabled { opacity:.5; cursor:not-allowed; }
   .side { display:flex; flex-direction:column; overflow:hidden; }
   .section { padding:.75rem 1rem; border-bottom:1px solid var(--border); }
-  .section h2 { margin:0 0 .5rem; font-size:.9rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .section h2 { margin:0 0 .5rem; font-size:.85rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; display:flex; justify-content:space-between; align-items:center; }
+  .section h2 button { background:none; border:none; color:var(--muted); cursor:pointer; font-size:.9rem; }
   .filetree { flex:1; overflow:auto; padding:.5rem 1rem; font-family: ui-monospace, monospace; font-size:.85rem; }
-  .filetree .entry { cursor:pointer; padding:.15rem 0; }
+  .filetree .entry { cursor:pointer; padding:.15rem 0; display:flex; align-items:center; gap:.3rem; }
   .filetree .entry:hover { color:var(--accent); }
   .filetree .dir::before { content:"📁 "; }
   .filetree .file::before { content:"📄 "; }
-  .viewer { height:40%; overflow:auto; padding:.75rem 1rem; border-top:1px solid var(--border); }
+  .filetree .indent { padding-left:1.2rem; }
+  .viewer { height:35%; overflow:auto; padding:.75rem 1rem; border-top:1px solid var(--border); }
   .viewer pre { margin:0; white-space:pre-wrap; word-break:break-word; font-family: ui-monospace, monospace; font-size:.85rem; }
-  .logs { height:120px; overflow:auto; border-top:1px solid var(--border); padding:.5rem 1rem; font-family: ui-monospace, monospace; font-size:.75rem; color:var(--muted); }
-  .logs details { margin:.25rem 0; }
-  .logs summary { cursor:pointer; }
-  .badge { display:inline-block; padding:.1rem .4rem; border-radius:4px; font-size:.7rem; background:#2a2f3a; margin-left:.4rem; }
-  .badge.ok { background:#1f3a2a; color:var(--ok); }
-  .badge.err { background:#3a1f24; color:var(--err); }
+  .logs { height:100px; overflow:auto; border-top:1px solid var(--border); padding:.5rem 1rem; font-family: ui-monospace, monospace; font-size:.75rem; color:var(--muted); }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:100; }
+  .modal.open { display:flex; }
+  .modal .box { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:1.2rem; max-width:480px; width:90%; }
+  .modal .box h3 { margin:0 0 .75rem; }
+  .modal .box .actions { display:flex; gap:.5rem; justify-content:flex-end; margin-top:1rem; }
+  .modal .box button { padding:.4rem .8rem; border-radius:6px; border:1px solid var(--border); background:#0b0d12; color:var(--fg); cursor:pointer; }
+  .modal .box button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .modal .box button.danger { background:#3a1f24; border-color:#5a1f24; color:#ffb4b4; }
+  .md h1,.md h2,.md h3 { margin:.6rem 0 .3rem; }
+  .md h1 { font-size:1.2rem; } .md h2 { font-size:1.05rem; } .md h3 { font-size:.95rem; }
+  .md p { margin:.4rem 0; }
+  .md ul { margin:.4rem 0; padding-left:1.4rem; }
+  .md code { background:#0b0d12; padding:.1rem .3rem; border-radius:3px; font-family:ui-monospace,monospace; font-size:.85em; }
+  .md pre { background:#0b0d12; padding:.6rem; border-radius:6px; overflow:auto; margin:.4rem 0; position:relative; }
+  .md pre code { background:none; padding:0; }
+  .md pre .copy { position:absolute; top:.3rem; right:.3rem; background:#1f2937; border:1px solid var(--border); color:var(--muted); border-radius:4px; padding:.15rem .4rem; font-size:.7rem; cursor:pointer; }
+  .md a { color:var(--accent); }
+  .cmd-hint { font-size:.75rem; color:var(--muted); padding:.25rem 1rem; border-top:1px solid var(--border); }
 </style>
 </head>
 <body>
@@ -48,23 +73,28 @@
   <label>Agent <select id="agent"></select></label>
   <label>Model <select id="model"></select></label>
   <label>Provider <select id="provider"></select></label>
-  <span class="status" id="status">bereit</span>
+  <button id="newSession" class="primary">+ Neue Session</button>
+  <button id="interrupt" class="danger">Interrupt</button>
+  <button id="compact">Compact</button>
+  <button id="revert">Revert</button>
+  <span class="status"><span class="dot" id="healthDot"></span><span id="status">bereit</span></span>
 </header>
 <main>
   <div class="chat">
     <div class="messages" id="messages"></div>
+    <div class="cmd-hint">Slash-Commands: /compact, /revert, /interrupt, /title, /new. Strg+Enter sendet.</div>
     <div class="inputbar">
-      <textarea id="input" placeholder="Prompt eingeben… (Strg+Enter senden)"></textarea>
+      <textarea id="input" placeholder="Prompt eingeben…"></textarea>
       <button id="send">Senden</button>
     </div>
   </div>
   <aside class="side">
     <div class="section">
-      <h2>Arbeitsverzeichnis</h2>
+      <h2>Arbeitsverzeichnis <button id="newFile" title="Neue Datei">+</button> <button id="refreshFiles" title="Aktualisieren">↻</button></h2>
       <div class="filetree" id="filetree"></div>
     </div>
     <div class="section viewer">
-      <h2>Datei</h2>
+      <h2>Datei <button id="deleteFile" title="Löschen">🗑</button></h2>
       <pre id="viewer">Datei auswählen…</pre>
     </div>
     <div class="logs">
@@ -73,11 +103,25 @@
     </div>
   </aside>
 </main>
+
+<div class="modal" id="permModal">
+  <div class="box">
+    <h3>Berechtigung erforderlich</h3>
+    <p id="permContext"></p>
+    <div class="actions">
+      <button id="permReject">Ablehnen</button>
+      <button id="permOnce">Einmal</button>
+      <button id="permAlways" class="primary">Immer erlauben</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const messages = document.getElementById('messages');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('send');
 const status = document.getElementById('status');
+const healthDot = document.getElementById('healthDot');
 const filetree = document.getElementById('filetree');
 const viewer = document.getElementById('viewer');
 const logs = document.getElementById('logs');
@@ -85,6 +129,8 @@ const logs = document.getElementById('logs');
 let sessionId = null;
 let es = null;
 let currentAssistant = null;
+let currentFile = null;
+let pendingPermission = null;
 
 function logEvent(text) {
   const d = document.createElement('div');
@@ -96,24 +142,82 @@ function logEvent(text) {
 function addMessage(role, text) {
   const div = document.createElement('div');
   div.className = 'msg ' + role;
-  div.textContent = text;
+  div.innerHTML = role === 'assistant' ? renderMarkdown(text) : escapeHtml(text);
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
   return div;
 }
 
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  // code blocks
+  text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    const esc = escapeHtml(code.replace(/\n$/,''));
+    return '<pre><code class="lang-'+lang+'">' + esc + '</code><button class="copy" onclick="copyCode(this)">Kopieren</button></pre>';
+  });
+  // headings
+  text = text.replace(/^### (.*)$/gm, '<h3>$1</h3>');
+  text = text.replace(/^## (.*)$/gm, '<h2>$1</h2>');
+  text = text.replace(/^# (.*)$/gm, '<h1>$1</h1>');
+  // bold + italic
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // inline code
+  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // links
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+  // lists
+  text = text.replace(/(?:^|\n)((?:- .+\n?)+)/g, (m) => {
+    const items = m.trim().split('\n').map(l => '<li>' + l.replace(/^- /,'') + '</li>').join('');
+    return '<ul>' + items + '</ul>';
+  });
+  // paragraphs
+  text = text.split(/\n\n+/).map(p => p.trim() ? '<p>' + p.replace(/\n/g,'<br>') + '</p>' : '').join('');
+  return text;
+}
+
+function copyCode(btn) {
+  const code = btn.parentElement.querySelector('code').textContent;
+  navigator.clipboard.writeText(code).then(()=>{ btn.textContent='Kopiert'; setTimeout(()=>btn.textContent='Kopieren',1500); });
+}
+
 async function init() {
   try {
-    const res = await fetch('/api/session', {method:'POST'});
-    const data = await res.json();
-    sessionId = data.id;
-    status.textContent = 'Session ' + sessionId.slice(0,12) + '…';
-    connectSSE();
-    await loadFiles('.');
+    await checkHealth();
     await loadSelectors();
+    await newSession();
+    await loadFiles('.');
   } catch (e) {
     status.textContent = 'Fehler: ' + e.message;
   }
+}
+
+async function checkHealth() {
+  try {
+    const res = await fetch('/api/health');
+    const data = await res.json();
+    healthDot.className = 'dot ok';
+    status.textContent = (data.provider||'') + ' / ' + (data.model||'');
+  } catch (e) {
+    healthDot.className = 'dot err';
+    status.textContent = 'offline';
+  }
+}
+
+async function newSession(agent) {
+  try {
+    const body = agent ? {agent} : {};
+    const res = await fetch('/api/session', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const data = await res.json();
+    sessionId = data.id;
+    messages.innerHTML = '';
+    status.textContent = 'Session ' + sessionId.slice(0,12) + '…';
+    if (es) es.close();
+    connectSSE();
+    await loadFiles('.');
+  } catch (e) { status.textContent = 'Fehler: ' + e.message; }
 }
 
 function connectSSE() {
@@ -128,10 +232,10 @@ function connectSSE() {
           currentAssistant = addMessage('assistant', '');
           break;
         case 'TextDelta':
-          if (currentAssistant) { currentAssistant.textContent += ev.text; messages.scrollTop = messages.scrollHeight; }
+          if (currentAssistant) { currentAssistant.textContent += ev.text; currentAssistant.innerHTML = renderMarkdown(currentAssistant.textContent); messages.scrollTop = messages.scrollHeight; }
           break;
         case 'TextEnded':
-          if (currentAssistant && !currentAssistant.textContent) currentAssistant.textContent = ev.text;
+          if (currentAssistant && !currentAssistant.textContent) currentAssistant.innerHTML = renderMarkdown(ev.text);
           currentAssistant = null;
           break;
         case 'ToolCallRequested':
@@ -141,7 +245,7 @@ function connectSSE() {
           addMessage('error', '⚠ ' + ev.message);
           break;
         case 'Finished':
-          logEvent('Fertig: ' + ev.reason);
+          logEvent('Fertig: ' + ev.reason + ' (' + (ev.usage?ev.usage.input:0) + '/' + (ev.usage?ev.usage.output:0) + ')');
           loadFiles('.');
           break;
         case 'ProviderFailed':
@@ -158,6 +262,12 @@ function connectSSE() {
 async function send() {
   const text = input.value.trim();
   if (!text || !sessionId) return;
+  // slash commands
+  if (text.startsWith('/')) {
+    handleCommand(text);
+    input.value = '';
+    return;
+  }
   addMessage('user', text);
   input.value = '';
   sendBtn.disabled = true;
@@ -181,6 +291,39 @@ async function send() {
     sendBtn.disabled = false;
     status.textContent = 'bereit';
     loadFiles('.');
+  }
+}
+
+async function handleCommand(cmd) {
+  const parts = cmd.trim().split(/\s+/);
+  const name = parts[0].slice(1);
+  const args = parts.slice(1).join(' ');
+  addMessage('user', cmd);
+  switch (name) {
+    case 'new':
+      await newSession();
+      break;
+    case 'interrupt':
+      await fetch('/api/session/' + sessionId + '/interrupt', {method:'POST'});
+      logEvent('Interrupt gesendet');
+      break;
+    case 'title':
+      try {
+        const res = await fetch('/api/session/' + sessionId + '/title', {method:'POST'});
+        const data = await res.json();
+        logEvent('Titel: ' + data.title);
+      } catch (e) { logEvent('Fehler: ' + e.message); }
+      break;
+    case 'compact':
+      logEvent('Compact angefordert');
+      break;
+    case 'revert':
+      logEvent('Revert angefordert');
+      break;
+    default:
+      // treat as prompt
+      input.value = cmd;
+      await send();
   }
 }
 
@@ -223,8 +366,47 @@ async function viewFile(path) {
     const res = await fetch('/api/file?path=' + encodeURIComponent(path));
     const data = await res.json();
     viewer.textContent = data.data ? data.data.content : JSON.stringify(data);
+    currentFile = path;
   } catch (e) { viewer.textContent = 'Fehler: ' + e.message; }
 }
+
+async function createFile() {
+  const name = prompt('Dateiname:');
+  if (!name) return;
+  const content = prompt('Inhalt (leer = leer):') || '';
+  try {
+    await fetch('/api/file', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path:name, content})});
+    await loadFiles('.');
+  } catch (e) { alert('Fehler: ' + e.message); }
+}
+
+async function deleteFile() {
+  if (!currentFile) { alert('Keine Datei ausgewählt'); return; }
+  if (!confirm('Löschen: ' + currentFile + '?')) return;
+  try {
+    await fetch('/api/file?path=' + encodeURIComponent(currentFile), {method:'DELETE'});
+    viewer.textContent = 'Gelöscht.';
+    currentFile = null;
+    await loadFiles('.');
+  } catch (e) { alert('Fehler: ' + e.message); }
+}
+
+document.getElementById('newFile').onclick = createFile;
+document.getElementById('deleteFile').onclick = deleteFile;
+document.getElementById('refreshFiles').onclick = () => loadFiles('.');
+document.getElementById('newSession').onclick = () => {
+  const agent = document.getElementById('agent').value;
+  newSession(agent || null);
+};
+document.getElementById('interrupt').onclick = () => {
+  if (sessionId) fetch('/api/session/' + sessionId + '/interrupt', {method:'POST'});
+};
+document.getElementById('compact').onclick = () => {
+  if (sessionId) { logEvent('Compact angefordert'); handleCommand('/compact'); }
+};
+document.getElementById('revert').onclick = () => {
+  if (sessionId) { logEvent('Revert angefordert'); handleCommand('/revert'); }
+};
 
 sendBtn.onclick = send;
 input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey||e.metaKey)) { e.preventDefault(); send(); } });
@@ -234,3 +416,4 @@ init();
 </body>
 </html>
 EOF
+echo "written"
