@@ -24,7 +24,7 @@ public class AgentCatalogue {
         if (agents.isEmpty()) {
             agents = List.of(
                     new EngineConfig.AgentConfig("build", null, false),
-                    new EngineConfig.AgentConfig("plan", "You are in plan mode. Do not edit files.", true));
+                    new EngineConfig.AgentConfig("plan", "You are in plan mode. Do not edit files.", false));
         }
         for (EngineConfig.AgentConfig agent : agents) {
             this.agents.add(new Agent(AgentId.create(), agent.name(), agent.hidden()));
