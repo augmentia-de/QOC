@@ -9,7 +9,9 @@ import de.augmentia.oc.engine.core.contract.provider.OutcomePayload;
 import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
 import de.augmentia.oc.engine.core.contract.tool.ToolSnapshot;
 import de.augmentia.oc.engine.core.eval.CacheAffinity;
+import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.eval.OutputBudget;
+import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.*;
 import de.augmentia.oc.engine.core.port.store.Conversation;
 import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
@@ -27,8 +29,7 @@ import java.util.stream.Stream;
  */
 public final class ContextBuilder {
 
-    public static final String STEP_LIMIT_PROMPT =
-            "The step limit is reached. Summarize what was done and what remains.";
+    public static final String STEP_LIMIT_PROMPT = PromptLoader.get("step-limit");
 
     private final Conversation conversation;
     private final SkillCatalog skills;
@@ -145,7 +146,6 @@ public final class ContextBuilder {
 
     private static String basePrompt(ToolSnapshot tools) {
         List<String> names = tools.list().stream().map(ToolDefinition::effectiveName).toList();
-        return "You are the OpenCode session engine. Use the available tools when needed.\n"
-                + "Available tools: " + String.join(", ", names);
+        return PromptLoader.get("base-prompt").replace("${tools}", String.join(", ", names));
     }
 }

@@ -6,6 +6,7 @@ import de.augmentia.oc.engine.core.contract.provider.ModelContent;
 import de.augmentia.oc.engine.core.contract.provider.ModelMessage;
 import de.augmentia.oc.engine.core.contract.provider.ModelRequest;
 import de.augmentia.oc.engine.core.eval.InstructionEpoch;
+import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.CompactionReason;
 import de.augmentia.oc.engine.core.model.InboxId;
 import de.augmentia.oc.engine.core.model.InstructionEntry;
@@ -34,54 +35,7 @@ import de.augmentia.oc.engine.core.model.TokenCount;
  */
 public final class CompactionService {
 
-    public static final String CTX_SUMMARY = """
-            You MUST summarize the conversation above into a structured summary that will be given to another agent to resume the work.
-
-            Summarize only what the user and the assistant said and did. Leave out instructions and setup the assistant was given rather than told by the user: repository conventions, instruction files such as AGENTS.md, and environment details like the session ID. The next agent receives current versions of all of these separately.
-
-            <template>
-            ## Objective
-            - [one or two brief sentences describing what the user is trying to accomplish]
-
-            ## Requirements
-            - [constraints, preferences, requirements, and scope boundaries stated by the user, or "(none)"]
-
-            ## Decisions
-            - [decisions already made and why, or "(none)"]
-
-            ## Work State
-            Break the objective into smaller goals and report which are completed, which are being worked on, and which are blocked.
-            ### Completed
-            - [goals that have been completed; otherwise "(none)"]
-
-            ### Active
-            - [goals currently being worked on; otherwise "(none)"]
-
-            ### Blocked
-            - [anything blocking progress, and why, or "(none)"]
-
-            ## Next Move
-            1. [ordered list of next actions, or "(none)"]
-
-            ## Relevant Files
-            List the files and directories, other than the current working directory, that another agent would need to open to continue this work. Include at most 15, most important first. Do not list every file that was read or changed. Include paths outside the current working directory when relevant. If none, write "(none)".
-            - `[file or directory path]`: [brief reason it matters]
-
-            ## Important Context
-            - [facts the next agent cannot continue without and cannot easily find on its own; or "(none)"]
-            </template>
-
-            Rules:
-            - Keep each section concise. Use terse, single-line bullets, not prose paragraphs or nested lists.
-            - Prefer short references over detailed restatement. It is fine to leave out information the next agent can recover from the code or the files listed above.
-            - Preserve exact file paths, symbols, commands, error strings, URLs, and identifiers.
-            - Carry forward only user questions or requests that remain unanswered or require further action. Do not repeat ones that newer history has answered or resolved. Preserve exact wording when carrying one forward.
-            - Preserve consequential workflow state, including whether changes are uncommitted, committed, pushed, under review, or merged.
-            - Do not mention the summary process or that context was compacted.
-
-            Do not continue the task or call tools.
-            Return only the structured summary in the requested format. Do not include a preamble, explanation, or other commentary.
-            """;
+    public static final String CTX_SUMMARY = PromptLoader.get("ctx-summary");
 
     private final Journal journal;
     private final Conversation conversation;

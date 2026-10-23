@@ -1,6 +1,7 @@
 package de.augmentia.oc.engine.runtime.skill;
 
 import de.augmentia.oc.engine.core.eval.PermissionRules;
+import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.Rule;
@@ -19,7 +20,7 @@ import java.util.Map;
 public final class SkillCatalog {
 
     public static final String GUIDANCE_KEY = "core/skill-guidance";
-    public static final String NO_SKILLS = "No skills are currently available.";
+    public static final String NO_SKILLS = PromptLoader.get("no-skills");
 
     private final Map<String, Skill> skills;
     private final long epoch;
@@ -86,12 +87,7 @@ public final class SkillCatalog {
     private static String renderInstructions(List<Skill> listed) {
         if (listed.isEmpty()) return NO_SKILLS;
         StringBuilder text = new StringBuilder();
-        text.append("Skills provide specialized instructions and workflows for specific tasks.\n")
-                .append("Use the skill tool to load a skill when a task matches its description.\n")
-                .append("The user may also invoke a skill directly. When that happens, its instructions\n")
-                .append("appear in the conversation as a <skill_content> block, the same shape the skill\n")
-                .append("tool returns. A skill that is already present this way does not need to be\n")
-                .append("invoked again.\n\n")
+        text.append(PromptLoader.get("skill-guidance")).append("\n\n")
                 .append("<available_skills>\n");
         for (Skill skill : listed) {
             text.append("  <skill>\n")

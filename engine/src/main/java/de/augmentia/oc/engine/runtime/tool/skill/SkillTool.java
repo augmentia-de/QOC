@@ -4,6 +4,7 @@ import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
 import de.augmentia.oc.engine.core.eval.PermissionRules;
+import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.json.Schema;
 import de.augmentia.oc.engine.core.model.Effect;
@@ -44,10 +45,10 @@ public final class SkillTool {
             try {
                 skill = catalog.find(SkillId.parse(id));
             } catch (IllegalArgumentException e) {
-                return ReadTool.failure("skill", "Unable to load skill " + id);
+                return ReadTool.failure("skill", PromptLoader.render("unable-to-load-skill", Map.of("id", id)));
             }
             if (skill.isEmpty()) {
-                return ReadTool.failure("skill", "Unable to load skill " + id);
+                return ReadTool.failure("skill", PromptLoader.render("unable-to-load-skill", Map.of("id", id)));
             }
             return new ToolOutcome.Ok(new ToolResult(Option.none(),
                     List.of(new ToolContent.TextItem(catalog.content(skill.orElseThrow()))),

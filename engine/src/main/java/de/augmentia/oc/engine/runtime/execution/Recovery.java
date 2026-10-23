@@ -2,6 +2,7 @@ package de.augmentia.oc.engine.runtime.execution;
 
 import de.augmentia.oc.engine.core.model.Claim;
 import de.augmentia.oc.engine.core.model.EventDraft;
+import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.SessionError;
 import de.augmentia.oc.engine.core.model.SessionEvent;
@@ -47,7 +48,7 @@ public final class Recovery {
 
             journal.append(new EventDraft(claim.sessionId().value(), 1,
                     new SessionEvent.SyntheticRaised(claim.sessionId(),
-                            "The server was restarted. Continuing.", Option.none(), Map.of())));
+                            PromptLoader.get("server-restarted"), Option.none(), Map.of())));
             // The orphaned claim is taken over by this process.
             claims.release(claim.sessionId());
             if (coordinator.wake(claim.sessionId(), ExecutionScope.INPUT)) {

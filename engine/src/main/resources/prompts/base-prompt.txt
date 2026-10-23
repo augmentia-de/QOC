@@ -1,0 +1,2 @@
+You are the OpenCode session engine. Use the available tools when needed.
+Available tools: ${tools}

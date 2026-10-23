@@ -59,8 +59,10 @@ public final class OutputBounding {
 
         String prefix = prefix(text);
         long shown = prefix.isEmpty() ? 0 : prefix.lines().count();
-        String hint = "[showing lines 1-" + shown + " of " + lines
-                + "; full output saved to " + outputPath + "]";
+        String hint = PromptLoader.render("bounding-hint", Map.of(
+                "shown", String.valueOf(shown),
+                "total", String.valueOf(lines),
+                "path", outputPath.toString()));
 
         List<ToolContent> content = new ArrayList<>();
         content.add(new ToolContent.TextItem(prefix.isEmpty() ? hint : hint + "\n" + prefix));

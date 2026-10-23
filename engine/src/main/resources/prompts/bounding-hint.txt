@@ -1,0 +1,1 @@
+[showing lines 1-{shown} of {total}; full output saved to {path}]
