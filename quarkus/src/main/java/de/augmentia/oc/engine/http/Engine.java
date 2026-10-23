@@ -6,6 +6,7 @@ import de.augmentia.oc.engine.core.contract.provider.Modality;
 import de.augmentia.oc.engine.core.contract.tool.Hooks;
 import de.augmentia.oc.engine.core.contract.tool.ToolCall;
 import de.augmentia.oc.engine.core.contract.tool.ToolContext;
+import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
 import de.augmentia.oc.engine.core.contract.tool.ToolCall;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
@@ -355,9 +356,23 @@ public class Engine {
                 List.of(), List.of(), List.of(), Map.of(), clock.now()));
 
         String agentName = agentCatalogue.nameOf(info.agent());
+        EngineConfig.AgentConfig agentConfig = agentCatalogue.config(agentName);
+        List<Rule> agentRules = (agentConfig == null || agentConfig.permissions().isEmpty())
+                ? List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK))
+                : agentConfig.permissions();
+        int maxSteps = agentConfig == null ? 10 : agentConfig.maxSteps();
         AgentProfile agent = agentOverride != null ? agentOverride
-                : AgentProfile.forAgent(info.agent(), Option.none(), 10,
-                        List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK)), agentName);
+                : AgentProfile.forAgent(info.agent(), Option.none(), maxSteps, agentRules, agentName);
+
+        // Model override from agent config
+        ModelInfo model = modelInfo();
+        if (agentConfig != null && agentConfig.model() != null && !agentConfig.model().isBlank()) {
+            model = new ModelInfo(ModelId.of(agentConfig.model()), model.providerId(), model.variants(),
+                    model.limits(), model.cost(), model.capabilities(), model.compaction(), model.transport());
+        }
+
+        // Agent-specific tool snapshot
+        ToolSnapshot agentToolSnapshot = filterToolSnapshot(toolSnapshot, agentConfig);
 
         // MODE-PLAN: log synthetic message when entering/leaving plan mode (PR-7).
         if (agent.planMode()) {
@@ -366,7 +381,6 @@ public class Engine {
                             PromptLoader.get("mode-plan-enter"), Option.none(), Map.of("mode", "plan"))));
         }
 
-        ModelInfo model = modelInfo();
         var liveSink = (java.util.function.Consumer<de.augmentia.oc.engine.core.contract.provider.ModelEvent>) event ->
                 eventBus.publishLive(id.value(), Json.encode(ContractCodec.encode(event,
                         de.augmentia.oc.engine.core.contract.provider.ModelEvent.class)));
@@ -699,6 +713,65 @@ public class Engine {
         }
         return text.toString();
     }
+
+
+    private ToolSnapshot filterToolSnapshot(ToolSnapshot global, EngineConfig.AgentConfig agentConfig) {
+        if (global == null) return ToolSnapshot.empty();
+        if (agentConfig == null) return global;
+        List<String> allow = agentConfig.toolAllow();
+        List<String> deny = agentConfig.toolDeny();
+        List<String> mcpServers = agentConfig.mcpServers();
+
+        java.util.Set<String> allowedNames = new java.util.LinkedHashSet<>();
+        for (ToolDefinition def : global.list()) {
+            String name = def.effectiveName();
+            if (!allowed(name, allow)) continue;
+            if (denied(name, deny)) continue;
+            if (isMcpTool(name) && !mcpAllowed(name, mcpServers)) continue;
+            allowedNames.add(name);
+        }
+
+        Map<ToolName, ToolDefinition> filtered = new java.util.LinkedHashMap<>();
+        for (ToolDefinition def : global.list()) {
+            if (allowedNames.contains(def.effectiveName())) {
+                filtered.put(def.name(), def);
+            }
+        }
+        return new ToolSnapshot(filtered);
+    }
+
+    private static boolean allowed(String name, List<String> allow) {
+        if (allow == null || allow.isEmpty()) return false;
+        for (String a : allow) {
+            if ("*".equals(a) || a.equalsIgnoreCase(name)) return true;
+        }
+        return false;
+    }
+
+    private static boolean denied(String name, List<String> deny) {
+        if (deny == null) return false;
+        for (String d : deny) {
+            if ("*".equals(d) || d.equalsIgnoreCase(name)) return true;
+        }
+        return false;
+    }
+
+    private static boolean isMcpTool(String name) {
+        return name != null && name.contains("_")
+                && !name.equals("read") && !name.equals("write") && !name.equals("edit")
+                && !name.equals("patch") && !name.equals("glob") && !name.equals("grep")
+                && !name.equals("shell") && !name.equals("skill") && !name.equals("subagent");
+    }
+
+    private static boolean mcpAllowed(String name, List<String> servers) {
+        if (servers == null || servers.isEmpty()) return false;
+        if (servers.contains("*")) return true;
+        int idx = name.indexOf('_');
+        if (idx < 0) return false;
+        String server = name.substring(0, idx);
+        return servers.stream().anyMatch(s -> s.equalsIgnoreCase(server));
+    }
+
 
     private static Hooks noopHooks() {
         return new Hooks() {

@@ -17,6 +17,7 @@ public class AgentCatalogue {
     EngineConfig config;
 
     private final List<Agent> agents = new ArrayList<>();
+    private final java.util.Map<String, EngineConfig.AgentConfig> configs = new java.util.LinkedHashMap<>();
 
     @PostConstruct
     void load() {
@@ -27,7 +28,9 @@ public class AgentCatalogue {
                     new EngineConfig.AgentConfig("plan", "You are in plan mode. Do not edit files.", false));
         }
         for (EngineConfig.AgentConfig agent : agents) {
-            this.agents.add(new Agent(AgentId.create(), agent.name(), agent.hidden()));
+            AgentId id = AgentId.create();
+            this.agents.add(new Agent(id, agent.name(), agent.hidden()));
+            configs.put(agent.name().toLowerCase(), agent);
         }
     }
 
@@ -46,17 +49,21 @@ public class AgentCatalogue {
                 .findFirst().map(Agent::name).orElse("build");
     }
 
-    /** Resolves an agent name to its id, or null if not found. */
-    public de.augmentia.oc.engine.core.model.AgentId resolve(String name) {
-        if (name == null) return null;
-        return agents.stream().filter(a -> a.name().equalsIgnoreCase(name))
-                .findFirst().map(Agent::id).orElse(null);
-    }
-
     /** Returns true if the named agent is a subagent (not primary). */
     public boolean isSubagent(String name) {
         // In the baseline, "build" and "plan" are primary; others are subagents.
         return name != null && !name.equalsIgnoreCase("build") && !name.equalsIgnoreCase("plan");
+    }
+
+    public EngineConfig.AgentConfig config(String name) {
+        if (name == null) return null;
+        return configs.get(name.toLowerCase());
+    }
+
+    public de.augmentia.oc.engine.core.model.AgentId resolve(String name) {
+        if (name == null) return null;
+        return agents.stream().filter(a -> a.name().equalsIgnoreCase(name))
+                .findFirst().map(Agent::id).orElse(null);
     }
 
     private record Agent(AgentId id, String name, boolean hidden) {}

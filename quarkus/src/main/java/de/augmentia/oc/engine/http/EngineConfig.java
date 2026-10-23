@@ -16,6 +16,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import de.augmentia.oc.engine.core.model.Effect;
+import de.augmentia.oc.engine.core.model.Rule;
 import java.util.logging.Logger;
 
 /**
@@ -92,9 +94,16 @@ public class EngineConfig {
         if (merged.get("agents") instanceof JsonValue.Arr list) {
             for (JsonValue item : list.values()) {
                 if (item instanceof JsonValue.Obj agent) {
+                    List<String> toolAllow = stringList(agent, "tools", "allow");
+                    List<String> toolDeny = stringList(agent, "tools", "deny");
+                    List<String> mcpServers = stringList(agent, "mcpServers", null);
+                    int maxSteps = (int) number(agent, "maxSteps", 10);
+                    String model = string(agent, "model", null);
+                    List<Rule> permissions = rules(agent);
                     agents.add(new AgentConfig(string(agent, "name", "build"),
                             string(agent, "system", null),
-                            Boolean.TRUE.equals(bool(agent, "hidden"))));
+                            Boolean.TRUE.equals(bool(agent, "hidden")),
+                            model, maxSteps, toolAllow, toolDeny, permissions, mcpServers));
                 }
             }
         }
@@ -175,6 +184,36 @@ public class EngineConfig {
                 .toList();
     }
 
+
+    private static List<String> stringList(JsonValue.Obj object, String key, String nested) {
+        JsonValue value = object.values().get(key);
+        if (nested != null && value instanceof JsonValue.Obj obj) value = obj.values().get(nested);
+        if (!(value instanceof JsonValue.Arr values)) return List.of();
+        return values.values().stream()
+                .filter(JsonValue.Str.class::isInstance)
+                .map(v -> ((JsonValue.Str) v).value())
+                .toList();
+    }
+
+    private static List<Rule> rules(JsonValue.Obj agent) {
+        if (!(agent.values().get("permissions") instanceof JsonValue.Arr arr)) return List.of();
+        List<Rule> out = new ArrayList<>();
+        for (JsonValue item : arr.values()) {
+            if (item instanceof JsonValue.Obj r) {
+                String action = string(r, "action", "*");
+                String resource = string(r, "resource", "*");
+                String effectStr = string(r, "effect", "allow");
+                Effect effect = switch (effectStr.toLowerCase()) {
+                    case "deny" -> Effect.DENY;
+                    case "ask" -> Effect.ASK;
+                    default -> Effect.ALLOW;
+                };
+                out.add(new Rule(action, resource, effect));
+            }
+        }
+        return out;
+    }
+
     private static long number(JsonValue.Obj object, String key, long fallback) {
         return object.values().get(key) instanceof JsonValue.Num num ? num.value().longValue() : fallback;
     }
@@ -214,7 +253,24 @@ public class EngineConfig {
         return object.values().get(key) instanceof JsonValue.Bool value ? value.value() : null;
     }
 
-    public record AgentConfig(String name, String system, boolean hidden) {}
+    public record AgentConfig(String name, String system, boolean hidden,
+                              String model, int maxSteps,
+                              List<String> toolAllow, List<String> toolDeny,
+                              List<Rule> permissions, List<String> mcpServers) {
+        public AgentConfig {
+            if (name == null || name.isBlank()) name = "build";
+            if (maxSteps <= 0) maxSteps = 10;
+            toolAllow = toolAllow == null ? List.of("*") : List.copyOf(toolAllow);
+            toolDeny = toolDeny == null ? List.of() : List.copyOf(toolDeny);
+            permissions = permissions == null ? List.of() : List.copyOf(permissions);
+            mcpServers = mcpServers == null ? List.of("*") : List.copyOf(mcpServers);
+        }
+        // backward-compatible constructor
+        public AgentConfig(String name, String system, boolean hidden) {
+            this(name, system, hidden, null, 10, List.of("*"), List.of(),
+                    List.of(new Rule("*", "*", Effect.ALLOW)), List.of("*"));
+        }
+    }
 
     public record ConfigEntry(String key, String value, String source) {}
 }
