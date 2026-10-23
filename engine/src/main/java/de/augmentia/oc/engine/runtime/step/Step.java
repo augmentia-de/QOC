@@ -16,12 +16,14 @@ import de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.logging.Logger;
 
 /**
  * One model step: consume the stream completely, publish live events, execute
  * requested tools and return one terminal result.
  */
 public final class Step {
+    private static final Logger LOG = Logger.getLogger(Step.class.getName());
 
     private final ProviderAdapter provider;
     private final ToolRuntime tools;
@@ -51,7 +53,9 @@ public final class Step {
         }
 
         Consumer<ModelEvent> sink = liveSink == null ? this.liveSink : liveSink;
+        LOG.fine("step run start");
         List<ModelEvent> events = provider.stream(prepared.toRequest()).toList();
+        LOG.fine("provider stream events=" + events.size());
         List<StepResult.ToolCallOutcome> outcomes = new ArrayList<>();
         FinishReason finish = null;
         TokenCount usage = TokenCount.zero();
@@ -60,6 +64,7 @@ public final class Step {
             publish(event, sink);
             switch (event) {
                 case ModelEvent.ToolCallRequested call -> {
+                    LOG.fine("tool call requested: " + call.name());
                     ToolOutcome outcome = tools.execute(
                             new ToolCall(call.callId(), call.name(), call.input()), context);
                     outcomes.add(new StepResult.ToolCallOutcome(
@@ -86,6 +91,7 @@ public final class Step {
                     de.augmentia.oc.engine.core.contract.provider.InvalidOutputClassification.INCOMPLETE_STREAM),
                     "stream ended without a finish event");
         }
+        LOG.fine("step run finish tools=" + outcomes.size());
         return new StepResult.Finished(finish, usage, events, outcomes);
     }
 

@@ -68,6 +68,7 @@ import de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.jboss.logging.Logger;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -94,6 +95,8 @@ public class Engine {
 
     @Inject
     AgentCatalogue agentCatalogue;
+
+    private static final Logger LOG = Logger.getLogger(Engine.class);
 
     @Inject
     EngineConfig config;
@@ -158,6 +161,7 @@ public class Engine {
             SessionInfo info = sessions.info(request.sessionId()).orElse(null);
             List<Rule> sessionRules = info == null ? List.of() : info.permissions();
             Option<AgentId> agent = info == null ? Option.none() : Option.some(info.agent());
+            LOG.debugf("permission check session=%s action=%s", request.sessionId().value(), request.action());
             permissionEngine.assertAllowed(new PermissionCheck(request, agent,
                     List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK)), sessionRules, List.of(), List.of()));
         };
@@ -211,7 +215,7 @@ public class Engine {
         return permissionEngine.reply(id, requestId, reply, feedback, project);
     }
     public void resolvePermission(SessionId id, PermissionRequestId requestId, Reply reply, Option<String> feedback) {
-        ApprovalResult result;
+        LOG.infof("permission reply session=%s request=%s reply=%s", id.value(), requestId.value(), reply);        ApprovalResult result;
         if (reply == Reply.REJECT) {
             result = new ApprovalResult.Denied(feedback == null ? Option.none() : feedback);
         } else {
@@ -240,13 +244,16 @@ public class Engine {
 
     public PromptResult prompt(SessionId id, String text) {
         if (text == null || text.isBlank()) throw new IllegalArgumentException("text must not be blank");
+        LOG.infof("prompt start session=%s text=%s", id.value(), text.length() > 120 ? text.substring(0,120) + "..." : text);
         Option<SessionInfo> found = sessions.info(id);
         if (found.isEmpty()) throw new IllegalArgumentException("unknown session: " + id);
 
         long before = journal.history(id.value(), Seq.zero()).size();
         running.put(id, Thread.currentThread());
         try {
-            return runPrompt(id, text);
+            PromptResult r = runPrompt(id, text);
+            LOG.infof("prompt finish session=%s finish=%s in=%d out=%d", id.value(), r.finish(), r.inputTokens(), r.outputTokens());
+            return r;
         } finally {
             running.remove(id);
             publishNew(id, before);
@@ -262,6 +269,7 @@ public class Engine {
                 de.augmentia.oc.engine.core.model.Delivery.QUEUE, enqueuedSeq, clock.now()));
         sessionService.deliver(id);
         SessionInfo info = sessions.info(id).orElseThrow();
+        LOG.debugf("runPrompt session=%s agent=%s", id.value(), info.agent());
 
         Seq seq = Seq.of(journal.history(id.value(), Seq.zero()).size() + 1L);
         conversation.insert(id, seq, new Message.UserMessage(MessageId.create(), text,
@@ -290,6 +298,7 @@ public class Engine {
         String finalText = "";
 
         while (true) {
+            LOG.debugf("step %d session=%s", stepNo, id.value());
             var prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), stepNo);
             ToolContext context = new ToolContext(id, info.agent(), MessageId.create(), CallId.create());
             StepResult result = step.run(prepared, context, liveSink);
@@ -338,6 +347,7 @@ public class Engine {
                         info.model().orElse(new ModelRef(model.providerId(), model.id())),
                         assistantContent, Option.some(finishReason), Option.none(), Option.none(),
                         Option.none(), Money.zero(), usage, AssistantTime.started(clock.now())));
+            LOG.debugf("persisted assistant turn session=%s step=%d tools=%d", id.value(), stepNo, done.toolCalls().size());
             }
 
             boolean hasToolCalls = !done.toolCalls().isEmpty();

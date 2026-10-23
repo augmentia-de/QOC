@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
+import java.util.logging.Logger;
 
 /**
  * Builds the neutral {@link Prepared} request: two system blocks at most,
@@ -28,6 +29,7 @@ import java.util.stream.Stream;
  * budget and the session-stable cache affinity.
  */
 public final class ContextBuilder {
+    private static final Logger LOG = Logger.getLogger(ContextBuilder.class.getName());
 
     public static final String STEP_LIMIT_PROMPT = PromptLoader.get("step-limit");
 
@@ -55,6 +57,7 @@ public final class ContextBuilder {
         if (!instruction.isBlank()) system.add(instruction);
 
         List<ModelMessage> messages = history(session.id(), from, agent);
+        LOG.fine("prepare step=" + step + " messages=" + messages.size() + " tools=" + tools.list().size());
         Option<Choice> toolChoice = Option.none();
         if (agent.maxSteps() > 0 && step >= agent.maxSteps()) {
             messages.add(new ModelMessage.Assistant(List.of(new ModelContent.Text(STEP_LIMIT_PROMPT))));

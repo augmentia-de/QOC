@@ -40,6 +40,10 @@ echo "  Modell:    ${ENGINE_MODEL_ID:-<default>}"
 echo "  Workspace: ${ENGINE_WORKSPACE}"
 echo "  Auth:      $([ -n "$OPENCODE_SERVER_PASSWORD" ] && echo 'basic (opencode)' || echo 'aus (nur loopback)')"
 echo
+# Logs standardmäßig ins Projekt-./log (absolut), damit der Ordner vorhersehbar ist.
+: "${LOG_DIR:=$PWD/log}"
+export LOG_DIR
+
 # Remote-Debug für IntelliJ (JVM Debug). Standardport 5005; mit DEBUG_PORT=... überschreibbar.
 : "${DEBUG_PORT:=5005}"
 echo "Remote-Debug: localhost:${DEBUG_PORT} (suspend=n)"

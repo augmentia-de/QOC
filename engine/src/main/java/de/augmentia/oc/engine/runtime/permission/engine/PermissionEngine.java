@@ -19,6 +19,7 @@ import de.augmentia.oc.engine.core.port.human.PolicySource;
 import de.augmentia.oc.engine.core.port.store.ApprovalStore;
 
 import java.util.ArrayList;
+import java.util.logging.Logger;
 import java.util.List;
 
 /**
@@ -31,6 +32,7 @@ import java.util.List;
  * </ul>
  */
 public final class PermissionEngine {
+    private static final Logger LOG = Logger.getLogger(PermissionEngine.class.getName());
 
     private final Option<ApprovalStore> approvals;
     private final Option<ApprovalSource> approvalSource;
@@ -62,16 +64,20 @@ public final class PermissionEngine {
         PermissionDecision decision = decide(check);
         switch (decision) {
             case PermissionDecision.Allowed allowed -> {
+                LOG.fine("permission allowed: " + check.request().action());
                 return;
             }
-            case PermissionDecision.Denied denied ->
-                    throw new PermissionDenied(check.request(), denied.reason());
+            case PermissionDecision.Denied denied -> {
+                LOG.fine("permission denied: " + check.request().action() + " reason=" + denied.reason());
+                throw new PermissionDenied(check.request(), denied.reason());
+            }
             case PermissionDecision.Ask ignored -> {
                 PermissionRequest request = check.request();
                 pending.add(check);
                 if (approvalSource.isEmpty()) {
                     throw new Defect("no approval source configured for an ask decision");
                 }
+                LOG.fine("permission ask: " + request.action());
                 ApprovalResult answer = approvalSource.orElseThrow()
                         .request(request.id(), request.sessionId(), request.action(), context(check));
                 pending.remove(request.sessionId(), request.id());

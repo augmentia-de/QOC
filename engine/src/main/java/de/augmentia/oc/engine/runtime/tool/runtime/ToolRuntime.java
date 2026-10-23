@@ -20,12 +20,14 @@ import de.augmentia.oc.engine.core.port.store.ToolOutputStore;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.logging.Logger;
 
 /**
  * The tool execution chain: pre-hook, snapshot resolution, input decode,
  * permission, execution, output decode, post-hook, normalization, bounding.
  */
 public final class ToolRuntime {
+    private static final Logger LOG = Logger.getLogger(ToolRuntime.class.getName());
 
     private final ToolSnapshot snapshot;
     private final ToolAuthorizer authorizer;
@@ -54,6 +56,7 @@ public final class ToolRuntime {
             ToolCall call = hooks.beforeToolCall(context, rawCall);
             if (call == null) throw new ToolFailure("pre-hook returned no call");
 
+            LOG.fine("tool execute: " + call.name());
             ToolDefinition definition = snapshot.require(call.name());
             JsonValue decodedInput = decode(call.input(), definition.inputSchema(), "input");
 
@@ -61,6 +64,7 @@ public final class ToolRuntime {
             permission.assertAllowed(request);
 
             ToolOutcome outcome = definition.execute().execute(decodedInput, context);
+            LOG.fine("tool outcome: " + call.name() + " -> " + outcome.getClass().getSimpleName());
             if (outcome instanceof ToolOutcome.Failed failed) {
                 return failed;
             }
