@@ -65,6 +65,20 @@ class McpDiscoveryTest {
     }
 
     @Test
+    void remoteCallHandlesSseResponses() {
+        String callSse = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"found\"}]}}";
+        ScriptedHttp transport = new ScriptedHttp(
+                new ScriptedHttp.Response(200, Map.of(), callSse.getBytes()));
+        McpDiscoveryClient client = new McpDiscoveryClient(transport,
+                new McpServerConfig.Remote("github", "https://example.test/mcp", Map.of(),
+                        false, false, true, 5_000, 5_000, 5_000));
+
+        JsonValue result = client.call("search", JsonValue.of(Map.of("q", JsonValue.of("x"))));
+        assertThat(result).isInstanceOf(JsonValue.Obj.class);
+    }
+
+
+    @Test
     void remoteDiscoveryFailureIsReported() {
         ScriptedHttp transport = new ScriptedHttp(
                 new ScriptedHttp.Response(200, Map.of(), "{\"jsonrpc\":\"2.0\",\"id\":0,\"error\":{\"code\":-32601,\"message\":\"not found\"}}".getBytes()));
