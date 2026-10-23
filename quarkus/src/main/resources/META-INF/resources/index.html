@@ -35,6 +35,11 @@
   .inputbar button { background:var(--accent); color:#fff; border:none; border-radius:6px; padding:0 .9rem; cursor:pointer; }
   .inputbar button:disabled { opacity:.5; cursor:not-allowed; }
   .side { display:flex; flex-direction:column; overflow:hidden; }
+  .panel { display:flex; flex-direction:column; overflow:hidden; min-height:60px; }
+  .panel > h2 { flex:0 0 auto; }
+  .panel > .filetree, .panel > .viewer, .panel > .logs { flex:1 1 auto; min-height:0; }
+  .resizer { flex:0 0 6px; height:6px; cursor:row-resize; background:var(--border); }
+  .resizer:hover { background:var(--accent); }
   .section { padding:.75rem 1rem; border-bottom:1px solid var(--border); }
   .section h2 { margin:0 0 .5rem; font-size:.85rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; display:flex; justify-content:space-between; align-items:center; }
   .section h2 button { background:none; border:none; color:var(--muted); cursor:pointer; font-size:.9rem; }
@@ -46,7 +51,7 @@
   .filetree .indent { padding-left:1.2rem; }
   .viewer { height:35%; overflow:auto; padding:.75rem 1rem; border-top:1px solid var(--border); }
   .viewer pre { margin:0; white-space:pre-wrap; word-break:break-word; font-family: ui-monospace, monospace; font-size:.85rem; }
-  .logs { height:100px; overflow:auto; border-top:1px solid var(--border); padding:.5rem 1rem; font-family: ui-monospace, monospace; font-size:.75rem; color:var(--muted); }
+  .logs { min-height:0; overflow:auto; padding:.5rem 1rem; font-family: ui-monospace, monospace; font-size:.75rem; color:var(--muted); }
   .modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:100; }
   .modal.open { display:flex; }
   .modal .box { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:1.2rem; max-width:480px; width:90%; }
@@ -89,18 +94,20 @@
     </div>
   </div>
   <aside class="side">
-    <div class="section">
+    <section class="section panel" id="panelFiles">
       <h2>Arbeitsverzeichnis <button id="newFile" title="Neue Datei">+</button> <button id="refreshFiles" title="Aktualisieren">↻</button></h2>
       <div class="filetree" id="filetree"></div>
-    </div>
-    <div class="section viewer">
+    </section>
+    <div class="resizer" data-i="0"></div>
+    <section class="section panel" id="panelViewer">
       <h2>Datei <button id="deleteFile" title="Löschen">🗑</button></h2>
-      <pre id="viewer">Datei auswählen…</pre>
-    </div>
-    <div class="logs">
-      <h2 style="margin:0 0 .25rem;font-size:.8rem;color:var(--muted)">Ereignisse</h2>
-      <div id="logs"></div>
-    </div>
+      <pre class="viewer" id="viewer">Datei auswählen…</pre>
+    </section>
+    <div class="resizer" data-i="1"></div>
+    <section class="section panel" id="panelLogs">
+      <h2>Ereignisse</h2>
+      <div class="logs" id="logs"></div>
+    </section>
   </aside>
 </main>
 
@@ -184,11 +191,46 @@ function copyCode(btn) {
   navigator.clipboard.writeText(code).then(()=>{ btn.textContent='Kopiert'; setTimeout(()=>btn.textContent='Kopieren',1500); });
 }
 
+function initResizers() {
+  const side = document.querySelector('.side');
+  const panels = [document.getElementById('panelFiles'), document.getElementById('panelViewer'), document.getElementById('panelLogs')];
+  const resizers = side.querySelectorAll('.resizer');
+  const total = side.clientHeight || 600;
+  const init = [Math.round(total*0.4), Math.round(total*0.35), total - Math.round(total*0.4) - Math.round(total*0.35)];
+  panels.forEach((p,i) => { p.style.flex = '0 0 auto'; p.style.height = init[i] + 'px'; });
+  resizers.forEach((r, i) => {
+    r.addEventListener('mousedown', (e) => {
+      const top = panels[i], bot = panels[i+1];
+      const startY = e.clientY;
+      const topH = top.offsetHeight, botH = bot.offsetHeight;
+      const onMove = (e2) => {
+        const delta = e2.clientY - startY;
+        const nt = Math.max(60, topH + delta);
+        const nb = Math.max(60, botH - delta);
+        top.style.height = nt + 'px';
+        bot.style.height = nb + 'px';
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+  });
+}
+
 async function init() {
   try {
     await checkHealth();
     await loadSelectors();
     await newSession();
+    initResizers();
     await loadFiles('.');
   } catch (e) {
     status.textContent = 'Fehler: ' + e.message;
