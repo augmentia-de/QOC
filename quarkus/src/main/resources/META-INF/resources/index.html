@@ -18,7 +18,13 @@
   .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
   .dot.ok { background:var(--ok); }
   .dot.err { background:var(--err); }
-  main { display:grid; grid-template-columns: 1fr 380px; flex:1; overflow:hidden; }
+  main { display:flex; flex-direction:row; flex:1; overflow:hidden; }
+  .chat { flex:1 1 auto; min-width:240px; display:flex; flex-direction:column; border-right:1px solid var(--border); }
+  .side-resizer { flex:0 0 6px; width:6px; cursor:col-resize; background:var(--border); }
+  .side-resizer:hover { background:var(--accent); }
+  .side { flex:0 0 380px; min-width:220px; max-width:60vw; display:flex; flex-direction:column; overflow:hidden; position:relative; transition:transform .2s ease; }
+  .backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:55; }
+  .backdrop.open { display:block; }
   .chat { display:flex; flex-direction:column; border-right:1px solid var(--border); }
   .messages { flex:1; overflow:auto; padding:1rem; display:flex; flex-direction:column; gap:.75rem; }
   .msg { padding:.6rem .8rem; border-radius:8px; max-width:92%; }
@@ -70,6 +76,16 @@
   .md pre .copy { position:absolute; top:.3rem; right:.3rem; background:#1f2937; border:1px solid var(--border); color:var(--muted); border-radius:4px; padding:.15rem .4rem; font-size:.7rem; cursor:pointer; }
   .md a { color:var(--accent); }
   .cmd-hint { font-size:.75rem; color:var(--muted); padding:.25rem 1rem; border-top:1px solid var(--border); }
+
+  @media (max-width: 768px) {
+    main { overflow:visible; }
+    .chat { min-width:0; }
+    .side-resizer { display:none; }
+    .side { position:fixed; top:0; right:0; height:100vh; width:86vw; max-width:360px; transform:translateX(100%); z-index:60; box-shadow:-2px 0 12px rgba(0,0,0,.5); }
+    .side.open { transform:translateX(0); }
+    .side .close-side { display:block; }
+  }
+  .close-side { display:none; position:absolute; top:.4rem; right:.6rem; background:none; border:none; color:var(--muted); font-size:1.2rem; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -93,7 +109,9 @@
       <button id="send">Senden</button>
     </div>
   </div>
-  <aside class="side">
+  <div class="side-resizer" id="sideResizer"></div>
+  <aside class="side" id="side">
+    <button class="close-side" id="closeSide" title="Schließen">×</button>
     <section class="section panel" id="panelFiles">
       <h2>Arbeitsverzeichnis <button id="newFile" title="Neue Datei">+</button> <button id="refreshFiles" title="Aktualisieren">↻</button></h2>
       <div class="filetree" id="filetree"></div>
@@ -110,6 +128,7 @@
     </section>
   </aside>
 </main>
+<div class="backdrop" id="backdrop"></div>
 
 <div class="modal" id="permModal">
   <div class="box">
@@ -225,12 +244,77 @@ function initResizers() {
   });
 }
 
+
+function initSideResizer() {
+  const resizer = document.getElementById('sideResizer');
+  const side = document.getElementById('side');
+  if (!resizer || !side) return;
+  resizer.addEventListener('mousedown', (e) => {
+    if (window.innerWidth <= 768) return;
+    const startX = e.clientX;
+    const startW = side.offsetWidth;
+    const onMove = (e2) => {
+      const delta = startX - e2.clientX;
+      const nw = Math.min(Math.max(220, startW + delta), window.innerWidth * 0.6);
+      side.style.flexBasis = nw + 'px';
+      side.style.width = nw + 'px';
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+}
+
+function openSide() {
+  const side = document.getElementById('side');
+  const bd = document.getElementById('backdrop');
+  if (side) side.classList.add('open');
+  if (bd) bd.classList.add('open');
+}
+function closeSide() {
+  const side = document.getElementById('side');
+  const bd = document.getElementById('backdrop');
+  if (side) side.classList.remove('open');
+  if (bd) bd.classList.remove('open');
+}
+
+function initMobileSide() {
+  const bd = document.getElementById('backdrop');
+  const closeBtn = document.getElementById('closeSide');
+  if (bd) bd.addEventListener('click', closeSide);
+  if (closeBtn) closeBtn.addEventListener('click', closeSide);
+  // Touch right edge to reveal
+  let startX = 0;
+  document.addEventListener('touchstart', (e) => {
+    if (window.innerWidth > 768) return;
+    startX = e.touches[0].clientX;
+  }, {passive:true});
+  document.addEventListener('touchmove', (e) => {
+    if (window.innerWidth > 768) return;
+    const x = e.touches[0].clientX;
+    if (startX >= window.innerWidth - 24 && startX - x > 40) {
+      openSide();
+      startX = 0;
+    }
+  }, {passive:true});
+}
+
 async function init() {
   try {
     await checkHealth();
     await loadSelectors();
     await newSession();
     initResizers();
+    initSideResizer();
+    initMobileSide();
     await loadFiles('.');
   } catch (e) {
     status.textContent = 'Fehler: ' + e.message;
