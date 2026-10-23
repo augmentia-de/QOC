@@ -282,6 +282,38 @@ public class HttpApi {
     }
 
     @GET
+    @Path("/health")
+    public Response health() {
+        return Response.ok(engine.health()).build();
+    }
+
+    @POST
+    @Path("/file")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createFile(Map<String, String> body) {
+        if (body == null || body.get("path") == null || body.get("path").isBlank()) {
+            return badRequest("path must not be blank");
+        }
+        try {
+            engine.createFile(body.get("path"), body.get("content"));
+            return Response.ok(Map.of("ok", true)).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @DELETE
+    @Path("/file")
+    public Response deleteFile(@QueryParam("path") String path) {
+        try {
+            engine.deleteFile(path);
+            return Response.ok(Map.of("ok", true)).build();
+        } catch (RuntimeException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @GET
     @Path("/location")
     public Engine.LocationDto location() {
         return engine.location();

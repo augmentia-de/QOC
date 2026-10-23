@@ -353,6 +353,28 @@ public class Engine {
         return fileSystem.readText(resolved);
     }
 
+    public void createFile(String path, String content) {
+        if (path == null || path.isBlank()) throw new IllegalArgumentException("path must not be blank");
+        Path resolved = Path.of(config.workspace()).toAbsolutePath().normalize().resolve(path);
+        fileSystem.write(resolved, (content == null ? "" : content).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    public void deleteFile(String path) {
+        if (path == null || path.isBlank()) throw new IllegalArgumentException("path must not be blank");
+        Path resolved = fileSystem.realPath(Path.of(config.workspace()).toAbsolutePath().normalize().resolve(path));
+        try { java.nio.file.Files.delete(resolved); }
+        catch (java.io.IOException e) { throw new RuntimeException("cannot delete: " + path, e); }
+    }
+
+    public Map<String, Object> health() {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("status", "ok");
+        m.put("provider", config.provider());
+        m.put("model", config.model());
+        m.put("workspace", config.workspace());
+        return m;
+    }
+
     public String encode(StoredEvent event) {
         return Json.encode(JsonValue.of(Map.of(
                 "seq", JsonValue.of(event.seq().value()),
