@@ -19,7 +19,8 @@ class SubagentToolTest {
 
     @Test
     void delegatesToRunner() {
-        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) -> "done: " + prompt, request -> { });
+        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) ->
+                new SubagentRunner.SubagentResult("done: " + prompt, de.augmentia.oc.engine.core.model.TokenCount.zero()), request -> { });
         ToolContext context = new ToolContext(SessionId.create(), AgentId.create(), MessageId.create(), CallId.create());
 
         ToolOutcome outcome = SubagentTool.definition(tool).execute().execute(
@@ -31,7 +32,8 @@ class SubagentToolTest {
 
     @Test
     void launchesInBackground() {
-        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) -> "done", request -> { });
+        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) ->
+                new SubagentRunner.SubagentResult("done", de.augmentia.oc.engine.core.model.TokenCount.zero()), request -> { });
         ToolContext context = new ToolContext(SessionId.create(), AgentId.create(), MessageId.create(), CallId.create());
 
         ToolOutcome outcome = SubagentTool.definition(tool).execute().execute(

@@ -44,6 +44,7 @@ import de.augmentia.oc.engine.runtime.tool.fs.GrepTool;
 import de.augmentia.oc.engine.runtime.tool.fs.PatchTool;
 import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
 import de.augmentia.oc.engine.runtime.tool.shell.ShellTool;
+import de.augmentia.oc.engine.runtime.tool.subagent.SubagentRunner;
 import de.augmentia.oc.engine.runtime.tool.subagent.SubagentTool;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
 import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
@@ -448,7 +449,10 @@ public class Engine {
 
     private final java.util.Map<SessionId, Integer> subagentDepths = new java.util.concurrent.ConcurrentHashMap<>();
 
-    public String runSubagent(SessionId parent, String agentName, String prompt, int depth) {
+    private static final int MAX_CONCURRENT_SUBAGENTS = 4;
+    private final java.util.concurrent.Semaphore subagentSemaphore = new java.util.concurrent.Semaphore(MAX_CONCURRENT_SUBAGENTS);
+
+    public SubagentRunner.SubagentResult runSubagent(SessionId parent, String agentName, String prompt, int depth) {
         AgentId agentId = agentCatalogue.resolve(agentName);
         if (agentId == null) {
             throw new IllegalArgumentException("unknown subagent: " + agentName);
@@ -462,23 +466,52 @@ public class Engine {
             throw new IllegalStateException("subagent depth limit reached (max 2)");
         }
 
-        Path directory = Path.of(config.workspace()).toAbsolutePath().normalize();
-        Location location = new Location(directory, ProjectId.create(), Option.none());
-        AgentProfile agent = AgentProfile.forAgent(agentId, Option.none(), 10,
-                List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK)), agentName);
+        // Resource contention: acquire permit (timeout 5 min)
+        try {
+            if (!subagentSemaphore.tryAcquire(5, java.util.concurrent.TimeUnit.MINUTES)) {
+                throw new IllegalStateException("subagent concurrency limit reached");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while waiting for subagent slot");
+        }
 
-        SessionId child = sessionService.create(location, agentId, Option.none(), clock.now());
-        sessions.put(new SessionInfo(child, location.projectId(), location, "Subagent: " + agentName, agentId,
-                Option.none(), List.of(), Money.zero(), TokenCount.zero(), clock.now(), clock.now(),
-                Option.none(), Option.none(), 0, Option.none()));
+        try {
+            Path directory = Path.of(config.workspace()).toAbsolutePath().normalize();
+            Location location = new Location(directory, ProjectId.create(), Option.none());
+            AgentProfile agent = AgentProfile.forAgent(agentId, Option.none(), 10,
+                    List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK)), agentName);
 
-        // Track depth
-        subagentDepths.put(child, parentDepth + 1);
+            SessionId child = sessionService.create(location, agentId, Option.none(), clock.now());
+            sessions.put(new SessionInfo(child, location.projectId(), location, "Subagent: " + agentName, agentId,
+                    Option.none(), List.of(), Money.zero(), TokenCount.zero(), clock.now(), clock.now(),
+                    Option.none(), Option.none(), 0, Option.none()));
 
-        PromptResult result = runPrompt(child, prompt, agent);
-        return result.text() == null || result.text().isBlank()
-                ? "Subagent completed with no text output."
-                : result.text();
+            subagentDepths.put(child, parentDepth + 1);
+
+            PromptResult result = runPrompt(child, prompt, agent);
+
+            // Token accumulation: add subagent usage to parent session
+            SessionInfo parentInfo = sessions.info(parent).orElse(null);
+            if (parentInfo != null) {
+                sessions.put(new SessionInfo(parentInfo.id(), parentInfo.projectId(), parentInfo.location(),
+                        parentInfo.title(), parentInfo.agent(), parentInfo.model(), parentInfo.permissions(),
+                        parentInfo.cost(),
+                        TokenCount.of(parentInfo.tokens().input() + result.inputTokens(),
+                                parentInfo.tokens().output() + result.outputTokens()),
+                        parentInfo.created(), clock.now(),
+                        parentInfo.idle(), parentInfo.suspended(), parentInfo.resumeAttempts(), parentInfo.archived()));
+            }
+
+            String text = result.text() == null || result.text().isBlank()
+                    ? "Subagent completed with no text output."
+                    : result.text();
+            return new SubagentRunner.SubagentResult(text, result.inputTokens() > 0
+                    ? TokenCount.of(result.inputTokens(), result.outputTokens())
+                    : TokenCount.zero(), child);
+        } finally {
+            subagentSemaphore.release();
+        }
     }
 
     public List<StoredEvent> events(SessionId id, long after) {

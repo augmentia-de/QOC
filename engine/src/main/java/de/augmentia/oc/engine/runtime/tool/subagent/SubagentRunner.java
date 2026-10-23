@@ -18,5 +18,17 @@ public interface SubagentRunner {
      * @return the subagent's final text response
      * @throws RuntimeException on failure (propagates as ToolFailure)
      */
-    String run(SessionId parent, String agentName, String prompt, int depth);
+    SubagentResult run(SessionId parent, String agentName, String prompt, int depth);
+
+    /** Result of a subagent run, including usage for cost tracking. */
+    record SubagentResult(String text, de.augmentia.oc.engine.core.model.TokenCount usage,
+                          de.augmentia.oc.engine.core.model.SessionId childSession) {
+        public SubagentResult {
+            if (text == null) text = "";
+            if (usage == null) usage = de.augmentia.oc.engine.core.model.TokenCount.zero();
+        }
+        public SubagentResult(String text, de.augmentia.oc.engine.core.model.TokenCount usage) {
+            this(text, usage, null);
+        }
+    }
 }

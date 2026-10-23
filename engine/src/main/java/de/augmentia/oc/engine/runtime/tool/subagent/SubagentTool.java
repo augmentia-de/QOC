@@ -29,6 +29,13 @@ public final class SubagentTool {
 
     private volatile SubagentRunner runner;
     private final PermissionGate permissionGate;
+    private static final java.util.concurrent.ConcurrentHashMap<de.augmentia.oc.engine.core.model.SessionId, String> backgroundResults =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Retrieves the result of a completed background subagent, or null if not yet done. */
+    public static String backgroundResult(de.augmentia.oc.engine.core.model.SessionId sessionId) {
+        return backgroundResults.get(sessionId);
+    }
 
     public SubagentTool(SubagentRunner runner, PermissionGate permissionGate) {
         this.runner = runner;
@@ -79,9 +86,10 @@ public final class SubagentTool {
                 permissionGate.assertAllowed(req);
             }
 
-            String result = runner.run(context.sessionId(), agent, prompt, 0);
+            SubagentRunner.SubagentResult result = runner.run(context.sessionId(), agent, prompt, 0);
+            String text = result.text().isBlank() ? "Subagent completed with no text output." : result.text();
             return new ToolOutcome.Ok(new ToolResult(Option.none(),
-                    List.of(new ToolContent.TextItem(result)), Map.of("agent", agent)));
+                    List.of(new ToolContent.TextItem(text)), Map.of("agent", agent, "tokens", result.usage().total())));
         } catch (IllegalArgumentException e) {
             return ReadTool.failure("subagent", e.getMessage());
         } catch (RuntimeException e) {
@@ -109,8 +117,12 @@ public final class SubagentTool {
 
             Thread thread = new Thread(() -> {
                 try {
-                    runner.run(context.sessionId(), agent, prompt, 0);
-                } catch (Exception ignored) {
+                    SubagentRunner.SubagentResult result = runner.run(context.sessionId(), agent, prompt, 0);
+                    if (result.childSession() != null) {
+                        backgroundResults.put(result.childSession(), result.text());
+                    }
+                } catch (RuntimeException ignored) {
+                    // Background failure: result is not stored; parent can retry.
                 }
             }, "subagent-" + agent);
             thread.setDaemon(true);
