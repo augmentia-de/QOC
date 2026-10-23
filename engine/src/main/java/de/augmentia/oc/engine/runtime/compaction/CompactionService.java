@@ -4,7 +4,9 @@ import de.augmentia.oc.engine.core.contract.provider.Choice;
 import de.augmentia.oc.engine.core.contract.provider.GenerationOptions;
 import de.augmentia.oc.engine.core.contract.provider.ModelContent;
 import de.augmentia.oc.engine.core.contract.provider.ModelMessage;
+import de.augmentia.oc.engine.core.contract.provider.ModelEvent;
 import de.augmentia.oc.engine.core.contract.provider.ModelRequest;
+import de.augmentia.oc.engine.core.contract.provider.ProviderAdapter;
 import de.augmentia.oc.engine.core.eval.InstructionEpoch;
 import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.CompactionReason;
@@ -43,16 +45,23 @@ public final class CompactionService {
     private final InstructionStore instructions;
     private final Compaction compaction;
     private final Clock clock;
+    private final ProviderAdapter provider;
     private final int keepMessages;
 
     public CompactionService(Journal journal, Conversation conversation,
                              InstructionStore instructions, Compaction compaction, Clock clock) {
-        this(journal, conversation, instructions, compaction, clock, 8);
+        this(journal, conversation, instructions, compaction, clock, 8, null);
     }
 
     public CompactionService(Journal journal, Conversation conversation,
                              InstructionStore instructions, Compaction compaction, Clock clock,
-                             int keepMessages) {
+                             ProviderAdapter provider) {
+        this(journal, conversation, instructions, compaction, clock, 8, provider);
+    }
+
+    public CompactionService(Journal journal, Conversation conversation,
+                             InstructionStore instructions, Compaction compaction, Clock clock,
+                             int keepMessages, ProviderAdapter provider) {
         if (journal == null || conversation == null || instructions == null
                 || compaction == null || clock == null) {
             throw new IllegalArgumentException("compaction dependencies must not be null");
@@ -63,6 +72,7 @@ public final class CompactionService {
         this.compaction = compaction;
         this.clock = clock;
         this.keepMessages = Math.max(1, keepMessages);
+        this.provider = provider;
     }
 
     /**
@@ -112,7 +122,28 @@ public final class CompactionService {
 
         CompactionResult result = compaction.compact(context);
         if (result instanceof CompactionResult.Compacted compacted) {
-            advanceEpoch(session, throughSeq, compacted.summary());
+            String summary = compacted.summary();
+            // CTX-NUDGE: if the response did not follow the template, re-prompt once.
+            if (!CtxNudge.followsTemplate(summary) && provider != null) {
+                String nudge = CtxNudge.prompt();
+                List<ModelEvent> nudgeEvents = provider.stream(new ModelRequest(
+                        context.request().model(),
+                        List.of(nudge),
+                        List.of(new ModelMessage.User(List.of(new ModelContent.Text(body.toString())))),
+                        List.of(),
+                        Option.some(new Choice.None()),
+                        new GenerationOptions(Option.none(), Option.some(32_000), Option.none(), List.of()),
+                        Map.of(), Map.of(), Option.none())).toList();
+                StringBuilder nudgeSummary = new StringBuilder();
+                for (ModelEvent event : nudgeEvents) {
+                    if (event instanceof ModelEvent.TextEnded ended) nudgeSummary.append(ended.text());
+                    else if (event instanceof ModelEvent.TextDelta delta) nudgeSummary.append(delta.text());
+                }
+                if (!nudgeSummary.toString().isBlank()) summary = nudgeSummary.toString();
+            }
+            advanceEpoch(session, throughSeq, summary);
+            // Update the result's summary by re-wrapping
+            result = new CompactionResult.Compacted(summary, compacted.epochStart());
         }
         return result;
     }

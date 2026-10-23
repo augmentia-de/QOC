@@ -90,7 +90,7 @@ public class Engine {
     private TitleGenerator titleGenerator;
     private Step step;
     private ToolSnapshot toolSnapshot;
-    private NioFileSystem fileSystem;
+    private ModelRef modelRef;    private NioFileSystem fileSystem;
     private InstructionStore instructions;
     private CompactionService compaction;
     private McpServerManager mcp;
@@ -134,10 +134,11 @@ public class Engine {
         ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
                 request -> { }, noopHooks(), toolOutput);
         contextBuilder = new ContextBuilder(conversation, SkillCatalog.empty());
-        titleGenerator = new TitleGenerator(provider, new ModelRef(ProviderId.create(), ModelId.create()));
+        modelRef = new ModelRef(ProviderId.create(), ModelId.create());
+        titleGenerator = new TitleGenerator(provider, modelRef);
         step = new Step(provider, toolRuntime);
         compaction = new CompactionService(journal, conversation, instructions,
-                new Compaction(journal, provider), clock, 8);
+                new Compaction(journal, provider), clock, 8, provider);
     }
 
     public SessionId createSession() {
@@ -222,8 +223,7 @@ public class Engine {
         if (info.title().equals("New session") || info.title().isBlank()) {
             String title = generateTitle(id);
             if (title != null && !title.isBlank()) {
-                promptResult = new PromptResult(promptResult.finish(), promptResult.inputTokens(),
-                        promptResult.outputTokens(), promptResult.text());
+                // Title was generated and stored; no change to the result.
             }
         }
         return promptResult;
@@ -348,7 +348,7 @@ public class Engine {
     }
 
     private ModelInfo modelInfo() {
-        return new ModelInfo(ModelId.create(), ProviderId.create(), List.of(),
+        return new ModelInfo(modelRef.model(), modelRef.provider(), List.of(),
                 new ModelInfo.ModelLimits(128_000, 8_192),
                 new ModelInfo.CostModel(Money.zero(), Money.zero(), Money.zero(), Money.zero()),
                 new ModelInfo.ModelCapabilities(List.of(Modality.TEXT), List.of(Modality.TEXT)),

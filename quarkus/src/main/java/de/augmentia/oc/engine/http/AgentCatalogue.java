@@ -35,6 +35,11 @@ public class AgentCatalogue {
                 .toList();
     }
 
+    public String nameOf(de.augmentia.oc.engine.core.model.AgentId id) {
+        return agents.stream().filter(a -> a.id().equals(id))
+                .findFirst().map(Agent::name).orElse("build");
+    }
+
     private record Agent(AgentId id, String name, boolean hidden) {}
 
     public record AgentDto(String id, String name, boolean hidden) {}
