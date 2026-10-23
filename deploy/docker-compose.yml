@@ -1,0 +1,17 @@
+services:
+  qoc:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: qoc-engine:local
+    container_name: qoc-engine
+    restart: unless-stopped
+    ports:
+      - "${QOC_PORT:-8333}:8080"
+    volumes:
+      - qoc-data:/data
+    env_file:
+      - .env
+
+volumes:
+  qoc-data:

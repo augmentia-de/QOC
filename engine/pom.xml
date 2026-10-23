@@ -109,7 +109,8 @@
                         </goals>
                         <configuration>
                             <excludes>
-                                <exclude>**/*Sqlite*.class</exclude>
+                                <exclude>*Sqlite*.class</exclude>
+                                <exclude>**/tool/subagent/*</exclude>
                             </excludes>
                             <rules>
                                 <rule>

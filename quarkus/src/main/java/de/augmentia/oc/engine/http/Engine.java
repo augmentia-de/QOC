@@ -44,6 +44,7 @@ import de.augmentia.oc.engine.runtime.tool.fs.GrepTool;
 import de.augmentia.oc.engine.runtime.tool.fs.PatchTool;
 import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
 import de.augmentia.oc.engine.runtime.tool.shell.ShellTool;
+import de.augmentia.oc.engine.runtime.tool.subagent.SubagentTool;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
 import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
 import de.augmentia.oc.engine.runtime.permission.engine.PermissionEngine;
@@ -132,6 +133,7 @@ public class Engine {
     private CompactionService compaction;
     private McpServerManager mcp;
     private List<Rule> allowAll;
+    private SubagentTool subagentTool;
     private PermissionEngine permissionEngine;
     private final EventCodec codec = EventCodec.standard();
     private final java.util.concurrent.ConcurrentHashMap<SessionId, Thread> running =
@@ -187,6 +189,8 @@ public class Engine {
         registry.register(GlobTool.definition(fs, access, permissionGate));
         registry.register(GrepTool.definition(fs, access, permissionGate));
         registry.register(ShellTool.definition(new JdkProcessRunner(), workspacePath, workspacePath, null, permissionGate));
+        subagentTool = new SubagentTool(null, permissionGate);
+        registry.register(SubagentTool.definition(subagentTool));
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
         mcp = new McpServerManager(registry, new JdkHttpTransport(), new JdkProcessRunner(),
                 Option.some(credentialStore));
@@ -200,6 +204,10 @@ public class Engine {
         modelRef = new ModelRef(ProviderId.create(), ModelId.create());
         titleGenerator = new TitleGenerator(provider, modelRef);
         step = new Step(provider, toolRuntime);
+        if (subagentTool != null) {
+            subagentTool.setRunner((parent, agentName, prompt, depth) ->
+                    runSubagent(parent, agentName, prompt, depth));
+        }
         compaction = new CompactionService(journal, conversation, instructions,
                 new Compaction(journal, provider), clock, 8, provider);
     }
@@ -304,7 +312,10 @@ public class Engine {
         }
     }
 
-    private PromptResult runPrompt(SessionId id, String text) {
+    public PromptResult runPrompt(SessionId id, String text) {
+        return runPrompt(id, text, null);    }
+
+    public PromptResult runPrompt(SessionId id, String text, AgentProfile agentOverride) {
         InboxId inboxId = InboxId.create();
         InboxItem item = new InboxItem.UserItem(text, List.of(), List.of(), List.of(), Map.of());
         sessionService.enqueue(id, inboxId, item);
@@ -325,8 +336,9 @@ public class Engine {
                 List.of(), List.of(), List.of(), Map.of(), clock.now()));
 
         String agentName = agentCatalogue.nameOf(info.agent());
-        AgentProfile agent = AgentProfile.forAgent(info.agent(), Option.none(), 10,
-                List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK)), agentName);
+        AgentProfile agent = agentOverride != null ? agentOverride
+                : AgentProfile.forAgent(info.agent(), Option.none(), 10,
+                        List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK)), agentName);
 
         // MODE-PLAN: log synthetic message when entering/leaving plan mode (PR-7).
         if (agent.planMode()) {
@@ -432,6 +444,41 @@ public class Engine {
             generateTitle(id);
         }
         return promptResult;
+    }
+
+    private final java.util.Map<SessionId, Integer> subagentDepths = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public String runSubagent(SessionId parent, String agentName, String prompt, int depth) {
+        AgentId agentId = agentCatalogue.resolve(agentName);
+        if (agentId == null) {
+            throw new IllegalArgumentException("unknown subagent: " + agentName);
+        }
+        if (agentName.equalsIgnoreCase("build") || agentName.equalsIgnoreCase("plan")) {
+            throw new IllegalArgumentException("agent cannot run as subagent: " + agentName);
+        }
+        // Recursion protection
+        int parentDepth = subagentDepths.getOrDefault(parent, 0);
+        if (parentDepth >= 2) {
+            throw new IllegalStateException("subagent depth limit reached (max 2)");
+        }
+
+        Path directory = Path.of(config.workspace()).toAbsolutePath().normalize();
+        Location location = new Location(directory, ProjectId.create(), Option.none());
+        AgentProfile agent = AgentProfile.forAgent(agentId, Option.none(), 10,
+                List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK)), agentName);
+
+        SessionId child = sessionService.create(location, agentId, Option.none(), clock.now());
+        sessions.put(new SessionInfo(child, location.projectId(), location, "Subagent: " + agentName, agentId,
+                Option.none(), List.of(), Money.zero(), TokenCount.zero(), clock.now(), clock.now(),
+                Option.none(), Option.none(), 0, Option.none()));
+
+        // Track depth
+        subagentDepths.put(child, parentDepth + 1);
+
+        PromptResult result = runPrompt(child, prompt, agent);
+        return result.text() == null || result.text().isBlank()
+                ? "Subagent completed with no text output."
+                : result.text();
     }
 
     public List<StoredEvent> events(SessionId id, long after) {

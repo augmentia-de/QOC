@@ -68,6 +68,23 @@ class StepTest {
     }
 
     @Test
+    void multipleRequestedToolsAreExecuted() {
+        CallId first = CallId.create();
+        CallId second = CallId.create();
+        Step step = new Step(provider(List.of(
+                new ModelEvent.ToolCallRequested(first, ECHO, JsonValue.of(Map.of())),
+                new ModelEvent.ToolCallRequested(second, ECHO, JsonValue.of(Map.of())),
+                new ModelEvent.Finished(FinishReason.NORMAL, TokenCount.zero(), JsonValue.ofNull()))),
+                runtime(ToolAuthorizer.defaultAuthorizer()));
+
+        StepResult.Finished result = (StepResult.Finished) step.run(emptyPrepared(), context());
+
+        assertThat(result.toolCalls()).hasSize(2);
+        assertThat(result.toolCalls().get(0).call().id()).isEqualTo(first);
+        assertThat(result.toolCalls().get(1).call().id()).isEqualTo(second);
+    }
+
+    @Test
     void contextOverflowCompactsAtMostOncePerStep() {
         Deque<List<ModelEvent>> responses = new ArrayDeque<>();
         responses.add(List.of(new ModelEvent.ProviderFailed(

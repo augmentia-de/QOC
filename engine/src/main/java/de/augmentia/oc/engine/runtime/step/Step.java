@@ -15,15 +15,21 @@ import de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 
 /**
  * One model step: consume the stream completely, publish live events, execute
- * requested tools and return one terminal result.
+ * requested tools in parallel and return one terminal result. Tool calls run
+ * concurrently (G-05); their outcomes are kept in call order.
  */
 public final class Step {
     private static final Logger LOG = Logger.getLogger(Step.class.getName());
+    private static final int MAX_PARALLEL_TOOLS = 8;
 
     private final ProviderAdapter provider;
     private final ToolRuntime tools;
@@ -56,20 +62,16 @@ public final class Step {
         LOG.fine("step run start");
         List<ModelEvent> events = provider.stream(prepared.toRequest()).toList();
         LOG.fine("provider stream events=" + events.size());
-        List<StepResult.ToolCallOutcome> outcomes = new ArrayList<>();
+
+        // Collect tool calls in stream order; publish non-tool events live.
+        List<ModelEvent.ToolCallRequested> toolCalls = new ArrayList<>();
         FinishReason finish = null;
         TokenCount usage = TokenCount.zero();
 
         for (ModelEvent event : events) {
             publish(event, sink);
             switch (event) {
-                case ModelEvent.ToolCallRequested call -> {
-                    LOG.fine("tool call requested: " + call.name());
-                    ToolOutcome outcome = tools.execute(
-                            new ToolCall(call.callId(), call.name(), call.input()), context);
-                    outcomes.add(new StepResult.ToolCallOutcome(
-                            new ToolCall(call.callId(), call.name(), call.input()), outcome));
-                }
+                case ModelEvent.ToolCallRequested call -> toolCalls.add(call);
                 case ModelEvent.Finished finished -> {
                     finish = finished.reason();
                     usage = finished.usage();
@@ -91,6 +93,54 @@ public final class Step {
                     de.augmentia.oc.engine.core.contract.provider.InvalidOutputClassification.INCOMPLETE_STREAM),
                     "stream ended without a finish event");
         }
+
+        // Execute tool calls in parallel (G-05), keep outcomes in call order.
+        List<StepResult.ToolCallOutcome> outcomes = new ArrayList<>(toolCalls.size());
+        for (int i = 0; i < toolCalls.size(); i++) outcomes.add(null);
+
+        if (!toolCalls.isEmpty()) {
+            ExecutorService executor = Executors.newFixedThreadPool(
+                    Math.min(MAX_PARALLEL_TOOLS, toolCalls.size()));
+            try {
+                List<Callable<StepResult.ToolCallOutcome>> tasks = new ArrayList<>();
+                for (ModelEvent.ToolCallRequested call : toolCalls) {
+                    tasks.add(() -> {
+                        LOG.fine("tool call requested: " + call.name());
+                        ToolOutcome outcome = tools.execute(
+                                new ToolCall(call.callId(), call.name(), call.input()), context);
+                        return new StepResult.ToolCallOutcome(
+                                new ToolCall(call.callId(), call.name(), call.input()), outcome);
+                    });
+                }
+                List<Future<StepResult.ToolCallOutcome>> futures = executor.invokeAll(tasks);
+                for (int i = 0; i < futures.size(); i++) {
+                    try {
+                        outcomes.set(i, futures.get(i).get());
+                    } catch (java.util.concurrent.ExecutionException e) {
+                        Throwable cause = e.getCause();
+                        if (cause instanceof de.augmentia.oc.engine.core.contract.permission.PermissionDenied pd) {
+                            throw pd;
+                        }
+                        if (cause instanceof de.augmentia.oc.engine.core.error.Aborted ab) {
+                            throw ab;
+                        }
+                        ModelEvent.ToolCallRequested call = toolCalls.get(i);
+                        outcomes.set(i, new StepResult.ToolCallOutcome(
+                                new ToolCall(call.callId(), call.name(), call.input()),
+                                new ToolOutcome.Failed(new de.augmentia.oc.engine.core.model.SessionError.ToolExecutionError(
+                                        "tool_failure", cause == null ? e.getMessage() : cause.getMessage()))));
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return new StepResult.Failed(new FailureKind.InvalidOutput(
+                        de.augmentia.oc.engine.core.contract.provider.InvalidOutputClassification.INCOMPLETE_STREAM),
+                        "tool execution interrupted");
+            } finally {
+                executor.shutdown();
+            }
+        }
+
         LOG.fine("step run finish tools=" + outcomes.size());
         return new StepResult.Finished(finish, usage, events, outcomes);
     }

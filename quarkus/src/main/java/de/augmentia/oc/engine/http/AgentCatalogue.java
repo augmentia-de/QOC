@@ -46,6 +46,19 @@ public class AgentCatalogue {
                 .findFirst().map(Agent::name).orElse("build");
     }
 
+    /** Resolves an agent name to its id, or null if not found. */
+    public de.augmentia.oc.engine.core.model.AgentId resolve(String name) {
+        if (name == null) return null;
+        return agents.stream().filter(a -> a.name().equalsIgnoreCase(name))
+                .findFirst().map(Agent::id).orElse(null);
+    }
+
+    /** Returns true if the named agent is a subagent (not primary). */
+    public boolean isSubagent(String name) {
+        // In the baseline, "build" and "plan" are primary; others are subagents.
+        return name != null && !name.equalsIgnoreCase("build") && !name.equalsIgnoreCase("plan");
+    }
+
     private record Agent(AgentId id, String name, boolean hidden) {}
 
     public record AgentDto(String id, String name, boolean hidden) {}
