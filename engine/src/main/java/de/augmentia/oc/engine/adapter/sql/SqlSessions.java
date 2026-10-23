@@ -5,6 +5,7 @@ import de.augmentia.oc.engine.core.event.ContractCodec;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.model.*;
 import de.augmentia.oc.engine.core.port.store.SessionReader;
+import de.augmentia.oc.engine.core.port.store.SessionStore;
 
 import javax.sql.DataSource;
 import java.math.BigDecimal;
@@ -15,7 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** PostgreSQL session read model and inbox. */
-public final class SqlSessions implements SessionReader {
+public final class SqlSessions implements SessionStore {
 
     private final DataSource dataSource;
 

@@ -6,3 +6,4 @@ target/
 .env
 log/
 quarkus/log/
+data/

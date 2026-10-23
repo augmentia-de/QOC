@@ -59,7 +59,7 @@ class ArchitectureTest {
 
     @ArchTest
     static final ArchRule javaSqlOnlyInSqlAdapter = noClasses()
-            .that().resideOutsideOfPackage("..adapter.sql..")
+            .that().resideOutsideOfPackages("..adapter.sql..", "..adapter.sqlite..")
             .should().accessClassesThat().resideInAPackage("java.sql..");
 
     @ArchTest

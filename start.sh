@@ -69,5 +69,22 @@ export LOG_DIR
 : "${DEBUG_PORT:=5005}"
 echo "Remote-Debug: localhost:${DEBUG_PORT} (suspend=n)"
 
+# DB-Backend (postgresql/sqlite) und zugehoerige Flyway-Migrationen.
+: "${ENGINE_DB_KIND:=postgresql}"
+export ENGINE_DB_KIND
+if [ "$ENGINE_DB_KIND" = "sqlite" ]; then
+    : "${ENGINE_DB_DRIVER:=org.sqlite.JDBC}"
+    : "${ENGINE_DB_PATH:=$PWD/data/qoc.db}"
+    mkdir -p "$(dirname "$ENGINE_DB_PATH")"
+    : "${ENGINE_FLYWAY_LOCATIONS:=classpath:db/migration-sqlite}"
+    export QUARKUS_DATASOURCE_JDBC_URL="jdbc:sqlite:${ENGINE_DB_PATH}"
+else
+    : "${ENGINE_DB_DRIVER:=}"
+    : "${ENGINE_DB_PATH:=}"
+    : "${ENGINE_FLYWAY_LOCATIONS:=classpath:db/migration}"
+    export QUARKUS_DATASOURCE_JDBC_URL="jdbc:postgresql://${ENGINE_DB_HOST:-localhost}:${ENGINE_DB_PORT:-20000}/${ENGINE_DB_NAME:-qoc}"
+fi
+export ENGINE_DB_DRIVER ENGINE_DB_PATH ENGINE_FLYWAY_LOCATIONS
+export QUARKUS_FLYWAY_LOCATIONS="$ENGINE_FLYWAY_LOCATIONS"
 echo "Starte Quarkus-Dev-Modus ..."
 exec mvn -pl quarkus quarkus:dev -Ddebug="${DEBUG_PORT}" "$@"

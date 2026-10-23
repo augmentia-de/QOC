@@ -23,12 +23,13 @@ import de.augmentia.oc.engine.core.contract.permission.Reply;
 import de.augmentia.oc.engine.core.model.ProjectId;
 import de.augmentia.oc.engine.runtime.permission.engine.ReplyOutcome;
 import de.augmentia.oc.engine.core.model.SessionEvent;
-import de.augmentia.oc.engine.core.port.store.Conversation;
+import de.augmentia.oc.engine.core.port.store.ConversationStore;
 import de.augmentia.oc.engine.runtime.tool.fs.FileAccess;
 import de.augmentia.oc.engine.adapter.fs.NioFileSystem;
 import de.augmentia.oc.engine.adapter.net.JdkHttpTransport;
 import de.augmentia.oc.engine.adapter.process.JdkProcessRunner;
 import de.augmentia.oc.engine.adapter.sql.*;
+import de.augmentia.oc.engine.adapter.sqlite.*;
 import de.augmentia.oc.engine.adapter.time.SystemClock;
 import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Option;
@@ -50,6 +51,7 @@ import de.augmentia.oc.engine.runtime.tool.mcp.McpServerManager;
 import de.augmentia.oc.engine.core.port.runtime.Clock;
 import de.augmentia.oc.engine.core.port.human.PolicySource;
 import de.augmentia.oc.engine.core.port.store.*;
+import de.augmentia.oc.engine.core.port.store.SessionStore;
 import de.augmentia.oc.engine.core.port.world.FileSystem;
 import de.augmentia.oc.engine.core.port.runtime.SessionWake;
 import de.augmentia.oc.engine.runtime.context.AgentProfile;
@@ -109,12 +111,16 @@ public class Engine {
     EngineConfig config;
 
     @Inject
+    @ConfigProperty(name = "engine.db.kind", defaultValue = "postgresql")
+    String dbKind;
+
+    @Inject
     WebApprovalSource approvalSource;
 
     private Clock clock;
-    private SqlJournal journal;
-    private SqlConversation conversation;
-    private SqlSessions sessions;
+    private Journal journal;
+    private ConversationStore conversation;
+    private SessionStore sessions;
     private SessionService sessionService;
     private ContextBuilder contextBuilder;
     private TitleGenerator titleGenerator;
@@ -133,17 +139,23 @@ public class Engine {
     @PostConstruct
     void wire() {
         clock = new SystemClock();
-        journal = new SqlJournal(dataSource, clock);
-        conversation = new SqlConversation(dataSource);
-        sessions = new SqlSessions(dataSource);
-        ClaimStore claims = new SqlClaims(dataSource);
-        ApprovalStore approvals = new SqlApprovals(dataSource);
-        instructions = new SqlInstructions(dataSource);
-        ToolOutputStore toolOutput = new SqlToolOutput(dataSource, Path.of("tool-output"));
+        boolean sqlite = "sqlite".equalsIgnoreCase(dbKind);
+        if (sqlite) Sqlite.enableWal(dataSource);
+        journal = sqlite ? new SqliteJournal(dataSource, clock) : new SqlJournal(dataSource, clock);
+        conversation = sqlite ? new SqliteConversation(dataSource) : new SqlConversation(dataSource);
+        sessions = sqlite ? new SqliteSessions(dataSource) : new SqlSessions(dataSource);
+        ClaimStore claims = sqlite ? new SqliteClaims(dataSource) : new SqlClaims(dataSource);
+        ApprovalStore approvals = sqlite ? new SqliteApprovals(dataSource) : new SqlApprovals(dataSource);
+        instructions = sqlite ? new SqliteInstructions(dataSource) : new SqlInstructions(dataSource);
+        ToolOutputStore toolOutput = sqlite
+                ? new SqliteToolOutput(dataSource, Path.of("tool-output"))
+                : new SqlToolOutput(dataSource, Path.of("tool-output"));
         SessionWake wake = session -> { };
 
         sessionService = new SessionService(journal, sessions, wake, sessions::removeInbox);
-        permissionEngine = new PermissionEngine(Option.some(new SqlApprovals(dataSource)),
+        ApprovalStore permissionApprovals = sqlite ? new SqliteApprovals(dataSource) : new SqlApprovals(dataSource);
+        CredentialStore credentialStore = sqlite ? new SqliteCredentials(dataSource) : new SqlCredentials(dataSource);
+        permissionEngine = new PermissionEngine(Option.some(permissionApprovals),
                 Option.some(approvalSource), Option.some((PolicySource) () -> List.of()), Option.none());
 
         Path workspacePath = Path.of(config.workspace()).toAbsolutePath().normalize();
@@ -159,7 +171,7 @@ public class Engine {
         registry.register(GrepTool.definition(fs, access));
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
         mcp = new McpServerManager(registry, new JdkHttpTransport(), new JdkProcessRunner(),
-                Option.some(new SqlCredentials(dataSource)));
+                Option.some(credentialStore));
         for (de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig server : config.mcpServers()) {
             mcp.add(server);
         }

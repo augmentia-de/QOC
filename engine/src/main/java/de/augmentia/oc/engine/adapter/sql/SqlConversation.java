@@ -8,6 +8,7 @@ import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.Seq;
 import de.augmentia.oc.engine.core.model.SessionId;
 import de.augmentia.oc.engine.core.port.store.Conversation;
+import de.augmentia.oc.engine.core.port.store.ConversationStore;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -17,7 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** PostgreSQL projection of the folded conversation. */
-public final class SqlConversation implements Conversation {
+public final class SqlConversation implements ConversationStore {
 
     private final DataSource dataSource;
 
