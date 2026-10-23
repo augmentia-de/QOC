@@ -13,7 +13,9 @@ import de.augmentia.oc.engine.core.json.Json;
 import de.augmentia.oc.engine.core.event.EventCodec;
 import de.augmentia.oc.engine.core.json.Json;
 import de.augmentia.oc.engine.core.json.JsonValue;
+import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.*;
+import de.augmentia.oc.engine.core.model.SessionEvent;
 import de.augmentia.oc.engine.core.port.store.Conversation;
 import de.augmentia.oc.engine.runtime.tool.fs.FileAccess;
 import de.augmentia.oc.engine.adapter.fs.NioFileSystem;
@@ -217,6 +219,14 @@ public class Engine {
         String agentName = agentCatalogue.nameOf(info.agent());
         AgentProfile agent = AgentProfile.forAgent(info.agent(), Option.none(), 10,
                 List.of(new Rule("*", "*", Effect.ALLOW)), agentName);
+
+        // MODE-PLAN: log synthetic message when entering/leaving plan mode (PR-7).
+        if (agent.planMode()) {
+            journal.append(new EventDraft(id.value(), 1,
+                    new SessionEvent.SyntheticRaised(id,
+                            PromptLoader.get("mode-plan-enter"), Option.none(), Map.of("mode", "plan"))));
+        }
+
         ModelInfo model = modelInfo();
         var prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), 1);
         ToolContext context = new ToolContext(id, info.agent(), MessageId.create(), CallId.create());
