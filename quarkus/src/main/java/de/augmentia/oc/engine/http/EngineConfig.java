@@ -108,7 +108,16 @@ public class EngineConfig {
             }
         }
         if (agents.isEmpty()) {
-            agents.add(new AgentConfig("build", null, false));
+            // Secure defaults: allow-all, but deny external_directory and protect .env
+            agents.add(new AgentConfig("build", null, false, null, 32,
+                    List.of("*"), List.of(),
+                    List.of(
+                            new Rule("*", "*", Effect.ALLOW),
+                            new Rule("external_directory", "*", Effect.DENY),
+                            new Rule("read", "*.env", Effect.ASK),
+                            new Rule("edit", "*.env", Effect.DENY),
+                            new Rule("shell", "*", Effect.ASK)),
+                    List.of("*")));
         }
         if (merged.get("mcp") instanceof JsonValue.Obj mcp) {
             for (Map.Entry<String, JsonValue> entry : mcp.values().entrySet()) {
@@ -265,10 +274,16 @@ public class EngineConfig {
             permissions = permissions == null ? List.of() : List.copyOf(permissions);
             mcpServers = mcpServers == null ? List.of("*") : List.copyOf(mcpServers);
         }
-        // backward-compatible constructor
+        // backward-compatible constructor with secure defaults
         public AgentConfig(String name, String system, boolean hidden) {
-            this(name, system, hidden, null, 10, List.of("*"), List.of(),
-                    List.of(new Rule("*", "*", Effect.ALLOW)), List.of("*"));
+            this(name, system, hidden, null, 32, List.of("*"), List.of(),
+                    List.of(
+                            new Rule("*", "*", Effect.ALLOW),
+                            new Rule("external_directory", "*", Effect.DENY),
+                            new Rule("read", "*.env", Effect.ASK),
+                            new Rule("edit", "*.env", Effect.DENY),
+                            new Rule("shell", "*", Effect.ASK)),
+                    List.of("*"));
         }
     }
 

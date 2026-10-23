@@ -1,6 +1,9 @@
 # Minimal runtime image for the QOC engine (e2-micro friendly).
 FROM eclipse-temurin:21-jre-alpine
 
+# Create dedicated user
+RUN addgroup -S qoc && adduser -S qoc -G qoc -h /var/lib/qoc -s /sbin/nologin
+
 WORKDIR /app
 
 # Fast-jar layout produced by: mvn -pl quarkus package -DskipTests
@@ -8,6 +11,11 @@ COPY quarkus/target/quarkus-app /app
 
 # Writable data volume: SQLite DB, workspace, logs.
 VOLUME ["/data"]
+
+# Create data directories and set ownership
+RUN mkdir -p /data/workspace /data/log /var/lib/qoc && \
+    chown -R qoc:qoc /data /var/lib/qoc && \
+    chmod 750 /data /var/lib/qoc
 
 ENV JAVA_OPTS="-Xms64m -Xmx384m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m"
 ENV QUARKUS_HTTP_HOST=0.0.0.0
@@ -20,5 +28,8 @@ ENV QUARKUS_OTEL_ENABLED=false
 ENV QUARKUS_LOG_FILE_ENABLE=false
 
 EXPOSE 8080
+
+# Run as dedicated user (not root)
+USER qoc
 
 ENTRYPOINT ["sh", "-c", "mkdir -p /data/workspace /data/log && exec java $JAVA_OPTS -jar /app/quarkus-run.jar"]

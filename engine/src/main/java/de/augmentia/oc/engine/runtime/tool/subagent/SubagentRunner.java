@@ -23,9 +23,13 @@ public interface SubagentRunner {
     /** Result of a subagent run, including usage for cost tracking. */
     record SubagentResult(String text, de.augmentia.oc.engine.core.model.TokenCount usage,
                           de.augmentia.oc.engine.core.model.SessionId childSession) {
-        public SubagentResult {
+        public SubagentResult(String text, de.augmentia.oc.engine.core.model.TokenCount usage,
+                              de.augmentia.oc.engine.core.model.SessionId childSession) {
             if (text == null) text = "";
             if (usage == null) usage = de.augmentia.oc.engine.core.model.TokenCount.zero();
+            this.text = text;
+            this.usage = usage;
+            this.childSession = childSession;
         }
         public SubagentResult(String text, de.augmentia.oc.engine.core.model.TokenCount usage) {
             this(text, usage, null);

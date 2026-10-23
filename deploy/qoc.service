@@ -1,0 +1,23 @@
+[Unit]
+Description=QOC Engine
+After=network.target
+
+[Service]
+Type=simple
+User=qoc
+Group=qoc
+WorkingDirectory=/var/lib/qoc
+EnvironmentFile=/etc/qoc/env
+ExecStartPre=/usr/local/bin/qoc-prepare.sh
+ExecStart=/usr/bin/java -Xmx256m -jar /opt/qoc/quarkus-run.jar
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/qoc
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

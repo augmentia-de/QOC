@@ -109,7 +109,7 @@ public class Engine {
     private static final Logger LOG = Logger.getLogger(Engine.class);
 
     @Inject
-    Tracer tracer;
+    jakarta.enterprise.inject.Instance<Tracer> tracerInstance;
 
     @Inject
     EngineConfig config;
@@ -190,7 +190,7 @@ public class Engine {
             List<Rule> sessionRules = info == null ? List.of() : info.permissions();
             Option<AgentId> agent = info == null ? Option.none() : Option.some(info.agent());
             LOG.debugf("permission check session=%s action=%s", request.sessionId().value(), request.action());
-            Span pspan = tracer.spanBuilder("permission.assert")
+            Span pspan = tracer().spanBuilder("permission.assert")
                     .setAttribute("session.id", request.sessionId().value())
                     .setAttribute("action", request.action())
                     .startSpan();
@@ -307,7 +307,7 @@ public class Engine {
 
         long before = journal.history(id.value(), Seq.zero()).size();
         running.put(id, Thread.currentThread());
-        Span span = tracer.spanBuilder("engine.prompt")
+        Span span = tracer().spanBuilder("engine.prompt")
                 .setAttribute("session.id", id.value())
                 .setAttribute("text.length", (long) text.length())
                 .startSpan();
@@ -393,7 +393,7 @@ public class Engine {
 
         while (true) {
             LOG.debugf("step %d session=%s", stepNo, id.value());
-            Span stepSpan = tracer.spanBuilder("engine.step")
+            Span stepSpan = tracer().spanBuilder("engine.step")
                     .setAttribute("session.id", id.value())
                     .setAttribute("step", (long) stepNo)
                     .startSpan();
@@ -403,7 +403,7 @@ public class Engine {
             StepResult result = step.run(prepared, context, liveSink);
             if (result instanceof StepResult.NeedsCompaction) {
                 // Automatic compaction (I-07, I-09): exactly one per step.
-                Span cspan = tracer.spanBuilder("compaction").setAttribute("session.id", id.value()).startSpan();
+                Span cspan = tracer().spanBuilder("compaction").setAttribute("session.id", id.value()).startSpan();
                 try (Scope cscope = cspan.makeCurrent()) {
                 compaction.compact(id, CompactionReason.OVERFLOW, preparedModel(info, model),
                         Option.none(), Seq.of(journal.history(id.value(), Seq.zero()).size()),
@@ -544,6 +544,14 @@ public class Engine {
         } finally {
             subagentSemaphore.release();
         }
+    }
+
+    /** Returns the OpenTelemetry tracer, or a no-op tracer when OTEL is disabled. */
+    private Tracer tracer() {
+        if (tracerInstance != null && tracerInstance.isResolvable()) {
+            return tracerInstance.get();
+        }
+        return io.opentelemetry.api.trace.TracerProvider.noop().get("qoc");
     }
 
     public List<StoredEvent> events(SessionId id, long after) {
