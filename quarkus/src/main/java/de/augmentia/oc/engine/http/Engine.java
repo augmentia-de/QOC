@@ -313,6 +313,11 @@ public class Engine {
                 de.augmentia.oc.engine.core.model.Delivery.QUEUE, enqueuedSeq, clock.now()));
         sessionService.deliver(id);
         SessionInfo info = sessions.info(id).orElseThrow();
+        sessions.put(new SessionInfo(info.id(), info.projectId(), info.location(), info.title(),
+                info.agent(), info.model(), info.permissions(), info.cost(), info.tokens(),
+                info.created(), clock.now(), info.idle(), info.suspended(),
+                info.resumeAttempts(), info.archived()));
+        info = sessions.info(id).orElseThrow();
         LOG.debugf("runPrompt session=%s agent=%s", id.value(), info.agent());
 
         Seq seq = conversation.nextSeq(id);
@@ -502,7 +507,10 @@ public class Engine {
     }
 
     public List<SessionInfo> listSessions() {
-        return sessions.list();
+        return sessions.list().stream()
+                .sorted(java.util.Comparator.comparing(SessionInfo::updated).reversed())
+                .limit(25)
+                .toList();
     }
 
     public record LocationDto(String directory, ProjectDto project) {}

@@ -476,6 +476,7 @@ async function send() {
     if (permPoll) { clearInterval(permPoll); permPoll = null; }
     sendBtn.disabled = false;
     status.textContent = 'bereit';
+    loadSessions();
     loadFiles('.');
   }
 }
