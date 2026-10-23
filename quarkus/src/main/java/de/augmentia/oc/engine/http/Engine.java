@@ -29,6 +29,7 @@ import de.augmentia.oc.engine.adapter.sql.*;
 import de.augmentia.oc.engine.adapter.time.SystemClock;
 import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Option;
+import de.augmentia.oc.engine.core.model.AgentId;
 import de.augmentia.oc.engine.core.model.ApprovalResult;
 import de.augmentia.oc.engine.core.model.CompactionReason;
 import de.augmentia.oc.engine.core.model.Rule;
@@ -151,8 +152,9 @@ public class Engine {
         PermissionGate permissionGate = request -> {
             SessionInfo info = sessions.info(request.sessionId()).orElse(null);
             List<Rule> sessionRules = info == null ? List.of() : info.permissions();
-            permissionEngine.assertAllowed(new PermissionCheck(request, Option.none(),
-                    List.of(new Rule("*", "*", Effect.ALLOW), new Rule("shell", "*", Effect.ASK)), sessionRules, List.of(), List.of()));
+            Option<AgentId> agent = info == null ? Option.none() : Option.some(info.agent());
+            permissionEngine.assertAllowed(new PermissionCheck(request, agent,
+                    List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK)), sessionRules, List.of(), List.of()));
         };
         ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
                 permissionGate, noopHooks(), toolOutput);
@@ -262,7 +264,7 @@ public class Engine {
 
         String agentName = agentCatalogue.nameOf(info.agent());
         AgentProfile agent = AgentProfile.forAgent(info.agent(), Option.none(), 10,
-                List.of(new Rule("*", "*", Effect.ALLOW), new Rule("shell", "*", Effect.ASK)), agentName);
+                List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK)), agentName);
 
         // MODE-PLAN: log synthetic message when entering/leaving plan mode (PR-7).
         if (agent.planMode()) {

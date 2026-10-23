@@ -152,12 +152,25 @@ public class HttpApi {
         }
     }
 
+
+    private Map<String, Object> permissionDto(PermissionRequest r) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("id", r.id().value());
+        m.put("sessionId", r.sessionId().value());
+        m.put("action", r.action());
+        m.put("resources", r.resources());
+        m.put("save", r.save());
+        m.put("message", r.message());
+        return m;
+    }
+
     @GET
     @Path("/session/{id}/permission")
     public Response sessionPermissions(@PathParam("id") String id) {
         try {
             List<PermissionRequest> pending = engine.pendingPermissions(SessionId.parse(id));
-            return Response.ok(Map.of("data", pending)).build();
+            List<Map<String, Object>> data = pending.stream().map(this::permissionDto).toList();
+            return Response.ok(Map.of("data", data)).build();
         } catch (IllegalArgumentException e) {
             return badRequest("invalid session id");
         }
@@ -192,7 +205,8 @@ public class HttpApi {
     @GET
     @Path("/permission/request")
     public Response openPermissions() {
-        return Response.ok(Map.of("location", engine.location(), "data", engine.allPendingPermissions())).build();
+        List<Map<String, Object>> data = engine.allPendingPermissions().stream().map(this::permissionDto).toList();
+        return Response.ok(Map.of("location", engine.location(), "data", data)).build();
     }
 
     @GET
