@@ -94,6 +94,7 @@
   <label>Agent <select id="agent"></select></label>
   <label>Model <select id="model"></select></label>
   <label>Provider <select id="provider"></select></label>
+  <label><input type="checkbox" id="showDetails"> Details</label>
   <button id="newSession" class="primary">+ Neue Session</button>
   <button id="interrupt" class="danger">Interrupt</button>
   <button id="compact">Compact</button>
@@ -157,6 +158,7 @@ let es = null;
 let currentAssistant = null;
 let currentFile = null;
 let pendingPermission = null;
+const showDetails = document.getElementById('showDetails');
 let permPoll = null;
 
 function logEvent(text) {
@@ -356,16 +358,20 @@ function connectSSE() {
     if (ev._type) {
       switch (ev._type) {
         case 'TextStarted':
+          if (!showDetails.checked) return;
           currentAssistant = addMessage('assistant', '');
           break;
         case 'TextDelta':
-          if (currentAssistant) { currentAssistant.textContent += ev.text; currentAssistant.innerHTML = renderMarkdown(currentAssistant.textContent); messages.scrollTop = messages.scrollHeight; }
+          if (!showDetails.checked || !currentAssistant) return;
+          currentAssistant.textContent += ev.text; currentAssistant.innerHTML = renderMarkdown(currentAssistant.textContent); messages.scrollTop = messages.scrollHeight;
           break;
         case 'TextEnded':
+          if (!showDetails.checked) { currentAssistant = null; return; }
           if (currentAssistant && !currentAssistant.textContent) currentAssistant.innerHTML = renderMarkdown(ev.text);
           currentAssistant = null;
           break;
         case 'ToolCallRequested':
+          if (!showDetails.checked) return;
           addMessage('tool', '🔧 ' + ev.name + '(' + JSON.stringify(ev.input) + ')');
           break;
         case 'ToolFailed':
