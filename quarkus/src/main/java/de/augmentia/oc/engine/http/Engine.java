@@ -214,8 +214,9 @@ public class Engine {
         conversation.insert(id, seq, new Message.UserMessage(MessageId.create(), text,
                 List.of(), List.of(), List.of(), Map.of(), clock.now()));
 
+        String agentName = agentCatalogue.nameOf(info.agent());
         AgentProfile agent = AgentProfile.forAgent(info.agent(), Option.none(), 10,
-                List.of(new Rule("*", "*", Effect.ALLOW)), "build");
+                List.of(new Rule("*", "*", Effect.ALLOW)), agentName);
         ModelInfo model = modelInfo();
         var prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), 1);
         ToolContext context = new ToolContext(id, info.agent(), MessageId.create(), CallId.create());
