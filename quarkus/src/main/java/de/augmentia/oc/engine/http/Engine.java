@@ -122,7 +122,8 @@ public class Engine {
         registry.register(GlobTool.definition(fs, access));
         registry.register(GrepTool.definition(fs, access));
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
-        mcp = new McpServerManager(registry, new JdkHttpTransport(), new JdkProcessRunner());
+        mcp = new McpServerManager(registry, new JdkHttpTransport(), new JdkProcessRunner(),
+                Option.some(new SqlCredentials(dataSource)));
         for (de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig server : config.mcpServers()) {
             mcp.add(server);
         }
@@ -213,6 +214,38 @@ public class Engine {
 
     public List<AgentCatalogue.AgentDto> agents() {
         return agentCatalogue.list();
+    }
+
+    public List<String> mcpServerNames() {
+        return mcp.serverNames();
+    }
+
+    public String mcpStatus(String name) {
+        return mcp.status(name).name();
+    }
+
+    public String mcpError(String name) {
+        return mcp.error(name);
+    }
+
+    public String mcpAuthorizationUrl(String name, String clientId, String redirectUri) {
+        String effectiveClient = clientId == null || clientId.isBlank() ? "opencode" : clientId;
+        String effectiveRedirect = redirectUri == null || redirectUri.isBlank()
+                ? "http://127.0.0.1:8080/api/mcp/" + name + "/callback"
+                : redirectUri;
+        return mcp.client(name) instanceof de.augmentia.oc.engine.runtime.tool.mcp.McpDiscoveryClient discovery
+                ? discovery.authorizationUrl(effectiveClient, effectiveRedirect, "state-" + System.currentTimeMillis())
+                : null;
+    }
+
+    public void mcpAuthenticate(String name, String code, String redirectUri, String clientId, String clientSecret) {
+        String effectiveClient = clientId == null || clientId.isBlank() ? "opencode" : clientId;
+        String effectiveRedirect = redirectUri == null || redirectUri.isBlank()
+                ? "http://127.0.0.1:8080/api/mcp/" + name + "/callback"
+                : redirectUri;
+        mcp.authenticate(name, code, effectiveRedirect, effectiveClient,
+                clientSecret == null ? "" : clientSecret);
+        mcp.reload(name);
     }
 
     public ConfigDto config() {
