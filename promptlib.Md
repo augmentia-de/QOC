@@ -104,18 +104,35 @@ Fallback.
 - `MCP-INSTRUCTIONS` – McpInstructions
 - `SKILL-GUIDANCE` – SkillCatalog
 
+### Verdrahtet (Stand nach diesem Commit)
+- `MODE-PLAN`: Agent-Modus-Feld (`planMode`) auto-detected aus Name oder
+  verweigerter `edit`-Permission. Synthetic `SyntheticRaised`-Event wird bei
+  Plan-Modus protokolliert. Standard-Catalogue enthält jetzt einen `plan`-Agent.
+- `TTL`: Titel wird nach dem ersten erfolgreichen Prompt automatisch generiert
+  und in der Session gespeichert (`generateTitle` + `SessionRenamed`-Event).
+- `CTX-NUDGE`: In `CompactionService.compact` verdrahtet – prüft Format und
+  re-prompted mit Nudge-Prompt (erfordert Provider).
+- `CTX-CHECKPOINT`: in `ContextBuilder.append` für `CompactionMessage`.
+- `CTX-SUMMARY-UPDATE`: Logik vorhanden (Vorgänger-Erkennung).
+
 ### Noch nicht verdrahtet
-- `MODE-PLAN`: Agent-Modus-Feld (`planMode`) wird auto-detected, aber kein Agent
-  heißt "plan" im Standard-Catalogue. Plan-Modus-Reminder werden nur eingefügt,
-  wenn `planMode=true`.
-- `TTL`: Titel wird nach dem ersten Prompt generiert, aber `titleGenerator` nutzt
-  einen zufälligen `ModelRef` (funktioniert mit scripted provider, nicht mit
-  echtem Provider).
-- `CTX-CHECKPOINT`: in ContextBuilder, aber nicht in einer dedizierten
-  Message-Folding-Pipeline (Conversation-Projektion fehlt).
-- `CTX-NUDGE`: Utility vorhanden und in CompactionService verdrahtet, aber der
-  Re-Prompt erfordert einen Provider (funktioniert nur mit echtem Provider).
-- `CTX-SUMMARY-UPDATE`: Logik vorhanden, aber noch nicht end-to-end getestet.
+- `CTX-CHECKPOINT` in einer dedizierten Message-Folding-Pipeline
+  (Conversation-Projektion fehlt – aktuell nur im ContextBuilder).
+- `MODE-PLAN`-Reminder als synthetische Nachrichten in der Conversation-
+  Projektion (aktuell nur im ContextBuilder eingefügt).
+- `TTL` nutzt einen zufälligen `ModelRef` (funktioniert mit scripted provider,
+  nicht mit echtem Provider).
+- `CTX-NUDGE` Re-Prompt erfordert einen Provider (funktioniert nur mit echtem
+  Provider).
+- `CTX-SUMMARY-UPDATE` noch nicht end-to-end getestet.
+
+### Gold-Tests (PR-10)
+- `PromptGoldenTest` (14 Tests) pinnt die wichtigsten Prompt-Texte.
+- Tool-Beschreibungen (15 Tools) sind noch nicht golden-getestet.
+
+### SYS-BASE
+- Text ist produkt-spezifisch (OpenCode-Branding) und kann ersetzt werden,
+  solange PR-2…PR-13 eingehalten werden.
 
 ### Gold-Tests (PR-10)
 - `PromptGoldenTest` (14 Tests) pinnt die wichtigsten Prompt-Texte.
