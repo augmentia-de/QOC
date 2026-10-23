@@ -69,6 +69,10 @@ import de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Scope;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.api.trace.Tracer;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -97,6 +101,9 @@ public class Engine {
     AgentCatalogue agentCatalogue;
 
     private static final Logger LOG = Logger.getLogger(Engine.class);
+
+    @Inject
+    Tracer tracer;
 
     @Inject
     EngineConfig config;
@@ -162,8 +169,16 @@ public class Engine {
             List<Rule> sessionRules = info == null ? List.of() : info.permissions();
             Option<AgentId> agent = info == null ? Option.none() : Option.some(info.agent());
             LOG.debugf("permission check session=%s action=%s", request.sessionId().value(), request.action());
+            Span pspan = tracer.spanBuilder("permission.assert")
+                    .setAttribute("session.id", request.sessionId().value())
+                    .setAttribute("action", request.action())
+                    .startSpan();
+            try (Scope pscope = pspan.makeCurrent()) {
             permissionEngine.assertAllowed(new PermissionCheck(request, agent,
                     List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK)), sessionRules, List.of(), List.of()));
+            pspan.setAttribute("result", "checked");
+            pspan.end();
+            }
         };
         ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
                 permissionGate, noopHooks(), toolOutput);
@@ -250,13 +265,28 @@ public class Engine {
 
         long before = journal.history(id.value(), Seq.zero()).size();
         running.put(id, Thread.currentThread());
-        try {
-            PromptResult r = runPrompt(id, text);
-            LOG.infof("prompt finish session=%s finish=%s in=%d out=%d", id.value(), r.finish(), r.inputTokens(), r.outputTokens());
-            return r;
+        Span span = tracer.spanBuilder("engine.prompt")
+                .setAttribute("session.id", id.value())
+                .setAttribute("text.length", (long) text.length())
+                .startSpan();
+        try (Scope scope = span.makeCurrent()) {
+            try {
+                PromptResult r = runPrompt(id, text);
+                span.setAttribute("finish", r.finish());
+                span.setAttribute("usage.input_tokens", (long) r.inputTokens());
+                span.setAttribute("usage.output_tokens", (long) r.outputTokens());
+                LOG.infof("prompt finish session=%s finish=%s in=%d out=%d", id.value(), r.finish(), r.inputTokens(), r.outputTokens());
+                return r;
+            } catch (RuntimeException e) {
+                span.recordException(e);
+                span.setStatus(StatusCode.ERROR, e.getMessage());
+                throw e;
+            } finally {
+                running.remove(id);
+                publishNew(id, before);
+            }
         } finally {
-            running.remove(id);
-            publishNew(id, before);
+            span.end();
         }
     }
 
@@ -299,14 +329,23 @@ public class Engine {
 
         while (true) {
             LOG.debugf("step %d session=%s", stepNo, id.value());
+            Span stepSpan = tracer.spanBuilder("engine.step")
+                    .setAttribute("session.id", id.value())
+                    .setAttribute("step", (long) stepNo)
+                    .startSpan();
+            try (Scope stepScope = stepSpan.makeCurrent()) {
             var prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), stepNo);
             ToolContext context = new ToolContext(id, info.agent(), MessageId.create(), CallId.create());
             StepResult result = step.run(prepared, context, liveSink);
             if (result instanceof StepResult.NeedsCompaction) {
                 // Automatic compaction (I-07, I-09): exactly one per step.
+                Span cspan = tracer.spanBuilder("compaction").setAttribute("session.id", id.value()).startSpan();
+                try (Scope cscope = cspan.makeCurrent()) {
                 compaction.compact(id, CompactionReason.OVERFLOW, preparedModel(info, model),
                         Option.none(), Seq.of(journal.history(id.value(), Seq.zero()).size()),
                         clock.now());
+                cspan.end();
+                }
                 prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), stepNo);
                 result = step.run(prepared, context, liveSink);
             }
@@ -347,10 +386,19 @@ public class Engine {
                         info.model().orElse(new ModelRef(model.providerId(), model.id())),
                         assistantContent, Option.some(finishReason), Option.none(), Option.none(),
                         Option.none(), Money.zero(), usage, AssistantTime.started(clock.now())));
+            }
             LOG.debugf("persisted assistant turn session=%s step=%d tools=%d", id.value(), stepNo, done.toolCalls().size());
+            stepSpan.setAttribute("finish", finished.reason().name());
+            stepSpan.setAttribute("tool_calls", (long) finished.toolCalls().size());
+            for (StepResult.ToolCallOutcome outcome : finished.toolCalls()) {
+                stepSpan.addEvent("tool.call", io.opentelemetry.api.common.Attributes.of(
+                        io.opentelemetry.api.common.AttributeKey.stringKey("tool.name"), outcome.call().name().value()));
+            }
+            } finally {
+            stepSpan.end();
             }
 
-            boolean hasToolCalls = !done.toolCalls().isEmpty();
+            boolean hasToolCalls = !finished.toolCalls().isEmpty();
             if (!hasToolCalls) break;
             if (stepNo >= agent.maxSteps()) break;
             stepNo++;
