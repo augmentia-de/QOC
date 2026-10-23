@@ -38,6 +38,9 @@ class LiveMavenTest {
 
     @Test
     void createsAndCompilesAMavenHelloWorldProject() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                System.getenv("OPENAI_API_KEY") != null && !System.getenv("OPENAI_API_KEY").isBlank(),
+                "OPENAI_API_KEY is not set");
         Path workspace = Path.of("/tmp/oc-live");
         deleteRecursively(workspace);
         Files.createDirectories(workspace);

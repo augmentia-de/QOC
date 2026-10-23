@@ -64,6 +64,9 @@ class LiveLlmTest {
 
     @Test
     void promptCanCreateAFile() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                System.getenv("OPENAI_API_KEY") != null && !System.getenv("OPENAI_API_KEY").isBlank(),
+                "OPENAI_API_KEY is not set");
         java.nio.file.Files.deleteIfExists(Path.of("/tmp/oc-live/hello.txt"));
         String id = given()
                 .post("/api/session")
