@@ -1,5 +1,7 @@
 package de.augmentia.oc.engine.runtime.tool.mcp;
 
+import de.augmentia.oc.engine.core.model.Option;
+import de.augmentia.oc.engine.core.port.store.CredentialStore;
 import de.augmentia.oc.engine.core.port.world.HttpTransport;
 import de.augmentia.oc.engine.core.port.world.ProcessRunner;
 import de.augmentia.oc.engine.runtime.tool.registry.Registration;
@@ -19,13 +21,20 @@ public final class McpServerManager {
     private final ToolRegistry registry;
     private final HttpTransport httpTransport;
     private final ProcessRunner processRunner;
+    private final Option<CredentialStore> credentials;
     private final Map<String, ServerEntry> servers = new LinkedHashMap<>();
 
     public McpServerManager(ToolRegistry registry, HttpTransport httpTransport, ProcessRunner processRunner) {
+        this(registry, httpTransport, processRunner, Option.none());
+    }
+
+    public McpServerManager(ToolRegistry registry, HttpTransport httpTransport, ProcessRunner processRunner,
+                            Option<CredentialStore> credentials) {
         if (registry == null) throw new IllegalArgumentException("registry must not be null");
         this.registry = registry;
         this.httpTransport = httpTransport;
         this.processRunner = processRunner;
+        this.credentials = credentials == null ? Option.none() : credentials;
     }
 
     public void add(McpServerConfig config) {
@@ -61,6 +70,19 @@ public final class McpServerManager {
             }
         }
         return all;
+    }
+
+    public McpClient client(String name) {
+        ServerEntry entry = servers.get(name);
+        return entry == null ? null : entry.client;
+    }
+
+    public void authenticate(String name, String code, String redirectUri, String clientId, String clientSecret) {
+        McpClient client = client(name);
+        if (!(client instanceof McpDiscoveryClient discovery)) {
+            throw new McpFailure("server is not a remote discovery client: " + name);
+        }
+        discovery.authenticate(code, redirectUri, null, clientId, clientSecret);
     }
 
     public String error(String name) {
@@ -108,7 +130,8 @@ public final class McpServerManager {
 
     private McpClient client(McpServerConfig config) {
         return switch (config) {
-            case McpServerConfig.Remote remote -> new McpDiscoveryClient(httpTransport, remote);
+            case McpServerConfig.Remote remote -> new McpDiscoveryClient(httpTransport, remote,
+                    credentials, "mcp:" + remote.name());
             case McpServerConfig.Local local -> processRunner == null ? null
                     : new McpStdioClient(processRunner, local);
         };
