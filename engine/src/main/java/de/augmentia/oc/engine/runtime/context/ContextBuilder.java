@@ -76,10 +76,7 @@ public final class ContextBuilder {
     }
 
     private List<ModelMessage> history(SessionId session, Seq afterSeq, AgentProfile agent) {
-        List<ModelMessage> messages = new ArrayList<>();
-        for (Message message : conversation.messages(session, afterSeq)) {
-            append(message, messages);
-        }
+        List<ModelMessage> messages = ConversationFolding.fold(conversation.messages(session, afterSeq));
         // MODE-PLAN: insert reminders as messages (PR-7: logged synthetically).
         boolean hasEnter = messages.stream().anyMatch(m ->
                 m instanceof ModelMessage.User u && u.content().stream()
@@ -97,42 +94,6 @@ public final class ContextBuilder {
                     List.of(new ModelContent.Text(reminder))));
         }
         return messages;
-    }
-
-    private void append(Message message, List<ModelMessage> out) {
-        switch (message) {
-            case Message.UserMessage user ->
-                    out.add(new ModelMessage.User(List.of(new ModelContent.Text(user.text()))));
-            case Message.SyntheticMessage synthetic ->
-                    out.add(new ModelMessage.User(List.of(new ModelContent.Text(synthetic.text()))));
-            case Message.SystemMessage system ->
-                    out.add(new ModelMessage.User(List.of(new ModelContent.Text(system.text()))));
-            case Message.SkillMessage skill ->
-                    out.add(new ModelMessage.User(List.of(new ModelContent.Text(skill.text()))));
-            case Message.ShellMessage shell ->
-                    out.add(new ModelMessage.User(List.of(new ModelContent.Text(
-                            "Shell " + shell.shell().command() + ": " + shell.shell().status()))));
-            case Message.AssistantMessage assistant -> appendAssistant(assistant, out);
-            case Message.CompactionMessage compaction -> {
-                // CTX-CHECKPOINT: wrap the summary as historical context, not instruction.
-                String checkpoint = PromptLoader.render("ctx-checkpoint", Map.of(
-                        "summary", compaction.summary(),
-                        "recent", ""));
-                out.add(new ModelMessage.User(List.of(new ModelContent.Text(checkpoint))));
-            }
-            case Message.AgentSwitched switched ->
-                    out.add(new ModelMessage.User(List.of(new ModelContent.Text(
-                            "Agent switched to " + switched.agent()))));
-            case Message.ModelSwitched switched ->
-                    out.add(new ModelMessage.User(List.of(new ModelContent.Text(
-                            "Model switched to " + switched.model()))));
-            case Message.LocationSwitched switched ->
-                    out.add(new ModelMessage.User(List.of(new ModelContent.Text(
-                            "Location switched to " + switched.location().directory()))));
-            case Message.IdleMessage idle ->
-                    out.add(new ModelMessage.User(List.of(new ModelContent.Text(
-                            "Idle: " + idle.outcome()))));
-        }
     }
 
     private void appendAssistant(Message.AssistantMessage assistant, List<ModelMessage> out) {
