@@ -203,13 +203,13 @@ public class Engine {
         conversation.insert(id, seq, new Message.UserMessage(MessageId.create(), text,
                 List.of(), List.of(), List.of(), Map.of(), clock.now()));
 
-        AgentProfile agent = new AgentProfile(info.agent(), Option.none(), 10,
-                List.of(new Rule("*", "*", Effect.ALLOW)));
+        AgentProfile agent = AgentProfile.forAgent(info.agent(), Option.none(), 10,
+                List.of(new Rule("*", "*", Effect.ALLOW)), "build");
         ModelInfo model = modelInfo();
         var prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), 1);
         ToolContext context = new ToolContext(id, info.agent(), MessageId.create(), CallId.create());
         StepResult result = step.run(prepared, context);
-        return switch (result) {
+        PromptResult promptResult = switch (result) {
             case StepResult.Finished finished -> new PromptResult(finished.reason().name(),
                     finished.usage().input(), finished.usage().output(), text(finished.events()));
             case StepResult.Failed failed ->
@@ -217,6 +217,16 @@ public class Engine {
             case StepResult.NeedsCompaction ignored ->
                     throw new IllegalStateException("context overflow: compaction required");
         };
+
+        // Generate title after the first successful prompt if not yet set.
+        if (info.title().equals("New session") || info.title().isBlank()) {
+            String title = generateTitle(id);
+            if (title != null && !title.isBlank()) {
+                promptResult = new PromptResult(promptResult.finish(), promptResult.inputTokens(),
+                        promptResult.outputTokens(), promptResult.text());
+            }
+        }
+        return promptResult;
     }
 
     public List<StoredEvent> events(SessionId id, long after) {

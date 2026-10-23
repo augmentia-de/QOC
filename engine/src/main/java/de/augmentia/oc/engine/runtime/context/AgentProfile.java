@@ -19,4 +19,11 @@ public record AgentProfile(AgentId id, Option<String> system, int maxSteps, List
     public AgentProfile(AgentId id, Option<String> system, int maxSteps, List<Rule> permissions) {
         this(id, system, maxSteps, permissions, false);
     }
+
+    /** Plan mode is detected from the agent name. */
+    public static AgentProfile forAgent(AgentId id, Option<String> system, int maxSteps,
+                                        List<Rule> permissions, String name) {
+        boolean plan = "plan".equalsIgnoreCase(name);
+        return new AgentProfile(id, system, maxSteps, permissions, plan);
+    }
 }
