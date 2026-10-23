@@ -91,6 +91,8 @@
 <body>
 <header>
   <h1>OpenCode Engine</h1>
+  <select id="sessions"></select>
+  <span id="sessionTitle" style="color:var(--muted);font-size:.85rem"></span>
   <label>Agent <select id="agent"></select></label>
   <label>Model <select id="model"></select></label>
   <label>Provider <select id="provider"></select></label>
@@ -158,6 +160,8 @@ let es = null;
 let currentAssistant = null;
 let currentFile = null;
 let pendingPermission = null;
+const sessionsSel = document.getElementById('sessions');
+const sessionTitle = document.getElementById('sessionTitle');
 const showDetails = document.getElementById('showDetails');
 let permPoll = null;
 
@@ -314,6 +318,7 @@ async function init() {
     await checkHealth();
     await loadSelectors();
     await newSession();
+    await loadSessions();
     initResizers();
     initSideResizer();
     initMobileSide();
@@ -335,12 +340,57 @@ async function checkHealth() {
   }
 }
 
+
+async function loadSessions() {
+  try {
+    const res = await fetch('/api/session');
+    const data = await res.json();
+    sessionsSel.innerHTML = '';
+    (data.data||[]).forEach(s => {
+      const o = document.createElement('option');
+      o.value = s.id;
+      o.textContent = (s.title||'Session') + ' — ' + s.id.slice(0,12);
+      sessionsSel.appendChild(o);
+    });
+    if (sessionId) sessionsSel.value = sessionId;
+  } catch (e) { /* ignore */ }
+}
+
+async function switchSession(id) {
+  if (!id || id === sessionId) return;
+  sessionId = id;
+  messages.innerHTML = '';
+  currentAssistant = null;
+  // load title
+  try {
+    const res = await fetch('/api/session/' + id);
+    const data = await res.json();
+    sessionTitle.textContent = data.title || '';
+  } catch (e) {}
+  // load messages
+  try {
+    const res = await fetch('/api/session/' + id + '/messages');
+    const data = await res.json();
+    (data.data||[]).forEach(m => {
+      const role = (m.type||'').toLowerCase().includes('user') ? 'user'
+        : (m.type||'').toLowerCase().includes('assistant') ? 'assistant' : 'tool';
+      addMessage(role, m.text || '');
+    });
+  } catch (e) { logEvent('Fehler beim Laden: ' + e.message); }
+  if (es) es.close();
+  connectSSE();
+  status.textContent = 'Session ' + id.slice(0,12) + '…';
+  await loadFiles('.');
+}
+
 async function newSession(agent) {
   try {
     const body = agent ? {agent} : {};
     const res = await fetch('/api/session', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     const data = await res.json();
     sessionId = data.id;
+    await loadSessions();
+    sessionsSel.value = sessionId;
     messages.innerHTML = '';
     status.textContent = 'Session ' + sessionId.slice(0,12) + '…';
     if (es) es.close();
@@ -575,6 +625,7 @@ async function checkPermissions() {
   } catch (e) { /* ignore */ }
 }
 
+sessionsSel.addEventListener('change', (e) => switchSession(e.target.value));
 sendBtn.onclick = send;
 input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey||e.metaKey)) { e.preventDefault(); send(); } });
 
