@@ -114,6 +114,7 @@ public final class ContextBuilder {
                             "Shell " + shell.shell().command() + ": " + shell.shell().status()))));
             case Message.AssistantMessage assistant -> appendAssistant(assistant, out);
             case Message.CompactionMessage compaction -> {
+                // CTX-CHECKPOINT: wrap the summary as historical context, not instruction.
                 String checkpoint = PromptLoader.render("ctx-checkpoint", Map.of(
                         "summary", compaction.summary(),
                         "recent", ""));
