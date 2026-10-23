@@ -31,7 +31,28 @@ if [ -z "${ENGINE_MODEL_ID:-}" ] && [ -n "${OPENAI_MODEL:-}" ]; then
 fi
 
 export OPENAI_API_KEY="${OPENAI_API_KEY:-${ENGINE_PROVIDER_API_KEY:-}}"
-export ENGINE_WORKSPACE="${ENGINE_WORKSPACE:-.}"
+# Arbeitsverzeichnis aus .env (ENGINE_WORKSPACE oder WORKSPACE/OPENCODE_WORKSPACE/PROJECT_DIR).
+# Relative Pfade (./... oder ../...) werden gegen das Projektroot (qoc/) aufgeloest.
+if [ -z "${ENGINE_WORKSPACE:-}" ]; then
+    if [ -n "${WORKSPACE:-}" ]; then
+        ENGINE_WORKSPACE="$WORKSPACE"
+    elif [ -n "${OPENCODE_WORKSPACE:-}" ]; then
+        ENGINE_WORKSPACE="$OPENCODE_WORKSPACE"
+    elif [ -n "${PROJECT_DIR:-}" ]; then
+        ENGINE_WORKSPACE="$PROJECT_DIR"
+    else
+        ENGINE_WORKSPACE="."
+    fi
+fi
+if [ "$ENGINE_WORKSPACE" = "." ]; then
+    ENGINE_WORKSPACE="$(cd "$(dirname "$0")" && pwd)"
+fi
+case "$ENGINE_WORKSPACE" in
+    /*) : ;;
+    *) ENGINE_WORKSPACE="$(cd "$(dirname "$0")" && pwd)/${ENGINE_WORKSPACE#./}" ;;
+esac
+mkdir -p "$ENGINE_WORKSPACE"
+export ENGINE_WORKSPACE
 export OPENCODE_SERVER_PASSWORD="${OPENCODE_SERVER_PASSWORD:-}"
 
 echo "Engine-Konfiguration:"
