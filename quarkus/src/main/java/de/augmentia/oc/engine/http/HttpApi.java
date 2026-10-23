@@ -128,6 +128,17 @@ public class HttpApi {
     }
 
     @POST
+    @Path("/session/{id}/title")
+    public Response title(@PathParam("id") String id) {
+        try {
+            String title = engine.generateTitle(SessionId.parse(id));
+            return Response.ok(Map.of("title", title == null ? "" : title)).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest("invalid session id");
+        }
+    }
+
+    @POST
     @Path("/session/{id}/interrupt")
     public Response interrupt(@PathParam("id") String id) {
         try {

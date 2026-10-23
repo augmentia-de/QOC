@@ -14,6 +14,7 @@ import de.augmentia.oc.engine.core.event.EventCodec;
 import de.augmentia.oc.engine.core.json.Json;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.model.*;
+import de.augmentia.oc.engine.core.port.store.Conversation;
 import de.augmentia.oc.engine.runtime.tool.fs.FileAccess;
 import de.augmentia.oc.engine.adapter.fs.NioFileSystem;
 import de.augmentia.oc.engine.adapter.net.JdkHttpTransport;
@@ -39,6 +40,7 @@ import de.augmentia.oc.engine.core.port.world.FileSystem;
 import de.augmentia.oc.engine.core.port.runtime.SessionWake;
 import de.augmentia.oc.engine.runtime.context.AgentProfile;
 import de.augmentia.oc.engine.runtime.context.ContextBuilder;
+import de.augmentia.oc.engine.runtime.context.TitleGenerator;
 import de.augmentia.oc.engine.runtime.compaction.Compaction;
 import de.augmentia.oc.engine.runtime.compaction.CompactionService;
 import de.augmentia.oc.engine.runtime.session.core.SessionService;
@@ -85,6 +87,7 @@ public class Engine {
     private SqlSessions sessions;
     private SessionService sessionService;
     private ContextBuilder contextBuilder;
+    private TitleGenerator titleGenerator;
     private Step step;
     private ToolSnapshot toolSnapshot;
     private NioFileSystem fileSystem;
@@ -131,6 +134,7 @@ public class Engine {
         ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
                 request -> { }, noopHooks(), toolOutput);
         contextBuilder = new ContextBuilder(conversation, SkillCatalog.empty());
+        titleGenerator = new TitleGenerator(provider, new ModelRef(ProviderId.create(), ModelId.create()));
         step = new Step(provider, toolRuntime);
         compaction = new CompactionService(journal, conversation, instructions,
                 new Compaction(journal, provider), clock, 8);
@@ -150,6 +154,24 @@ public class Engine {
 
     public Option<SessionInfo> session(SessionId id) {
         return sessions.info(id);
+    }
+
+    public String generateTitle(SessionId id) {
+        if (titleGenerator == null) return null;
+        List<Message> messages = conversation.messages(id, Seq.zero());
+        if (messages.isEmpty()) return null;
+        String title = titleGenerator.fromConversation(messages);
+        // Update the session title via a new event.
+        journal.append(new EventDraft(id.value(), 1,
+                new SessionEvent.SessionRenamed(id, title)));
+        SessionInfo info = sessions.info(id).orElse(null);
+        if (info != null) {
+            sessions.put(new SessionInfo(info.id(), info.projectId(), info.location(), title,
+                    info.agent(), info.model(), info.permissions(), info.cost(), info.tokens(),
+                    info.created(), clock.now(), info.idle(), info.suspended(),
+                    info.resumeAttempts(), info.archived()));
+        }
+        return title;
     }
 
     public PromptResult prompt(SessionId id, String text) {
