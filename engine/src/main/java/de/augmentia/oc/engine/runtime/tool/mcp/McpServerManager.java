@@ -77,6 +77,42 @@ public final class McpServerManager {
         return entry == null ? null : entry.client;
     }
 
+    /** Resources of all connected servers. A failing server is skipped. */
+    public List<McpResource.Resource> resources() {
+        List<McpResource.Resource> all = new ArrayList<>();
+        for (Map.Entry<String, ServerEntry> entry : servers.entrySet()) {
+            McpClient client = entry.getValue().client;
+            if (client == null) continue;
+            try {
+                all.addAll(client.listResources());
+            } catch (RuntimeException e) {
+                entry.getValue().error = e.getMessage();
+            }
+        }
+        return List.copyOf(all);
+    }
+
+    /** Resource templates of all connected servers. A failing server is skipped. */
+    public List<McpResource.Template> resourceTemplates() {
+        List<McpResource.Template> all = new ArrayList<>();
+        for (Map.Entry<String, ServerEntry> entry : servers.entrySet()) {
+            McpClient client = entry.getValue().client;
+            if (client == null) continue;
+            try {
+                all.addAll(client.listResourceTemplates());
+            } catch (RuntimeException e) {
+                entry.getValue().error = e.getMessage();
+            }
+        }
+        return List.copyOf(all);
+    }
+
+    public List<McpResource.Content> readResource(String server, String uri) {
+        McpClient client = client(server);
+        if (client == null) throw new McpFailure("unknown MCP server: " + server);
+        return client.readResource(uri);
+    }
+
     public void authenticate(String name, String code, String redirectUri, String clientId, String clientSecret) {
         McpClient client = client(name);
         if (!(client instanceof McpDiscoveryClient discovery)) {

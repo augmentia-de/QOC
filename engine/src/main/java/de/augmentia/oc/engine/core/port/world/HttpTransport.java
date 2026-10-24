@@ -12,6 +12,14 @@ public interface HttpTransport {
 
     ResponseStream postJson(URI url, Map<String, String> headers, String body, Duration timeout);
 
+    /**
+     * Plain GET for read-only HTTP tools (webfetch). Implementations that do
+     * not support it keep the default and fail fast.
+     */
+    default ResponseStream get(URI url, Map<String, String> headers, Duration timeout) {
+        throw new UnsupportedOperationException("GET is not supported by this transport");
+    }
+
     Channel openChannel(URI url, Map<String, String> headers);
 
     interface ResponseStream extends AutoCloseable {

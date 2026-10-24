@@ -12,6 +12,7 @@ import de.augmentia.oc.engine.runtime.tool.mcp.McpFailure;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpStdioClient;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpInstructions;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpRegistrar;
+import de.augmentia.oc.engine.runtime.tool.mcp.McpResource;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpServerManager;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpServerStatus;
@@ -62,6 +63,46 @@ class McpDiscoveryTest {
 
         JsonValue result = client.call("search", JsonValue.of(Map.of("q", JsonValue.of("x"))));
         assertThat(result).isInstanceOf(JsonValue.Obj.class);
+    }
+
+    @Test
+    void remoteListsResourcesAndTemplates() {
+        String resources = """
+                {"jsonrpc":"2.0","id":3,"result":{"resources":[
+                  {"uri":"file:///a","name":"a","description":"d","mimeType":"text/plain"}]}}""";
+        String templates = """
+                {"jsonrpc":"2.0","id":3,"result":{"resourceTemplates":[
+                  {"uriTemplate":"file:///{x}","name":"t","description":"d","mimeType":"text/plain"}]}}""";
+        ScriptedHttp transport = new ScriptedHttp(
+                new ScriptedHttp.Response(200, Map.of(), INITIALIZE_RESPONSE.getBytes()),
+                new ScriptedHttp.Response(200, Map.of(), TOOLS_RESPONSE.getBytes()),
+                new ScriptedHttp.Response(200, Map.of(), resources.getBytes()),
+                new ScriptedHttp.Response(200, Map.of(), templates.getBytes()));
+        McpDiscoveryClient client = new McpDiscoveryClient(transport,
+                new McpServerConfig.Remote("github", "https://example.test/mcp", Map.of(),
+                        false, false, true, 5_000, 5_000, 5_000));
+
+        assertThat(client.listResources()).extracting(McpResource.Resource::uri)
+                .containsExactly("file:///a");
+        assertThat(client.listResourceTemplates()).extracting(McpResource.Template::uriTemplate)
+                .containsExactly("file:///{x}");
+    }
+
+    @Test
+    void remoteReadsResourceContent() {
+        String read = """
+                {"jsonrpc":"2.0","id":3,"result":{"contents":[
+                  {"uri":"file:///a","mimeType":"text/plain","text":"hello"}]}}""";
+        ScriptedHttp transport = new ScriptedHttp(
+                new ScriptedHttp.Response(200, Map.of(), INITIALIZE_RESPONSE.getBytes()),
+                new ScriptedHttp.Response(200, Map.of(), TOOLS_RESPONSE.getBytes()),
+                new ScriptedHttp.Response(200, Map.of(), read.getBytes()));
+        McpDiscoveryClient client = new McpDiscoveryClient(transport,
+                new McpServerConfig.Remote("github", "https://example.test/mcp", Map.of(),
+                        false, false, true, 5_000, 5_000, 5_000));
+
+        assertThat(client.readResource("file:///a")).extracting(McpResource.Content::text)
+                .containsExactly("hello");
     }
 
     @Test

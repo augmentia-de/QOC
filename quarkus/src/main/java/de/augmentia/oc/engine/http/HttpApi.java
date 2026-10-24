@@ -183,10 +183,52 @@ public class HttpApi {
         }
     }
 
+    @GET
+    @Path("/session/{id}/todo")
+    public Response todos(@PathParam("id") String id) {
+        try {
+            return Response.ok(Map.of("data", engine.todos(SessionId.parse(id)))).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @GET
+    @Path("/session/{id}/question")
+    public Response pendingQuestion(@PathParam("id") String id) {
+        try {
+            var pending = engine.pendingQuestion(SessionId.parse(id));
+            if (pending.isEmpty()) {
+                return Response.ok(Map.of("id", "", "questions", List.of())).build();
+            }
+            var question = pending.orElseThrow();
+            return Response.ok(Map.of("id", question.id(), "questions", question.questions())).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @POST
+    @Path("/session/{id}/question/{questionId}/reply")
+    public Response replyQuestion(@PathParam("id") String id,
+                                  @PathParam("questionId") String questionId,
+                                  QuestionReply request) {
+        try {
+            boolean resolved = engine.replyQuestion(SessionId.parse(id), questionId,
+                    request == null ? List.of() : request.selected(),
+                    request == null ? "" : request.text());
+            if (!resolved) {
+                return Response.status(404).entity(Map.of("message", "question not found")).build();
+            }
+            return Response.ok(Map.of("ok", true)).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
     @POST
     @Path("/session/{id}/revert")
-    public Response revert(@PathParam("id") String id) {
-        try {
+    public Response revert(@PathParam("id") String id) {        try {
             de.augmentia.oc.engine.runtime.session.revert.RevertResult result =
                     engine.revert(SessionId.parse(id));
             if (result instanceof de.augmentia.oc.engine.runtime.session.revert.RevertResult.Failed failed) {
@@ -483,6 +525,8 @@ public class HttpApi {
     public record SwitchAgentRequest(String agent) {}
 
     public record CommandRequest(String name, String arguments) {}
+
+    public record QuestionReply(List<String> selected, String text) {}
 
     public record PromptResponse(String finish, long inputTokens, long outputTokens, String text) {}
 

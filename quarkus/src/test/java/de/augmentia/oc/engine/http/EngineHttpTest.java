@@ -61,6 +61,10 @@ class EngineHttpTest {
                 .body(containsString("plan"));
         given().get("/api/skill").then().statusCode(200)
                 .body("data", notNullValue());
+        given().get("/api/session/" + id + "/todo").then().statusCode(200)
+                .body("data", notNullValue());
+        given().get("/api/session/" + id + "/question").then().statusCode(200)
+                .body("id", equalTo(""));
         given().get("/api/config").then().statusCode(200).body("[1].value", equalTo("gpt-4o-mini"));
         given().get("/api/model").then().statusCode(200).body("data[0].context", equalTo(128000));
     }

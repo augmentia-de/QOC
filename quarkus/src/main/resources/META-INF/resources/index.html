@@ -146,6 +146,18 @@
   </div>
 </div>
 
+<div class="modal" id="questionModal">
+  <div class="box">
+    <h3>Frage</h3>
+    <div id="questionText"></div>
+    <div id="questionOptions" style="display:flex;flex-direction:column;gap:.6rem;margin:.6rem 0"></div>
+    <textarea id="questionAnswer" rows="3" placeholder="Antwort…" style="width:100%"></textarea>
+    <div class="actions">
+      <button id="questionSend" class="primary">Senden</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const messages = document.getElementById('messages');
 const input = document.getElementById('input');
@@ -165,6 +177,8 @@ const sessionsSel = document.getElementById('sessions');
 const sessionTitle = document.getElementById('sessionTitle');
 const showDetails = document.getElementById('showDetails');
 let permPoll = null;
+let questionPoll = null;
+let pendingQuestion = null;
 
 function logEvent(text) {
   const d = document.createElement('div');
@@ -549,6 +563,8 @@ async function send() {
   status.textContent = 'Denke…';
   if (permPoll) clearInterval(permPoll);
   permPoll = setInterval(checkPermissions, 700);
+  if (questionPoll) clearInterval(questionPoll);
+  questionPoll = setInterval(checkQuestions, 700);
   currentAssistant = null;
   try {
     const res = await fetch('/api/session/' + sessionId + '/prompt', {
@@ -566,6 +582,7 @@ async function send() {
     addMessage('error', 'Netzwerkfehler: ' + e.message);
   } finally {
     if (permPoll) { clearInterval(permPoll); permPoll = null; }
+    if (questionPoll) { clearInterval(questionPoll); questionPoll = null; }
     sendBtn.disabled = false;
     status.textContent = 'bereit';
     loadSessions();
@@ -687,6 +704,7 @@ document.getElementById('revert').onclick = () => revertTurn();
 document.getElementById('permOnce').onclick = () => replyPermission('ONCE');
 document.getElementById('permAlways').onclick = () => replyPermission('ALWAYS');
 document.getElementById('permReject').onclick = () => replyPermission('REJECT');
+document.getElementById('questionSend').onclick = () => replyPendingQuestion();
 
 async function replyPermission(reply) {
   if (!pendingPermission || !sessionId) return;
@@ -713,6 +731,77 @@ async function checkPermissions() {
       document.getElementById('permModal').classList.add('open');
     }
   } catch (e) { /* ignore */ }
+}
+
+async function checkQuestions() {
+  if (!sessionId || pendingQuestion) return;
+  try {
+    const res = await fetch('/api/session/' + sessionId + '/question');
+    const data = await res.json();
+    if (data.id && data.questions && data.questions.length) {
+      pendingQuestion = data;
+      renderQuestion(data);
+      document.getElementById('questionModal').classList.add('open');
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function renderQuestion(data) {
+  const container = document.getElementById('questionText');
+  container.innerHTML = '';
+  const options = document.getElementById('questionOptions');
+  options.innerHTML = '';
+  data.selections = new Map();
+  data.questions.forEach((q, index) => {
+    const block = document.createElement('div');
+    const header = document.createElement('div');
+    header.innerHTML = '<strong></strong>';
+    header.querySelector('strong').textContent = q.header || ('Frage ' + (index + 1));
+    const body = document.createElement('div');
+    body.textContent = q.question;
+    block.appendChild(header);
+    block.appendChild(body);
+    const selected = new Set();
+    data.selections.set(index, selected);
+    (q.options || []).forEach(opt => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = opt.label;
+      button.title = opt.description || '';
+      button.style.marginRight = '.3rem';
+      button.onclick = () => {
+        if (q.multiple) {
+          if (selected.has(opt.label)) { selected.delete(opt.label); button.classList.remove('primary'); }
+          else { selected.add(opt.label); button.classList.add('primary'); }
+        } else {
+          selected.clear();
+          selected.add(opt.label);
+          Array.from(block.querySelectorAll('button')).forEach(b => b.classList.remove('primary'));
+          button.classList.add('primary');
+        }
+      };
+      block.appendChild(button);
+    });
+    options.appendChild(block);
+  });
+  document.getElementById('questionAnswer').value = '';
+}
+
+async function replyPendingQuestion() {
+  if (!pendingQuestion) return;
+  const selected = [];
+  pendingQuestion.selections.forEach(set => set.forEach(value => selected.push(value)));
+  const text = document.getElementById('questionAnswer').value;
+  try {
+    await fetch('/api/session/' + sessionId + '/question/' + encodeURIComponent(pendingQuestion.id) + '/reply', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selected, text })
+    });
+  } catch (e) {
+    logEvent('Frage-Antwort fehlgeschlagen: ' + e.message);
+  }
+  document.getElementById('questionModal').classList.remove('open');
+  pendingQuestion = null;
 }
 
 sessionsSel.addEventListener('change', (e) => switchSession(e.target.value));

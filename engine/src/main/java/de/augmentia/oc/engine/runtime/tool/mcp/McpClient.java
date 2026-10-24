@@ -11,4 +11,16 @@ public interface McpClient {
     default List<McpRegistrar.McpToolSpec> listTools() {
         return List.of();
     }
+
+    default List<McpResource.Resource> listResources() {
+        return List.of();
+    }
+
+    default List<McpResource.Template> listResourceTemplates() {
+        return List.of();
+    }
+
+    default List<McpResource.Content> readResource(String uri) {
+        return List.of();
+    }
 }

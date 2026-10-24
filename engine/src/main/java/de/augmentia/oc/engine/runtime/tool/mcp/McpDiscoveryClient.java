@@ -109,6 +109,82 @@ public final class McpDiscoveryClient implements McpClient {
         return listTools();
     }
 
+    @Override
+    public List<McpResource.Resource> listResources() {
+        JsonValue result = rpc("resources/list", JsonValue.of(Map.of()), config.catalogTimeoutMs());
+        List<McpResource.Resource> resources = new java.util.ArrayList<>();
+        if (result instanceof JsonValue.Obj object
+                && object.values().get("resources") instanceof JsonValue.Arr array) {
+            for (JsonValue item : array.values()) {
+                if (item instanceof JsonValue.Obj resource) {
+                    resources.add(new McpResource.Resource(config.name(), string(resource, "uri"),
+                            string(resource, "name"), string(resource, "description"),
+                            string(resource, "mimeType")));
+                }
+            }
+        }
+        return List.copyOf(resources);
+    }
+
+    @Override
+    public List<McpResource.Template> listResourceTemplates() {
+        JsonValue result = rpc("resources/templates/list", JsonValue.of(Map.of()), config.catalogTimeoutMs());
+        List<McpResource.Template> templates = new java.util.ArrayList<>();
+        if (result instanceof JsonValue.Obj object
+                && object.values().get("resourceTemplates") instanceof JsonValue.Arr array) {
+            for (JsonValue item : array.values()) {
+                if (item instanceof JsonValue.Obj template) {
+                    templates.add(new McpResource.Template(config.name(), string(template, "uriTemplate"),
+                            string(template, "name"), string(template, "description"),
+                            string(template, "mimeType")));
+                }
+            }
+        }
+        return List.copyOf(templates);
+    }
+
+    @Override
+    public List<McpResource.Content> readResource(String uri) {
+        if (uri == null || uri.isBlank()) throw new IllegalArgumentException("uri must not be blank");
+        JsonValue result = rpc("resources/read", JsonValue.of(Map.of("uri", JsonValue.of(uri))),
+                config.executionTimeoutMs());
+        List<McpResource.Content> contents = new java.util.ArrayList<>();
+        if (result instanceof JsonValue.Obj object
+                && object.values().get("contents") instanceof JsonValue.Arr array) {
+            for (JsonValue item : array.values()) {
+                if (item instanceof JsonValue.Obj content) {
+                    contents.add(new McpResource.Content(string(content, "uri"),
+                            string(content, "mimeType"), string(content, "text"),
+                            string(content, "blob")));
+                }
+            }
+        }
+        return List.copyOf(contents);
+    }
+
+    private JsonValue rpc(String method, JsonValue params, long timeoutMs) {
+        if (sessionId == null) listTools();
+        String body = McpJsonRpc.request(3, method, params);
+        HttpTransport.ResponseStream response = transport.postJson(
+                URI.create(config.url()), headers(), body, Duration.ofMillis(timeoutMs));
+        if (response.status() == 401) {
+            response.close();
+            throw new McpNeedsAuth("oauth required for " + config.name());
+        }
+        String text = readBody(response);
+        response.close();
+        Result<JsonValue> parsed = McpJsonRpc.parse(text);
+        if (parsed instanceof Result.Err<JsonValue> error) throw new McpFailure(error.error().message());
+        Option<String> error = McpJsonRpc.error(parsed.valueOrNull());
+        if (error.isPresent()) throw new McpFailure(error.orElseThrow());
+        JsonValue result = McpJsonRpc.result(parsed.valueOrNull());
+        return result == null ? JsonValue.of(Map.of()) : result;
+    }
+
+    private static String string(JsonValue.Obj object, String key) {
+        return object.values().get(key) instanceof JsonValue.Str str ? str.value() : null;
+    }
+
     /** Exchanges an authorization code and stores the resulting token. */
     public void authenticate(String code, String redirectUri, String codeVerifier,
                              String clientId, String clientSecret) {

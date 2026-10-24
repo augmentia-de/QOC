@@ -48,11 +48,17 @@ import de.augmentia.oc.engine.runtime.tool.shell.ShellTool;
 import de.augmentia.oc.engine.runtime.tool.subagent.SubagentRunner;
 import de.augmentia.oc.engine.runtime.tool.subagent.SubagentTool;
 import de.augmentia.oc.engine.runtime.tool.web.FirecrawlTool;
+import de.augmentia.oc.engine.runtime.tool.web.WebFetchTool;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
 import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
 import de.augmentia.oc.engine.runtime.permission.engine.PermissionEngine;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpInstructions;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpServerManager;
+import de.augmentia.oc.engine.runtime.tool.mcp.McpResourceTools;
+import de.augmentia.oc.engine.runtime.tool.meta.QuestionTool;
+import de.augmentia.oc.engine.runtime.tool.meta.SessionTools;
+import de.augmentia.oc.engine.runtime.tool.meta.TodoTool;
+import de.augmentia.oc.engine.runtime.tool.meta.WorktreeTool;
 import de.augmentia.oc.engine.core.port.runtime.Clock;
 import de.augmentia.oc.engine.core.port.human.PolicySource;
 import de.augmentia.oc.engine.core.port.store.*;
@@ -147,6 +153,11 @@ public class Engine {
 
     @Inject
     WebApprovalSource approvalSource;
+
+    @Inject
+    WebQuestionSource questionSource;
+
+    private TodoTool todoTool;
 
     private Clock clock;
     private Journal journal;
@@ -252,6 +263,33 @@ public class Engine {
         String firecrawlKey = firecrawlApiKey == null ? "" : firecrawlApiKey.orElse("");
         registry.register(FirecrawlTool.definition(
                 new FirecrawlTool(new JdkHttpTransport(), firecrawlKey, firecrawlEndpoint)));
+        registry.register(WebFetchTool.definition(new WebFetchTool(new JdkHttpTransport())));
+        todoTool = new TodoTool();
+        registry.register(TodoTool.definition(todoTool));
+        SessionTools.SessionControl sessionControl = new SessionTools.SessionControl() {
+            @Override
+            public String rename(SessionId session, String title) {
+                return renameSession(session, title);
+            }
+
+            @Override
+            public String move(SessionId session, String directory) {
+                return moveSession(session, directory);
+            }
+
+            @Override
+            public List<SessionTools.ModelSummary> models() {
+                return modelSummaries();
+            }
+        };
+        registry.register(SessionTools.rename(sessionControl));
+        registry.register(SessionTools.move(sessionControl));
+        registry.register(SessionTools.models(sessionControl));
+        WorktreeTool worktrees = new WorktreeTool(new JdkProcessRunner(), workspacePath);
+        registry.register(WorktreeTool.create(worktrees));
+        registry.register(WorktreeTool.list(worktrees));
+        registry.register(WorktreeTool.remove(worktrees));
+        registry.register(QuestionTool.definition(new QuestionTool(questionSource)));
         // Skills are project text, loaded on request: <workspace>/skill(s),
         // <workspace>/.opencode/skills and any configured skills.paths.
         List<Path> skillRoots = new ArrayList<>();
@@ -280,6 +318,8 @@ public class Engine {
         for (de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig server : config.mcpServers()) {
             mcp.add(server);
         }
+        registry.register(McpResourceTools.list(mcp));
+        registry.register(McpResourceTools.read(mcp));
         toolSnapshot = registry.snapshot(allowAll);
         ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
                 permissionGate, noopHooks(), toolOutput);
@@ -534,6 +574,59 @@ public class Engine {
         ModelRef model = preparedModel(info, modelInfo());
         Seq throughSeq = Seq.of(journal.history(id.value(), Seq.zero()).size());
         return compaction.compact(id, CompactionReason.MANUAL, model, Option.none(), throughSeq, clock.now());
+    }
+
+    /** Renames a session and records the event. */
+    public String renameSession(SessionId id, String title) {
+        if (id == null || title == null || title.isBlank()) {
+            throw new IllegalArgumentException("session and title must be set");
+        }
+        SessionInfo info = sessions.info(id)
+                .orElseThrow(() -> new IllegalArgumentException("unknown session: " + id));
+        journal.append(new EventDraft(id.value(), 1, new SessionEvent.SessionRenamed(id, title)));
+        sessions.put(copy(info, info.location(), title));
+        return title;
+    }
+
+    /**
+     * Moves the session's location metadata. The process keeps one workspace
+     * (L-A); tools still resolve against the process workspace.
+     */
+    public String moveSession(SessionId id, String directory) {
+        if (id == null || directory == null || directory.isBlank()) {
+            throw new IllegalArgumentException("session and directory must be set");
+        }
+        SessionInfo info = sessions.info(id)
+                .orElseThrow(() -> new IllegalArgumentException("unknown session: " + id));
+        Path target = Path.of(directory);
+        if (!target.isAbsolute()) target = Path.of(config.workspace()).resolve(directory);
+        target = target.toAbsolutePath().normalize();
+        Location location = new Location(target, info.projectId(), Option.none());
+        journal.append(new EventDraft(id.value(), 1, new SessionEvent.SessionMoved(id, location)));
+        sessions.put(copy(info, location, info.title()));
+        return target.toString();
+    }
+
+    public List<SessionTools.ModelSummary> modelSummaries() {
+        return List.of(new SessionTools.ModelSummary(config.model(), config.model(), config.provider()));
+    }
+
+    public List<TodoTool.Todo> todos(SessionId id) {
+        return todoTool == null ? List.of() : todoTool.todos(id);
+    }
+
+    public Option<WebQuestionSource.Pending> pendingQuestion(SessionId id) {
+        return questionSource.pending(id);
+    }
+
+    public boolean replyQuestion(SessionId id, String questionId, List<String> selected, String text) {
+        return questionSource.resolve(id, questionId, selected, text);
+    }
+
+    private static SessionInfo copy(SessionInfo info, Location location, String title) {
+        return new SessionInfo(info.id(), info.projectId(), location, title, info.agent(),
+                info.model(), info.permissions(), info.cost(), info.tokens(), info.created(),
+                Instant.now(), info.idle(), info.suspended(), info.resumeAttempts(), info.archived());
     }
 
     public String generateTitle(SessionId id) {

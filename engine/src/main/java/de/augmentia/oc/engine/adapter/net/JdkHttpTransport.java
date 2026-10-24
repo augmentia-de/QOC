@@ -38,6 +38,19 @@ public final class JdkHttpTransport implements HttpTransport {
                 .timeout(timeout == null ? Duration.ofMinutes(2) : timeout)
                 .header("content-type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body == null ? "" : body));
+        return send(request, headers);
+    }
+
+    @Override
+    public ResponseStream get(URI url, Map<String, String> headers, Duration timeout) {
+        if (url == null) throw new IllegalArgumentException("url must not be null");
+        HttpRequest.Builder request = HttpRequest.newBuilder(url)
+                .timeout(timeout == null ? Duration.ofSeconds(30) : timeout)
+                .GET();
+        return send(request, headers);
+    }
+
+    private ResponseStream send(HttpRequest.Builder request, Map<String, String> headers) {
         if (headers != null) {
             headers.forEach((name, value) -> {
                 if (name != null && value != null) request.header(name, value);
