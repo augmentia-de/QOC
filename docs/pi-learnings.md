@@ -38,7 +38,12 @@ to concrete QOC classes.
 
 ## 2. Adoptable features and pi implementation details
 
-### 2.1 Context files (`AGENTS.md`, `CLAUDE.md`, `SYSTEM.md`)
+### 2.1 Context files (`AGENTS.md`, `CLAUDE.md`, `SYSTEM.md`) — ✅ implemented (2026-10-24)
+
+**Status:** implemented. `InstructionLoader` + `NioInstructionLoader`, wired in
+`ContextBuilder.prepare`, enabled by default (`engine.instructions.enabled`).
+The JVM compose mounts `deploy/AGENTS.jvm.md` at `/data/workspace/AGENTS.md`;
+the native compose already mounts `AGENTS.native.md` there.
 
 **pi reference:** `packages/coding-agent/src/core/resource-loader.ts`
 
@@ -69,9 +74,9 @@ Project-specific instructions and guidelines:
   content; otherwise treat it as literal prompt text (supports
   `--system-prompt "…"`).
 
-**QOC implementation**
+**QOC implementation (done)**
 
-- New port `engine/src/main/java/de/augmentia/oc/engine/core/port/world/InstructionLoader.java`:
+- Port `engine/src/main/java/de/augmentia/oc/engine/core/port/world/InstructionLoader.java`:
 
 ```java
 public interface InstructionLoader {
@@ -79,30 +84,27 @@ public interface InstructionLoader {
 
     record InstructionFile(Path path, String text, Kind kind) {}
 
-    enum Kind { SYSTEM, APPEND_SYSTEM, AGENTS }
+    enum Kind { SYSTEM, AGENTS, APPEND_SYSTEM }
 }
 ```
 
-- Adapter `engine/src/main/java/de/augmentia/oc/engine/adapter/fs/NioInstructionLoader.java`
-  with the exact ordering above, a 32 KiB per-file cap and a warning log for
-  unreadable files.
+- Adapter `engine/src/main/java/de/augmentia/oc/engine/adapter/fs/NioInstructionLoader.java`:
+  - global `~/.config/opencode/AGENTS.md`/`CLAUDE.md` first;
+  - every ancestor from `/` down to the working directory (AGENTS before
+    CLAUDE per directory, dedupe by path);
+  - `SYSTEM.md` / `APPEND_SYSTEM.md` from `<dir>/.opencode/`, `<dir>/`, then
+    the global directory;
+  - 32 KiB per-file cap, unreadable files are skipped with a log.
 - Call site `ContextBuilder.prepare(...)`
   (`engine/src/main/java/de/augmentia/oc/engine/runtime/context/ContextBuilder.java`):
-
-```java
-List<String> system = new ArrayList<>();
-String base = agent.system().orElse(basePrompt(tools));
-if (!base.isBlank()) system.add(base);
-instructionLoader.load(session.location().directory()).forEach(file -> {
-    if (file.kind() == InstructionLoader.Kind.SYSTEM) system.clear();
-    if (!file.text().isBlank()) system.add(file.text());
-});
-```
-
-- Config: `engine.instructions.enabled` (default `true`),
-  `engine.instructions.files`.
-- Tests: `NioInstructionLoaderTest` (order, dedupe, AGENTS-before-CLAUDE) and
-  an `EngineHttpTest` case with an `AGENTS.md`.
+  `SYSTEM` clears and replaces the base block; `AGENTS` and `APPEND_SYSTEM`
+  append before the skill block.
+- Config: `engine.instructions.enabled` (default `true`,
+  `ENGINE_INSTRUCTIONS_ENABLED`).
+- Tests: `NioInstructionLoaderTest` (order, AGENTS-over-CLAUDE, size cap,
+  missing files) and `ContextBuilderTest` (extend + SYSTEM replaces).
+- Verified in the container: `AGENTS.jvm.md` is mounted as
+  `/data/workspace/AGENTS.md` and appears in the system prompt trace.
 
 ### 2.2 Prompt templates
 
@@ -398,7 +400,7 @@ worth copying:
 
 ## 4. Recommended order
 
-1. **2.1** context files + system-prompt files (small, high leverage).
+1. ✅ **2.1** context files + system-prompt files — **done (2026-10-24)**.
 2. **2.2** prompt templates (matches L-6).
 3. **2.7 + 2.8** `/reload`, settings keys and extended slash commands.
 4. **2.4** compaction details (reserve/keep tokens, custom instructions,

@@ -14,6 +14,7 @@ import de.augmentia.oc.engine.core.eval.OutputBudget;
 import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.*;
 import de.augmentia.oc.engine.core.port.store.Conversation;
+import de.augmentia.oc.engine.core.port.world.InstructionLoader;
 import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
 
 import java.util.ArrayList;
@@ -35,11 +36,17 @@ public final class ContextBuilder {
 
     private final Conversation conversation;
     private final SkillCatalog skills;
+    private final InstructionLoader instructions;
 
     public ContextBuilder(Conversation conversation, SkillCatalog skills) {
+        this(conversation, skills, InstructionLoader.none());
+    }
+
+    public ContextBuilder(Conversation conversation, SkillCatalog skills, InstructionLoader instructions) {
         if (conversation == null) throw new IllegalArgumentException("conversation must not be null");
         this.conversation = conversation;
         this.skills = skills == null ? SkillCatalog.empty() : skills;
+        this.instructions = instructions == null ? InstructionLoader.none() : instructions;
     }
 
     public Prepared prepare(SessionInfo session, AgentProfile agent, ModelInfo model,
@@ -53,6 +60,14 @@ public final class ContextBuilder {
         List<String> system = new ArrayList<>();
         String base = agent.system().orElse(basePrompt(tools));
         if (!base.isBlank()) system.add(base);
+        for (InstructionLoader.InstructionFile file
+                : instructions.load(session.location().directory())) {
+            if (file.text().isBlank()) continue;
+            if (file.kind() == InstructionLoader.Kind.SYSTEM) {
+                system.clear();
+            }
+            system.add(file.text());
+        }
         String instruction = skills.instructions(rules);
         if (!instruction.isBlank()) system.add(instruction);
 

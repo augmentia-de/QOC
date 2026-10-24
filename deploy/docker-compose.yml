@@ -12,6 +12,8 @@ services:
     volumes:
       - /home/torsten/dev/my-projects/2oc/dws:/data/workspace
       - /home/torsten/dev/my-projects/2oc/qoc/data:/data
+      # JVM-specific agent instructions, visible only inside this container.
+      - ./AGENTS.jvm.md:/data/workspace/AGENTS.md:ro
       # Reused skill library (read-only, no copies, no drift).
       - /home/torsten/dev/my-projects/AISDLC/.opencode/skills:/data/skills/aisdlc:ro
     env_file:

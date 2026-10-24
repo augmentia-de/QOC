@@ -27,6 +27,7 @@ import de.augmentia.oc.engine.core.model.SessionEvent;
 import de.augmentia.oc.engine.core.port.store.ConversationStore;
 import de.augmentia.oc.engine.runtime.tool.fs.FileAccess;
 import de.augmentia.oc.engine.adapter.fs.NioFileSystem;
+import de.augmentia.oc.engine.adapter.fs.NioInstructionLoader;
 import de.augmentia.oc.engine.adapter.net.JdkHttpTransport;
 import de.augmentia.oc.engine.adapter.process.JdkProcessRunner;
 import de.augmentia.oc.engine.adapter.sql.*;
@@ -64,6 +65,7 @@ import de.augmentia.oc.engine.core.port.human.PolicySource;
 import de.augmentia.oc.engine.core.port.store.*;
 import de.augmentia.oc.engine.core.port.store.SessionStore;
 import de.augmentia.oc.engine.core.port.world.FileSystem;
+import de.augmentia.oc.engine.core.port.world.InstructionLoader;
 import de.augmentia.oc.engine.core.port.runtime.SessionWake;
 import de.augmentia.oc.engine.runtime.context.AgentProfile;
 import de.augmentia.oc.engine.runtime.context.ContextBuilder;
@@ -150,6 +152,10 @@ public class Engine {
     @Inject
     @ConfigProperty(name = "engine.revert.snapshot.enabled", defaultValue = "true")
     boolean revertSnapshotEnabled;
+
+    @Inject
+    @ConfigProperty(name = "engine.instructions.enabled", defaultValue = "true")
+    boolean instructionsEnabled;
 
     @Inject
     WebApprovalSource approvalSource;
@@ -330,7 +336,11 @@ public class Engine {
         toolSnapshot = registry.snapshot(allowAll);
         ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
                 permissionGate, noopHooks(), toolOutput);
-        contextBuilder = new ContextBuilder(conversation, skillCatalog);
+        InstructionLoader instructionLoader = instructionsEnabled
+                ? new NioInstructionLoader(Path.of(System.getProperty("user.home", "."),
+                        ".config", "opencode"))
+                : InstructionLoader.none();
+        contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader);
         modelRef = new ModelRef(ProviderId.create(), ModelId.create());
         titleGenerator = new TitleGenerator(provider, modelRef);
         step = new Step(provider, toolRuntime);

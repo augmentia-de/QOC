@@ -13,6 +13,7 @@ import de.augmentia.oc.engine.core.contract.tool.ToolSnapshot;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.json.Schema;
 import de.augmentia.oc.engine.core.model.*;
+import de.augmentia.oc.engine.core.port.world.InstructionLoader;
 import de.augmentia.oc.engine.runtime.context.AgentProfile;
 import de.augmentia.oc.engine.runtime.context.ContextBuilder;
 import de.augmentia.oc.engine.runtime.context.Prepared;
@@ -63,6 +64,34 @@ class ContextBuilderTest {
         Prepared prepared = builder().prepare(session, agent(Option.some("You are terse."), 0),
                 model, tools, Seq.zero(), 0);
         assertThat(prepared.system().get(0)).isEqualTo("You are terse.");
+    }
+
+    @Test
+    void instructionFilesExtendTheSystemBlocks() {
+        InstructionLoader loader = directory -> List.of(
+                new InstructionLoader.InstructionFile(Path.of("/work/AGENTS.md"),
+                        "project rules", InstructionLoader.Kind.AGENTS),
+                new InstructionLoader.InstructionFile(Path.of("/work/APPEND_SYSTEM.md"),
+                        "appended rules", InstructionLoader.Kind.APPEND_SYSTEM));
+
+        Prepared prepared = new ContextBuilder(conversation, skills, loader)
+                .prepare(session, agent(Option.none(), 0), model, tools, Seq.zero(), 0);
+
+        assertThat(prepared.system()).anyMatch(text -> text.contains("project rules"));
+        assertThat(prepared.system()).anyMatch(text -> text.contains("appended rules"));
+    }
+
+    @Test
+    void systemInstructionReplacesTheBaseBlock() {
+        InstructionLoader loader = directory -> List.of(
+                new InstructionLoader.InstructionFile(Path.of("/work/SYSTEM.md"),
+                        "custom system", InstructionLoader.Kind.SYSTEM));
+
+        Prepared prepared = new ContextBuilder(conversation, skills, loader)
+                .prepare(session, agent(Option.none(), 0), model, tools, Seq.zero(), 0);
+
+        assertThat(prepared.system().getFirst()).isEqualTo("custom system");
+        assertThat(prepared.system()).noneMatch(text -> text.contains("Available tools:"));
     }
 
     @Test
