@@ -11,6 +11,7 @@ import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.json.Result;
 import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.port.world.HttpTransport;
+import de.augmentia.oc.engine.core.contract.provider.LlmTrace;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -40,11 +41,20 @@ public final class HttpProviderAdapter implements ProviderAdapter {
     private final Supplier<EventTranslator> translatorFactory;
     private final ProviderErrorClassifier classifier;
     private final Duration timeout;
+    private final LlmTrace trace;
 
     public HttpProviderAdapter(HttpTransport transport, URI endpoint, Map<String, String> headers,
                                Function<ModelRequest, String> encoder, SseReader sseReader,
                                Supplier<EventTranslator> translatorFactory, ProviderErrorClassifier classifier,
                                Duration timeout) {
+        this(transport, endpoint, headers, encoder, sseReader, translatorFactory, classifier, timeout,
+                LlmTrace.noop());
+    }
+
+    public HttpProviderAdapter(HttpTransport transport, URI endpoint, Map<String, String> headers,
+                               Function<ModelRequest, String> encoder, SseReader sseReader,
+                               Supplier<EventTranslator> translatorFactory, ProviderErrorClassifier classifier,
+                               Duration timeout, LlmTrace trace) {
         if (transport == null || endpoint == null || encoder == null || sseReader == null
                 || translatorFactory == null || classifier == null || timeout == null) {
             throw new IllegalArgumentException("adapter dependencies must not be null");
@@ -57,18 +67,23 @@ public final class HttpProviderAdapter implements ProviderAdapter {
         this.translatorFactory = translatorFactory;
         this.classifier = classifier;
         this.timeout = timeout;
+        this.trace = trace == null ? LlmTrace.noop() : trace;
     }
 
     @Override
     public Stream<ModelEvent> stream(ModelRequest request) {
         if (request == null) throw new IllegalArgumentException("request must not be null");
         String body = encoder.apply(request);
+        trace.request(endpoint.toString(), body);
         HttpTransport.ResponseStream response = null;
         try {
             response = transport.postJson(endpoint, mergeHeaders(request), body, timeout);
             if (response.status() < 200 || response.status() >= 300) {
                 String errorBody = readBody(response);
-                return Stream.of(providerFailure(response.status(), errorBody, retryAfter(response)));
+                trace.error(response.status(), errorBody);
+                ModelEvent failure = providerFailure(response.status(), errorBody, retryAfter(response));
+                trace.response(response.status(), List.of(failure));
+                return Stream.of(failure);
             }
 
             List<SseReader.SseFrame> frames = sseReader.read(response.body());
@@ -78,8 +93,11 @@ public final class HttpProviderAdapter implements ProviderAdapter {
                 events.addAll(translator.translate(frame));
             }
             StreamValidator validator = new StreamValidator();
-            return validator.finish(validator.validate(events)).stream();
+            List<ModelEvent> validated = validator.finish(validator.validate(events)).stream().toList();
+            trace.response(response.status(), validated);
+            return validated.stream();
         } catch (UncheckedIOException e) {
+            trace.transportFailure(e.getMessage());
             return Stream.of(new ModelEvent.ProviderFailed(
                     new FailureKind.Transport(TransportDelivery.UNSENT, TransportOperation.SEND, "io"),
                     "transport failure", Option.none(), Option.none()));

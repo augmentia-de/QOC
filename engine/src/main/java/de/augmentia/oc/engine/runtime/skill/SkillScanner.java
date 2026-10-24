@@ -10,6 +10,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.logging.Logger;
 
 /**
  * Discovers skills under {@code <project>/skill} and {@code <project>/skills}
@@ -19,6 +20,8 @@ public final class SkillScanner {
 
     public static final int MAX_DEPTH = 6;
     public static final int MAX_FILES = 10;
+
+    private static final Logger LOG = Logger.getLogger(SkillScanner.class.getName());
 
     private final FileSystem fileSystem;
 
@@ -78,6 +81,8 @@ public final class SkillScanner {
                 Result<Skill> parsed = parser.parse(file, fileSystem.readText(file));
                 if (parsed instanceof Result.Ok<Skill> ok) {
                     skills.add(withFiles(ok.value()));
+                } else if (parsed instanceof Result.Err<Skill> error) {
+                    LOG.fine("skipping skill " + file + ": " + error.error().message());
                 }
             } catch (UncheckedIOException ignored) {
                 // The file disappeared between list and read: next reload sees it.

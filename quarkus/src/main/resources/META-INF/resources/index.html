@@ -94,7 +94,6 @@
   <select id="sessions"></select>
   <span id="sessionTitle" style="color:var(--muted);font-size:.85rem"></span>
   <label>Agent <select id="agent"></select></label>
-  <button id="switchAgent">Agent wechseln</button>
   <label>Model <select id="model"></select></label>
   <label>Provider <select id="provider"></select></label>
   <label><input type="checkbox" id="showDetails"> Details</label>
@@ -648,7 +647,6 @@ document.getElementById('newSession').onclick = () => {
   const agent = document.getElementById('agent').value;
   newSession(agent || null);
 };
-document.getElementById('switchAgent').onclick = switchAgent;
 document.getElementById('deleteSession').onclick = deleteCurrentSession;
 document.getElementById('interrupt').onclick = () => {
   if (sessionId) fetch('/api/session/' + sessionId + '/interrupt', {method:'POST'});
@@ -692,6 +690,7 @@ async function checkPermissions() {
 }
 
 sessionsSel.addEventListener('change', (e) => switchSession(e.target.value));
+document.getElementById('agent').addEventListener('change', () => switchAgent());
 sendBtn.onclick = send;
 input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey||e.metaKey)) { e.preventDefault(); send(); } });
 

@@ -7,3 +7,4 @@ target/
 log/
 quarkus/log/
 data/
+deploy/vm.md

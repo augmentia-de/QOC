@@ -148,6 +148,7 @@ public class Engine {
     private SessionStore sessions;
     private SessionService sessionService;
     private ContextBuilder contextBuilder;
+    private SkillCatalog skillCatalog = SkillCatalog.empty();
     private TitleGenerator titleGenerator;
     private Step step;
     private ToolSnapshot toolSnapshot;
@@ -252,6 +253,7 @@ public class Engine {
                 ? SkillCatalog.of(new SkillScanner(fs).loadRoots(skillRoots, new SkillParser()),
                         config.skillAllow(), config.skillDeny(), config.skillMax())
                 : SkillCatalog.empty();
+        this.skillCatalog = skillCatalog;
         if (!skillCatalog.all().isEmpty()) {
             LOG.infof("loaded %d skill(s): %s", skillCatalog.all().size(),
                     skillCatalog.all().stream().map(skill -> skill.id().value()).toList());
@@ -396,19 +398,18 @@ public class Engine {
 
     public String generateTitle(SessionId id) {
         if (titleGenerator == null) return null;
+        SessionInfo info = sessions.info(id).orElse(null);
+        if (info == null) return null;
         List<Message> messages = conversation.messages(id, Seq.zero());
         if (messages.isEmpty()) return null;
-        String title = titleGenerator.fromConversation(messages);
+        String title = titleGenerator.fromConversation(messages, id, info.projectId());
         // Update the session title via a new event.
         journal.append(new EventDraft(id.value(), 1,
                 new SessionEvent.SessionRenamed(id, title)));
-        SessionInfo info = sessions.info(id).orElse(null);
-        if (info != null) {
-            sessions.put(new SessionInfo(info.id(), info.projectId(), info.location(), title,
-                    info.agent(), info.model(), info.permissions(), info.cost(), info.tokens(),
-                    info.created(), clock.now(), info.idle(), info.suspended(),
-                    info.resumeAttempts(), info.archived()));
-        }
+        sessions.put(new SessionInfo(info.id(), info.projectId(), info.location(), title,
+                info.agent(), info.model(), info.permissions(), info.cost(), info.tokens(),
+                info.created(), clock.now(), info.idle(), info.suspended(),
+                info.resumeAttempts(), info.archived()));
         return title;
     }
 
@@ -689,6 +690,15 @@ public class Engine {
     public List<AgentCatalogue.AgentDto> agents() {
         return agentCatalogue.list();
     }
+
+    /** Listed skills (description set, autoinvoke enabled), sorted by ID. */
+    public List<SkillDto> skills() {
+        return skillCatalog.listed().stream()
+                .map(skill -> new SkillDto(skill.id().value(), skill.name(), skill.description()))
+                .toList();
+    }
+
+    public record SkillDto(String id, String name, String description) {}
 
     public String agentName(AgentId id) {
         return agentCatalogue.nameOf(id);

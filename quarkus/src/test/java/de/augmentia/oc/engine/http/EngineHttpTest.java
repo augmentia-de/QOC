@@ -10,6 +10,7 @@ import java.util.Map;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.notNullValue;
 
 @QuarkusTest
 class EngineHttpTest {
@@ -57,6 +58,8 @@ class EngineHttpTest {
         given().get("/api/agent").then().statusCode(200)
                 .body(containsString("build"))
                 .body(containsString("plan"));
+        given().get("/api/skill").then().statusCode(200)
+                .body("data", notNullValue());
         given().get("/api/config").then().statusCode(200).body("[1].value", equalTo("gpt-4o-mini"));
         given().get("/api/model").then().statusCode(200).body("data[0].context", equalTo(128000));
     }

@@ -330,7 +330,7 @@ public class HttpApi {
     @GET
     @Path("/skill")
     public Response skills() {
-        return Response.ok(Map.of("location", engine.location(), "data", List.of())).build();
+        return Response.ok(Map.of("location", engine.location(), "data", engine.skills())).build();
     }
 
     @GET

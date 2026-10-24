@@ -121,6 +121,27 @@ class HttpProviderAdapterTest {
         assertThat(http.requests().getFirst().headers()).containsEntry("x-session-affinity", "ses_abc");
     }
 
+    @Test
+    void tracesTheRequestAndResponse() {
+        String sse = sse("{\"type\":\"text.started\",\"blockId\":\"b1\"}",
+                "{\"type\":\"text.delta\",\"blockId\":\"b1\",\"text\":\"hi\"}",
+                "{\"type\":\"text.ended\",\"blockId\":\"b1\",\"text\":\"hi\"}",
+                "{\"type\":\"finished\",\"reason\":\"normal\"}");
+        ScriptedHttp http = new ScriptedHttp(stream(sse));
+        CaptureTrace trace = new CaptureTrace();
+        HttpProviderAdapter adapter = new HttpProviderAdapter(http, ENDPOINT, Map.of(),
+                request -> "{\"encoded\":true}", new SseReader(), JsonEventTranslator::new,
+                new ProviderErrorClassifier(), Duration.ofSeconds(5), trace);
+
+        adapter.stream(request(Map.of())).toList();
+
+        assertThat(trace.endpoint).isEqualTo(ENDPOINT.toString());
+        assertThat(trace.requestBody).isEqualTo("{\"encoded\":true}");
+        assertThat(trace.status).isEqualTo(200);
+        assertThat(trace.events).extracting(Object::getClass)
+                .contains(ModelEvent.TextDelta.class, ModelEvent.Finished.class);
+    }
+
     private HttpProviderAdapter adapter(HttpTransport transport) {
         return new HttpProviderAdapter(transport, ENDPOINT, Map.of("authorization", "Bearer x"),
                 request -> "{}", new SseReader(), JsonEventTranslator::new,
@@ -144,6 +165,31 @@ class HttpProviderAdapterTest {
         return new ModelRequest(ModelRef.of(ProviderId.create(), ModelId.create()),
                 List.of(), List.of(), List.of(), Option.none(), GenerationOptions.defaults(),
                 Map.of(), headers, Option.none());
+    }
+
+    private static final class CaptureTrace implements de.augmentia.oc.engine.core.contract.provider.LlmTrace {
+        private String endpoint;
+        private String requestBody;
+        private int status;
+        private List<ModelEvent> events = List.of();
+
+        @Override
+        public void request(String endpoint, String body) {
+            this.endpoint = endpoint;
+            this.requestBody = body;
+        }
+
+        @Override
+        public void response(int status, List<ModelEvent> events) {
+            this.status = status;
+            this.events = events;
+        }
+
+        @Override
+        public void error(int status, String body) {}
+
+        @Override
+        public void transportFailure(String message) {}
     }
 
     private static final class FailingTransport implements HttpTransport {
