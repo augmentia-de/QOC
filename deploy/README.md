@@ -25,3 +25,18 @@ Plan mode files are written to `HOME` (`/data/home`), i.e.
 `/data/home/.opencode/plan` inside the volume. The compose file sets `HOME`
 explicitly because the container user has no `/etc/passwd` entry, which would
 otherwise make Java fall back to `/` and break plan writes.
+
+## Native image
+
+```bash
+cd qoc
+mvn -DskipTests package -Dnative     # requires GraalVM
+cd deploy
+INSTALL_GIT=true docker compose -f docker-compose.native.yml up -d --build
+```
+
+`INSTALL_GIT` (default `false`) installs git for the worktree tools. On the
+Debian native base it adds about **88 MiB** (git plus the Perl stack): the
+image grows from ~263 MiB to ~351 MiB. Without git the worktree tools return a
+clear "git is not available" failure; everything else works. The JVM image
+uses Alpine git (~9 MiB) and always includes it.

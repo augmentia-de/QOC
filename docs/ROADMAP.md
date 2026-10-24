@@ -269,7 +269,7 @@ Implemented beyond the original M0–M14 scope:
 | **M6 shell / PTY** | Optional one-off PTY via `pty: true` and `script(1)` (installed as `util-linux` in the image); falls back to a normal process when `script` is missing. Persistent PTY is still open. |
 | **Title generation** | Session affinity headers for provider routing, prompt sent as a user message with `max_tokens=64` and `reasoning_effort: none`, Deltas preferred over Ended text. |
 | **Web fetch** | `webfetch`: read-only HTTP GET, `text`/`markdown`/`html`, textual MIME types only, 5 MiB cap, jsoup-based HTML conversion and a 120 s timeout ceiling. |
-| **Reference tool parity** | `todowrite` (in-memory per session), `question` (web UI modal), `session_rename`, `session_move` (location metadata; one process workspace), `models`, `worktree_create`/`list`/`remove` (git required), `list_mcp_resources`/`read_mcp_resource` (remote and stdio MCP). |
+| **Reference tool parity** | `todowrite` (in-memory per session), `question` (web UI modal), `session_rename`, `session_move` (location metadata; one process workspace), `models`, `worktree_create`/`list`/`remove` (git required; opt-in in the native image via `INSTALL_GIT`, ~88 MiB), `list_mcp_resources`/`read_mcp_resource` (remote and stdio MCP). |
 | **Provider options** | `ModelRequest.providerOptions` is passed through unchanged (V-14). |
 
 Still open from the decision log:

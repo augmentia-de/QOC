@@ -132,8 +132,14 @@ public final class WorktreeTool {
         command.add("-C");
         command.add(workspace.toString());
         command.addAll(List.of(arguments));
-        return runner.run(new ProcessRunner.ProcessSpec(command, Option.none(),
-                Map.of("GIT_TERMINAL_PROMPT", "0"), Option.none(), false), TIMEOUT);
+        try {
+            return runner.run(new ProcessRunner.ProcessSpec(command, Option.none(),
+                    Map.of("GIT_TERMINAL_PROMPT", "0"), Option.none(), false), TIMEOUT);
+        } catch (RuntimeException e) {
+            return new ProcessRunner.Exit(127, "",
+                    "git is not available: " + (e.getMessage() == null ? "cannot start process" : e.getMessage()),
+                    false);
+        }
     }
 
     private static List<Map<String, String>> parse(String porcelain) {

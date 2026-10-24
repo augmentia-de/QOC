@@ -3,6 +3,9 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.native
+      args:
+        # Worktree tools need git; it adds ~88 MiB to the Debian native image.
+        INSTALL_GIT: "${INSTALL_GIT:-false}"
     image: qoc-engine:native
     container_name: qoc-engine-native
     restart: unless-stopped

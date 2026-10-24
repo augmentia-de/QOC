@@ -10,6 +10,7 @@ import de.augmentia.oc.engine.core.model.CallId;
 import de.augmentia.oc.engine.core.model.MessageId;
 import de.augmentia.oc.engine.core.model.SessionId;
 import de.augmentia.oc.engine.core.model.ToolContent;
+import de.augmentia.oc.engine.core.port.world.ProcessRunner;
 import de.augmentia.oc.engine.runtime.tool.meta.WorktreeTool;
 
 import org.junit.jupiter.api.Assumptions;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +59,28 @@ class WorktreeToolTest {
                 Map.of("directory", JsonValue.of("/tmp/elsewhere")));
         assertThat(outcome).isInstanceOf(ToolOutcome.Failed.class);
         assertThat(((ToolOutcome.Failed) outcome).error().message()).contains("outside");
+    }
+
+    @Test
+    void missingGitIsACleanFailure(@TempDir Path directory) {
+        ProcessRunner failing = new ProcessRunner() {
+            @Override
+            public Handle start(ProcessSpec spec) {
+                throw new java.io.UncheckedIOException(new java.io.IOException("no git"));
+            }
+
+            @Override
+            public Exit run(ProcessSpec spec, Duration timeout) {
+                throw new java.io.UncheckedIOException(new java.io.IOException("no git"));
+            }
+        };
+        WorktreeTool tool = new WorktreeTool(failing, directory);
+
+        ToolOutcome outcome = execute(WorktreeTool.create(tool),
+                Map.of("name", JsonValue.of("feature")));
+
+        assertThat(outcome).isInstanceOf(ToolOutcome.Failed.class);
+        assertThat(((ToolOutcome.Failed) outcome).error().message()).contains("git is not available");
     }
 
     private static ToolOutcome execute(ToolDefinition definition, Map<String, JsonValue> input) {
