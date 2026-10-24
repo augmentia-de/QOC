@@ -6,6 +6,7 @@ import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.Rule;
 import de.augmentia.oc.engine.core.model.SkillId;
+import de.augmentia.oc.engine.core.pattern.Wildcard;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -32,6 +33,24 @@ public final class SkillCatalog {
 
     public static SkillCatalog of(List<Skill> skills) {
         return new SkillCatalog(index(skills), 0);
+    }
+
+    /**
+     * Builds a catalog with load-time filtering: an empty allow list means
+     * "all", deny always wins, and {@code max} caps the result (0 = no cap).
+     * IDs use the same wildcard syntax as permissions.
+     */
+    public static SkillCatalog of(List<Skill> skills, List<String> allow, List<String> deny, int max) {
+        List<Skill> safe = skills == null ? List.of() : skills;
+        List<Skill> selected = safe.stream()
+                .filter(skill -> allow == null || allow.isEmpty()
+                        || allow.stream().anyMatch(pattern -> Wildcard.match(skill.id().value(), pattern)))
+                .filter(skill -> deny == null
+                        || deny.stream().noneMatch(pattern -> Wildcard.match(skill.id().value(), pattern)))
+                .sorted(Comparator.comparing(skill -> skill.id().value()))
+                .limit(max > 0 ? max : Long.MAX_VALUE)
+                .toList();
+        return new SkillCatalog(index(selected), 0);
     }
 
     public static SkillCatalog empty() {

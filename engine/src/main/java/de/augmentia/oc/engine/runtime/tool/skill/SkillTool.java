@@ -10,6 +10,7 @@ import de.augmentia.oc.engine.core.json.Schema;
 import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.Rule;
+import de.augmentia.oc.engine.core.model.AgentId;
 import de.augmentia.oc.engine.core.model.SkillId;
 import de.augmentia.oc.engine.core.model.ToolContent;
 import de.augmentia.oc.engine.core.model.ToolName;
@@ -33,6 +34,24 @@ public final class SkillTool {
         return new ToolDefinition(new ToolName("skill"), "Load a skill by ID",
                 input, Option.none(),
                 (value, context) -> execute(catalog, safeRules, value), null);
+    }
+
+    /**
+     * Resolves the rules per calling agent so a {@code skill} deny hides and
+     * blocks the skill for that agent (SK-06/SK-08).
+     */
+    public static ToolDefinition definition(SkillCatalog catalog,
+                                            java.util.function.Function<AgentId, List<Rule>> rulesByAgent) {
+        if (catalog == null) throw new IllegalArgumentException("catalog must not be null");
+        java.util.function.Function<AgentId, List<Rule>> resolver =
+                rulesByAgent == null ? agentId -> List.of() : rulesByAgent;
+        Schema input = Schema.obj(Map.of("id", Schema.str()));
+        return new ToolDefinition(new ToolName("skill"), "Load a skill by ID",
+                input, Option.none(),
+                (value, context) -> {
+                    List<Rule> rules = resolver.apply(context.agentId());
+                    return execute(catalog, rules == null ? List.of() : rules, value);
+                }, null);
     }
 
     static ToolOutcome execute(SkillCatalog catalog, List<Rule> rules, JsonValue value) {

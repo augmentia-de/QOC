@@ -104,6 +104,30 @@ class SkillCatalogTest {
     }
 
     @Test
+    void loadTimeFilterAppliesAllowDenyAndMax() {
+        List<Skill> skills = List.of(
+                skill("aisdlc-tdd", "tdd", "body", true),
+                skill("aisdlc-qa", "qa", "body", true),
+                skill("springboot-testing", "spring", "body", true),
+                skill("react-hooks", "react", "body", true));
+
+        SkillCatalog catalog = SkillCatalog.of(skills,
+                List.of("aisdlc-*"), List.of("*-qa"), 1);
+
+        assertThat(catalog.all()).extracting(skill -> skill.id().value())
+                .containsExactly("aisdlc-tdd");
+    }
+
+    @Test
+    void emptyAllowListMeansAllSkills() {
+        SkillCatalog catalog = SkillCatalog.of(List.of(
+                skill("a", "a", "body", true),
+                skill("b", "b", "body", true)), List.of(), List.of("b"), 0);
+
+        assertThat(catalog.all()).extracting(skill -> skill.id().value()).containsExactly("a");
+    }
+
+    @Test
     void unchangedCatalogHasEmptyDelta() {
         SkillCatalog catalog = SkillCatalog.of(List.of(skill("commit", "commit", "body", true)));
         assertThat(catalog.guidanceDelta(catalog)).isEmpty();

@@ -41,11 +41,39 @@ public final class SkillScanner {
         return List.copyOf(found);
     }
 
+    /**
+     * Scans explicit skill roots in the given order. Later roots win on ID
+     * collisions (SK-05). Each root is treated like a project skill directory:
+     * a subdirectory with {@code SKILL.md} is one skill, flat {@code *.md}
+     * files in the root are flat skills.
+     */
+    public List<Path> scanRoots(List<Path> roots) {
+        if (roots == null) throw new IllegalArgumentException("roots must not be null");
+        List<Path> found = new ArrayList<>();
+        for (Path root : roots) {
+            if (root == null || !exists(root)) continue;
+            List<Path> perRoot = new ArrayList<>();
+            walk(root, 0, perRoot);
+            perRoot.sort(Comparator.naturalOrder());
+            found.addAll(perRoot);
+        }
+        return List.copyOf(found);
+    }
+
     /** Scans and parses; invalid skills are skipped, not fatal (SK-11). */
     public List<Skill> load(Path projectRoot, SkillParser parser) {
+        return parse(scan(projectRoot), parser);
+    }
+
+    /** Loads skills from explicit roots in the given order. */
+    public List<Skill> loadRoots(List<Path> roots, SkillParser parser) {
+        return parse(scanRoots(roots), parser);
+    }
+
+    private List<Skill> parse(List<Path> files, SkillParser parser) {
         if (parser == null) throw new IllegalArgumentException("parser must not be null");
         List<Skill> skills = new ArrayList<>();
-        for (Path file : scan(projectRoot)) {
+        for (Path file : files) {
             try {
                 Result<Skill> parsed = parser.parse(file, fileSystem.readText(file));
                 if (parsed instanceof Result.Ok<Skill> ok) {

@@ -29,7 +29,7 @@ public class EngineConfig {
 
     private static final Logger LOG = Logger.getLogger(EngineConfig.class.getName());
     private static final List<String> KNOWN = List.of(
-            "model", "provider", "workspace", "auth", "agents", "mcp");
+            "model", "provider", "workspace", "auth", "agents", "mcp", "skills");
 
     @Inject
     @ConfigProperty(name = "engine.workspace", defaultValue = ".")
@@ -59,6 +59,11 @@ public class EngineConfig {
     private String password;
     private List<AgentConfig> agents;
     private List<de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig> mcpServers;
+    private boolean skillsEnabled;
+    private List<String> skillPaths;
+    private List<String> skillAllow;
+    private List<String> skillDeny;
+    private int skillMax;
     private final List<ConfigEntry> entries = new ArrayList<>();
 
     @PostConstruct
@@ -70,6 +75,11 @@ public class EngineConfig {
         password = passwordProperty.orElse("");
         agents = new ArrayList<>();
         mcpServers = new ArrayList<>();
+        skillsEnabled = true;
+        skillPaths = new ArrayList<>();
+        skillAllow = new ArrayList<>();
+        skillDeny = new ArrayList<>();
+        skillMax = 0;
 
         Map<String, JsonValue> merged = new LinkedHashMap<>();
         merge(merged, read(globalFile()));
@@ -108,30 +118,26 @@ public class EngineConfig {
             }
         }
         if (agents.isEmpty()) {
-            // Secure defaults: allow-all, but deny external_directory and protect .env.
-            // The Plan directory (~/.opencode/plan) is the only external location
-            // that stays writable/readable, mirroring the reference implementation.
-            String planDir = planDirectory();
-            agents.add(new AgentConfig("build", null, false, null, 32,
-                    List.of("*"), List.of(),
-                    List.of(
-                            new Rule("*", "*", Effect.ALLOW),
-                            new Rule("external_directory", "*", Effect.DENY),
-                            new Rule("read", "*.env", Effect.ASK),
-                            new Rule("edit", "*.env", Effect.DENY),
-                            new Rule("shell", "*", Effect.ASK),
-                            new Rule("external_directory", planDir + "/*", Effect.ALLOW)),
-                    List.of("*")));
-            agents.add(new AgentConfig("plan", "You are in plan mode. Do not edit files.",
-                    false, null, 10, List.of("*"), List.of(),
-                    List.of(
-                            new Rule("*", "*", Effect.ALLOW),
-                            new Rule("edit", "*", Effect.DENY),
-                            new Rule("external_directory", "*", Effect.DENY),
-                            new Rule("read", "*.env", Effect.ASK),
-                            new Rule("shell", "*", Effect.ASK),
-                            new Rule("external_directory", planDir + "/*", Effect.ALLOW)),
-                    List.of("*")));
+            agents.add(defaultBuildAgent());
+            agents.add(defaultPlanAgent());
+        } else {
+            // The engine baseline needs "build" and "plan" (plan mode, subagent
+            // exclusions, AISDLC profile). A project config that declares only
+            // its own roles must not make them disappear.
+            ensureBaselineAgents(agents);
+        }
+        if (merged.get("skills") instanceof JsonValue.Obj skillsObject) {
+            if (Boolean.FALSE.equals(bool(skillsObject, "enabled"))) skillsEnabled = false;
+            skillAllow = patterns(skillsObject, "allow");
+            skillDeny = patterns(skillsObject, "deny");
+            skillMax = (int) Math.max(0, number(skillsObject, "max", 0));
+            if (skillsObject.values().get("paths") instanceof JsonValue.Arr paths) {
+                for (JsonValue item : paths.values()) {
+                    if (item instanceof JsonValue.Str path && !path.value().isBlank()) {
+                        skillPaths.add(path.value());
+                    }
+                }
+            }
         }
         if (merged.get("mcp") instanceof JsonValue.Obj mcp) {
             for (Map.Entry<String, JsonValue> entry : mcp.values().entrySet()) {
@@ -156,6 +162,16 @@ public class EngineConfig {
     public List<de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig> mcpServers() {
         return List.copyOf(mcpServers);
     }
+    /** Skill discovery is on by default; {@code skills.enabled=false} disables it. */
+    public boolean skillsEnabled() { return skillsEnabled; }
+    /** Additional skill roots from {@code skills.paths}, in order (later wins). */
+    public List<String> skillPaths() { return List.copyOf(skillPaths); }
+    /** If non-empty, only matching skill IDs are loaded. */
+    public List<String> skillAllow() { return List.copyOf(skillAllow); }
+    /** Matching skill IDs are never loaded (deny wins over allow). */
+    public List<String> skillDeny() { return List.copyOf(skillDeny); }
+    /** Caps the number of loaded skills (0 = unlimited). */
+    public int skillMax() { return skillMax; }
     public List<ConfigEntry> entries() { return List.copyOf(entries); }
 
     private JsonValue read(Path file) {
@@ -282,6 +298,58 @@ public class EngineConfig {
      */
     static String planDirectory() {
         return Path.of(System.getProperty("user.home", "."), ".opencode", "plan").toString();
+    }
+
+    private static List<String> patterns(JsonValue.Obj object, String key) {
+        if (!(object.values().get(key) instanceof JsonValue.Arr values)) return new ArrayList<>();
+        return values.values().stream()
+                .filter(JsonValue.Str.class::isInstance)
+                .map(value -> ((JsonValue.Str) value).value())
+                .filter(value -> !value.isBlank())
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+    }
+
+    /** Baseline build agent with the secure defaults. */
+    private static AgentConfig defaultBuildAgent() {
+        String planDir = planDirectory();
+        return new AgentConfig("build", null, false, null, 32,
+                List.of("*"), List.of(),
+                List.of(
+                        new Rule("*", "*", Effect.ALLOW),
+                        new Rule("external_directory", "*", Effect.DENY),
+                        new Rule("read", "*.env", Effect.ASK),
+                        new Rule("edit", "*.env", Effect.DENY),
+                        new Rule("shell", "*", Effect.ASK),
+                        new Rule("external_directory", planDir + "/*", Effect.ALLOW)),
+                List.of("*"));
+    }
+
+    /** Baseline plan agent: no edits except the plan directory. */
+    private static AgentConfig defaultPlanAgent() {
+        String planDir = planDirectory();
+        return new AgentConfig("plan", "You are in plan mode. Do not edit files.",
+                false, null, 32, List.of("*"), List.of(),
+                List.of(
+                        new Rule("*", "*", Effect.ALLOW),
+                        new Rule("edit", "*", Effect.DENY),
+                        new Rule("external_directory", "*", Effect.DENY),
+                        new Rule("read", "*.env", Effect.ASK),
+                        new Rule("shell", "*", Effect.ASK),
+                        new Rule("external_directory", planDir + "/*", Effect.ALLOW)),
+                List.of("*"));
+    }
+
+    /**
+     * Keeps the engine baseline available even when a project config declares
+     * only its own roles. Configured agents win; missing baseline agents are
+     * appended.
+     */
+    private static void ensureBaselineAgents(List<AgentConfig> agents) {
+        java.util.Set<String> names = agents.stream()
+                .map(agent -> agent.name().toLowerCase(java.util.Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        if (!names.contains("build")) agents.add(defaultBuildAgent());
+        if (!names.contains("plan")) agents.add(defaultPlanAgent());
     }
 
     public record AgentConfig(String name, String system, boolean hidden,

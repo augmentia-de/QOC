@@ -1,6 +1,7 @@
 package de.augmentia.oc.engine.runtime;
 
 import de.augmentia.oc.engine.runtime.skill.Skill;
+import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
 import de.augmentia.oc.engine.runtime.skill.SkillParser;
 import de.augmentia.oc.engine.runtime.skill.SkillScanner;
 import de.augmentia.oc.engine.testing.FakeFileSystem;
@@ -103,6 +104,31 @@ class SkillScannerTest {
         fs.putText(root.resolve("skills/flat.md"), frontmatter("flat"));
         Skill skill = scanner.load(root, new SkillParser()).getFirst();
         assertThat(skill.files()).isEmpty();
+    }
+
+    @Test
+    void loadRootsFindsSkillsUnderExplicitRoots() {
+        skillFile(".opencode/skills/commit/SKILL.md", "commit");
+        fs.putText(root.resolve("external/flat.md"), frontmatter("flat"));
+
+        List<Skill> skills = scanner.loadRoots(
+                List.of(root.resolve(".opencode/skills"), root.resolve("external")),
+                new SkillParser());
+
+        assertThat(skills).extracting(skill -> skill.id().value())
+                .containsExactlyInAnyOrder("commit", "flat");
+    }
+
+    @Test
+    void laterRootWinsOnCollisionEvenWhenPathsSortDifferently() {
+        skillFile("z-first/dup/SKILL.md", "first");
+        skillFile("a-second/dup/SKILL.md", "second");
+
+        List<Skill> skills = scanner.loadRoots(
+                List.of(root.resolve("z-first"), root.resolve("a-second")), new SkillParser());
+
+        SkillCatalog catalog = SkillCatalog.of(skills);
+        assertThat(catalog.find("dup").orElseThrow().description()).isEqualTo("second");
     }
 
     private void skillFile(String relative, String description) {

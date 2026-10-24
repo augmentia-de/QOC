@@ -67,6 +67,9 @@ import de.augmentia.oc.engine.runtime.compaction.CompactionService;
 import de.augmentia.oc.engine.runtime.session.core.SessionRetention;
 import de.augmentia.oc.engine.runtime.session.core.SessionService;
 import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
+import de.augmentia.oc.engine.runtime.skill.SkillParser;
+import de.augmentia.oc.engine.runtime.skill.SkillScanner;
+import de.augmentia.oc.engine.runtime.tool.skill.SkillTool;
 import de.augmentia.oc.engine.runtime.step.Step;
 import de.augmentia.oc.engine.runtime.step.StepResult;
 import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
@@ -235,6 +238,27 @@ public class Engine {
         String firecrawlKey = firecrawlApiKey == null ? "" : firecrawlApiKey.orElse("");
         registry.register(FirecrawlTool.definition(
                 new FirecrawlTool(new JdkHttpTransport(), firecrawlKey, firecrawlEndpoint)));
+        // Skills are project text, loaded on request: <workspace>/skill(s),
+        // <workspace>/.opencode/skills and any configured skills.paths.
+        List<Path> skillRoots = new ArrayList<>();
+        skillRoots.add(workspacePath.resolve("skill"));
+        skillRoots.add(workspacePath.resolve("skills"));
+        skillRoots.add(workspacePath.resolve(".opencode").resolve("skills"));
+        for (String configured : config.skillPaths()) {
+            Path path = Path.of(configured);
+            skillRoots.add(path.isAbsolute() ? path : workspacePath.resolve(path));
+        }
+        SkillCatalog skillCatalog = config.skillsEnabled()
+                ? SkillCatalog.of(new SkillScanner(fs).loadRoots(skillRoots, new SkillParser()),
+                        config.skillAllow(), config.skillDeny(), config.skillMax())
+                : SkillCatalog.empty();
+        if (!skillCatalog.all().isEmpty()) {
+            LOG.infof("loaded %d skill(s): %s", skillCatalog.all().size(),
+                    skillCatalog.all().stream().map(skill -> skill.id().value()).toList());
+        }
+        registry.register(SkillTool.definition(skillCatalog,
+                agentId -> agentProfile(agentId, agentCatalogue.nameOf(agentId),
+                        agentCatalogue.config(agentCatalogue.nameOf(agentId))).permissions()));
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
         mcp = new McpServerManager(registry, new JdkHttpTransport(), new JdkProcessRunner(),
                 Option.some(credentialStore));
@@ -244,7 +268,7 @@ public class Engine {
         toolSnapshot = registry.snapshot(allowAll);
         ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
                 permissionGate, noopHooks(), toolOutput);
-        contextBuilder = new ContextBuilder(conversation, SkillCatalog.empty());
+        contextBuilder = new ContextBuilder(conversation, skillCatalog);
         modelRef = new ModelRef(ProviderId.create(), ModelId.create());
         titleGenerator = new TitleGenerator(provider, modelRef);
         step = new Step(provider, toolRuntime);

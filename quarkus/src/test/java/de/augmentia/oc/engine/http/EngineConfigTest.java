@@ -55,6 +55,38 @@ class EngineConfigTest {
         assertThat(config.model()).isEqualTo("gpt-4o-mini");
         assertThat(config.agents()).extracting(EngineConfig.AgentConfig::name)
                 .containsExactly("build", "plan");
+        assertThat(config.skillsEnabled()).isTrue();
+        assertThat(config.skillPaths()).isEmpty();
+    }
+
+    @Test
+    void parsesSkillSettings() throws Exception {
+        Files.writeString(workspace.resolve("settings.json"), """
+                {"skills": {"enabled": false, "paths": ["/opt/skills", "extra"],
+                            "allow": ["aisdlc-*"], "deny": ["*-qa"], "max": 12}}
+                """);
+
+        EngineConfig config = config();
+        config.load();
+
+        assertThat(config.skillsEnabled()).isFalse();
+        assertThat(config.skillPaths()).containsExactly("/opt/skills", "extra");
+        assertThat(config.skillAllow()).containsExactly("aisdlc-*");
+        assertThat(config.skillDeny()).containsExactly("*-qa");
+        assertThat(config.skillMax()).isEqualTo(12);
+    }
+
+    @Test
+    void customAgentsKeepTheBuildAndPlanBaseline() throws Exception {
+        Files.writeString(workspace.resolve("settings.json"), """
+                {"agents": [{"name": "custom-role"}]}
+                """);
+
+        EngineConfig config = config();
+        config.load();
+
+        assertThat(config.agents()).extracting(EngineConfig.AgentConfig::name)
+                .containsExactly("custom-role", "build", "plan");
     }
 
     @Test

@@ -54,11 +54,32 @@ class SkillToolTest {
         assertThat(execute(catalog, List.of(), "hidden")).isInstanceOf(ToolOutcome.Ok.class);
     }
 
+    @Test
+    void rulesAreResolvedPerCallingAgent() {
+        SkillCatalog catalog = SkillCatalog.of(List.of(skill("commit", "commit")));
+        AgentId deniedAgent = AgentId.create();
+        AgentId allowedAgent = AgentId.create();
+        var definition = SkillTool.definition(catalog, agentId ->
+                agentId.equals(deniedAgent)
+                        ? List.of(new Rule("skill", "commit", Effect.DENY))
+                        : List.of());
+
+        assertThat(execute(definition, deniedAgent, "commit")).isInstanceOf(ToolOutcome.Failed.class);
+        assertThat(execute(definition, allowedAgent, "commit")).isInstanceOf(ToolOutcome.Ok.class);
+    }
+
     private static ToolOutcome execute(SkillCatalog catalog, List<Rule> rules, String id) {
         ToolContext context = new ToolContext(SessionId.create(), AgentId.create(),
                 MessageId.create(), CallId.create());
         return SkillTool.definition(catalog, rules).execute().execute(
                 JsonValue.of(Map.of("id", JsonValue.of(id))), context);
+    }
+
+    private static ToolOutcome execute(de.augmentia.oc.engine.core.contract.tool.ToolDefinition definition,
+                                       AgentId agent, String id) {
+        ToolContext context = new ToolContext(SessionId.create(), agent,
+                MessageId.create(), CallId.create());
+        return definition.execute().execute(JsonValue.of(Map.of("id", JsonValue.of(id))), context);
     }
 
     private static Skill skill(String id, String description) {
