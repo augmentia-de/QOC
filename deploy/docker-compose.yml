@@ -6,10 +6,17 @@ services:
     image: qoc-engine:local
     container_name: qoc-engine
     restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
     ports:
       - "${QOC_PORT:-8333}:8080"
     volumes:
+      - /home/torsten/dev/my-projects/2oc/dws:/data/workspace
       - /home/torsten/dev/my-projects/2oc/qoc/data:/data
     env_file:
       - .env
+    environment:
+      # HOME must be writable by the runtime user and should persist.
+      # Keeps ~/.opencode/plan (Plan mode) inside the /data volume instead of
+      # falling back to the container root or the workspace.
+      - HOME=/data/home
 

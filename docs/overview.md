@@ -1097,7 +1097,7 @@ array) are **migrated and merged** in `packages/core/src/config/normalize.ts:179
 | System | `/etc/opencode`, `/Library/Application Support/opencode`, `%ProgramData%\opencode` (`:28-32`) |
 | macOS MDM | preferences `ai.opencode.managed` (`:35-40`) |
 | Global | `~/.config/opencode` (`:68`) |
-| Project | upwards `./opencode.json(c)`, `.opencode/`, `.claude/`, `.agents/` (`:81-144`) |
+| Project | upwards `./settings.json(c)`, `.opencode/`, `.claude/`, `.agents/` (`:81-144`) |
 
 **Agent definitions from markdown**: `{agent,agents}/**/*.md` → subagent,
 `{mode,modes}/*.md` → primary (`packages/core/src/config/plugin/agent.ts:21-26`);
@@ -1154,10 +1154,10 @@ interface PolicyInfo {
 |---|---|
 | 1 (highest) | Connected OpenCode console workspace |
 | 2 | macOS managed preferences (`/Library/Managed Preferences/ai.opencode.managed.plist`) |
-| 3 | System `opencode.json(c)` (`/Library/Application Support/opencode`, `/etc/opencode`, `%ProgramData%\opencode`) |
-| 4 | Global `~/.config/opencode/opencode.json(c)` |
-| 5 | Direct `opencode.json(c)`; **outer** directories beat inner |
-| 6 (lowest) | `.opencode/opencode.json(c)`; outer beat inner |
+| 3 | System `settings.json(c)` (`/Library/Application Support/opencode`, `/etc/opencode`, `%ProgramData%\opencode`) |
+| 4 | Global `~/.config/opencode/settings.json(c)` |
+| 5 | Direct `settings.json(c)`; **outer** directories beat inner |
+| 6 (lowest) | `.opencode/settings.json(c)`; outer beat inner |
 
 Within a file the written order remains; **within a document** merge is
 `[...generated, ...experimental, ...native]`
@@ -1519,15 +1519,15 @@ rules), **`policies`** (provider/tool/integration access), `agents`, `snapshots`
 |---|---|
 | macOS managed preferences | `/Library/Managed Preferences/[<user>/]ai.opencode.managed.plist` |
 | System | `/Library/Application Support/opencode`, `/etc/opencode`, `%ProgramData%\opencode` |
-| Global | `~/.config/opencode/opencode.json(c)` |
-| Project (direct) | `opencode.json(c)` upwards to filesystem root |
-| Project (`.opencode/`) | `.opencode/opencode.json(c)` upwards |
+| Global | `~/.config/opencode/settings.json(c)` |
+| Project (direct) | `settings.json(c)` upwards to filesystem root |
+| Project (`.opencode/`) | `.opencode/settings.json(c)` upwards |
 
-Merge rule: **first** all direct `opencode.json(c)` files **from outside in**,
+Merge rule: **first** all direct `settings.json(c)` files **from outside in**,
 **then** all `.opencode/` files in the same order – "every discovered `.opencode`
 config overrides every direct config" (`config.mdx:78-82`). Precedence example
-(`:98-107`): `~/.config/opencode` < `acme/opencode.json` <
-`acme/packages/web/opencode.json` < `/etc/opencode`.
+(`:98-107`): `~/.config/opencode` < `acme/settings.json` <
+`acme/packages/web/settings.json` < `/etc/opencode`.
 
 The system folder additionally loads `agents/`, `commands/`, `skills/`, `plugins/`
 for all users of the machine (`:42-48`). Managed preferences have the **highest**
@@ -1558,7 +1558,7 @@ the global file), `OPENCODE_DB`, `OPENCODE_PASSWORD` /
 
 Project-local extensions in the repo itself: `.opencode/tool/*.ts` (custom tools),
 `.opencode/command/*.md` (slash commands), `.opencode/themes/*.json`,
-`.opencode/opencode.jsonc`, `.opencode/plugins/`.
+`.opencode/settings.jsonc`, `.opencode/plugins/`.
 
 ---
 

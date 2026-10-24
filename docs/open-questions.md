@@ -185,8 +185,8 @@ Proposal: one file, strict JSON (no comments), two locations:
 
 | Location | File | Precedence |
 |---|---|---|
-| global | `~/.config/opencode/opencode.json` | 1 |
-| project | `<project>/opencode.json` | 2 |
+| global | `~/.config/opencode/settings.json` | 1 |
+| project | `<project>/settings.json` | 2 |
 | session | payload of `POST /api/session` | 3 |
 
 Only the fields of the baseline environment:
@@ -822,7 +822,7 @@ an opinion.
 | O-01 | 4 attempts total, configurable (1–10), hard-capped | 2026-10-22 | 3 failures + success = 4th attempt; 4 failures = final error; 401 = 1 attempt |
 | O-07 | Global working directory (default cwd) + allow-list with read/write flags | 2026-10-22 | Access only to working dir + listed folders; read/write flag per entry |
 | L-1 | File-based: agent/<id>.md (project) + ~/.config/opencode/agent/<id>.md (global) + built-in build; project overrides global | 2026-10-22 | Without files only build; project file appears; unknown name → 400 |
-| L-2 | File-based, strict JSON: opencode.json global+project, strict validation, project overrides global | 2026-10-22 | Without file defaults; broken JSON → 400 with file+position |
+| L-2 | File-based, strict JSON: settings.json global+project, strict validation, project overrides global | 2026-10-22 | Without file defaults; broken JSON → 400 with file+position |
 | L-6 | Text macro via inbox: command/<id>.md with $ARGUMENTS; finished text as normal input | 2026-10-22 | Invocation produces user message with substituted text; unknown → 404; subagent → 400 |
 | L-7 | Snapshot models.json at startup + explicit update (--refresh-catalog) | 2026-10-22 | Startup without network OK; running session stays on old model |
 | L-A | One location per process (baseline); multi-location later | 2026-10-22 | One location; second location → 400 until multi-location built |

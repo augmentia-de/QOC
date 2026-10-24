@@ -10,6 +10,8 @@ import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
 import de.augmentia.oc.engine.runtime.tool.shell.ShellTool;
 import de.augmentia.oc.engine.runtime.tool.skill.SkillTool;
+import de.augmentia.oc.engine.runtime.tool.web.FirecrawlTool;
+import de.augmentia.oc.engine.testing.ScriptedHttp;
 import de.augmentia.oc.engine.core.port.world.FileSystem;
 import de.augmentia.oc.engine.testing.FakeFileSystem;
 
@@ -70,5 +72,11 @@ class ToolDescriptionGoldenTest {
     void skillDescription() {
         assertThat(SkillTool.definition(de.augmentia.oc.engine.runtime.skill.SkillCatalog.empty(),
                 java.util.List.of()).description()).isEqualTo("Load a skill by ID");
+    }
+
+    @Test
+    void websearchDescription() {
+        assertThat(FirecrawlTool.definition(new FirecrawlTool(new ScriptedHttp(), ""))
+                .description()).isEqualTo("Search the web and return titles, URLs and snippets");
     }
 }

@@ -12,11 +12,15 @@ COPY quarkus/target/quarkus-app /app
 # Writable data volume: SQLite DB, workspace, logs.
 VOLUME ["/data"]
 
-# Create data directories and set ownership
-RUN mkdir -p /data/workspace /data/log /var/lib/qoc && \
+# Create data directories and set ownership.
+# /data/home is the process HOME: plan files (~/.opencode/plan) land in the
+# persistent volume instead of the container root or the workspace.
+RUN mkdir -p /data/workspace /data/log /data/home/.opencode/plan /var/lib/qoc && \
     chown -R qoc:qoc /data /var/lib/qoc && \
-    chmod 750 /data /var/lib/qoc
+    chmod 750 /data /data/workspace /data/log /var/lib/qoc && \
+    chmod 700 /data/home
 
+ENV HOME=/data/home
 ENV JAVA_OPTS="-Xms64m -Xmx384m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m"
 ENV QUARKUS_HTTP_HOST=0.0.0.0
 ENV QUARKUS_HTTP_PORT=8080
@@ -32,4 +36,6 @@ EXPOSE 8080
 # Run as dedicated user (not root)
 USER qoc
 
-ENTRYPOINT ["sh", "-c", "mkdir -p /data/workspace /data/log && exec java $JAVA_OPTS -jar /app/quarkus-run.jar"]
+# The bind mount on /data hides the build-time /data/home, so create it again
+# at startup. HOME must be writable by the runtime user (see compose user:).
+ENTRYPOINT ["sh", "-c", "mkdir -p /data/workspace /data/log \"$HOME/.opencode/plan\" && exec java $JAVA_OPTS -jar /app/quarkus-run.jar"]

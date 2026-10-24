@@ -1,6 +1,8 @@
 package de.augmentia.oc.engine.http;
 
 import de.augmentia.oc.engine.core.error.Defect;
+import de.augmentia.oc.engine.core.eval.PermissionRules;
+import de.augmentia.oc.engine.core.model.Effect;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -19,7 +21,7 @@ class EngineConfigTest {
 
     @Test
     void projectFileOverridesDefaultsAndMasksThePassword() throws Exception {
-        Files.writeString(workspace.resolve("opencode.json"), """
+        Files.writeString(workspace.resolve("settings.json"), """
                 {
                   "model": {"provider": "openai", "id": "gpt-4o"},
                   "provider": {"url": "https://example.test/v1"},
@@ -51,12 +53,29 @@ class EngineConfigTest {
 
         assertThat(config.provider()).isEqualTo("openai");
         assertThat(config.model()).isEqualTo("gpt-4o-mini");
-        assertThat(config.agents()).extracting(EngineConfig.AgentConfig::name).containsExactly("build");
+        assertThat(config.agents()).extracting(EngineConfig.AgentConfig::name)
+                .containsExactly("build", "plan");
+    }
+
+    @Test
+    void defaultAgentsMayOnlyReachOutsideTheWorkspaceThroughThePlanDirectory() {
+        EngineConfig config = config();
+        config.load();
+
+        String planFile = EngineConfig.planDirectory() + "/my-plan.md";
+        for (EngineConfig.AgentConfig agent : config.agents()) {
+            assertThat(PermissionRules.evaluate(agent.permissions(), "external_directory", planFile))
+                    .as("plan directory for agent %s", agent.name())
+                    .isEqualTo(Effect.ALLOW);
+            assertThat(PermissionRules.evaluate(agent.permissions(), "external_directory", "/etc/passwd"))
+                    .as("other external path for agent %s", agent.name())
+                    .isEqualTo(Effect.DENY);
+        }
     }
 
     @Test
     void parsesLocalAndRemoteMcpServers() throws Exception {
-        Files.writeString(workspace.resolve("opencode.json"), """
+        Files.writeString(workspace.resolve("settings.json"), """
                 {
                   "mcp": {
                     "github": {"type": "remote", "url": "https://example.test/mcp", "codemode": false,
@@ -85,7 +104,7 @@ class EngineConfigTest {
 
     @Test
     void invalidJsonIsADefect() throws Exception {
-        Files.writeString(workspace.resolve("opencode.json"), "{not json");
+        Files.writeString(workspace.resolve("settings.json"), "{not json");
         EngineConfig config = config();
         assertThatThrownBy(config::load).isInstanceOf(Defect.class);
     }

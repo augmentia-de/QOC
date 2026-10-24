@@ -20,4 +20,7 @@ public interface Journal {
     List<StoredEvent> history(String aggregateId, Seq after);
 
     List<StoredEvent> historyOfType(String aggregateId, String type, Seq after);
+
+    /** Removes all events and the sequence row of one aggregate. */
+    void deleteAggregate(String aggregateId);
 }

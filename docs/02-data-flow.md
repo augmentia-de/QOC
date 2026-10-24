@@ -272,7 +272,7 @@ Active path is `session_inbox`.
 * **Snapshots**: separate Git repository under
   `~/.local/share/opencode/snapshot/<projectID>/<hash>` (`packages/core/src/snapshot.ts:92-103`)
 * **Shell output**: managed storage (file path in the tool result)
-* **Configuration**: files (`opencode.json(c)`, `AGENTS.md`, `.opencode/`)
+* **Configuration**: files (`settings.json(c)`, `AGENTS.md`, `.opencode/`)
 * **Console credentials**: obtained via `GET /api/v2/config`, not persisted locally
 
 ---

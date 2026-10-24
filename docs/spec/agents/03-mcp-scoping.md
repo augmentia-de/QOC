@@ -2,7 +2,7 @@
 
 ## 1. Server configuration
 
-MCP servers are configured globally or per project in `opencode.json`:
+MCP servers are configured globally or per project in `settings.json`:
 
 ```json
 {

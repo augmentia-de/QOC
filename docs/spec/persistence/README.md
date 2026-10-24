@@ -367,11 +367,11 @@ erDiagram
 |---|---|---|
 | **Snapshots (undo)** | separate version-control repository under `<data-dir>/snapshot/<projectID>/<hash>` | large binary blobs do not belong in a transactional database; a DB backup would then contain **no** undo history |
 | **Tool outputs** (large output) | file under `<data-dir>/tool-output/tool_<id>` | same rationale; 7 days retention |
-| **Configuration** | files (`opencode.json`, `AGENTS.md`, `.opencode/`) | part of the workspace, not the system |
+| **Configuration** | files (`settings.json`, `AGENTS.md`, `.opencode/`) | part of the workspace, not the system |
 | **Console provider credentials** | obtained per request, not stored locally | trust boundary |
 | **Write-provider connections** | keychain/token management | not part of domain logic |
 
-> **Decision (2026-10-22, L-2).** One file `opencode.json` (global
+> **Decision (2026-10-22, L-2).** One file `settings.json` (global
 > `~/.config/opencode/`, then project), strict JSON, project precedence over
 > global over session payload; lists are appended, objects overridden field by
 > field; unknown keys warn, wrong types → `400`.

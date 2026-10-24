@@ -30,12 +30,53 @@ public class HttpApi {
 
     @POST
     @Path("/session")
-    public Response createSession() {
-        SessionId id = engine.createSession();
+    public Response createSession(CreateSessionRequest request) {
+        SessionId id = engine.createSession(request == null ? null : request.agent());
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("id", id.value());
         engine.session(id).ifPresent(info -> body.put("data", dto(info)));
         return Response.ok(body).build();
+    }
+
+    @POST
+    @Path("/session/{id}/agent")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response switchAgent(@PathParam("id") String id, SwitchAgentRequest request) {
+        if (request == null || request.agent() == null || request.agent().isBlank()) {
+            return badRequest("agent must not be blank");
+        }
+        try {
+            var selected = engine.switchAgent(SessionId.parse(id), request.agent());
+            if (selected.isEmpty()) {
+                return Response.status(Response.Status.NOT_FOUND).build();
+            }
+            var agent = selected.orElseThrow();
+            return Response.ok(Map.of("agent", agent.value(), "name", engine.agentName(agent))).build();
+        } catch (IllegalStateException e) {
+            return Response.status(Response.Status.CONFLICT)
+                    .entity(Map.of("_tag", "SessionRunningError",
+                            "message", e.getMessage() == null ? "session is running" : e.getMessage()))
+                    .build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage() == null ? "invalid agent" : e.getMessage());
+        }
+    }
+
+    @DELETE
+    @Path("/session/{id}")
+    public Response deleteSession(@PathParam("id") String id) {
+        try {
+            boolean deleted = engine.deleteSession(SessionId.parse(id));
+            if (!deleted) return Response.status(Response.Status.NOT_FOUND).build();
+            return Response.noContent().build();
+        } catch (IllegalStateException e) {
+            return Response.status(Response.Status.CONFLICT)
+                    .entity(Map.of("_tag", "SessionRunningError",
+                            "message", e.getMessage() == null ? "session is running" : e.getMessage()))
+                    .build();
+        } catch (IllegalArgumentException e) {
+            return badRequest("invalid session id");
+        }
     }
 
     @GET
@@ -394,6 +435,8 @@ public class HttpApi {
     public record PromptRequest(String text) {}
 
     public record CreateSessionRequest(String agent) {}
+
+    public record SwitchAgentRequest(String agent) {}
 
     public record CommandRequest(String name, String arguments) {}
 

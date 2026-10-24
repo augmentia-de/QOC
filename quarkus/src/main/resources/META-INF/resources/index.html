@@ -94,10 +94,12 @@
   <select id="sessions"></select>
   <span id="sessionTitle" style="color:var(--muted);font-size:.85rem"></span>
   <label>Agent <select id="agent"></select></label>
+  <button id="switchAgent">Agent wechseln</button>
   <label>Model <select id="model"></select></label>
   <label>Provider <select id="provider"></select></label>
   <label><input type="checkbox" id="showDetails"> Details</label>
   <button id="newSession" class="primary">+ Neue Session</button>
+  <button id="deleteSession" class="danger">Löschen</button>
   <button id="interrupt" class="danger">Interrupt</button>
   <button id="compact">Compact</button>
   <button id="revert">Revert</button>
@@ -366,6 +368,10 @@ async function switchSession(id) {
     const res = await fetch('/api/session/' + id);
     const data = await res.json();
     sessionTitle.textContent = data.title || '';
+    const agentSelect = document.getElementById('agent');
+    if (data.agent && Array.from(agentSelect.options).some(o => o.value === data.agent)) {
+      agentSelect.value = data.agent;
+    }
   } catch (e) {}
   // load messages
   try {
@@ -389,6 +395,11 @@ async function newSession(agent) {
     const res = await fetch('/api/session', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     const data = await res.json();
     sessionId = data.id;
+    const agentSelect = document.getElementById('agent');
+    const createdAgent = data.data && data.data.agent;
+    if (createdAgent && Array.from(agentSelect.options).some(o => o.value === createdAgent)) {
+      agentSelect.value = createdAgent;
+    }
     await loadSessions();
     sessionsSel.value = sessionId;
     messages.innerHTML = '';
@@ -397,6 +408,58 @@ async function newSession(agent) {
     connectSSE();
     await loadFiles('.');
   } catch (e) { status.textContent = 'Fehler: ' + e.message; }
+}
+
+async function switchAgent() {
+  if (!sessionId) return;
+  const select = document.getElementById('agent');
+  const agent = select.value;
+  if (!agent) return;
+  const selected = select.options[select.selectedIndex];
+  const label = selected ? selected.textContent : agent;
+  try {
+    const res = await fetch('/api/session/' + encodeURIComponent(sessionId) + '/agent', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({agent})
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || ('HTTP ' + res.status));
+    }
+    const data = await res.json();
+    logEvent('Agent gewechselt: ' + (data.name || label));
+    status.textContent = 'Agent: ' + (data.name || label);
+  } catch (e) {
+    alert('Agent-Wechsel fehlgeschlagen: ' + e.message);
+  }
+}
+
+async function deleteCurrentSession() {
+  if (!sessionId) return;
+  const selected = sessionsSel.options[sessionsSel.selectedIndex];
+  const label = selected ? selected.textContent : sessionId;
+  if (!confirm('Session wirklich löschen?\n\n' + label)) return;
+  try {
+    const res = await fetch('/api/session/' + encodeURIComponent(sessionId), {method:'DELETE'});
+    if (!res.ok && res.status !== 404) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || ('HTTP ' + res.status));
+    }
+    if (es) { es.close(); es = null; }
+    sessionId = null;
+    currentAssistant = null;
+    messages.innerHTML = '';
+    sessionTitle.textContent = '';
+    await loadSessions();
+    const next = sessionsSel.value;
+    if (next) {
+      await switchSession(next);
+    } else {
+      status.textContent = 'Keine Session';
+    }
+  } catch (e) {
+    alert('Löschen fehlgeschlagen: ' + e.message);
+  }
 }
 
 function connectSSE() {
@@ -519,7 +582,7 @@ async function loadSelectors() {
     const agents = await (await fetch('/api/agent')).json();
     const models = await (await fetch('/api/model')).json();
     const providers = await (await fetch('/api/provider')).json();
-    fill('agent', (agents.data||[]).map(a=>({value:a.id,label:a.name})));
+    fill('agent', (agents.data||[]).filter(a=>!a.hidden).map(a=>({value:a.id,label:a.name})));
     fill('model', (models.data||[]).map(m=>({value:m.id||m.model,label:m.model||m.id})));
     fill('provider', (providers.data||[]).map(p=>({value:p.id,label:p.name})));
   } catch (e) { /* ignore */ }
@@ -585,6 +648,8 @@ document.getElementById('newSession').onclick = () => {
   const agent = document.getElementById('agent').value;
   newSession(agent || null);
 };
+document.getElementById('switchAgent').onclick = switchAgent;
+document.getElementById('deleteSession').onclick = deleteCurrentSession;
 document.getElementById('interrupt').onclick = () => {
   if (sessionId) fetch('/api/session/' + sessionId + '/interrupt', {method:'POST'});
 };

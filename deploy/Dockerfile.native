@@ -1,8 +1,9 @@
 FROM debian:bookworm-slim
 WORKDIR /work/
 COPY quarkus/target/quarkus-1.0.0-SNAPSHOT-runner /work/application
-RUN chmod 755 /work/application && mkdir -p /workspace /data/log
+RUN chmod 755 /work/application && mkdir -p /workspace /data/log /data/home/.opencode/plan
 EXPOSE 8080
+ENV HOME=/data/home
 ENV QUARKUS_HTTP_HOST=0.0.0.0
 ENV QUARKUS_HTTP_PORT=8080
 ENV ENGINE_DB_KIND=sqlite

@@ -40,6 +40,13 @@ class OpenPromptLogicTest {
     }
 
     @Test
+    void planModeNotDetectedFromScopedEditDeny() {
+        AgentProfile agent = AgentProfile.forAgent(AgentId.create(), Option.none(), 10,
+                List.of(new Rule("edit", "*.env", Effect.DENY)), "build");
+        assertThat(agent.planMode()).isFalse();
+    }
+
+    @Test
     void titleGeneratorFromFirstMessage() {
         de.augmentia.oc.engine.core.contract.provider.ProviderAdapter provider =
                 request -> java.util.stream.Stream.of(new ModelEvent.TextEnded("b", "My Title"));

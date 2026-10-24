@@ -18,4 +18,7 @@ public interface SessionStore extends SessionReader {
     void removeInbox(SessionId session, InboxId id);
 
     List<SessionInfo> list();
+
+    /** Deletes one session and its dependent projections. */
+    boolean delete(SessionId session);
 }

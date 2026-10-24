@@ -112,6 +112,65 @@ class SqliteAdaptersTest {
     }
 
     @Test
+    void updatingSessionChangesTheAgent() {
+        SqliteSessions sessions = new SqliteSessions(dataSource);
+        SessionInfo info = sessionInfo();
+        sessions.put(info);
+
+        AgentId replacement = AgentId.create();
+        sessions.put(new SessionInfo(info.id(), info.projectId(), info.location(), info.title(),
+                replacement, info.model(), info.permissions(), info.cost(), info.tokens(),
+                info.created(), info.updated(), info.idle(), info.suspended(),
+                info.resumeAttempts(), info.archived()));
+
+        assertThat(sessions.info(info.id()).orElseThrow().agent()).isEqualTo(replacement);
+    }
+
+    @Test
+    void deletingSessionRemovesDependentRows() {
+        SqliteSessions sessions = new SqliteSessions(dataSource);
+        SessionInfo info = sessionInfo();
+        sessions.put(info);
+        sessions.putInbox(new InboxEntry(InboxId.create(), info.id(),
+                new InboxItem.UserItem("text", List.of(), List.of(), List.of(), Map.of()),
+                Delivery.QUEUE, Seq.of(1), Instant.EPOCH));
+
+        SqliteConversation conversation = new SqliteConversation(dataSource);
+        conversation.insert(info.id(), Seq.of(1),
+                new Message.UserMessage(MessageId.create(), "hello",
+                        List.of(), List.of(), List.of(), Map.of(), Instant.EPOCH));
+        SqliteInstructions instructions = new SqliteInstructions(dataSource);
+        instructions.putState(info.id(), new InstructionState(Seq.of(1), Seq.of(2),
+                Map.of("a", "1"), Map.of("a", "2")));
+        instructions.putEntry(info.id(), new InstructionEntry("a", "1", "h"));
+        SqliteClaims claims = new SqliteClaims(dataSource);
+        claims.acquire(info.id(), Instant.EPOCH);
+
+        assertThat(sessions.delete(info.id())).isTrue();
+        assertThat(sessions.info(info.id()).isEmpty()).isTrue();
+        assertThat(sessions.inbox(info.id())).isEmpty();
+        assertThat(conversation.messages(info.id(), Seq.zero())).isEmpty();
+        assertThat(instructions.state(info.id()).isEmpty()).isTrue();
+        assertThat(instructions.entries(info.id())).isEmpty();
+        assertThat(claims.open()).noneMatch(claim -> claim.sessionId().equals(info.id()));
+    }
+
+    @Test
+    void journalDeletesAggregateAndSequence() {
+        SqliteJournal journal = new SqliteJournal(dataSource, new FixedClock(Instant.EPOCH));
+        SessionId session = SessionId.create();
+        journal.append(new EventDraft(session.value(), 1,
+                new SessionEvent.ExecutionStarted(session)));
+
+        journal.deleteAggregate(session.value());
+
+        assertThat(journal.history(session.value(), Seq.zero())).isEmpty();
+        Seq next = journal.append(new EventDraft(session.value(), 1,
+                new SessionEvent.ExecutionSucceeded(session)));
+        assertThat(next).isEqualTo(Seq.of(1));
+    }
+
+    @Test
     void claimsAreExclusiveAndCountAttempts() {
         SqliteSessions sessions = new SqliteSessions(dataSource);
         SessionInfo info = sessionInfo();

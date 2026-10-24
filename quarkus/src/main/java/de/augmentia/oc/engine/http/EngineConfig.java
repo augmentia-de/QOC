@@ -78,7 +78,7 @@ public class EngineConfig {
         }
         merge(merged, read(projectFile()));
         merged.keySet().stream().filter(key -> !KNOWN.contains(key))
-                .forEach(key -> LOG.warning("unknown opencode.json key: " + key));
+                .forEach(key -> LOG.warning("unknown settings.json key: " + key));
 
         if (merged.get("workspace") instanceof JsonValue.Str value) workspace = value.value();
         if (merged.get("model") instanceof JsonValue.Obj modelObject) {
@@ -108,7 +108,10 @@ public class EngineConfig {
             }
         }
         if (agents.isEmpty()) {
-            // Secure defaults: allow-all, but deny external_directory and protect .env
+            // Secure defaults: allow-all, but deny external_directory and protect .env.
+            // The Plan directory (~/.opencode/plan) is the only external location
+            // that stays writable/readable, mirroring the reference implementation.
+            String planDir = planDirectory();
             agents.add(new AgentConfig("build", null, false, null, 32,
                     List.of("*"), List.of(),
                     List.of(
@@ -116,7 +119,18 @@ public class EngineConfig {
                             new Rule("external_directory", "*", Effect.DENY),
                             new Rule("read", "*.env", Effect.ASK),
                             new Rule("edit", "*.env", Effect.DENY),
-                            new Rule("shell", "*", Effect.ASK)),
+                            new Rule("shell", "*", Effect.ASK),
+                            new Rule("external_directory", planDir + "/*", Effect.ALLOW)),
+                    List.of("*")));
+            agents.add(new AgentConfig("plan", "You are in plan mode. Do not edit files.",
+                    false, null, 10, List.of("*"), List.of(),
+                    List.of(
+                            new Rule("*", "*", Effect.ALLOW),
+                            new Rule("edit", "*", Effect.DENY),
+                            new Rule("external_directory", "*", Effect.DENY),
+                            new Rule("read", "*.env", Effect.ASK),
+                            new Rule("shell", "*", Effect.ASK),
+                            new Rule("external_directory", planDir + "/*", Effect.ALLOW)),
                     List.of("*")));
         }
         if (merged.get("mcp") instanceof JsonValue.Obj mcp) {
@@ -229,11 +243,11 @@ public class EngineConfig {
 
     private Path globalFile() {
         String home = System.getProperty("user.home", ".");
-        return Path.of(home, ".config", "opencode", "opencode.json");
+        return Path.of(home, ".config", "opencode", "settings.json");
     }
 
     private Path projectFile() {
-        return Path.of(workspace).resolve("opencode.json");
+        return Path.of(workspace).resolve("settings.json");
     }
 
     private static void merge(Map<String, JsonValue> target, JsonValue source) {
@@ -262,6 +276,14 @@ public class EngineConfig {
         return object.values().get(key) instanceof JsonValue.Bool value ? value.value() : null;
     }
 
+    /**
+     * Plan mode writes to {@code ~/.opencode/plan}. Resolve it with the same
+     * rule the filesystem tools use so the permission allow-list matches.
+     */
+    static String planDirectory() {
+        return Path.of(System.getProperty("user.home", "."), ".opencode", "plan").toString();
+    }
+
     public record AgentConfig(String name, String system, boolean hidden,
                               String model, int maxSteps,
                               List<String> toolAllow, List<String> toolDeny,
@@ -282,7 +304,8 @@ public class EngineConfig {
                             new Rule("external_directory", "*", Effect.DENY),
                             new Rule("read", "*.env", Effect.ASK),
                             new Rule("edit", "*.env", Effect.DENY),
-                            new Rule("shell", "*", Effect.ASK)),
+                            new Rule("shell", "*", Effect.ASK),
+                            new Rule("external_directory", EngineConfig.planDirectory() + "/*", Effect.ALLOW)),
                     List.of("*"));
         }
     }

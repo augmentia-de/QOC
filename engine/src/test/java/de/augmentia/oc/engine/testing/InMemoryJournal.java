@@ -64,6 +64,11 @@ public final class InMemoryJournal implements Journal {
                 .toList();
     }
 
+    @Override
+    public synchronized void deleteAggregate(String aggregateId) {
+        events.remove(aggregateId);
+    }
+
     public synchronized int count(String aggregateId) {
         return events.getOrDefault(aggregateId, List.of()).size();
     }

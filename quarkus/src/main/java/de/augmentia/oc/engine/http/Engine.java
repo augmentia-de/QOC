@@ -47,6 +47,7 @@ import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
 import de.augmentia.oc.engine.runtime.tool.shell.ShellTool;
 import de.augmentia.oc.engine.runtime.tool.subagent.SubagentRunner;
 import de.augmentia.oc.engine.runtime.tool.subagent.SubagentTool;
+import de.augmentia.oc.engine.runtime.tool.web.FirecrawlTool;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
 import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
 import de.augmentia.oc.engine.runtime.permission.engine.PermissionEngine;
@@ -63,6 +64,7 @@ import de.augmentia.oc.engine.runtime.context.ContextBuilder;
 import de.augmentia.oc.engine.runtime.context.TitleGenerator;
 import de.augmentia.oc.engine.runtime.compaction.Compaction;
 import de.augmentia.oc.engine.runtime.compaction.CompactionService;
+import de.augmentia.oc.engine.runtime.session.core.SessionRetention;
 import de.augmentia.oc.engine.runtime.session.core.SessionService;
 import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
 import de.augmentia.oc.engine.runtime.step.Step;
@@ -73,6 +75,7 @@ import de.augmentia.oc.engine.runtime.tool.runtime.ToolAuthorizer;
 import de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
 import io.opentelemetry.api.trace.Span;
@@ -89,6 +92,9 @@ import java.util.ArrayList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /** Wiring of the engine for the Quarkus outer skin (M14). */
 @ApplicationScoped
@@ -119,6 +125,18 @@ public class Engine {
     String dbKind;
 
     @Inject
+    @ConfigProperty(name = "engine.firecrawl.api-key")
+    java.util.Optional<String> firecrawlApiKey;
+
+    @Inject
+    @ConfigProperty(name = "engine.firecrawl.endpoint", defaultValue = FirecrawlTool.DEFAULT_ENDPOINT)
+    String firecrawlEndpoint;
+
+    @Inject
+    @ConfigProperty(name = "engine.session.retention-days", defaultValue = "14")
+    long sessionRetentionDays;
+
+    @Inject
     WebApprovalSource approvalSource;
 
     private Clock clock;
@@ -137,6 +155,8 @@ public class Engine {
     private List<Rule> allowAll;
     private SubagentTool subagentTool;
     private PermissionEngine permissionEngine;
+    private SessionRetention sessionRetention;
+    private ScheduledExecutorService retentionExecutor;
     private final EventCodec codec = EventCodec.standard();
     private final java.util.concurrent.ConcurrentHashMap<SessionId, Thread> running =
             new java.util.concurrent.ConcurrentHashMap<>();
@@ -176,6 +196,7 @@ public class Engine {
         };
 
         sessionService = new SessionService(journal, sessions, wake, sessions::removeInbox);
+        sessionRetention = new SessionRetention(sessions, journal, clock, sessionRetentionDays);
         ApprovalStore permissionApprovals = sqlite ? new SqliteApprovals(dataSource) : new SqlApprovals(dataSource);
         CredentialStore credentialStore = sqlite ? new SqliteCredentials(dataSource) : new SqlCredentials(dataSource);
         permissionEngine = new PermissionEngine(Option.some(permissionApprovals),
@@ -211,6 +232,9 @@ public class Engine {
         registry.register(ShellTool.definition(new JdkProcessRunner(), workspacePath, workspacePath, null, permissionGate));
         subagentTool = new SubagentTool(null, permissionGate);
         registry.register(SubagentTool.definition(subagentTool));
+        String firecrawlKey = firecrawlApiKey == null ? "" : firecrawlApiKey.orElse("");
+        registry.register(FirecrawlTool.definition(
+                new FirecrawlTool(new JdkHttpTransport(), firecrawlKey, firecrawlEndpoint)));
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
         mcp = new McpServerManager(registry, new JdkHttpTransport(), new JdkProcessRunner(),
                 Option.some(credentialStore));
@@ -230,6 +254,39 @@ public class Engine {
         }
         compaction = new CompactionService(journal, conversation, instructions,
                 new Compaction(journal, provider), clock, 8, provider);
+        startRetention();
+    }
+
+    private void startRetention() {
+        if (sessionRetentionDays <= 0) return;
+        retentionExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "qoc-session-retention");
+            thread.setDaemon(true);
+            return thread;
+        });
+        retentionExecutor.scheduleWithFixedDelay(this::purgeExpiredSessions, 0, 1, TimeUnit.HOURS);
+    }
+
+    private void purgeExpiredSessions() {
+        try {
+            int deleted = sessionRetention.purgeExpired(id -> running.containsKey(id));
+            if (deleted > 0) LOG.infof("session retention deleted %d session(s)", deleted);
+        } catch (RuntimeException e) {
+            LOG.warn("session retention failed: " + e.getMessage(), e);
+        }
+    }
+
+    @PreDestroy
+    void shutdownRetention() {
+        if (retentionExecutor != null) retentionExecutor.shutdownNow();
+    }
+
+    public boolean deleteSession(SessionId id) {
+        if (id == null) return false;
+        if (running.containsKey(id)) {
+            throw new IllegalStateException("session is currently running");
+        }
+        return sessionRetention.delete(id);
     }
 
     public SessionId createSession() {
@@ -239,19 +296,51 @@ public class Engine {
     public SessionId createSession(String agentName) {
         Path directory = Path.of(config.workspace()).toAbsolutePath().normalize();
         Location location = new Location(directory, ProjectId.create(), Option.none());
-        AgentId agent = agentName == null ? agentCatalogue.primaryId()
-                : agentCatalogue.list().stream()
-                        .filter(a -> a.name().equalsIgnoreCase(agentName))
-                        .findFirst()
-                        .map(AgentCatalogue.AgentDto::id)
-                        .map(AgentId::parse)
-                        .orElse(agentCatalogue.primaryId());
+        AgentId selected = resolveAgent(agentName);
+        AgentId agent = selected == null ? agentCatalogue.primaryId() : selected;
         Instant now = clock.now();
         SessionId id = sessionService.create(location, agent, Option.none(), now);
         sessions.put(new SessionInfo(id, location.projectId(), location, "New session", agent,
                 Option.none(), List.of(), Money.zero(), TokenCount.zero(), now, now,
                 Option.none(), Option.none(), 0, Option.none()));
         return id;
+    }
+
+    private AgentId resolveAgent(String selector) {
+        if (selector == null || selector.isBlank()) return null;
+        return agentCatalogue.list().stream()
+                .filter(agent -> agent.name().equalsIgnoreCase(selector)
+                        || agent.id().equalsIgnoreCase(selector))
+                .findFirst()
+                .map(AgentCatalogue.AgentDto::id)
+                .map(AgentId::parse)
+                .orElse(null);
+    }
+
+    /**
+     * Switches the active agent of an existing session. The next prompt uses
+     * the new agent's system prompt, model, tools and permissions.
+     */
+    public Option<AgentId> switchAgent(SessionId id, String agentSelector) {
+        if (id == null) throw new IllegalArgumentException("session id must not be null");
+        SessionInfo info = sessions.info(id).orElse(null);
+        if (info == null) return Option.none();
+        if (running.containsKey(id)) {
+            throw new IllegalStateException("session is currently running");
+        }
+        AgentId selected = resolveAgent(agentSelector);
+        if (selected == null) {
+            throw new IllegalArgumentException("unknown agent: " + agentSelector);
+        }
+        if (selected.equals(info.agent())) return Option.some(selected);
+
+        sessions.put(new SessionInfo(id, info.projectId(), info.location(), info.title(),
+                selected, info.model(), info.permissions(), info.cost(), info.tokens(),
+                info.created(), clock.now(), info.idle(), info.suspended(),
+                info.resumeAttempts(), info.archived()));
+        journal.append(new EventDraft(id.value(), 1,
+                new SessionEvent.SessionAgentSelected(id, selected, Option.some(info.agent()))));
+        return Option.some(selected);
     }
 
     public Option<SessionInfo> session(SessionId id) {
@@ -357,12 +446,8 @@ public class Engine {
 
         String agentName = agentCatalogue.nameOf(info.agent());
         EngineConfig.AgentConfig agentConfig = agentCatalogue.config(agentName);
-        List<Rule> agentRules = (agentConfig == null || agentConfig.permissions().isEmpty())
-                ? List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK))
-                : agentConfig.permissions();
-        int maxSteps = agentConfig == null ? 10 : agentConfig.maxSteps();
         AgentProfile agent = agentOverride != null ? agentOverride
-                : AgentProfile.forAgent(info.agent(), Option.none(), maxSteps, agentRules, agentName);
+                : agentProfile(info.agent(), agentName, agentConfig);
 
         // Model override from agent config
         ModelInfo model = modelInfo();
@@ -484,6 +569,15 @@ public class Engine {
     private static final int MAX_CONCURRENT_SUBAGENTS = 4;
     private final java.util.concurrent.Semaphore subagentSemaphore = new java.util.concurrent.Semaphore(MAX_CONCURRENT_SUBAGENTS);
 
+    AgentProfile agentProfile(AgentId id, String name, EngineConfig.AgentConfig config) {
+        List<Rule> rules = (config == null || config.permissions().isEmpty())
+                ? List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK))
+                : config.permissions();
+        int maxSteps = config == null ? 10 : config.maxSteps();
+        Option<String> system = config == null ? Option.none() : Option.of(config.system());
+        return AgentProfile.forAgent(id, system, maxSteps, rules, name);
+    }
+
     public SubagentRunner.SubagentResult runSubagent(SessionId parent, String agentName, String prompt, int depth) {
         AgentId agentId = agentCatalogue.resolve(agentName);
         if (agentId == null) {
@@ -511,8 +605,7 @@ public class Engine {
         try {
             Path directory = Path.of(config.workspace()).toAbsolutePath().normalize();
             Location location = new Location(directory, ProjectId.create(), Option.none());
-            AgentProfile agent = AgentProfile.forAgent(agentId, Option.none(), 10,
-                    List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK)), agentName);
+            AgentProfile agent = agentProfile(agentId, agentName, agentCatalogue.config(agentName));
 
             SessionId child = sessionService.create(location, agentId, Option.none(), clock.now());
             sessions.put(new SessionInfo(child, location.projectId(), location, "Subagent: " + agentName, agentId,
@@ -571,6 +664,10 @@ public class Engine {
 
     public List<AgentCatalogue.AgentDto> agents() {
         return agentCatalogue.list();
+    }
+
+    public String agentName(AgentId id) {
+        return agentCatalogue.nameOf(id);
     }
 
     public List<String> mcpServerNames() {

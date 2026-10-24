@@ -368,6 +368,7 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
             "de.augmentia.oc.engine.http.HttpApi$PromptResponse",
             "de.augmentia.oc.engine.http.HttpApi$ProviderDto",
             "de.augmentia.oc.engine.http.HttpApi$SessionDto",
+            "de.augmentia.oc.engine.http.HttpApi$SwitchAgentRequest",
             "de.augmentia.oc.engine.http.NativeReflectionConfig",
             "de.augmentia.oc.engine.http.ProviderProducer",
             "de.augmentia.oc.engine.http.WebApprovalSource",

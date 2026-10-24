@@ -3,7 +3,7 @@
 ## 1. Agent definition
 
 An agent is a named profile that determines how a session behaves. The
-configuration is part of `opencode.json` (global then project; project wins).
+configuration is part of `settings.json` (global then project; project wins).
 
 ```json
 {
@@ -48,8 +48,8 @@ configuration is part of `opencode.json` (global then project; project wins).
 
 ## 3. Precedence
 
-1. Global `~/.config/opencode/opencode.json`
-2. Project `opencode.json`
+1. Global `~/.config/opencode/settings.json`
+2. Project `settings.json`
 3. Environment (`ENGINE_*`)
 4. Agent-specific overrides inside the agent definition
 

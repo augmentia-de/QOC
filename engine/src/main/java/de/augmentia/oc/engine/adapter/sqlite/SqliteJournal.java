@@ -65,6 +65,18 @@ public final class SqliteJournal implements Journal {
                 "where aggregate_id = ? and seq > ? and type = ? order by seq", aggregateId, after, type);
     }
 
+    @Override
+    public void deleteAggregate(String aggregateId) {
+        if (aggregateId == null || aggregateId.isBlank()) {
+            throw new IllegalArgumentException("aggregateId must not be blank");
+        }
+        Sqlite.transaction(dataSource, connection -> {
+            Sqlite.execute(connection, "delete from event where aggregate_id = ?", aggregateId);
+            Sqlite.execute(connection, "delete from event_sequence where aggregate_id = ?", aggregateId);
+            return null;
+        });
+    }
+
     private Seq append(Connection connection, EventDraft draft) {
         long seq = nextSequence(connection, draft.aggregateId());
         String json = Sqlite.json(codec.encode(draft.payload()));

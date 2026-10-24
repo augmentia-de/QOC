@@ -19,14 +19,24 @@ public class DatabaseMigration {
     DataSource dataSource;
 
     @Inject
+    Flyway flyway;
+
+    @Inject
     @ConfigProperty(name = "engine.db.kind", defaultValue = "postgresql")
     String dbKind;
 
     void onStart(@Observes StartupEvent event) {
-        String location = "sqlite".equalsIgnoreCase(dbKind)
-                ? "classpath:db/migration-sqlite"
-                : "classpath:db/migration";
-        Flyway.configure().dataSource(dataSource).locations(location).load().migrate();
+        if (isNativeImage()) {
+            // In native images Flyway's classpath directory scanning is replaced by
+            // Quarkus' build-time migration registry. Use the Quarkus-managed
+            // Flyway bean so the registered SQLite migrations are visible.
+            flyway.migrate();
+        } else {
+            String location = "sqlite".equalsIgnoreCase(dbKind)
+                    ? "classpath:db/migration-sqlite"
+                    : "classpath:db/migration";
+            Flyway.configure().dataSource(dataSource).locations(location).load().migrate();
+        }
 
         if ("sqlite".equalsIgnoreCase(dbKind)) {
             try (Connection connection = dataSource.getConnection();
@@ -37,5 +47,9 @@ public class DatabaseMigration {
                 throw new RuntimeException("cannot configure sqlite", e);
             }
         }
+    }
+
+    private static boolean isNativeImage() {
+        return System.getProperty("org.graalvm.nativeimage.imagecode") != null;
     }
 }

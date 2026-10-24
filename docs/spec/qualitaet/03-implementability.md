@@ -241,7 +241,7 @@ The yardstick can be falsified: try to write three things **from the spec alone*
 | Attempt | Result | Evidence |
 |---|---|---|
 | implement an endpoint | **possible** – path, method, success, error, frame | `betrieb/01` |
-| write an `opencode.json` | impossible – no schema | L-2 |
+| write an `settings.json` | impossible – no schema | L-2 |
 | load a skill | **possible** – sources, format, visibility, tool | `betrieb/02` |
 
 If one of the two remaining attempts succeeds anyway, the matrix is too

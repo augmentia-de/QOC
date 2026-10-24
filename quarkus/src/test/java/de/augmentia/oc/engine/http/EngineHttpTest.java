@@ -54,9 +54,67 @@ class EngineHttpTest {
                 .then().statusCode(200)
                 .body("interrupted", equalTo(false));
 
-        given().get("/api/agent").then().statusCode(200).body(containsString("build"));
+        given().get("/api/agent").then().statusCode(200)
+                .body(containsString("build"))
+                .body(containsString("plan"));
         given().get("/api/config").then().statusCode(200).body("[1].value", equalTo("gpt-4o-mini"));
         given().get("/api/model").then().statusCode(200).body("data[0].context", equalTo(128000));
+    }
+
+    @Test
+    void switchAgentInAnExistingSession() {
+        String buildId = given().get("/api/agent")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("data.find { it.name == 'build' }.id");
+        String planId = given().get("/api/agent")
+                .then().statusCode(200)
+                .extract().jsonPath().getString("data.find { it.name == 'plan' }.id");
+
+        String id = given()
+                .contentType(ContentType.JSON)
+                .body(Map.of("agent", buildId))
+                .post("/api/session")
+                .then().statusCode(200)
+                .body("data.agent", equalTo(buildId))
+                .extract().path("id");
+
+        given()
+                .contentType(ContentType.JSON)
+                .body(Map.of("agent", "plan"))
+                .post("/api/session/" + id + "/agent")
+                .then().statusCode(200)
+                .body("agent", equalTo(planId))
+                .body("name", equalTo("plan"));
+
+        given().get("/api/session/" + id)
+                .then().statusCode(200)
+                .body("agent", equalTo(planId));
+
+        given().accept("text/event-stream")
+                .get("/api/event?session=" + id + "&live=false")
+                .then().statusCode(200)
+                .body(containsString("SessionAgentSelected"));
+
+        given().contentType(ContentType.JSON)
+                .body(Map.of("agent", "does-not-exist"))
+                .post("/api/session/" + id + "/agent")
+                .then().statusCode(400);
+
+        given().delete("/api/session/" + id).then().statusCode(204);
+    }
+
+    @Test
+    void deleteSessionRemovesIt() {
+        String id = given()
+                .contentType(ContentType.JSON)
+                .post("/api/session")
+                .then().statusCode(200)
+                .extract().path("id");
+
+        given().delete("/api/session/" + id)
+                .then().statusCode(204);
+        given().get("/api/session/" + id)
+                .then().statusCode(404);
     }
 
     @Test

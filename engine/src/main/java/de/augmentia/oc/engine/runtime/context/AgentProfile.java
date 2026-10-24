@@ -25,10 +25,13 @@ public record AgentProfile(AgentId id, Option<String> system, int maxSteps, List
     public static AgentProfile forAgent(AgentId id, Option<String> system, int maxSteps,
                                         List<Rule> permissions, String name) {
         boolean plan = "plan".equalsIgnoreCase(name);
-        // Auto-detect plan mode: if "edit" is denied, it's plan mode.
+        // Auto-detect plan mode only when edit is denied globally. Scoped rules
+        // such as "edit: *.env = deny" must not turn a build agent into plan mode.
         if (!plan && permissions != null) {
             plan = permissions.stream().anyMatch(r ->
-                    "edit".equalsIgnoreCase(r.action()) && r.effect() == Effect.DENY);
+                    "edit".equalsIgnoreCase(r.action())
+                            && ("*".equals(r.resource()) || "**".equals(r.resource()))
+                            && r.effect() == Effect.DENY);
         }
         return new AgentProfile(id, system, maxSteps, permissions, plan);
     }

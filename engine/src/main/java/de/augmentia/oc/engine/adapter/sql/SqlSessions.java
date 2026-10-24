@@ -33,6 +33,7 @@ public final class SqlSessions implements SessionStore {
                             "time_suspended, resume_attempts, time_archived) " +
                             "values (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?::jsonb, ?, ?, ?, ?, ?, ?) " +
                             "on conflict (id) do update set title = excluded.title, " +
+                            "agent_id = excluded.agent_id, " +
                             "model = excluded.model, permissions = excluded.permissions, " +
                             "cost = excluded.cost, tokens = excluded.tokens, " +
                             "time_updated = excluded.time_updated, time_idle = excluded.time_idle, " +
@@ -75,6 +76,22 @@ public final class SqlSessions implements SessionStore {
                     session.value(), id.value());
             return null;
         });
+    }
+
+    @Override
+    public boolean delete(SessionId session) {
+        if (session == null) throw new IllegalArgumentException("session must not be null");
+        Sql.transaction(dataSource, connection -> {
+            Sql.execute(connection, "delete from session_claim where session_id = ?", session.value());
+            Sql.execute(connection, "delete from resume_counter where session_id = ?", session.value());
+            Sql.execute(connection, "delete from session_message where session_id = ?", session.value());
+            Sql.execute(connection, "delete from session_inbox where session_id = ?", session.value());
+            Sql.execute(connection, "delete from instruction_entry where session_id = ?", session.value());
+            Sql.execute(connection, "delete from instruction_state where session_id = ?", session.value());
+            Sql.execute(connection, "delete from session where id = ?", session.value());
+            return null;
+        });
+        return true;
     }
 
     public List<SessionInfo> list() {
