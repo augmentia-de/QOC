@@ -81,6 +81,19 @@ class WorktreeToolTest {
 
         assertThat(outcome).isInstanceOf(ToolOutcome.Failed.class);
         assertThat(((ToolOutcome.Failed) outcome).error().message()).contains("git is not available");
+        assertThat(WorktreeTool.available(failing, directory)).isFalse();
+    }
+
+    @Test
+    void availabilityRequiresAGitRepository(@TempDir Path directory) throws Exception {
+        Assumptions.assumeTrue(gitAvailable(), "git is not installed");
+        JdkProcessRunner runner = new JdkProcessRunner();
+
+        assertThat(WorktreeTool.available(runner, directory)).isFalse();
+
+        run(directory, "git", "init", "-q");
+
+        assertThat(WorktreeTool.available(runner, directory)).isTrue();
     }
 
     private static ToolOutcome execute(ToolDefinition definition, Map<String, JsonValue> input) {

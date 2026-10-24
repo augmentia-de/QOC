@@ -32,11 +32,13 @@ otherwise make Java fall back to `/` and break plan writes.
 cd qoc
 mvn -DskipTests package -Dnative     # requires GraalVM
 cd deploy
-INSTALL_GIT=true docker compose -f docker-compose.native.yml up -d --build
+docker compose -f docker-compose.native.yml up -d --build
 ```
 
-`INSTALL_GIT` (default `false`) installs git for the worktree tools. On the
-Debian native base it adds about **88 MiB** (git plus the Perl stack): the
-image grows from ~263 MiB to ~351 MiB. Without git the worktree tools return a
-clear "git is not available" failure; everything else works. The JVM image
-uses Alpine git (~9 MiB) and always includes it.
+The native image intentionally contains **no git**. The worktree tools are
+therefore unavailable there; use the JVM image for git worktrees.
+
+The native compose file mounts `deploy/AGENTS.native.md` read-only at
+`/data/workspace/AGENTS.md`, so agents see the native-specific restrictions
+without modifying the shared host workspace. The file is also baked into the
+image at `/opt/qoc/AGENTS.md`.

@@ -39,6 +39,30 @@ public final class WorktreeTool {
         this.workspace = workspace.toAbsolutePath().normalize();
     }
 
+    /**
+     * Returns true when the {@code git} binary is runnable and the workspace is
+     * inside a Git working tree. Worktree tools are only registered when this
+     * holds, so images without Git do not advertise tools that cannot work.
+     */
+    public static boolean available(ProcessRunner runner, Path workspace) {
+        if (runner == null || workspace == null) return false;
+        Path root = workspace.toAbsolutePath().normalize();
+        try {
+            ProcessRunner.Exit version = runner.run(new ProcessRunner.ProcessSpec(
+                    List.of("git", "--version"), Option.none(),
+                    Map.of("GIT_TERMINAL_PROMPT", "0"), Option.none(), false),
+                    Duration.ofSeconds(5));
+            if (version.code() != 0) return false;
+            ProcessRunner.Exit inside = runner.run(new ProcessRunner.ProcessSpec(
+                    List.of("git", "-C", root.toString(), "rev-parse", "--is-inside-work-tree"),
+                    Option.none(), Map.of("GIT_TERMINAL_PROMPT", "0"), Option.none(), false),
+                    Duration.ofSeconds(5));
+            return inside.code() == 0 && "true".equals(inside.stdout().strip());
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     public static ToolDefinition create(WorktreeTool tool) {
         Schema input = Schema.obj(Map.of("name", Schema.str()));
         return new ToolDefinition(new ToolName("worktree_create"),

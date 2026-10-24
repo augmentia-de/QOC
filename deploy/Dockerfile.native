@@ -1,16 +1,11 @@
 FROM debian:bookworm-slim
 WORKDIR /work/
 COPY quarkus/target/quarkus-1.0.0-SNAPSHOT-runner /work/application
+COPY deploy/AGENTS.native.md /opt/qoc/AGENTS.md
 
-# git backs the worktree tools, but costs ~88 MiB on Debian because of the
-# Perl stack. It is opt-in for the native image.
-ARG INSTALL_GIT=false
-RUN chmod 755 /work/application && mkdir -p /workspace /data/log /data/home/.opencode/plan \
+RUN chmod 755 /work/application && mkdir -p /data/workspace /data/log /data/home/.opencode/plan \
     && apt-get update \
     && apt-get install -y --no-install-recommends util-linux \
-    && if [ "$INSTALL_GIT" = "true" ]; then \
-         apt-get install -y --no-install-recommends git; \
-       fi \
     && rm -rf /var/lib/apt/lists/*
 EXPOSE 8080
 ENV HOME=/data/home
@@ -21,4 +16,4 @@ ENV ENGINE_DB_PATH=/data/qoc.db
 ENV ENGINE_WORKSPACE=/data/workspace
 ENV LOG_DIR=/data/log
 ENV QUARKUS_OTEL_ENABLED=false
-ENTRYPOINT ["/work/application"]
+ENTRYPOINT ["/bin/sh", "-c", "mkdir -p /data/workspace /data/log /data/home/.opencode/plan && exec /work/application"]
