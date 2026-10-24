@@ -257,7 +257,8 @@ public class Engine {
         registry.register(PatchTool.definition(fs, access, permissionGate));
         registry.register(GlobTool.definition(fs, access, permissionGate));
         registry.register(GrepTool.definition(fs, access, permissionGate));
-        registry.register(ShellTool.definition(new JdkProcessRunner(), workspacePath, workspacePath, null, permissionGate));
+        JdkProcessRunner processRunner = new JdkProcessRunner();
+        registry.register(ShellTool.definition(processRunner, workspacePath, workspacePath, null, permissionGate));
         subagentTool = new SubagentTool(null, permissionGate);
         registry.register(SubagentTool.definition(subagentTool));
         String firecrawlKey = firecrawlApiKey == null ? "" : firecrawlApiKey.orElse("");
@@ -285,10 +286,14 @@ public class Engine {
         registry.register(SessionTools.rename(sessionControl));
         registry.register(SessionTools.move(sessionControl));
         registry.register(SessionTools.models(sessionControl));
-        WorktreeTool worktrees = new WorktreeTool(new JdkProcessRunner(), workspacePath);
-        registry.register(WorktreeTool.create(worktrees));
-        registry.register(WorktreeTool.list(worktrees));
-        registry.register(WorktreeTool.remove(worktrees));
+        if (WorktreeTool.available(processRunner, workspacePath)) {
+            WorktreeTool worktrees = new WorktreeTool(processRunner, workspacePath);
+            registry.register(WorktreeTool.create(worktrees));
+            registry.register(WorktreeTool.list(worktrees));
+            registry.register(WorktreeTool.remove(worktrees));
+        } else {
+            LOG.info("worktree tools disabled: git is not available or the workspace is not a git repository");
+        }
         registry.register(QuestionTool.definition(new QuestionTool(questionSource)));
         // Skills are project text, loaded on request: <workspace>/skill(s),
         // <workspace>/.opencode/skills and any configured skills.paths.
@@ -309,9 +314,11 @@ public class Engine {
             LOG.infof("loaded %d skill(s): %s", skillCatalog.all().size(),
                     skillCatalog.all().stream().map(skill -> skill.id().value()).toList());
         }
-        registry.register(SkillTool.definition(skillCatalog,
-                agentId -> agentProfile(agentId, agentCatalogue.nameOf(agentId),
-                        agentCatalogue.config(agentCatalogue.nameOf(agentId))).permissions()));
+        java.util.function.Function<AgentId, List<Rule>> skillRules = agentId ->
+                agentProfile(agentId, agentCatalogue.nameOf(agentId),
+                        agentCatalogue.config(agentCatalogue.nameOf(agentId))).permissions();
+        registry.register(SkillTool.definition(skillCatalog, skillRules));
+        registry.register(SkillTool.listDefinition(skillCatalog, skillRules));
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
         mcp = new McpServerManager(registry, new JdkHttpTransport(), new JdkProcessRunner(),
                 Option.some(credentialStore));
@@ -927,12 +934,20 @@ public class Engine {
 
     /** Listed skills (description set, autoinvoke enabled), sorted by ID. */
     public List<SkillDto> skills() {
-        return skillCatalog.listed().stream()
-                .map(skill -> new SkillDto(skill.id().value(), skill.name(), skill.description()))
+        return skills(false);
+    }
+
+    /** @param includeHidden include skills hidden from the prompt */
+    public List<SkillDto> skills(boolean includeHidden) {
+        List<de.augmentia.oc.engine.runtime.skill.Skill> skills =
+                includeHidden ? skillCatalog.all() : skillCatalog.listed();
+        return skills.stream()
+                .map(skill -> new SkillDto(skill.id().value(), skill.name(),
+                        skill.description(), skill.listed()))
                 .toList();
     }
 
-    public record SkillDto(String id, String name, String description) {}
+    public record SkillDto(String id, String name, String description, boolean listed) {}
 
     public String agentName(AgentId id) {
         return agentCatalogue.nameOf(id);

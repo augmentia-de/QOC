@@ -61,6 +61,8 @@ class EngineHttpTest {
                 .body(containsString("plan"));
         given().get("/api/skill").then().statusCode(200)
                 .body("data", notNullValue());
+        given().get("/api/skill?all=true").then().statusCode(200)
+                .body("data", notNullValue());
         given().get("/api/session/" + id + "/todo").then().statusCode(200)
                 .body("data", notNullValue());
         given().get("/api/session/" + id + "/question").then().statusCode(200)

@@ -415,8 +415,8 @@ public class HttpApi {
 
     @GET
     @Path("/skill")
-    public Response skills() {
-        return Response.ok(Map.of("location", engine.location(), "data", engine.skills())).build();
+    public Response skills(@QueryParam("all") @DefaultValue("false") boolean all) {
+        return Response.ok(Map.of("location", engine.location(), "data", engine.skills(all))).build();
     }
 
     @GET

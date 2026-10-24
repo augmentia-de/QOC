@@ -34,6 +34,31 @@ class SkillToolTest {
     }
 
     @Test
+    void listShowsEverySkillIncludingHiddenOnes() {
+        SkillCatalog catalog = SkillCatalog.of(List.of(
+                skill("visible", "visible skill"),
+                new Skill(SkillId.parse("hidden"), "hidden", "hidden skill", "body",
+                        Path.of("/skills/hidden"), List.of(), false)));
+
+        ToolOutcome outcome = executeList(catalog, List.of());
+
+        assertThat(text(outcome)).contains("visible: visible skill");
+        assertThat(text(outcome)).contains("hidden (hidden): hidden skill");
+    }
+
+    @Test
+    void listOmitsSkillsDeniedForTheAgent() {
+        SkillCatalog catalog = SkillCatalog.of(List.of(
+                skill("visible", "visible skill"),
+                skill("blocked", "blocked skill")));
+
+        ToolOutcome outcome = executeList(catalog, List.of(new Rule("skill", "blocked", Effect.DENY)));
+
+        assertThat(text(outcome)).contains("visible");
+        assertThat(text(outcome)).doesNotContain("blocked");
+    }
+
+    @Test
     void unknownSkillIsAToolError() {
         assertThat(execute(SkillCatalog.empty(), List.of(), "missing"))
                 .isInstanceOf(ToolOutcome.Failed.class);
@@ -66,6 +91,13 @@ class SkillToolTest {
 
         assertThat(execute(definition, deniedAgent, "commit")).isInstanceOf(ToolOutcome.Failed.class);
         assertThat(execute(definition, allowedAgent, "commit")).isInstanceOf(ToolOutcome.Ok.class);
+    }
+
+    private static ToolOutcome executeList(SkillCatalog catalog, List<Rule> rules) {
+        ToolContext context = new ToolContext(SessionId.create(), AgentId.create(),
+                MessageId.create(), CallId.create());
+        return SkillTool.listDefinition(catalog, agentId -> rules)
+                .execute().execute(JsonValue.of(Map.of()), context);
     }
 
     private static ToolOutcome execute(SkillCatalog catalog, List<Rule> rules, String id) {

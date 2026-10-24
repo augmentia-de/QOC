@@ -1,6 +1,7 @@
 package de.augmentia.oc.engine.runtime.tool.skill;
 
 import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
+import de.augmentia.oc.engine.core.contract.tool.ToolOptions;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
 import de.augmentia.oc.engine.core.eval.PermissionRules;
@@ -52,6 +53,48 @@ public final class SkillTool {
                     List<Rule> rules = resolver.apply(context.agentId());
                     return execute(catalog, rules == null ? List.of() : rules, value);
                 }, null);
+    }
+
+    /**
+     * Lists every catalog entry, including skills hidden from the prompt via
+     * {@code disable-model-invocation}. A {@code skill} deny for the calling
+     * agent also hides the entry (SK-08).
+     */
+    public static ToolDefinition listDefinition(SkillCatalog catalog,
+                                                java.util.function.Function<AgentId, List<Rule>> rulesByAgent) {
+        if (catalog == null) throw new IllegalArgumentException("catalog must not be null");
+        java.util.function.Function<AgentId, List<Rule>> resolver =
+                rulesByAgent == null ? agentId -> List.of() : rulesByAgent;
+        Schema input = Schema.obj(Map.of());
+        return new ToolDefinition(new ToolName("skill_list"),
+                "List every available skill, including hidden ones. Load one with skill(id).",
+                input, Option.none(),
+                (value, context) -> {
+                    List<Rule> rules = resolver.apply(context.agentId());
+                    return list(catalog, rules == null ? List.of() : rules);
+                },
+                new ToolOptions(Option.none(), Option.of("skill"), true, false));
+    }
+
+    static ToolOutcome list(SkillCatalog catalog, List<Rule> rules) {
+        List<Skill> visible = catalog.all().stream()
+                .filter(skill -> PermissionRules.evaluate(rules, "skill", skill.id().value()) != Effect.DENY)
+                .toList();
+        if (visible.isEmpty()) {
+            return new ToolOutcome.Ok(new ToolResult(Option.none(),
+                    List.of(new ToolContent.TextItem("No skills are available.")),
+                    Map.of("count", 0, "listed", 0)));
+        }
+        StringBuilder text = new StringBuilder();
+        for (Skill skill : visible) {
+            text.append("- ").append(skill.id().value());
+            if (!skill.listed()) text.append(" (hidden)");
+            text.append(": ").append(skill.description()).append('\n');
+        }
+        long listed = visible.stream().filter(Skill::listed).count();
+        return new ToolOutcome.Ok(new ToolResult(Option.none(),
+                List.of(new ToolContent.TextItem(text.toString().strip())),
+                Map.of("count", visible.size(), "listed", listed)));
     }
 
     static ToolOutcome execute(SkillCatalog catalog, List<Rule> rules, JsonValue value) {
