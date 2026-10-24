@@ -36,6 +36,8 @@ public final class OpenAiRequestEncoder implements Function<ModelRequest, String
         body.put("model", JsonValue.of(modelName));
         body.put("stream", JsonValue.of(true));
         body.put("stream_options", JsonValue.of(Map.of("include_usage", JsonValue.of(true))));
+        // V-14: provider options are passed through unchanged.
+        request.providerOptions().forEach((key, value) -> body.put(key, toJson(value)));
 
         List<JsonValue> messages = new ArrayList<>();
         if (!request.system().isEmpty()) {
@@ -156,6 +158,27 @@ public final class OpenAiRequestEncoder implements Function<ModelRequest, String
 
     private static JsonValue message(String role, JsonValue content) {
         return JsonValue.of(Map.of("role", JsonValue.of(role), "content", content));
+    }
+
+    /** Converts a neutral provider option value into JSON. */
+    private static JsonValue toJson(Object value) {
+        return switch (value) {
+            case null -> JsonValue.ofNull();
+            case JsonValue json -> json;
+            case Boolean bool -> JsonValue.of(bool);
+            case Integer number -> JsonValue.of(number.longValue());
+            case Long number -> JsonValue.of(number);
+            case Float number -> JsonValue.of(number.doubleValue());
+            case Double number -> JsonValue.of(number);
+            case java.math.BigDecimal number -> JsonValue.of(number);
+            case String text -> JsonValue.of(text);
+            case Map<?, ?> map -> JsonValue.of(map.entrySet().stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            entry -> String.valueOf(entry.getKey()),
+                            entry -> toJson(entry.getValue()))));
+            case List<?> list -> JsonValue.of(list.stream().map(OpenAiRequestEncoder::toJson).toList());
+            default -> JsonValue.of(String.valueOf(value));
+        };
     }
 
     private static String outcomeText(OutcomePayload outcome) {

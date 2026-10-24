@@ -274,7 +274,7 @@ description: Use when the user asks to run tests for a package or verify a chang
 |---|---|---|
 | number of skills | 3 | decision (not reference) |
 | description | ≤ 500 characters | decision (token budget) |
-| body | ≤ 4 KiB | decision (one prompt block) |
+| body | ≤ 8 KiB | decision (one prompt block) |
 | files per skill | ≤ 10 | reference behavior (`packages/core/src/skill.ts:68`) |
 | search depth | 6 | reference behavior (`packages/core/src/config/plugin/skill-scan.ts:7`) |
 
@@ -347,7 +347,7 @@ global**; a later configured source beats an earlier one.
 
 | Point | Question | Impact |
 |---|---|---|
-| **SK-A** | Should the limits from §6 (3 skills, 4 KiB) be hard or only recommended? | operations vs. flexibility |
+| **SK-A** | Should the limits from §6 (3 skills, 8 KiB) be hard or only recommended? | operations vs. flexibility |
 | **SK-B** | Should a URL catalog pin versioned skills? | reproducibility over time |
 | **SK-C** | Does `autoinvoke` need more than `true`/`false` (e.g. "only on match")? | model selection |
 | **SK-D** | Should skill texts be redacted on session transfer? | the reference does it (`session/transfer.ts`), the base environment does not need it |

@@ -8,7 +8,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -75,7 +78,8 @@ public final class JdkProcessRunner implements ProcessRunner {
     }
 
     private static Process spawn(ProcessSpec spec) {
-        ProcessBuilder builder = new ProcessBuilder(spec.command());
+        List<String> command = spec.pty() ? ptyCommand(spec.command()) : spec.command();
+        ProcessBuilder builder = new ProcessBuilder(command);
         spec.cwd().ifPresent(path -> builder.directory(path.toFile()));
         builder.redirectErrorStream(false);
         Map<String, String> environment = builder.environment();
@@ -85,6 +89,32 @@ public final class JdkProcessRunner implements ProcessRunner {
         } catch (IOException e) {
             throw new UncheckedIOException("cannot start process", e);
         }
+    }
+
+    /**
+     * A one-off pseudo terminal via {@code script(1)} when available. The flag
+     * requests PTY semantics (single command); a persistent PTY across calls is
+     * not modelled here. Without {@code script} the command runs normally.
+     */
+    private static List<String> ptyCommand(List<String> command) {
+        String script = scriptBinary();
+        if (script == null) return command;
+        StringBuilder line = new StringBuilder();
+        for (String argument : command) {
+            if (line.length() > 0) line.append(' ');
+            line.append('\'').append(argument.replace("'", "'\\''")).append('\'');
+        }
+        return List.of(script, "-qefc", line.toString(), "/dev/null");
+    }
+
+    private static String scriptBinary() {
+        String path = System.getenv("PATH");
+        if (path == null) return null;
+        for (String directory : path.split(java.io.File.pathSeparator)) {
+            Path candidate = Path.of(directory, "script");
+            if (Files.isExecutable(candidate)) return candidate.toString();
+        }
+        return null;
     }
 
     private static final class JdkHandle implements Handle {

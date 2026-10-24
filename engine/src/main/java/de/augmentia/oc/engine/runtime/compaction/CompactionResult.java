@@ -15,6 +15,9 @@ public sealed interface CompactionResult {
 
     record AlreadyInProgress() implements CompactionResult {}
 
+    /** There is not enough history to compact (all messages are kept). */
+    record NothingToDo() implements CompactionResult {}
+
     record Failed(FailureKind kind, String message) implements CompactionResult {
         public Failed {
             if (message == null) message = "";

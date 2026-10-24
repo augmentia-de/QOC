@@ -10,6 +10,7 @@ import java.util.Map;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 
 @QuarkusTest
@@ -118,6 +119,54 @@ class EngineHttpTest {
                 .then().statusCode(204);
         given().get("/api/session/" + id)
                 .then().statusCode(404);
+    }
+
+    @Test
+    void revertRemovesTheLastUserTurn() {
+        String id = given()
+                .contentType(ContentType.JSON)
+                .post("/api/session")
+                .then().statusCode(200)
+                .extract().path("id");
+
+        given()
+                .contentType(ContentType.JSON)
+                .body(Map.of("text", "revert me"))
+                .post("/api/session/" + id + "/prompt")
+                .then().statusCode(200);
+
+        given().get("/api/session/" + id + "/messages")
+                .then().statusCode(200)
+                .body(containsString("revert me"));
+
+        given().post("/api/session/" + id + "/revert")
+                .then().statusCode(200)
+                .body("reverted", equalTo(true));
+
+        given().get("/api/session/" + id + "/messages")
+                .then().statusCode(200)
+                .body(not(containsString("revert me")));
+    }
+
+    @Test
+    void compactReturnsACompactedResult() {
+        String id = given()
+                .contentType(ContentType.JSON)
+                .post("/api/session")
+                .then().statusCode(200)
+                .extract().path("id");
+
+        for (int i = 0; i < 5; i++) {
+            given()
+                    .contentType(ContentType.JSON)
+                    .body(Map.of("text", "compact me " + i))
+                    .post("/api/session/" + id + "/prompt")
+                    .then().statusCode(200);
+        }
+
+        given().post("/api/session/" + id + "/compact")
+                .then().statusCode(200)
+                .body("compacted", equalTo(true));
     }
 
     @Test

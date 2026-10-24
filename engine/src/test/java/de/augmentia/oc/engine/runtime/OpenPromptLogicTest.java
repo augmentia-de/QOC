@@ -84,6 +84,11 @@ class OpenPromptLogicTest {
                 .containsEntry("x-session-affinity", session.value())
                 .containsEntry("X-Session-Id", session.value())
                 .containsEntry("X-Project-Id", project.value());
+        assertThat(captured.get().system()).isEmpty();
+        assertThat(captured.get().messages()).hasSize(1);
+        assertThat(captured.get().messages().getFirst())
+                .isInstanceOf(de.augmentia.oc.engine.core.contract.provider.ModelMessage.User.class);
+        assertThat(captured.get().providerOptions()).containsEntry("reasoning_effort", "none");
     }
 
     @Test

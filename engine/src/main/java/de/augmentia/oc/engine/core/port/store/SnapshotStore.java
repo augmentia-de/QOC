@@ -13,5 +13,8 @@ public interface SnapshotStore {
 
     void restore(SnapshotId snapshot, List<Path> paths);
 
+    /** Removes a snapshot and its stored files. */
+    void delete(SnapshotId snapshot);
+
     List<FileDiff> diff(SnapshotId from, SnapshotId to);
 }

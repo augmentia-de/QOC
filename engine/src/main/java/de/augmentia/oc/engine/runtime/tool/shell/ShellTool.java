@@ -46,7 +46,8 @@ public final class ShellTool {
                 "command", Schema.str(),
                 "workdir", Schema.opt(Schema.str()),
                 "timeout", Schema.opt(Schema.lng()),
-                "background", Schema.opt(Schema.bool())));
+                "background", Schema.opt(Schema.bool()),
+                "pty", Schema.opt(Schema.bool())));
         return new ToolDefinition(new ToolName("shell"), "Run a shell command",
                 input, Option.none(),
                 (value, context) -> execute(processes, location, root, effective, value, context, permissionGate), null);
@@ -64,6 +65,7 @@ public final class ShellTool {
             String workdir = JsonArgs.string(value, "workdir");
             Path cwd = workdir == null ? location : location.resolve(workdir).normalize();
             boolean background = JsonArgs.boolOr(value, "background", false);
+            boolean pty = JsonArgs.boolOr(value, "pty", false);
             long timeoutMillis = JsonArgs.intOr(value, "timeout", -1);
 
             ScanResult scan = scanner.scan(command, shellName(), cwd);
@@ -95,7 +97,7 @@ public final class ShellTool {
 
             Duration timeout = background ? Duration.ZERO
                     : timeoutMillis >= 0 ? Duration.ofMillis(timeoutMillis) : DEFAULT_TIMEOUT;
-            ProcessRunner.ProcessSpec spec = spec(command, cwd, context.sessionId().value());
+            ProcessRunner.ProcessSpec spec = spec(command, cwd, context.sessionId().value(), pty);
 
             if (background) {
                 ProcessRunner.Handle handle = processes.start(spec);
@@ -132,7 +134,7 @@ public final class ShellTool {
         }
     }
 
-    private static ProcessRunner.ProcessSpec spec(String command, Path cwd, String sessionId) {
+    private static ProcessRunner.ProcessSpec spec(String command, Path cwd, String sessionId, boolean pty) {
         List<String> invocation = new ArrayList<>();
         if (isWindows()) {
             invocation.add("cmd");
@@ -148,7 +150,7 @@ public final class ShellTool {
                 "OPENCODE", "1",
                 "AI_AGENT", "opencode",
                 "OPENCODE_SESSION_ID", sessionId);
-        return new ProcessRunner.ProcessSpec(invocation, Option.some(cwd), env, Option.none(), false);
+        return new ProcessRunner.ProcessSpec(invocation, Option.some(cwd), env, Option.none(), pty);
     }
 
     private static String shellName() {

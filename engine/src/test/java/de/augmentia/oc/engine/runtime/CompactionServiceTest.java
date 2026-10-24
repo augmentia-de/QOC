@@ -69,6 +69,21 @@ class CompactionServiceTest {
     }
 
     @Test
+    void shortConversationHasNoManualWork() {
+        conversation.add(session, Seq.of(1),
+                new Message.UserMessage(MessageId.create(), "only message",
+                        List.of(), List.of(), List.of(), Map.of(), Instant.EPOCH));
+        Compaction compaction = compaction(journal, provider(List.of(
+                new ModelEvent.TextEnded("b", "unused"),
+                new ModelEvent.Finished(FinishReason.NORMAL, TokenCount.zero(), JsonValue.ofNull()))));
+        CompactionService service = new CompactionService(journal, conversation, instructions,
+                compaction, new FixedClock(Instant.EPOCH));
+
+        assertThat(service.hasWork(session)).isFalse();
+        assertThat(instructions.state(session).isPresent()).isFalse();
+    }
+
+    @Test
     void windowSplitKeepsTheLastMessages() {
         List<Message> history = new ArrayList<>();
         for (int i = 0; i < 10; i++) {

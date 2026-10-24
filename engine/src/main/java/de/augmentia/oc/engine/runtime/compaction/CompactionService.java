@@ -8,6 +8,7 @@ import de.augmentia.oc.engine.core.contract.provider.ModelEvent;
 import de.augmentia.oc.engine.core.contract.provider.ModelRequest;
 import de.augmentia.oc.engine.core.contract.provider.ProviderAdapter;
 import de.augmentia.oc.engine.core.eval.InstructionEpoch;
+import de.augmentia.oc.engine.core.eval.CacheAffinity;
 import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.CompactionReason;
 import de.augmentia.oc.engine.core.model.InboxId;
@@ -75,6 +76,13 @@ public final class CompactionService {
         this.provider = provider;
     }
 
+    /** True when at least one message would be summarized by a manual pass. */
+    public boolean hasWork(SessionId session) {
+        if (session == null) throw new IllegalArgumentException("session must not be null");
+        return !CompactionWindow.split(conversation.messages(session, Seq.zero()), keepMessages)
+                .toSummarize().isEmpty();
+    }
+
     /**
      * Compacts everything except the last {@code keepMessages} messages and
      * advances the instruction epoch to {@code throughSeq}.
@@ -106,6 +114,8 @@ public final class CompactionService {
             }
         }
 
+        Map<String, String> headers = CacheAffinity.headers(
+                CacheAffinity.affinity(session, Option.none(), Option.none()));
         ModelRequest request = new ModelRequest(
                 model,
                 List.of(prompt),
@@ -114,7 +124,7 @@ public final class CompactionService {
                 Option.some(new Choice.None()),
                 new GenerationOptions(Option.none(), Option.some(32_000), Option.none(), List.of()),
                 Map.of(),
-                Map.of(),
+                headers,
                 Option.none());
 
         CompactionContext context = new CompactionContext(
@@ -133,7 +143,7 @@ public final class CompactionService {
                         List.of(),
                         Option.some(new Choice.None()),
                         new GenerationOptions(Option.none(), Option.some(32_000), Option.none(), List.of()),
-                        Map.of(), Map.of(), Option.none())).toList();
+                        Map.of(), headers, Option.none())).toList();
                 StringBuilder nudgeSummary = new StringBuilder();
                 for (ModelEvent event : nudgeEvents) {
                     if (event instanceof ModelEvent.TextEnded ended) nudgeSummary.append(ended.text());

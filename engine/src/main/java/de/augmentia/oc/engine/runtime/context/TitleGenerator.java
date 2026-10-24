@@ -4,6 +4,7 @@ import de.augmentia.oc.engine.core.contract.provider.ModelContent;
 import de.augmentia.oc.engine.core.contract.provider.ModelMessage;
 import de.augmentia.oc.engine.core.contract.provider.ModelRequest;
 import de.augmentia.oc.engine.core.contract.provider.ProviderAdapter;
+import de.augmentia.oc.engine.core.contract.provider.GenerationOptions;
 import de.augmentia.oc.engine.core.eval.CacheAffinity;
 import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.Content;
@@ -59,8 +60,11 @@ public final class TitleGenerator {
 
     private String generate(String prompt, Map<String, String> headers) {
         List<de.augmentia.oc.engine.core.contract.provider.ModelEvent> events = provider.stream(
-                new ModelRequest(model, List.of(prompt), List.of(), List.of(), Option.none(),
-                        null, Map.of(), headers, Option.none())).toList();
+                new ModelRequest(model, List.of(),
+                        List.of(new ModelMessage.User(List.of(new ModelContent.Text(prompt)))),
+                        List.of(), Option.none(),
+                        new GenerationOptions(Option.none(), Option.some(64), Option.none(), List.of()),
+                        Map.of("reasoning_effort", "none"), headers, Option.none())).toList();
         StringBuilder deltas = new StringBuilder();
         String ended = null;
         for (de.augmentia.oc.engine.core.contract.provider.ModelEvent event : events) {

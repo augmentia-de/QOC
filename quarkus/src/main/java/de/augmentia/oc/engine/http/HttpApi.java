@@ -184,6 +184,50 @@ public class HttpApi {
     }
 
     @POST
+    @Path("/session/{id}/revert")
+    public Response revert(@PathParam("id") String id) {
+        try {
+            de.augmentia.oc.engine.runtime.session.revert.RevertResult result =
+                    engine.revert(SessionId.parse(id));
+            if (result instanceof de.augmentia.oc.engine.runtime.session.revert.RevertResult.Failed failed) {
+                return Response.status(422)
+                        .entity(Map.of("_tag", "UnknownError", "message", failed.message())).build();
+            }
+            return Response.ok(Map.of("reverted", true)).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        } catch (IllegalStateException e) {
+            return Response.status(422)
+                    .entity(Map.of("_tag", "UnknownError", "message", e.getMessage())).build();
+        }
+    }
+
+    @POST
+    @Path("/session/{id}/compact")
+    public Response compact(@PathParam("id") String id) {
+        try {
+            de.augmentia.oc.engine.runtime.compaction.CompactionResult result =
+                    engine.compact(SessionId.parse(id));
+            return switch (result) {
+                case de.augmentia.oc.engine.runtime.compaction.CompactionResult.Compacted compacted ->
+                        Response.ok(Map.of("compacted", true, "summary", compacted.summary())).build();
+                case de.augmentia.oc.engine.runtime.compaction.CompactionResult.AlreadyInProgress ignored ->
+                        Response.status(409).entity(Map.of("message", "compaction already in progress")).build();
+                case de.augmentia.oc.engine.runtime.compaction.CompactionResult.NothingToDo ignored ->
+                        Response.ok(Map.of("compacted", false, "reason", "nothing to compact")).build();
+                case de.augmentia.oc.engine.runtime.compaction.CompactionResult.Failed failed ->
+                        Response.status(422).entity(Map.of("_tag", "UnknownError",
+                                "message", failed.message())).build();
+            };
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        } catch (IllegalStateException e) {
+            return Response.status(422)
+                    .entity(Map.of("_tag", "UnknownError", "message", e.getMessage())).build();
+        }
+    }
+
+    @POST
     @Path("/session/{id}/interrupt")
     public Response interrupt(@PathParam("id") String id) {
         try {

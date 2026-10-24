@@ -61,6 +61,32 @@ public final class SqliteConversation implements ConversationStore {
     }
 
     @Override
+    public Option<Seq> seqOf(SessionId session, MessageId message) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "select seq from session_message where session_id = ? and id = ?")) {
+            statement.setString(1, session.value());
+            statement.setString(2, message.value());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) return Option.none();
+                return Option.some(Seq.of(resultSet.getLong(1)));
+            }
+        } catch (java.sql.SQLException e) {
+            throw new StoreFailure("cannot read message sequence", e);
+        }
+    }
+
+    @Override
+    public void deleteFrom(SessionId session, Seq seq) {
+        Sqlite.transaction(dataSource, connection -> {
+            Sqlite.execute(connection,
+                    "delete from session_message where session_id = ? and seq >= ?",
+                    session.value(), seq.value());
+            return null;
+        });
+    }
+
+    @Override
     public List<Message> messages(SessionId session, Seq afterSeq) {
         Seq from = afterSeq == null ? Seq.zero() : afterSeq;
         try (Connection connection = dataSource.getConnection();

@@ -273,6 +273,12 @@ class SqliteAdaptersTest {
 
         snapshots.restore(before, List.of(file));
         assertThat(fileSystem.readText(file)).isEqualTo("one");
+
+        snapshots.delete(null);
+        snapshots.delete(after);
+        assertThat(snapshots.diff(before, after))
+                .extracting(FileDiff::kind)
+                .contains(FileDiff.Kind.DELETED);
     }
 
     private static SessionInfo sessionInfo() {

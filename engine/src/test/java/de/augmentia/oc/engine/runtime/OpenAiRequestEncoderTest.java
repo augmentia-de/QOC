@@ -54,6 +54,21 @@ class OpenAiRequestEncoderTest {
     }
 
     @Test
+    void passesProviderOptionsThroughUnchanged() {
+        ModelRequest request = new ModelRequest(ModelRef.of(ProviderId.create(), ModelId.create()),
+                List.of(), List.of(), List.of(), Option.none(),
+                GenerationOptions.defaults(),
+                Map.of("reasoning_effort", "none", "seed", 7L),
+                Map.of(), Option.none());
+
+        JsonValue.Obj object = (JsonValue.Obj) Json.parse(
+                new OpenAiRequestEncoder("deepseek-v4.1-flash").apply(request)).valueOrNull();
+
+        assertThat(((JsonValue.Str) object.values().get("reasoning_effort")).value()).isEqualTo("none");
+        assertThat(((JsonValue.Num) object.values().get("seed")).value().longValue()).isEqualTo(7L);
+    }
+
+    @Test
     void toolChoiceCanBeNone() {
         ModelRequest request = new ModelRequest(ModelRef.of(ProviderId.create(), ModelId.create()),
                 List.of(), List.of(), List.of(tool()), Option.some(new Choice.None()),

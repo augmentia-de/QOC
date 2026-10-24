@@ -90,18 +90,18 @@
 </head>
 <body>
 <header>
-  <h1>OpenCode Engine</h1>
+  <h1>QOC Engine</h1>
   <select id="sessions"></select>
   <span id="sessionTitle" style="color:var(--muted);font-size:.85rem"></span>
   <label>Agent <select id="agent"></select></label>
-  <label>Model <select id="model"></select></label>
-  <label>Provider <select id="provider"></select></label>
-  <label><input type="checkbox" id="showDetails"> Details</label>
+  <!--label>Model <select id="model"></select></label>
+  <label>Provider <select id="provider"></select></label-->
   <button id="newSession" class="primary">+ Neue Session</button>
   <button id="deleteSession" class="danger">Löschen</button>
   <button id="interrupt" class="danger">Interrupt</button>
   <button id="compact">Compact</button>
   <button id="revert">Revert</button>
+  <label><input type="checkbox" id="showDetails"> Details</label>
   <span class="status"><span class="dot" id="healthDot"></span><span id="status">bereit</span></span>
 </header>
 <main>
@@ -433,6 +433,36 @@ async function switchAgent() {
   }
 }
 
+async function compactNow() {
+  if (!sessionId) return;
+  try {
+    const res = await fetch('/api/session/' + sessionId + '/compact', {method:'POST'});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
+    logEvent('Compact ausgeführt');
+    const current = sessionId;
+    sessionId = null;
+    await switchSession(current);
+  } catch (e) {
+    alert('Compact fehlgeschlagen: ' + e.message);
+  }
+}
+
+async function revertTurn() {
+  if (!sessionId) return;
+  try {
+    const res = await fetch('/api/session/' + sessionId + '/revert', {method:'POST'});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
+    logEvent('Revert ausgeführt');
+    const current = sessionId;
+    sessionId = null;
+    await switchSession(current);
+  } catch (e) {
+    alert('Revert fehlgeschlagen: ' + e.message);
+  }
+}
+
 async function deleteCurrentSession() {
   if (!sessionId) return;
   const selected = sessionsSel.options[sessionsSel.selectedIndex];
@@ -564,10 +594,10 @@ async function handleCommand(cmd) {
       } catch (e) { logEvent('Fehler: ' + e.message); }
       break;
     case 'compact':
-      logEvent('Compact angefordert');
+      await compactNow();
       break;
     case 'revert':
-      logEvent('Revert angefordert');
+      await revertTurn();
       break;
     default:
       // treat as prompt
@@ -651,12 +681,8 @@ document.getElementById('deleteSession').onclick = deleteCurrentSession;
 document.getElementById('interrupt').onclick = () => {
   if (sessionId) fetch('/api/session/' + sessionId + '/interrupt', {method:'POST'});
 };
-document.getElementById('compact').onclick = () => {
-  if (sessionId) { logEvent('Compact angefordert'); handleCommand('/compact'); }
-};
-document.getElementById('revert').onclick = () => {
-  if (sessionId) { logEvent('Revert angefordert'); handleCommand('/revert'); }
-};
+document.getElementById('compact').onclick = () => compactNow();
+document.getElementById('revert').onclick = () => revertTurn();
 
 document.getElementById('permOnce').onclick = () => replyPermission('ONCE');
 document.getElementById('permAlways').onclick = () => replyPermission('ALWAYS');

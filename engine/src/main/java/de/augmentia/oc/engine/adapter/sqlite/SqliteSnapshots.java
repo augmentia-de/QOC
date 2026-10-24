@@ -58,6 +58,16 @@ public final class SqliteSnapshots implements SnapshotStore {
     }
 
     @Override
+    public void delete(SnapshotId snapshot) {
+        if (snapshot == null) return;
+        Sqlite.transaction(dataSource, connection -> {
+            Sqlite.execute(connection, "delete from snapshot_file where snapshot_id = ?", snapshot.value());
+            Sqlite.execute(connection, "delete from snapshot where id = ?", snapshot.value());
+            return null;
+        });
+    }
+
+    @Override
     public List<FileDiff> diff(SnapshotId from, SnapshotId to) {
         Map<String, byte[]> oldFiles = files(from);
         Map<String, byte[]> newFiles = files(to);

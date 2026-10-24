@@ -17,7 +17,7 @@ import java.util.Map;
 public final class SkillParser {
 
     public static final int MAX_DESCRIPTION = 500;
-    public static final int MAX_BODY_BYTES = 4 * 1024;
+    public static final int MAX_BODY_BYTES = 8 * 1024;
 
     public Result<Skill> parse(Path file, String content) {
         if (file == null) return error("$", "file is null");

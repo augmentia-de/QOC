@@ -32,6 +32,11 @@ public final class FakeSnapshotStore implements SnapshotStore {
     }
 
     @Override
+    public synchronized void delete(SnapshotId snapshot) {
+        snapshots.remove(snapshot);
+    }
+
+    @Override
     public synchronized List<FileDiff> diff(SnapshotId from, SnapshotId to) {
         return List.of();
     }

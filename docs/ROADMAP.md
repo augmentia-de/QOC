@@ -7,7 +7,7 @@
 > **Basis:** `spec/module-plan.md` §6–§9, `spec/java-packages.md`,
 > `spec/session-engine/Java-Impl.md` §13–§14, `open-questions.md` (all points decided).
 >
-> **Status:** 2026-10-22 · Repo `dev` @ `3108505b2f`.
+> **Status:** 2026-10-24 · post-M14 hardening (revert, manual compaction, PTY, skill limit, LLM trace).
 
 ## 0. Roadmap vs. reference
 
@@ -255,3 +255,25 @@ rules.
 | **M18** | S7/S8 | `runtime` (execution), `http` | Multi-agent workflow handoff | workflow runs plan → build → review |
 
 These milestones extend M0–M14 without changing their invariants.
+
+## 4. Post-M14 implementation status (2026-10-24)
+
+Implemented beyond the original M0–M14 scope:
+
+| Area | State |
+|---|---|
+| **LLM trace** | Dedicated rotating file (2 MiB × 20): request body, text, tool calls, usage, raw provider errors and transport failures. Configured via `ENGINE_LLM_LOG_*`; auth headers are not logged. |
+| **Skills** | Discovery under `<workspace>/skill(s)` and `<workspace>/.opencode/skills`, plus `skills.paths`. Load-time limits `skills.allow`, `skills.deny`, `skills.max`; body limit raised to 8 KiB. Agent-specific `skill` rules hide and block. |
+| **Revert** | `POST /api/session/{id}/revert`: restores the pre-turn workspace snapshot, deletes the conversation from the last user message, deletes instructions and appends `RevertCommitted` (log stays append-only). Snapshot capture can be disabled with `ENGINE_REVERT_SNAPSHOT=false`. |
+| **Compaction** | `POST /api/session/{id}/compact`: manual pass with the session affinity headers; keeps the last 8 messages. Overflow compaction remains automatic. |
+| **M6 shell / PTY** | Optional one-off PTY via `pty: true` and `script(1)` (installed as `util-linux` in the image); falls back to a normal process when `script` is missing. Persistent PTY is still open. |
+| **Title generation** | Session affinity headers for provider routing, prompt sent as a user message with `max_tokens=64` and `reasoning_effort: none`, Deltas preferred over Ended text. |
+| **Provider options** | `ModelRequest.providerOptions` is passed through unchanged (V-14). |
+
+Still open from the decision log:
+
+- **L-1** markdown agent files (`agent/<id>.md` project/global) — only JSON `agents` are read.
+- **L-6** command macros (`command/<id>.md` with `$ARGUMENTS`) — the command endpoint forwards text.
+- **L-7** model catalog snapshot and refresh — `StaticCatalogSource` is not wired.
+- **Persistent PTY** across calls (only one-off PTY is implemented).
+- **Native image** rebuild: no GraalVM on the build host; the existing runner predates the post-M14 changes.

@@ -1,6 +1,9 @@
 # Minimal runtime image for the QOC engine (e2-micro friendly).
 FROM eclipse-temurin:21-jre-alpine
 
+# script(1) provides the optional one-off PTY for the shell tool.
+RUN apk add --no-cache util-linux
+
 # Create dedicated user
 RUN addgroup -S qoc && adduser -S qoc -G qoc -h /var/lib/qoc -s /sbin/nologin
 

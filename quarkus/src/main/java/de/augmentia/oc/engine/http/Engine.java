@@ -64,6 +64,8 @@ import de.augmentia.oc.engine.runtime.context.ContextBuilder;
 import de.augmentia.oc.engine.runtime.context.TitleGenerator;
 import de.augmentia.oc.engine.runtime.compaction.Compaction;
 import de.augmentia.oc.engine.runtime.compaction.CompactionService;
+import de.augmentia.oc.engine.runtime.session.revert.Revert;
+import de.augmentia.oc.engine.runtime.session.revert.RevertResult;
 import de.augmentia.oc.engine.runtime.session.core.SessionRetention;
 import de.augmentia.oc.engine.runtime.session.core.SessionService;
 import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
@@ -140,6 +142,10 @@ public class Engine {
     long sessionRetentionDays;
 
     @Inject
+    @ConfigProperty(name = "engine.revert.snapshot.enabled", defaultValue = "true")
+    boolean revertSnapshotEnabled;
+
+    @Inject
     WebApprovalSource approvalSource;
 
     private Clock clock;
@@ -161,6 +167,11 @@ public class Engine {
     private PermissionEngine permissionEngine;
     private SessionRetention sessionRetention;
     private ScheduledExecutorService retentionExecutor;
+    private SnapshotStore snapshots;
+    private Revert revert;
+    private final java.util.concurrent.ConcurrentHashMap<SessionId, CapturedSnapshot> revertSnapshots =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private record CapturedSnapshot(SnapshotId id, List<Path> paths) {}
     private final EventCodec codec = EventCodec.standard();
     private final java.util.concurrent.ConcurrentHashMap<SessionId, Thread> running =
             new java.util.concurrent.ConcurrentHashMap<>();
@@ -209,6 +220,8 @@ public class Engine {
         Path workspacePath = Path.of(config.workspace()).toAbsolutePath().normalize();
         fileSystem = new NioFileSystem(workspacePath);
         NioFileSystem fs = fileSystem;
+        snapshots = sqlite ? new SqliteSnapshots(dataSource, fs) : new SqlSnapshots(dataSource, fs);
+        revert = new Revert(journal, Option.some(snapshots), Option.some(instructions));
         FileAccess access = new FileAccess(fs, workspacePath, workspacePath);
         PermissionGate permissionGate = request -> {
             SessionInfo info = sessions.info(request.sessionId()).orElse(null);
@@ -396,6 +409,133 @@ public class Engine {
         approvalSource.resolve(id.value(), requestId.value(), result);
     }
 
+    private static final int MAX_SNAPSHOT_FILES = 2_000;
+    private static final long MAX_SNAPSHOT_FILE_BYTES = 1_048_576;
+    private static final long MAX_SNAPSHOT_TOTAL_BYTES = 20L * 1024 * 1024;
+
+    /**
+     * Captures the pre-turn workspace so a later revert can restore it. One
+     * snapshot per session (the last turn); capture failures never block the
+     * prompt, they only disable file restore for that revert.
+     */
+    private void captureSnapshot(SessionId id) {
+        if (snapshots == null || !revertSnapshotEnabled) return;
+        try {
+            List<Path> paths = workspaceFiles();
+            if (paths.isEmpty()) return;
+            SnapshotId snapshot = snapshots.capture(paths);
+            CapturedSnapshot previous = revertSnapshots.put(id, new CapturedSnapshot(snapshot, paths));
+            if (previous != null && !previous.id().equals(snapshot)) {
+                try {
+                    snapshots.delete(previous.id());
+                } catch (RuntimeException e) {
+                    LOG.warnf("cannot delete previous snapshot %s: %s", previous.id().value(), e.getMessage());
+                }
+            }
+        } catch (RuntimeException e) {
+            revertSnapshots.remove(id);
+            LOG.warnf("snapshot capture failed for %s: %s", id.value(), e.getMessage());
+        }
+    }
+
+    private List<Path> workspaceFiles() {
+        Path root = Path.of(config.workspace()).toAbsolutePath().normalize();
+        List<Path> paths = new ArrayList<>();
+        try (var stream = java.nio.file.Files.walk(root)) {
+            stream.filter(java.nio.file.Files::isRegularFile)
+                    .filter(path -> !snapshotExcluded(root.relativize(path)))
+                    .filter(path -> {
+                        try {
+                            return java.nio.file.Files.size(path) <= MAX_SNAPSHOT_FILE_BYTES;
+                        } catch (java.io.IOException e) {
+                            return false;
+                        }
+                    })
+                    .limit(MAX_SNAPSHOT_FILES)
+                    .forEach(paths::add);
+        } catch (java.io.IOException e) {
+            LOG.warn("snapshot scan failed: " + e.getMessage());
+            return List.of();
+        }
+        long total = 0;
+        for (Path path : paths) {
+            try {
+                total += java.nio.file.Files.size(path);
+            } catch (java.io.IOException e) {
+                return List.of();
+            }
+            if (total > MAX_SNAPSHOT_TOTAL_BYTES) {
+                LOG.warn("workspace exceeds the snapshot budget; revert will not restore files");
+                return List.of();
+            }
+        }
+        return paths;
+    }
+
+    private static boolean snapshotExcluded(Path relative) {
+        for (Path part : relative) {
+            String name = part.toString();
+            if (name.startsWith(".") || name.equals("node_modules") || name.equals("target")
+                    || name.equals("data")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Reverts the last user turn: restores the pre-turn snapshot, deletes the
+     * conversation messages at and after the boundary and commits the revert
+     * event. The event log stays append-only.
+     */
+    public RevertResult revert(SessionId id) {
+        if (id == null) return new RevertResult.Failed("session is required");
+        if (running.containsKey(id)) throw new IllegalStateException("session is currently running");
+        List<Message> messages = conversation.messages(id, Seq.zero());
+        MessageId boundary = null;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i) instanceof Message.UserMessage user) {
+                boundary = user.id();
+                break;
+            }
+        }
+        if (boundary == null) return new RevertResult.Failed("no user message to revert");
+        Option<Seq> seq = conversation.seqOf(id, boundary);
+        if (seq.isEmpty()) return new RevertResult.Failed("revert boundary not found");
+
+        CapturedSnapshot captured = revertSnapshots.remove(id);
+        Option<SnapshotId> snapshot = captured == null ? Option.none() : Option.some(captured.id());
+        List<Path> paths = captured == null ? List.of() : captured.paths();
+        RevertResult result = revert.commit(id, boundary, snapshot, paths);
+        if (result instanceof RevertResult.Failed) {
+            if (captured != null) revertSnapshots.put(id, captured);
+            return result;
+        }
+        conversation.deleteFrom(id, seq.orElseThrow());
+        if (captured != null) {
+            try {
+                snapshots.delete(captured.id());
+            } catch (RuntimeException e) {
+                LOG.warnf("cannot delete revert snapshot %s: %s", captured.id().value(), e.getMessage());
+            }
+        }
+        return result;
+    }
+
+    /** Runs one manual compaction pass (keeps the last messages). */
+    public de.augmentia.oc.engine.runtime.compaction.CompactionResult compact(SessionId id) {
+        if (id == null) throw new IllegalArgumentException("session id must not be null");
+        if (running.containsKey(id)) throw new IllegalStateException("session is currently running");
+        SessionInfo info = sessions.info(id)
+                .orElseThrow(() -> new IllegalArgumentException("unknown session: " + id));
+        if (!compaction.hasWork(id)) {
+            return new de.augmentia.oc.engine.runtime.compaction.CompactionResult.NothingToDo();
+        }
+        ModelRef model = preparedModel(info, modelInfo());
+        Seq throughSeq = Seq.of(journal.history(id.value(), Seq.zero()).size());
+        return compaction.compact(id, CompactionReason.MANUAL, model, Option.none(), throughSeq, clock.now());
+    }
+
     public String generateTitle(SessionId id) {
         if (titleGenerator == null) return null;
         SessionInfo info = sessions.info(id).orElse(null);
@@ -420,6 +560,7 @@ public class Engine {
         if (found.isEmpty()) throw new IllegalArgumentException("unknown session: " + id);
 
         long before = journal.history(id.value(), Seq.zero()).size();
+        captureSnapshot(id);
         running.put(id, Thread.currentThread());
         Span span = tracer().spanBuilder("engine.prompt")
                 .setAttribute("session.id", id.value())
