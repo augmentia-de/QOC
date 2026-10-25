@@ -11,7 +11,7 @@
 | Spec | Answers | Scope |
 |---|---|---|
 | [`session-engine/`](./session-engine/README.md) | How does an input become a sequence of model calls, and how does state stay robust? | 14 files, 111 invariants |
-| [`tools/`](./tools/README.md) | How are tools built, and how do filesystem, Bash, MCP, subagent and remote shell run? | 9 files, 5 families |
+| [`tools/`](./tools/README.md) | How are tools built, and how do filesystem, Bash, MCP, subagent, remote shell and the MCP server run? | 10 files, 6 families |
 | [`permissions/`](./permissions/README.md) | How is it decided whether something is allowed? | 6 files |
 | [`provider/`](./provider/README.md) | What does a model call look like, and how are errors classified? | 7 files |
 | [`persistence/`](./persistence/README.md) | What does the database structure look like? Tables, transactions, indexes, migrations | 3 files |

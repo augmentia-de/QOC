@@ -22,6 +22,7 @@
 | [`06-java.md`](./06-java.md) | Java 21 implementation: `sealed`/`record`, registry, scanner, MCP client |
 | [`07-subagent.md`](./07-subagent.md) | Subagent delegation, child sessions, recursion limit, cost attribution |
 | [`08-remote-shell.md`](./08-remote-shell.md) | SSH `exec`/`read`/`write`/`list`/`stat` and recursive copy (`download`/`upload`) – **spec-only** |
+| [`09-mcp-server.md`](./09-mcp-server.md) | MCP server exposing only `qoc_run_agent`, optional structured output, OAuth prepared |
 
 The current status of `08-remote-shell.md` is tracked in
 [`../../STATUS.md`](../../STATUS.md).
@@ -35,6 +36,7 @@ The current status of `08-remote-shell.md` is tracked in
 | **MCP** | `<server>_<tool>` | `<server>_<tool>` | `*` |
 | **Subagent** | `subagent` (V1 name: `task`) | `subagent` | `*` |
 | **Remote Shell** | `remote` | `remote.exec`, `remote.read`, `remote.write`, `remote.list`, `remote.stat`, `remote.download`, `remote.upload` | `<host-alias>:<target>` |
+| **MCP Server** | `qoc_run_agent` | (external MCP tool) | agent task payload |
 
 > `edit`, `write` and `patch` share the action **`edit`**
 > (`packages/core/src/tool/AGENTS.md`).
