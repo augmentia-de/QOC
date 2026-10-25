@@ -291,8 +291,8 @@ type ModelRef = { providerID: ProviderID, id: ModelID, variant: Option<VariantID
 
 Model resolution (order is binding):
 
-1. Session has a model → must exist in the catalog, otherwise `ModellNichtVerfügbar`.
-2. Session has no model → global default; if none exists → `ModellNichtGewählt`.
+1. Session has a model → must exist in the catalog, otherwise `ModelNotAvailable`.
+2. Session has no model → global default; if none exists → `ModelNotSelected`.
 
 ## 8. Tools
 
@@ -400,9 +400,4 @@ type Money = { amount: Decimal, currency: Currency }
 | `Option<T>` is its own type, not a null pointer | makes "not present" explicit |
 | Events are **values**, not objects with identity | allows replay without object graph |
 | Tool `execute` takes `Json` and returns `Outcome` | boundary between trusted and untrusted |
-| Errors are values, not exceptions | allows partial matching and serializable representation |<|end|><|start|>write to=assistant<|channel|>analysis<|message|>I kept some German identifiers in code? "ModellNichtVerfügbar" and "ModellNichtGewählt" are error type strings? They appear as `ModellNichtVerfügbar`. The rule says keep identifiers. These are identifiers/error type names in German in original. Should I translate? They are identifiers (error type strings). The rule says keep code/paths/identifiers/numbers/invariant IDs. So keep. But they read German. Hmm. "ModellNichtVerfügbar" is an identifier-like error name. To be safe keep original. Also `# ephem` kept. `# erzeugt, nicht empfangen` translated? I translated comment to "# generated, not received". That's prose in comment. Fine. I translated "# vom Anbieter ausgeführt?" etc. Good.
-
-Note I translated "Taxonomie" → taxonomy. Good.
-
-Now 02-events.md.<|end|><|start|> fileList? Let me read.<|end|><|start|><|start|>assistant to=read<|channel|>analysis <|constrain|>xml<|message|><rfl:parameter name="path">
-/home/torsten/dev/my-projects/2oc/qoc/docs/spec/session-engine/02-events.md
+| Errors are values, not exceptions | allows partial matching and serializable representation |

@@ -20,6 +20,21 @@
 >
 > **Status:** 2026-10-22
 
+## Contents
+
+- [1. Five principles](#1-five-principles)
+- [2. Root and naming scheme](#2-root-and-naming-scheme)
+- [3. The tree (Option B, revised)](#3-the-tree-option-b-revised)
+- [4. Package by package](#4-package-by-package)
+- [5. Visibility and construction](#5-visibility-and-construction)
+- [6. Ports and their packages](#6-ports-and-their-packages)
+- [7. Import rules (ArchUnit)](#7-import-rules-archunit)
+- [8. Naming conventions](#8-naming-conventions)
+- [9. Test packages](#9-test-packages)
+- [10. JPMS: no](#10-jpms-no)
+- [11. Import chains as examples](#11-import-chains-as-examples)
+- [12. Open decisions](#12-open-decisions)
+
 ## 1. Five principles
 
 | # | Principle | Verifiable by |
@@ -130,7 +145,7 @@ de.augmentia.oc.engine
 | `core.contract.tool` | `tool.contract` | `ToolDefinition`, `ToolResult`, `ToolContent`, `ToolFailure`, `ToolExecutor`, `ToolGate`, `ToolCall`, `ToolContext`, `ToolSnapshot`, `Hooks` | `model`, `error`, `json` |
 | `core.contract.permission` | `permission.contract` | `Rule`, `Effect`, `PermissionRequest`, `Reply`, `PermissionGate`, `PermissionHook`, `PermissionDenied` | `model`, `error` |
 | `core.contract.provider` | `provider.contract` | `ModelRequest`, `ModelEvent` (sealed), `ProviderFailure` (sealed), `FinishReason`, `OutcomePayload`, `ProviderAdapter` | `model`, `error`, `json` |
-| `core.eval` | `permission.rule`, `provider.classify`, `provider.budget`, `provider.affinity`, `tool.output`, `instruction` | `model`, `json`, `pattern`, `port.*`, `contract.*` |
+| `core.eval` | `permission.rule`, `provider.classify`, `provider.budget`, `provider.affinity`, `tool.output`, `instruction` | pure evaluation helpers, no orchestration | `model`, `json`, `pattern`, `port.*`, `contract.*` |
 
 > **`engine.core` is the shared kernel.** It contains **data only** plus pure
 > helpers and ports. No domain orchestration lives here, so the whole engine

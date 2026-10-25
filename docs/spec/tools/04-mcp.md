@@ -265,8 +265,7 @@ type OAuthConfig =
 | # | Rule |
 |---|---|
 | 1 | The client secret is **not** emitted in the tool context or in logs. |
-| 2 | `auth_server_metadata_url` is set when the server names no protected
-   resource metadata document naming its authorization server. |
+| 2 | `auth_server_metadata_url` is set when the server names no protected resource metadata document naming its authorization server. |
 | 3 | The token belongs to the **server**, not the tool. |
 | 4 | A missing token leads to `NeedsAuth` – **not** to `Failed`. |
 

@@ -1,5 +1,8 @@
 # 03 – Modular Decomposition & Bounded Contexts
 
+> **Rolle:** reference analysis des OpenCode-V2-Checkouts, not an operative
+> QOC-Spec. For the implementation, see [`spec/`](../spec/README.md).
+
 > **Workflow 3:** Modular decomposition (finding bounded contexts)
 > `[Import/Call diagram] ➔ [LLM cluster analysis] ➔ [Bounded contexts + migration plan]`
 >
@@ -10,6 +13,17 @@
 > Reproducible with: `node docs/tools/coupling-analysis.mjs`.
 
 ---
+
+## Contents
+
+- [1. Dependency matrix at package level](#1-dependency-matrix-at-package-level)
+- [2. Module coupling inside `packages/core/src`](#2-module-coupling-inside-packagescoresrc)
+- [2.7 Orientation: dependency graph](#27-orientation-dependency-graph)
+- [3. Bounded Contexts (proposal)](#3-bounded-contexts-proposal)
+- [4. Boundary violations and thresholds](#4-boundary-violations-and-thresholds)
+- [5. Strangler-Fig Plan](#5-strangler-fig-plan)
+- [6. Concrete recommendations (small, safe steps)](#6-concrete-recommendations-small-safe-steps)
+- [7. Open questions](#7-open-questions)
 
 ## 1. Dependency matrix at package level
 

@@ -1,18 +1,18 @@
-# 04 – Session-Lebenszyklus und Ausführungssteuerung
+# 04 – Session Lifecycle and Execution Control
 
-## Zweck
+## Purpose
 
-Dieses Diagramm zeigt den Lebenszyklus einer Session und die deterministische
-Steuerung eines Laufs: Claim, Doorbell, genau ein aktiver Lauf pro Session und
-ein terminales Ereignis.
+This diagram shows the lifecycle of a session and the deterministic control
+of a run: claim, doorbell, exactly one active run per session and a terminal
+event.
 
-> **Ist-Stand:** Die Zustände sind eine Lesart der vorhandenen Events,
-> Projektionen und Bausteine. Es gibt keine separate `session_state`-Tabelle.
-> `Coordinator`, `SessionExecution` und `Recovery` existieren und sind getestet,
-> werden vom HTTP-Pfad aber noch nicht verwendet. `Engine` arbeitet aktuell mit
-> einer eigenen `running`-Map und einem direkten Prompt-Loop.
+> **Current state:** The states are a reading of the existing events,
+> projections and building blocks. There is no separate `session_state` table.
+> `Coordinator`, `SessionExecution` and `Recovery` exist and are tested,
+> but are not yet used by the HTTP path. `Engine` currently works with its
+> own `running` map and a direct prompt loop.
 
-## Session-Zustände
+## Session states
 
 ```mermaid
 stateDiagram-v2
@@ -21,79 +21,79 @@ stateDiagram-v2
   Idle --> Queued: InboxEnqueued
   Queued --> Delivered: InboxDelivered
   Delivered --> Running: Engine.prompt / runPrompt
-  Running --> Running: Step + Tool-Calls
+  Running --> Running: Step + Tool Calls
   Running --> Compacting: Context Overflow
   Compacting --> Running: CompactionEnded
-  Running --> Completed: kein Tool-Call / maxSteps
+  Running --> Completed: no tool call / maxSteps
   Running --> Interrupted: User Interrupt
-  Running --> Failed: Provider-/Tool-Fehler
+  Running --> Failed: Provider/Tool Error
   Running --> Suspended: Shutdown
   Suspended --> Running: Recovery
   Completed --> Idle
-  Interrupted --> Idle: Claim frei
-  Failed --> Idle: Claim frei
+  Interrupted --> Idle: Claim free
+  Failed --> Idle: Claim free
   Idle --> Deleted: SessionDeleted / Retention
   Created --> Deleted: DELETE /api/session/{id}
 
   note right of Running
-    Deterministischer Rahmen:
-    Claim, ein aktiver Lauf pro Session,
-    Doorbell, ein terminales Event.
-    Das LLM entscheidet nur über Text
-    und Tool-Calls innerhalb eines Steps.
+    Deterministic framework:
+    claim, one active run per session,
+    doorbell, one terminal event.
+    The LLM decides only about text
+    and tool calls within a step.
   end note
 ```
 
-## Claim, Doorbell und Recovery
+## Claim, doorbell and recovery
 
 ```mermaid
 flowchart TD
-  Wake["wake(session)"]:::det --> Active{"Lauf aktiv?"}:::det
-  Active -->|"ja"| Ring["Doorbell ring<br/>Scope mergen"]:::det
-  Ring --> Coalesce["kein zweiter Lauf<br/>Wake wird zusammengefasst"]:::det
-  Active -->|"nein"| Acquire["ClaimStore.acquire(session)"]:::det
-  Acquire -->|"leer"| Busy["bereits geclaimt<br/>kein Lauf"]:::det
+  Wake["wake(session)"]:::det --> Active{"run active?"}:::det
+  Active -->|"yes"| Ring["Doorbell ring<br/>merge scopes"]:::det
+  Ring --> Coalesce["no second run<br/>wake is coalesced"]:::det
+  Active -->|"no"| Acquire["ClaimStore.acquire(session)"]:::det
+  Acquire -->|"empty"| Busy["already claimed<br/>no run"]:::det
   Acquire -->|"ok"| Started["ExecutionStarted"]:::det
   Started --> Run["ExecutionRunner.run"]:::mixed
   Run --> Terminal{"terminal?"}:::det
   Terminal -->|"success"| Success["ExecutionSucceeded<br/>Claim release"]:::det
   Terminal -->|"failed"| Failed["ExecutionFailed<br/>Claim release"]:::det
   Terminal -->|"interrupted (user)"| Interrupted["ExecutionInterrupted<br/>Claim release"]:::det
-  Terminal -->|"interrupted (shutdown)"| Keep["Claim bleibt<br/>Recovery"]:::det
+  Terminal -->|"interrupted (shutdown)"| Keep["claim retained<br/>recovery"]:::det
   Success --> Follow{"Doorbell?"}:::det
   Failed --> Follow
   Interrupted --> Follow
-  Follow -->|"ja"| Wake
-  Follow -->|"nein"| Idle["idle"]:::det
-  Keep --> Recovery["Recovery beim Neustart"]:::det
+  Follow -->|"yes"| Wake
+  Follow -->|"no"| Idle["idle"]:::det
+  Keep --> Recovery["recovery on restart"]:::det
   Recovery --> Run
 
   classDef det fill:#d9f7d9,stroke:#2e7d32,stroke-width:1px,color:#111;
   classDef mixed fill:#fff9c4,stroke:#f9a825,stroke-width:1px,color:#111;
 ```
 
-## Regeln
+## Rules
 
-| Regel | Bedeutung |
+| Rule | Meaning |
 |---|---|
-| **Ein aktiver Lauf pro Session** | `Coordinator` hält `SessionExecution` pro Session; parallele Wakes werden über die Doorbell zusammengefasst. |
-| **Claim überlebt den Prozess** | Ein Shutdown gibt den Claim nicht frei; beim Neustart übernimmt `Recovery`. |
-| **Genau ein terminales Event** | `ExecutionSucceeded`, `ExecutionFailed` oder `ExecutionInterrupted`. |
-| **Doorbell ist koaleszierend** | Mehrere Wakes während eines Laufs führen zu genau einem Folge-Lauf. |
-| **Interrupt ist idempotent** | Ein Interrupt auf einer inaktiven Session ist ein No-op. |
-| **User-Interrupt gibt Claim frei** | Shutdown behält ihn für Recovery. |
+| **One active run per session** | `Coordinator` holds a `SessionExecution` per session; parallel wakes are coalesced via the doorbell. |
+| **Claim survives the process** | A shutdown does not release the claim; on restart `Recovery` takes over. |
+| **Exactly one terminal event** | `ExecutionSucceeded`, `ExecutionFailed` or `ExecutionInterrupted`. |
+| **Doorbell is coalescing** | Multiple wakes during a run lead to exactly one follow-up run. |
+| **Interrupt is idempotent** | An interrupt on an inactive session is a no-op. |
+| **User interrupt releases the claim** | Shutdown retains it for recovery. |
 
-## Wo bleibt das LLM?
+## Where does the LLM fit in?
 
-Der LLM-Anteil liegt **innerhalb** von `ExecutionRunner.run` bzw. `Step.run`:
-Text und Tool-Calls. Die Zustandsübergänge, Claims, Doorbell und terminalen
-Events sind deterministisch.
+The LLM share lies **inside** `ExecutionRunner.run` / `Step.run`:
+text and tool calls. The state transitions, claims, doorbell and terminal
+events are deterministic.
 
-## Quellen
+## Sources
 
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/execution/SessionExecution.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/execution/ExecutionRunner.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Recovery.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/core/model/SessionEvent.java`
-- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/execution/SessionExecution.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/execution/ExecutionRunner.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Recovery.java`
+- `engine/src/main/java/de/augmentia/oc/engine/core/model/SessionEvent.java`
+- `quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java`

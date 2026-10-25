@@ -1,23 +1,23 @@
-# 08 – Agenten, Subagents und deterministischer Orchestrator
+# 08 – Agents, Subagents, and Deterministic Orchestrator
 
-## Zweck
+## Purpose
 
-Dieses Diagramm beschreibt zwei Dinge getrennt:
+This diagram describes two things separately:
 
-1. **Ist-Stand:** wie Agenten und Subagents heute in QOC funktionieren.
-2. **Zielbild:** wie ein deterministischer Orchestrator mit LLM nur im
-   Fehlerfall aussehen kann.
+1. **Current state:** how agents and subagents work in QOC today.
+2. **Target design:** what a deterministic orchestrator with LLM only in
+   the error case can look like.
 
-Das Zielbild ist **noch nicht implementiert**. Es dient als Architekturplan und
-macht die Determinismus-Grenze explizit.
+The target design is **not yet implemented**. It serves as an architecture
+plan and makes the determinism boundary explicit.
 
 ---
 
-## Ist-Stand: Agenten und Subagents
+## Current state: Agents and Subagents
 
-Ein Agent ist eine Konfiguration aus System-Prompt, Modell, `maxSteps`,
-Tool-Filtern und Permissions. `AgentCatalogue` hält die Agenten; `AgentProfile`
-ist die Sicht, die der `ContextBuilder` für einen Prompt benötigt.
+An agent is a configuration of system prompt, model, `maxSteps`,
+tool filters, and permissions. `AgentCatalogue` holds the agents; `AgentProfile`
+is the view that the `ContextBuilder` needs for a prompt.
 
 ```mermaid
 flowchart LR
@@ -27,12 +27,12 @@ flowchart LR
   Child["Child-Session<br/>AgentProfile"]:::det
   Run["runPrompt(child)"]:::mixed
   Llm["LLM + Tools"]:::llm
-  Result["Text-Ergebnis"]:::llm
+  Result["Text result"]:::llm
 
-  Parent -->|"LLM ruft subagent-Tool"| Tool
+  Parent -->|"LLM calls subagent tool"| Tool
   Tool --> Guard
-  Guard -->|"nein"| Error["Fehler als ToolOutcome"]:::det
-  Guard -->|"ja"| Child
+  Guard -->|"no"| Error["Error as ToolOutcome"]:::det
+  Guard -->|"yes"| Child
   Child --> Run
   Run --> Llm
   Llm --> Result
@@ -44,53 +44,53 @@ flowchart LR
   classDef mixed fill:#fff9c4,stroke:#f9a825,stroke-width:1px,color:#111;
 ```
 
-### Regeln im Ist-Stand
+### Rules in the current state
 
-| Regel | Umsetzung |
+| Rule | Implementation |
 |---|---|
-| Subagent-Agenten | `build` und `plan` sind nicht als Subagent erlaubt |
-| Tiefe | maximal 2 |
-| Parallelität | maximal 4 gleichzeitige Subagents (Semaphore) |
-| Child-Session | eigener `SessionId`, eigener Agent, eigener Prompt |
-| Token-Abrechnung | Usage wird auf die Parent-Session addiert |
-| Ergebnis | finaler Text des Child-Laufs als Tool-Output |
-| Hintergrund | `background=true` startet einen Daemon-Thread |
+| Subagent agents | `build` and `plan` are not allowed as subagents |
+| Depth | maximum 2 |
+| Concurrency | at most 4 simultaneous subagents (semaphore) |
+| Child-Session | own `SessionId`, own agent, own prompt |
+| Token accounting | usage is added to the parent session |
+| Result | final text of the child run as tool output |
+| Background | `background=true` starts a daemon thread |
 
-### Determinismus
+### Determinism
 
-- **Deterministisch:** Permission-Check, Depth-Limit, Semaphore, Child-Session
-  anlegen, Token-Aufsummierung, Tool-Outcome.
-- **LLM:** der eigentliche Child-Lauf und sein Ergebnis.
+- **Deterministic:** permission check, depth limit, semaphore, creating the
+  child session, token summation, tool outcome.
+- **LLM:** the actual child run and its result.
 
 ---
 
-## Zielbild: deterministischer Orchestrator mit LLM-Fallback
+## Target design: deterministic orchestrator with LLM fallback
 
-Der Orchestrator ist **kein freier LLM-Agent**. Er ist eine Zustandsmaschine,
-die den nächsten Schritt aus dem persistierten Zustand ableitet. Worker sind
-Subagents, führen aber nur **einen** Schritt aus und dürfen den Workflow-State
-nicht schreiben. Das LLM wird nur bei definierten Fehlern als
-Reparatur-/Anreicherungsdienst aufgerufen.
+The orchestrator is **not a free LLM agent**. It is a state machine
+that derives the next step from the persisted state. Workers are
+subagents, but they execute only **one** step and may not write the
+workflow state. The LLM is invoked only for defined errors as a
+repair/enrichment service.
 
 ```mermaid
 flowchart TD
-  Req["Task Request"]:::ext --> Gateway["TaskGateway<br/>Validierung · Idempotenz"]:::det
+  Req["Task Request"]:::ext --> Gateway["TaskGateway<br/>Validation · Idempotency"]:::det
   Gateway --> Db[("workflow_run<br/>workflow_step")]:::store
   Db --> Orch["Deterministic Orchestrator"]:::det
-  Orch --> Next{"nächster Schritt?"}:::det
-  Next -->|"fertig"| Done["COMPLETED"]:::det
-  Next -->|"Schritt"| Worker["Worker-Subagent<br/>genau ein Schritt"]:::mixed
-  Worker --> Result["strukturiertes Ergebnis"]:::llm
-  Result --> Validate{"Schema gültig?"}:::det
-  Validate -->|"ja"| Tx["Zustand transaktional schreiben"]:::det
+  Orch --> Next{"next step?"}:::det
+  Next -->|"done"| Done["COMPLETED"]:::det
+  Next -->|"step"| Worker["Worker-Subagent<br/>exactly one step"]:::mixed
+  Worker --> Result["structured result"]:::llm
+  Result --> Validate{"Schema valid?"}:::det
+  Validate -->|"yes"| Tx["write state transactionally"]:::det
   Tx --> Db
-  Validate -->|"nein"| Classify["Fehler klassifizieren"]:::det
-  Classify -->|"transient"| Retry["Retry mit Backoff"]:::det
+  Validate -->|"no"| Classify["classify error"]:::det
+  Classify -->|"transient"| Retry["Retry with backoff"]:::det
   Retry --> Orch
-  Classify -->|"semantic"| Fallback["LLM-Fallback<br/>Daten anreichern / Alternative"]:::llm
+  Classify -->|"semantic"| Fallback["LLM-Fallback<br/>enrich data / alternative"]:::llm
   Fallback --> FValidate{"Schema + Confidence?"}:::det
-  FValidate -->|"ja"| Tx
-  FValidate -->|"nein"| Approval["WAITING_APPROVAL"]:::det
+  FValidate -->|"yes"| Tx
+  FValidate -->|"no"| Approval["WAITING_APPROVAL"]:::det
   Approval -->|"approved"| Tx
   Approval -->|"rejected"| Failed["FAILED"]:::det
 
@@ -101,34 +101,34 @@ flowchart TD
   classDef store fill:#e3f2fd,stroke:#1565c0,stroke-width:1px,color:#111;
 ```
 
-### Zustandsmaschine
+### State machine
 
 ```mermaid
 stateDiagram-v2
   [*] --> PENDING
   PENDING --> RUNNING: start
-  RUNNING --> COMPLETED: alle Schritte ok
+  RUNNING --> COMPLETED: all steps ok
   RUNNING --> FAILED_TRANSIENT: timeout / 429 / network
-  RUNNING --> FAILED_SEMANTIC: fehlende Daten / mehrdeutig
-  RUNNING --> WAITING_APPROVAL: Nebenwirkung
+  RUNNING --> FAILED_SEMANTIC: missing data / ambiguous
+  RUNNING --> WAITING_APPROVAL: side effect
   FAILED_TRANSIENT --> RUNNING: retry + backoff
   FAILED_SEMANTIC --> ENRICHING: LLM-Fallback
-  ENRICHING --> RUNNING: validierte Eingabe
-  ENRICHING --> WAITING_APPROVAL: niedrige Confidence
+  ENRICHING --> RUNNING: validated input
+  ENRICHING --> WAITING_APPROVAL: low confidence
   WAITING_APPROVAL --> RUNNING: approved
   WAITING_APPROVAL --> FAILED: rejected
   COMPLETED --> [*]
   FAILED --> [*]
 
   note right of ENRICHING
-    Einziger normaler LLM-Einsatz
-    außerhalb des Workers:
-    Datenbasis erweitern oder
-    vordefinierte Alternative wählen.
+    Only normal LLM use
+    outside the worker:
+    extend the data basis or
+    choose a predefined alternative.
   end note
 ```
 
-### Vorgeschlagenes Datenmodell
+### Proposed data model
 
 ```sql
 create table workflow_run (
@@ -169,78 +169,78 @@ create table fallback_attempt (
 );
 ```
 
-### Regeln für den Orchestrator
+### Orchestrator rules
 
-| Regel | Bedeutung |
+| Rule | Meaning |
 |---|---|
-| **Schrittfolge im Code** | Der nächste Schritt kommt aus der Workflow-Definition, nicht aus dem LLM. |
-| **Worker = Subagent** | Der Worker führt genau einen Schritt aus und liefert strukturiertes JSON. |
-| **Worker minimal** | Nur die für den Schritt nötigen Tools; keine weiteren Subagents. |
-| **Worker schreibt keinen State** | Nur der Orchestrator schreibt `workflow_run` / `workflow_step`. |
-| **Retry nur transient** | Timeout, 429, Netzwerk, Lock-Konflikt. |
-| **LLM nur bei semantic** | Fehlende Daten, Mehrdeutigkeit, unbekannte Struktur. |
-| **Fallback ist begrenzt** | Maximal 1–2 Versuche, dann Circuit Breaker / Approval. |
-| **Schema-Validierung** | Jede LLM-Ausgabe wird gegen ein JSON-Schema geprüft. |
-| **Confidence-Schwelle** | Zu unsichere Vorschläge gehen in `WAITING_APPROVAL`. |
-| **Nebenwirkungen brauchen Approval** | Schreiben, Löschen, Shell, externe Writes. |
-| **Audit** | Jeder Schritt und jeder Fallback wird persistiert. |
+| **Step order in code** | The next step comes from the workflow definition, not from the LLM. |
+| **Worker = Subagent** | The worker executes exactly one step and returns structured JSON. |
+| **Worker minimal** | Only the tools needed for the step; no further subagents. |
+| **Worker writes no state** | Only the orchestrator writes `workflow_run` / `workflow_step`. |
+| **Retry only transient** | Timeout, 429, network, lock conflict. |
+| **LLM only for semantic** | Missing data, ambiguity, unknown structure. |
+| **Fallback is bounded** | At most 1–2 attempts, then circuit breaker / approval. |
+| **Schema validation** | Every LLM output is validated against a JSON schema. |
+| **Confidence threshold** | Proposals that are too uncertain go to `WAITING_APPROVAL`. |
+| **Side effects need approval** | Writing, deleting, shell, external writes. |
+| **Audit** | Every step and every fallback is persisted. |
 
-### Was der LLM-Fallback darf
+### What the LLM fallback may do
 
-- fehlende Felder aus vorhandenen Daten extrahieren,
-- mehrdeutige Eingaben normalisieren,
-- Suchbegriffe oder Kandidaten erweitern,
-- eine **vordefinierte** Alternative aus einer Allowlist wählen,
-- eine korrigierte Eingabe für einen deterministischen Schritt vorschlagen.
+- extract missing fields from existing data,
+- normalize ambiguous input,
+- expand search terms or candidates,
+- choose a **predefined** alternative from an allowlist,
+- propose a corrected input for a deterministic step.
 
-### Was der LLM-Fallback nicht darf
+### What the LLM fallback may not do
 
-- Schritte überspringen,
-- den Workflow-State direkt ändern,
-- beliebige Tools oder Shell-Befehle ausführen,
-- einen Retry ohne inhaltliche Änderung auslösen,
-- ohne Validierung als „erledigt“ markiert werden.
+- skip steps,
+- change the workflow state directly,
+- execute arbitrary tools or shell commands,
+- trigger a retry without a content change,
+- be marked as "done" without validation.
 
-### Deterministische und LLM-Anteile
+### Deterministic and LLM parts
 
-| Teil | Status |
+| Part | Status |
 |---|---|
-| Task-Gateway, Validierung, Idempotenz | deterministisch |
-| Workflow-Definition und Transitionstabelle | deterministisch |
-| State-Persistenz und Transaktionen | deterministisch |
-| Fehlerklassifikation | deterministisch |
-| Retry/Backoff | deterministisch |
-| Worker-Ausführung | LLM (Subagent) |
-| Datenanreicherung / Alternativwahl | LLM, aber schema- und policy-validiert |
-| Approval | Mensch/UI |
-| Audit | deterministisch |
+| Task gateway, validation, idempotency | deterministic |
+| Workflow definition and transition table | deterministic |
+| State persistence and transactions | deterministic |
+| Error classification | deterministic |
+| Retry/backoff | deterministic |
+| Worker execution | LLM (Subagent) |
+| Data enrichment / alternative selection | LLM, but schema- and policy-validated |
+| Approval | Human/UI |
+| Audit | deterministic |
 
-### Umsetzungslücke
+### Implementation gap
 
-Heute fehlen:
+Today these are missing:
 
 - `workflow_run` / `workflow_step` / `fallback_attempt`,
-- eine Workflow-Definition und Transitionstabelle,
-- ein `TaskGateway` mit Idempotency-Store,
-- ein Worker-Vertrag mit JSON-Schema,
-- eine LLM-Fallback-Policy mit Confidence und Allowlist,
-- die Verdrahtung des vorhandenen `Coordinator` in den HTTP-Pfad.
+- a workflow definition and transition table,
+- a `TaskGateway` with idempotency store,
+- a worker contract with JSON schema,
+- an LLM fallback policy with confidence and allowlist,
+- wiring the existing `Coordinator` into the HTTP path.
 
-Die vorhandenen Bausteine, auf denen das aufsetzen kann:
+The existing building blocks this can build on:
 
 - `SessionService`, `Admission`, `Delivery`,
-- `Journal` und SQL-Adapter,
+- `Journal` and SQL adapter,
 - `PermissionEngine`,
 - `Step`, `ToolRuntime`, `SubagentTool`,
 - `Coordinator`, `SessionExecution`, `Recovery`.
 
-## Quellen
+## Sources
 
-- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java`
-- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/AgentCatalogue.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/context/AgentProfile.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/SubagentTool.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/SubagentRunner.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java`
-- `qoc/docs/LoadAgentConfig.md`
-- `qoc/docs/ideas.md`
+- `quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java`
+- `quarkus/src/main/java/de/augmentia/oc/engine/http/AgentCatalogue.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/context/AgentProfile.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/SubagentTool.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/SubagentRunner.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java`
+- `docs/guides/LoadAgentConfig.md`
+- `docs/guides/ideas.md`

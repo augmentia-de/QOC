@@ -79,7 +79,7 @@ WorkingDirectory=/var/lib/qoc
 Environment=HOME=/var/lib/qoc
 EnvironmentFile=/etc/qoc/env
 ExecStartPre=/usr/local/bin/qoc-prepare.sh
-ExecStart=/usr/bin/java -Xmx256m -jar /opt/qoc/quarkus-run.jar
+ExecStart=/usr/bin/java -Xmx256m -jar /opt/quarkus-run.jar
 Restart=on-failure
 RestartSec=5
 

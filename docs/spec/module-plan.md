@@ -14,6 +14,21 @@
 >
 > **Status:** 2026-10-22
 
+## Contents
+
+- [1. Five rules](#1-five-rules)
+- [2. The stages](#2-the-stages)
+- [3. The ports](#3-the-ports)
+- [4. The modules per stage](#4-the-modules-per-stage)
+- [5. Interfaces that make the difference](#5-interfaces-that-make-the-difference)
+- [6. What a simplification may never change](#6-what-a-simplification-may-never-change)
+- [7. Test strategy](#7-test-strategy)
+- [8. Order of implementation](#8-order-of-implementation)
+- [9. Prohibitions](#9-prohibitions)
+- [10. Package tree](#10-package-tree)
+- [11. Spec → module mapping](#11-spec-module-mapping)
+- [12. Open decisions (all decided 2026-10-22)](#12-open-decisions-all-decided-2026-10-22)
+
 ## 1. Five rules
 
 | # | Rule | Consequence |
@@ -526,4 +541,3 @@ without the stages above it and without real infrastructure.
 | **M-C** | Does `wiring` wire the projections or `adapter.sql`? | With `wiring` the projection list is visible; with `adapter.sql` hidden. | **`adapter.sql`**, list in the constructor |
 | **M-D** | Is `shellscan` its own module or part of `tool.shell`? | A separate port allows the tree scanner **and** the portable scanner as interchangeable implementations. | **own module** |
 | **M-E** | May `execution` run several sessions in parallel? | Concurrency is an internal matter; the interface does not change. | **later**, first correct, then parallel |
-/home/torsten/dev/my-projects/2oc/qoc/docs/spec/module-plan.md

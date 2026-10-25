@@ -38,14 +38,14 @@ type ModelRequest =
   , cacheKey: Option<Text> }
 
 type ModelMessage =
-  | Nutzer       { inhalt: List<Content> }
-  | Assistent    { inhalt: List<Content> }
-  | Werkzeugergebnis { aufrufID: CallID, name: ToolName, ergebnis: OutcomePayload }
+  | User       { content: List<Content> }
+  | Assistant  { content: List<Content> }
+  | ToolResult { callID: CallID, name: ToolName, result: OutcomePayload }
 
 type Content =
   | Text  { text: Text }
-  | Medium { medienart: Bild | Audio | Video | PDF, daten: Bytes, name: Option<Text> }
-  | Werkzeugaufruf { aufrufID: CallID, name: ToolName, eingabe: Json }
+  | Media { mediaType: Image | Audio | Video | PDF, data: Bytes, name: Option<Text> }
+  | ToolCall { callID: CallID, name: ToolName, input: Json }
 ```
 
 **Rules:**
@@ -63,8 +63,8 @@ type Content =
 ### Output budget
 
 ```
-budget = min( kataloglimit, 256_000 )
-budget = min( budget, max( 1_024, kontextfenster - gemessene_eingangsgröße - puffer ) )
+budget = min( catalogLimit, 256_000 )
+budget = min( budget, max( 1_024, contextWindow - measuredInputSize - buffer ) )
 ```
 
 * For compaction assignments an additional smaller upper bound (32,000) applies.
@@ -81,34 +81,34 @@ text, reasoning and tool calls; a tool call can still be incomplete
 
 ```
 type ProviderEvent =
-  | TextBegonnen        { blockID }
-  | TextFortschritt     { blockID, text }
-  | TextBeendet         { blockID, text }
+  | TextStarted        { blockID }
+  | TextProgress       { blockID, text }
+  | TextEnded          { blockID, text }
 
-  | ReasoningBegonnen   { blockID }
-  | ReasoningFortschritt{ blockID, text }
-  | ReasoningBeendet    { blockID, text }
+  | ReasoningStarted   { blockID }
+  | ReasoningProgress  { blockID, text }
+  | ReasoningEnded     { blockID, text }
 
-  | WerkzeugEingabeBegonnen { aufrufID, name }
-  | WerkzeugEingabeFortschritt { aufrufID, text }
-  | WerkzeugEingabeBeendet   { aufrufID, text }
+  | ToolInputStarted   { callID, name }
+  | ToolInputProgress  { callID, text }
+  | ToolInputEnded     { callID, text }
 
-  | WerkzeugAufgerufen  { aufrufID, name, eingabe: Json }
-  | WerkzeugErgebnis    { aufrufID, ergebnis: OutcomePayload }   # executed by the provider
-  | WerkzeugFehler      { aufrufID, meldung }
+  | ToolCalled         { callID, name, input: Json }
+  | ToolResult         { callID, result: OutcomePayload }   # executed by the provider
+  | ToolError          { callID, message }
 
-  | Beendet             { grund: FinishReason, verbrauch: TokenCount, roh: Json }
+  | Finished           { reason: FinishReason, usage: TokenCount, raw: Json }
 
-  | AnbieterFehler      { meldung, einstufung: FailureClass }
+  | ProviderError      { message, classification: FailureClass }
 ```
 
 | Field | Meaning |
 |---|---|
 | `blockID` | identifies a text/reasoning block within the response |
-| `aufrufID` | identifies a tool call **within** a step |
-| `FinishReason` | `normal` · `laengenlimit` · `inhaltsfilter` · `unbekannt` · `abbruch` |
+| `callID` | identifies a tool call **within** a step |
+| `FinishReason` | `normal` · `lengthLimit` · `contentFilter` · `unknown` · `aborted` |
 | `OutcomePayload` | either content or an error text – never both |
-| `verbrauch` | token count, if the provider reports it |
+| `usage` | token count, if the provider reports it |
 
 **Rules:**
 
@@ -122,7 +122,7 @@ type ProviderEvent =
   protocol error (exception: a late error result after an abort cleanup is
   harmless and is ignored).
 * **V-05** Provider-side errors are reported as an **event**
-  (`AnbieterFehler`), not by aborting the stream – so the engine can
+  (`ProviderError`), not by aborting the stream – so the engine can
   decide whether an attempt is retried.
 * **V-06** An abort of the stream is an abort, not an error.
 
@@ -154,36 +154,36 @@ The engine classifies them; the adapter only translates.
 
 ```
 type FailureClass =
-  | Ratebegrenzt        { wartezeit: Option<Duration> }
-  | AnbieterIntern      { wartezeit: Option<Duration> }
-  | Transport           { zustellung: Ungesendet | Angenommen | Abgelehnt
-                        , operation: Senden | Lesen
+  | RateLimited        { waitTime: Option<Duration> }
+  | ProviderInternal   { waitTime: Option<Duration> }
+  | Transport          { delivery: Unsent | Accepted | Rejected
+                        , operation: Send | Read
                         , code: Text }
-  | UngueltigeAusgabe   { einstufung: UnvollstaendigerStrom | Unbekannt }
-  | UngueltigeAnfrage   { einstufung: Kontextueberlauf | Sonstiges }
-  | Authentifizierung   { hinweis: Option<Text> }
-  | Kontingent          { hinweis: Option<Text> }
-  | InhaltsrichtlinieVerletzt
-  | NichtUnterstuetzt   { operation: Text }
-  | KeineRoute
-  | UnbekannterAnbieter
-  | Zeitueberschreitung
+  | InvalidOutput      { classification: IncompleteStream | Unknown }
+  | InvalidRequest     { classification: ContextOverflow | Other }
+  | Authentication     { hint: Option<Text> }
+  | Quota              { hint: Option<Text> }
+  | ContentPolicyViolated
+  | NotSupported       { operation: Text }
+  | NoRoute
+  | UnknownProvider
+  | Timeout
 ```
 
 ### Retryability
 
 ```
-wiederholbar(fehler) =
+retryable(error) =
     if the provider supplies an explicit value: use it
-    je nach klasse:
-        Ratebegrenzt, AnbieterIntern           → ja
+    depending on class:
+        RateLimited, ProviderInternal           → yes
         Transport:
-            zustellung = Abgelehnt             → nein  (the request was rejected)
-            zustellung = Angenommen             → ja, only if operation = Lesen
-            zustellung = Ungesendet            → ja
-        UngueltigeAusgabe: UnvollstaendigerStrom → ja
-        UnbekannterAnbieter                    → ja
-        else                                   → nein
+            delivery = Rejected             → no  (the request was rejected)
+            delivery = Accepted             → yes, only if operation = Read
+            delivery = Unsent              → yes
+        InvalidOutput: IncompleteStream → yes
+        UnknownProvider                    → yes
+        else                               → no
 ```
 
 > **Principle:** *Unknown* errors are retried. The classification records only
@@ -193,8 +193,8 @@ wiederholbar(fehler) =
 ### Context overflow
 
 ```
-kontextueberlauf(fehler) =
-    fehler.typ = UngueltigeAnfrage und fehler.einstufung = Kontextueberlauf
+contextOverflow(error) =
+    error.type = InvalidRequest and error.classification = ContextOverflow
 ```
 
 **Important:** Text patterns like "too many tokens" are **not** a context
@@ -204,11 +204,11 @@ overflow – they mean an output limit, which compaction does not fix. Likewise
 ### Retry effort limits
 
 ```
-wait_time = min( provider_desired_wait_time, at most 15 minutes )
-wartezeit = max( wartezeit, eigene_backoff_stufe )
-own_backoff_step = exponential from 2 s, capped at 10 s per gap, with jitter
-maximale_wiederholungen = 10
-maximale_wiederholungen_bei_zeitueberschreitung = 3
+waitTime = min( providerDesiredWaitTime, at most 15 minutes )
+waitTime = max( waitTime, ownBackoffStep )
+ownBackoffStep = exponential from 2 s, capped at 10 s per gap, with jitter
+maxRetries = 10
+maxRetriesOnTimeout = 3
 ```
 
 > **Deviation from the present specification** (`specs/v2/session.md`):
@@ -258,12 +258,12 @@ type ProviderEntry =
 type ModelInfo =
   { id: ModelID
   , providerID: ProviderID
-  , varianten: List<VariantID>
-  , grenzen: { kontext: Int, ausgabe: Int }
-  , kosten: KostenModell
-  , faehigkeiten: { eingabe: List<Medienart>, ausgabe: List<Medienart> }
-  , verdichtung: Option<VerdichtungsModell>   # provider-side
-  , transport: Option<Zustandskanal> }
+  , variants: List<VariantID>
+  , limits: { context: Int, output: Int }
+  , cost: CostModel
+  , capabilities: { input: List<MediaType>, output: List<MediaType> }
+  , compaction: Option<CompactionModel>   # provider-side
+  , transport: Option<StateChannel> }
 ```
 
 **Rules:**

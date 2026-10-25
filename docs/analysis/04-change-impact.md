@@ -1,5 +1,8 @@
 # 04 – Change Impact, Invariants & Guardrails
 
+> **Rolle:** reference analysis des OpenCode-V2-Checkouts, not an operative
+> QOC-Spec. For the implementation, see [`spec/`](../spec/README.md).
+
 > **Workflow 4:** Change-impact analysis
 > `[Hotspots + Invariants] ➔ [LLM impact analysis] ➔ [Impact matrix + test plan]`
 >
@@ -13,6 +16,17 @@
 > `AGENTS.md` files and code comments.
 
 ---
+
+## Contents
+
+- [1. Hotspots – where a change takes the most with it](#1-hotspots-where-a-change-takes-the-most-with-it)
+- [2. Invariants as testable rules](#2-invariants-as-testable-rules)
+- [3. Change-Impact Matrix](#3-change-impact-matrix)
+- [4. Test and verification strategy](#4-test-and-verification-strategy)
+- [5. Guardrails (from the 19 `AGENTS.md` files)](#5-guardrails-from-the-19-agentsmd-files)
+- [6. Pitfalls](#6-pitfalls)
+- [7. Change checklist (short form)](#7-change-checklist-short-form)
+- [8. Still-open knowledge gaps](#8-still-open-knowledge-gaps)
 
 ## 1. Hotspots – where a change takes the most with it
 

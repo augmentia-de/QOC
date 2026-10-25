@@ -1,90 +1,90 @@
-# 07 – Werkzeugfamilie: Subagent (task delegation)
+# 07 – Tool family: Subagent (task delegation)
 
-> Werkzeug: `subagent` (V1-Name: `task`). Delegiert eine Aufgabe an einen
-> spezialisierten Agenten in einer Kind-Session.
+> Tool: `subagent` (V1 name: `task`). Delegates a task to a specialized
+> agent in a child session.
 
-## 1. Zweck
+## 1. Purpose
 
-Ein Agent kann eine Teilaufgabe an einen spezialisierten Subagenten
-delegieren. Der Subagent läuft in einer **eigenen Session** (mit `parentID`),
-mit eigenem Systemprompt, eigenen Rechten, eigenem Modell und eigenem
-Schrittbudget. Das Ergebnis wird als Tool-Output an den aufrufenden Agenten
-zurückgegeben.
+An agent can delegate a subtask to a specialized subagent. The subagent runs
+in its **own session** (with `parentID`), with its own system prompt, its
+own rights, its own model and its own step budget. The result is returned
+to the calling agent as tool output.
 
-## 2. Agenten-Modi
+## 2. Agent modes
 
-| Modus | Bedeutung | Sichtbar in `GET /api/agent` |
+| Mode | Meaning | Visible in `GET /api/agent` |
 |---|---|---|
-| `primary` | Auswählbar durch den Nutzer | ja |
-| `subagent` | Nur gerufen (nicht auswählbar) | nein |
-| `all` | beides | ja |
+| `primary` | Selectable by the user | yes |
+| `subagent` | Only invoked (not selectable) | no |
+| `all` | both | yes |
 
-Built-in-Subagenten:
-| Agent | Modus | Rechte | Zweck |
+Built-in subagents:
+| Agent | Mode | Rights | Purpose |
 |---|---|---|---|
-| `general` | subagent | `question` + `subagent` denied | Multi-Step/parallele Arbeit |
-| `explore` | subagent | `*` denied, Whitelist: `shell, grep, glob, webfetch, websearch, read` | Dateisuche |
+| `general` | subagent | `question` + `subagent` denied | Multi-step/parallel work |
+| `explore` | subagent | `*` denied, whitelist: `shell, grep, glob, webfetch, websearch, read` | File search |
 
-## 3. Werkzeug-Vertrag
+## 3. Tool contract
 
 ```
-Eingabe:  { agent: AgentID, prompt: String, description?: String }
-Ausgabe:  Text (Ergebnis des Subagenten) + Metadata { sessionId, agent, steps, cost, tokens }
+Input:  { agent: AgentID, prompt: String, description?: String }
+Output:  Text (result of the subagent) + Metadata { sessionId, agent, steps, cost, tokens }
 ```
 
-### 3.1 Ausführung
+### 3.1 Execution
 
 ```
 subagent(agent, prompt, context):
-    1. Prüfe Rekursions-Tiefe (max. 2 Ebenen). Wenn Tiefe > Limit → Fehler.
-    2. Lade Agent-Profil (Systemprompt, Rechte, Modell, Steps).
-    3. Prüfe Rechte: Agent muss `subagent` erlaubt haben (Permission.assert).
-    4. Erzeuge Kind-Session (parentID = aktuelle Session).
-    5. Enqueue prompt in Kind-Session (SessionService.enqueue).
-    6. Führe Kind-Session aus (Coordinator.wake) → blockiert bis idle.
-    7. Lese Assistant-Antwort aus Kind-Session (Conversation.messages).
-    8. Bounding: Ergebnis kürzen wenn > Limit (OutputBounding).
-    9. Gib Ergebnis als Tool-Output zurück.
+    1. Check recursion depth (max. 2 levels). If depth > limit → error.
+    2. Load agent profile (system prompt, rights, model, steps).
+    3. Check rights: agent must have been allowed `subagent` (Permission.assert).
+    4. Create child session (parentID = current session).
+    5. Enqueue prompt in child session (SessionService.enqueue).
+    6. Run child session (Coordinator.wake) → blocks until idle.
+    7. Read assistant answer from child session (Conversation.messages).
+    8. Bounding: shorten result if > limit (OutputBounding).
+    9. Return result as tool output.
 ```
 
-### 3.2 Rekursions-Schutz
+### 3.2 Recursion protection
 
-- Max. Tiefe: 2 (Parent → Child → Grandchild, nicht tiefer).
-- `general` hat `subagent` denied → kann nicht weiter delegieren.
-- `explore` hat `subagent` denied → kann nicht weiter delegieren.
-- Tiefe wird über `parentID`-Kette geprüft.
+- Max. depth: 2 (Parent → Child → Grandchild, no deeper).
+- `general` has `subagent` denied → cannot delegate further.
+- `explore` has `subagent` denied → cannot delegate further.
+- Depth is checked via the `parentID` chain.
 
-### 3.3 Fehlerbehandlung
+### 3.3 Error handling
 
-| Fehler | Wirkung |
+| Error | Effect |
 |---|---|
-| Unbekannter Agent | `Tool.Error` (modellseitig sichtbar) |
-| Keine Permission | `PermissionDenied` (modellseitig sichtbar) |
-| Rekursions-Limit | `Tool.Error` (modellseitig sichtbar) |
-| Subagent scheitert | `Tool.Error` mit Subagent-Fehler (modellseitig sichtbar) |
-| Timeout | `Tool.Error` (modellseitig sichtbar) |
+| Unknown agent | `Tool.Error` (visible to the model) |
+| No permission | `PermissionDenied` (visible to the model) |
+| Recursion limit | `Tool.Error` (visible to the model) |
+| Subagent fails | `Tool.Error` with subagent error (visible to the model) |
+| Timeout | `Tool.Error` (visible to the model) |
 
-### 3.4 Kosten und Token
+### 3.4 Cost and tokens
 
-- Subagent-Kosten werden zur Parent-Session addiert.
-- Subagent-Token werden separat getrackt (Metadata im Tool-Output).
+- Subagent costs are added to the parent session.
+- Subagent tokens are tracked separately (metadata in tool output).
 
-## 4. Agent-Scoping
+## 4. Agent scoping
 
-Jeder Subagent bekommt:
-- Eigenen Systemprompt (aus Agent-Definition).
-- Eigene Rechte (aus Agent-Definition oder Defaults).
-- Eigenen Tool-Snapshot (`registry.snapshot(agentPermissions)`).
-- Eigenes Schrittbudget (`steps`).
-- Eigenes Modell (oder Parent-Modell als Fallback).
+Each subagent receives:
 
-## 5. Agent-Definition (erweitert)
+- Its own system prompt (from the agent definition).
+- Its own rights (from the agent definition or defaults).
+- Its own tool snapshot (`registry.snapshot(agentPermissions)`).
+- Its own step budget (`steps`).
+- Its own model (or parent model as fallback).
 
-Datei `<projekt>/agent/<id>.md` oder `~/.config/opencode/agent/<id>.md`:
+## 5. Agent definition (extended)
+
+File `<project>/agent/<id>.md` or `~/.config/opencode/agent/<id>.md`:
 
 ```markdown
 ---
-description: Prüft Änderungen, ohne sie zu bearbeiten.
+description: Reviews changes without editing them.
 mode: subagent           # primary | subagent | all
 model: anthropic/claude-sonnet-4-5
 steps: 16
@@ -94,37 +94,38 @@ permissions:
   - { action: "edit",   resource: "*", effect: deny }
   - { action: "subagent", resource: "*", effect: deny }
 ---
-Du bist ein Reviewer. Lies die Änderung, bevor du urteilst.
+You are a reviewer. Read the change before judging.
 ```
 
-## 6. Invarianten
+## 6. Invariants
 
-| # | Invariante | Prüfart |
+| # | Invariant | Verification method |
 |---|---|---|
-| S-01 | Ein Subagent läuft in einer eigenen Session mit `parentID`. | Integrationstest |
-| S-02 | Der Subagent kann nicht tiefer als 2 Ebenen delegieren. | Unit-Test |
-| S-03 | Ein Subagent mit `subagent` = deny kann nicht weiter delegieren. | Unit-Test |
-| S-04 | Das Subagent-Ergebnis wird als Tool-Output an den Parent zurückgegeben. | Integrationstest |
-| S-05 | Subagent-Kosten werden zur Parent-Session addiert. | Integrationstest |
-| S-06 | Ein fehlgeschlagener Subagent erzeugt `Tool.Error`, nicht einen Absturz. | Integrationstest |
+| S-01 | A subagent runs in its own session with `parentID`. | Integration test |
+| S-02 | The subagent cannot delegate deeper than 2 levels. | Unit test |
+| S-03 | A subagent with `subagent` = deny cannot delegate further. | Unit test |
+| S-04 | The subagent result is returned to the parent as tool output. | Integration test |
+| S-05 | Subagent costs are added to the parent session. | Integration test |
+| S-06 | A failed subagent produces `Tool.Error`, not a crash. | Integration test |
 
-## 7. Best Practices
+## 7. Best practices
 
-1. **Isolation:** Kein shared mutable state zwischen Parent und Child.
-2. **Timeout:** Subagent-Runs haben ein Timeout (Default: 5 min).
-3. **Ergebnis-Truncation:** Große Ergebnisse werden gekürzt (OutputBounding).
-4. **Keine parallelen Subagents:** Sequentielle Ausführung (einfacher, weniger Ressourcenkonkurrenz).
-5. **Kontext-Übergabe:** Parent übergibt relevante Dateien/Fragen im Prompt.
-6. **Tool-Beschränkung:** Subagent bekommt nur Tools, die seine Permissions erlauben.
-7. **Rekursions-Schutz:** Depth-Limit + `subagent`-Deny für leaf-Agents.
-8. **Kosten-Tracking:** Separate Tracking, aber Attribution zur Parent-Session.
+1. **Isolation:** No shared mutable state between parent and child.
+2. **Timeout:** Subagent runs have a timeout (default: 5 min).
+3. **Result truncation:** Large results are shortened (OutputBounding).
+4. **No parallel subagents:** Sequential execution (simpler, less resource
+   contention).
+5. **Context handover:** Parent passes relevant files/questions in the prompt.
+6. **Tool restriction:** Subagent receives only tools its permissions allow.
+7. **Recursion protection:** Depth limit + `subagent`-deny for leaf agents.
+8. **Cost tracking:** Separate tracking, but attribution to the parent session.
 
-## 8. Referenzen
+## 8. References
 
-- Spec: `spec/permissions/03-effect-matrix.md` (`subagent`-Action, Target-Agent-ID)
+- Spec: `spec/permissions/03-effect-matrix.md` (`subagent` action, target agent ID)
 - Spec: `spec/session-engine/01-types.md` (`parentID`, `forkSessionID`, `forkBoundary`)
-- Spec: `spec/session-engine/04-algorithms.md` (Execution, Claim, Wiederaufnahme)
-- Spec: `spec/betrieb/README.md` §3 (Agent-Modi, Baseline: ein Agent)
-- Spec: `spec/tools/01-types.md` (Tool-Vertrag)
-- OpenCode-Referenz: `oc/packages/core/src/session/revert.ts` (Session-Hierarchie)
-- OpenCode-Referenz: `oc/packages/core/src/tool/plugin/task.ts` (V1 task tool)
+- Spec: `spec/session-engine/04-algorithms.md` (Execution, Claim, resumption)
+- Spec: `spec/betrieb/README.md` §3 (Agent modes, baseline: one agent)
+- Spec: `spec/tools/01-types.md` (Tool contract)
+- OpenCode reference: `oc/packages/core/src/session/revert.ts` (Session hierarchy)
+- OpenCode reference: `oc/packages/core/src/tool/plugin/task.ts` (V1 task tool)

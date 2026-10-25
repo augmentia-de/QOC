@@ -1,11 +1,11 @@
-# 09 – Persistenz, Event-Log und Transaktionen
+# 09 – Persistence, Event Log, and Transactions
 
-## Zweck
+## Purpose
 
-QOC speichert Sessions, Nachrichten, Inbox, Claims, Instructions und Snapshots
-in SQLite oder PostgreSQL. Das Event-Log ist append-only und die Grundlage für
-Replay, Projektionen und Audit. Dieses Diagramm zeigt die Tabellen und die
-wichtigsten Transaktionsgrenzen.
+QOC stores sessions, messages, inbox, claims, instructions, and snapshots
+in SQLite or PostgreSQL. The event log is append-only and the foundation for
+replay, projections, and audit. This diagram shows the tables and the
+most important transaction boundaries.
 
 ```mermaid
 erDiagram
@@ -133,21 +133,21 @@ erDiagram
   }
 ```
 
-> `EVENT.aggregate_id` ist bewusst **kein** Fremdschlüssel: Das Event-Log ist
-> ein eigenständiger Strom pro Aggregat. `event_sequence` hält die nächste
-> Sequenz. `SAVED_APPROVAL`, `CREDENTIAL`, `TOOL_OUTPUT` und `SNAPSHOT` sind
-> unterstützende Stores ohne harte Session-FK.
+> `EVENT.aggregate_id` is deliberately **not** a foreign key: the event log is
+> an independent stream per aggregate. `event_sequence` holds the next
+> sequence. `SAVED_APPROVAL`, `CREDENTIAL`, `TOOL_OUTPUT`, and `SNAPSHOT` are
+> supporting stores without a hard session FK.
 
-## Event-Log vs. Projektionen
+## Event log vs. projections
 
 ```mermaid
 flowchart LR
   Command["Command / Prompt"]:::det --> Append["Journal.append(draft)"]:::det
-  Append --> Tx["Transaktion:<br/>Sequenz + Event"]:::det
+  Append --> Tx["Transaction:<br/>Sequence + Event"]:::det
   Tx --> Event[("event")]:::store
   Tx --> Seq[("event_sequence")]:::store
   Event --> Replay["Replay / SSE"]:::det
-  Event --> Projection["Projektionen / Reads"]:::det
+  Event --> Projection["Projections / Reads"]:::det
   Projection --> Sessions[("session / session_message")]:::store
   Projection --> Inbox[("session_inbox")]:::store
 
@@ -155,47 +155,47 @@ flowchart LR
   classDef store fill:#e3f2fd,stroke:#1565c0,stroke-width:1px,color:#111;
 ```
 
-## Transaktionsgrenzen (Ist-Stand)
+## Transaction boundaries (current state)
 
-| Operation | Transaktion? | Hinweis |
+| Operation | Transaction? | Note |
 |---|---|---|
-| `Journal.append` | ja | Sequenz und Event gemeinsam; `appendAll` ebenfalls |
-| `SessionStore.put` | ja | Session-Projektion |
-| `SessionStore.putInbox` | ja | Inbox-Zeile |
-| `SessionStore.removeInbox` | ja | eigene Transaktion |
-| `Delivery.deliver` | nein, über zwei Stores | `InboxDelivered` und `removeInbox` sind getrennte Aufrufe |
-| `SessionStore.delete` | ja | löscht abhängige Projektionen |
-| `SessionRetention.delete` | nein, über zwei Stores | erst Session, dann Event-Aggregat |
-| `Snapshot.capture/restore` | adapterabhängig | SQL-Snapshots speichern Dateien in `snapshot_file` |
-| `Revert` | über Journal + Snapshot + Instructions | Event bleibt append-only; Revert wird als Event gespeichert, Snapshot wird wiederhergestellt, Instructions werden entfernt |
+| `Journal.append` | yes | Sequence and event together; `appendAll` as well |
+| `SessionStore.put` | yes | Session projection |
+| `SessionStore.putInbox` | yes | Inbox row |
+| `SessionStore.removeInbox` | yes | own transaction |
+| `Delivery.deliver` | no, across two stores | `InboxDelivered` and `removeInbox` are separate calls |
+| `SessionStore.delete` | yes | deletes dependent projections |
+| `SessionRetention.delete` | no, across two stores | first session, then event aggregate |
+| `Snapshot.capture/restore` | adapter-dependent | SQL snapshots store files in `snapshot_file` |
+| `Revert` | across Journal + Snapshot + Instructions | Event stays append-only; Revert is stored as an event, snapshot is restored, instructions are removed |
 
-## Deterministische Persistenzregeln
+## Deterministic persistence rules
 
-1. **Sequenz ist lückenlos und monoton** pro Aggregat.
-2. **Event + Projektion** sollen in einer Transaktion geschrieben werden, wenn
-   sie zusammengehören.
-3. **Event-Log wird nie umgeschrieben**; Compaction ist eine Sicht, kein
+1. **Sequence is gapless and monotonic** per aggregate.
+2. **Event + projection** should be written in one transaction when
+   they belong together.
+3. **Event log is never rewritten**; compaction is a view, not a
    `DELETE`.
-4. **Claims überleben den Prozess**; Shutdown gibt sie nicht frei.
-5. **Retention** löscht Session und Event-Aggregat; laufende Sessions werden
-   übersprungen.
-6. **SQL nur im SQL-Adapter** (`adapter.sql` / `adapter.sqlite`).
+4. **Claims survive the process**; shutdown does not release them.
+5. **Retention** deletes session and event aggregate; running sessions are
+   skipped.
+6. **SQL only in the SQL adapter** (`adapter.sql` / `adapter.sqlite`).
 
 ## SQLite vs. PostgreSQL
 
-| Eigenschaft | SQLite | PostgreSQL |
+| Property | SQLite | PostgreSQL |
 |---|---|---|
-| Default | ja | nein |
-| Mehrere Worker/Container | nein | ja |
+| Default | yes | no |
+| Multiple workers/containers | no | yes |
 | WAL | `Sqlite.enableWal` | – |
-| Migrationen | `db/migration-sqlite` | `db/migration` |
-| Geeignet für | lokale Instanz, GCP-Single-Node | verteilte Orchestrator-/Worker-Architektur |
+| Migrations | `db/migration-sqlite` | `db/migration` |
+| Suitable for | local instance, GCP single-node | distributed orchestrator/worker architecture |
 
-## Quellen
+## Sources
 
-- `qoc/engine/src/main/resources/db/migration/V1__engine.sql`
-- `qoc/engine/src/main/resources/db/migration-sqlite/V1__engine.sql`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/adapter/sqlite/`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/adapter/sql/`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/session/core/SessionRetention.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/session/delivery/Delivery.java`
+- `engine/src/main/resources/db/migration/V1__engine.sql`
+- `engine/src/main/resources/db/migration-sqlite/V1__engine.sql`
+- `engine/src/main/java/de/augmentia/oc/engine/adapter/sqlite/`
+- `engine/src/main/java/de/augmentia/oc/engine/adapter/sql/`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/session/core/SessionRetention.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/session/delivery/Delivery.java`

@@ -1,7 +1,7 @@
 # pi-learnings.md – What QOC can learn from the pi coding agent
 
 > **Status:** Analysis · 2026-10-24
-> **Reference:** `/home/torsten/dev/my-projects/pi-mono` (pi coding agent, `packages/coding-agent`)
+> **Reference:** `<pi-checkout>` (pi coding agent, `packages/coding-agent`)
 > **Target:** `de.augmentia.oc.engine` (Java 21 / Quarkus / LangChain4j)
 
 pi is a TypeScript coding agent (TUI + web UI) with a deliberately minimal core:
@@ -14,6 +14,14 @@ This document records the pi implementation details worth copying and maps them
 to concrete QOC classes.
 
 ---
+
+## Contents
+
+- [1. Shared concepts already in parity](#1-shared-concepts-already-in-parity)
+- [2. Adoptable features and pi implementation details](#2-adoptable-features-and-pi-implementation-details)
+- [3. What does not fit](#3-what-does-not-fit)
+- [4. Recommended order](#4-recommended-order)
+- [5. Open decisions](#5-open-decisions)
 
 ## 1. Shared concepts already in parity
 

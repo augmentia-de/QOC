@@ -4,6 +4,19 @@
 > is classified, what stays durable, what the user sees, and what happens on
 > the next start.
 
+## Contents
+
+- [1. What the client sees](#1-what-the-client-sees)
+- [2. Provider errors in detail](#2-provider-errors-in-detail)
+- [3. Tool errors in detail](#3-tool-errors-in-detail)
+- [4. Interruption](#4-interruption)
+- [5. Crash recovery (`packages/core/src/session/execution/restart.ts`)](#5-crash-recovery-packagescoresrcsessionexecutionrestartts)
+- [6. Errors in admission (Level 1)](#6-errors-in-admission-level-1)
+- [7. Errors in projection / event log](#7-errors-in-projection-event-log)
+- [8. The most important pitfalls](#8-the-most-important-pitfalls)
+- [9. Debugging checklist](#9-debugging-checklist)
+- [Next](#next)
+
 ## 1. What the client sees
 
 Every error that reaches the runner becomes a `SessionError.Error`

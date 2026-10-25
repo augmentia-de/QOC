@@ -3,6 +3,19 @@
 > Depth: **Level 3**. The request is built. Now: provider stream, tool call,
 > execution, permission check, result, bounding.
 
+## Contents
+
+- [1. `llm.stream` – the model call](#1-llmstream-the-model-call)
+- [2. The tool-call lifecycle](#2-the-tool-call-lifecycle)
+- [3. The execution chain in detail](#3-the-execution-chain-in-detail)
+- [4. The permission system](#4-the-permission-system)
+- [5. Path authorization (`packages/core/src/file-access.ts`)](#5-path-authorization-packagescoresrcfile-accessts)
+- [6. The leaf tools in detail](#6-the-leaf-tools-in-detail)
+- [7. Output bounding (`packages/core/src/tool-output.ts:69-120`)](#7-output-bounding-packagescoresrctool-outputts69-120)
+- [8. Code mode](#8-code-mode)
+- [Checkpoints for your own changes](#checkpoints-for-your-own-changes)
+- [Next](#next)
+
 ## 1. `llm.stream` – the model call
 
 ```ts

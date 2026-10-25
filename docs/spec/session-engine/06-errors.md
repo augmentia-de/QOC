@@ -203,4 +203,4 @@ log replay shows *that* a file was written, but not *what*.
 | F-07 | Retries are **bounded** and **observable** (retry event). |
 | F-08 | A retry after already produced output keeps the output and issues **one** continuation instruction. |
 | F-09 | The resume counter is **durable** and is **incremented before** the run. |
-| F-10 | Errors while projecting lead to **discarding** the transaction. |<|end|><|start|>write to=assistant<|channel|>analysis<|message|>Wrote file successfully: spec/session-engine/06-errors.md
+| F-10 | Errors while projecting lead to **discarding** the transaction. |

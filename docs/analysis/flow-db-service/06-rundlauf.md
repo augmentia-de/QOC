@@ -7,6 +7,16 @@
 > **Basis:** `docs/spec/session-engine/` (neutral spec) + verified actual
 > code.
 
+## Contents
+
+- [0. The picture in one sentence](#0-the-picture-in-one-sentence)
+- [1. The big sequence diagram](#1-the-big-sequence-diagram)
+- [2. Step by step](#2-step-by-step)
+- [3. The six transaction boundaries of a round](#3-the-six-transaction-boundaries-of-a-round)
+- [4. Error paths at the same points](#4-error-paths-at-the-same-points)
+- [5. What the user sees at each moment](#5-what-the-user-sees-at-each-moment)
+- [6. The three places where the flow deviates from the spec](#6-the-three-places-where-the-flow-deviates-from-the-spec)
+
 ## 0. The picture in one sentence
 
 > The tool result does **not** go back into the same model request. It lands

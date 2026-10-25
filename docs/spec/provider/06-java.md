@@ -3,6 +3,19 @@
 > The provider in Java 21: types, adapter, stream, classification, retry.
 > Without a reactive library – with virtual threads and `java.net.http`.
 
+## Contents
+
+- [1. The events as `sealed interface`](#1-the-events-as-sealed-interface)
+- [2. The error as a closed family](#2-the-error-as-a-closed-family)
+- [3. The adapter](#3-the-adapter)
+- [4. Reading the stream](#4-reading-the-stream)
+- [5. Classifying errors](#5-classifying-errors)
+- [6. The retry loop](#6-the-retry-loop)
+- [7. Budget and headers](#7-budget-and-headers)
+- [8. HTTP and SSE with `java.net.http`](#8-http-and-sse-with-javanethttp)
+- [9. WebSocket (long-lived channel)](#9-websocket-long-lived-channel)
+- [10. The Java pitfalls](#10-the-java-pitfalls)
+
 ## 1. The events as `sealed interface`
 
 ```java

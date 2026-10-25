@@ -7,46 +7,63 @@
 
 ---
 
+## Contents
+
+- [A. Admission](#a-admission)
+- [B. Wake and execution coordination](#b-wake-and-execution-coordination)
+- [C. Pass (Drain)](#c-pass-drain)
+- [D. Boundary logic (`reach_boundary`)](#d-boundary-logic-reach_boundary)
+- [E. Delivery (`deliver`)](#e-delivery-deliver)
+- [F. Selecting and loading context](#f-selecting-and-loading-context)
+- [G. Building the request](#g-building-the-request)
+- [H. Executing a step](#h-executing-a-step)
+- [I. Attempt (one model call)](#i-attempt-one-model-call)
+- [J. Tool execution](#j-tool-execution)
+- [K. Permission check](#k-permission-check)
+- [L. Recovery after process abort](#l-recovery-after-process-abort)
+- [M. Compaction (shortened)](#m-compaction-shortened)
+- [N. Ordering and concurrency guarantees](#n-ordering-and-concurrency-guarantees)
+
 ## A. Admission
 
 **Precondition:** Session exists.
 **Postcondition:** Exactly one inbox row present **or** it is recognized that the ID
 was already admitted. No model call.
-**Error cases:** `SitzungNichtGefunden`, `Eingabekonflikt`, `AnhangFehler`,
-`FaehigkeitNichtGefunden`.
+**Error cases:** `SessionNotFound`, `InputConflict`, `AttachmentError`,
+`CapabilityNotFound`.
 
 ```
-aufnahme(anfrage) =
-  sitzung ← lade_sitzung(anfrage.sitzungsID)      # fail(SitzungNichtGefunden)
+admit(request) =
+  session ← load_session(request.sessionID)      # fail(SessionNotFound)
 
   # 1. Idempotency first: an already known ID wins.
-  vorhanden ← finde_inbox(anfrage.id)
-  if vorhanden existiert:
-      if vorhanden.typ ≠ anfrage.typ oder vorhanden.sitzungID ≠ sitzung.id:
-          fail(Eingabekonflikt)
-      return { aufgenommen: vorhanden, neu: nein }
+  existing ← find_inbox(request.id)
+  if existing exists:
+      if existing.type ≠ request.type or existing.sessionID ≠ session.id:
+          fail(InputConflict)
+      return { admitted: existing, new: no }
 
   # 2. Preparation: hooks, attachments, capabilities.
-  maskierend {
-      wiederherstellbar {
-          vorbereitet ← bereite_vor(sitzung, anfrage)   # fail(AnhangFehler, FaehigkeitNichtGefunden)
+  masking {
+      recoverable {
+          prepared ← prepare(session, request)   # fail(AttachmentError, CapabilityNotFound)
       }
 
       # 3. An open revert is committed before new work.
-      if sitzung.revert vorhanden:
-          schreibe_revert(sitzung)
+      if session.revert exists:
+          write_revert(session)
 
       # 4. Admission: a durable event, from which the row arises.
-      aufgenommen ← veroeffentliche(InboxEnqueued {
-          sitzungsID: sitzung.id, inboxID: anfrage.id, element: vorbereitet.element
+      admitted ← publish(InboxEnqueued {
+          sessionID: session.id, inboxID: request.id, element: prepared.element
       })
   }
 
   # 5. Only afterwards is work scheduled.
-  if anfrage.fortsetzen ≠ falsch:
-      wecke(sitzung.id, umfang = Eingabe)
+  if request.continue ≠ false:
+      wake(session.id, scope = Input)
 
-  return { aufgenommen: aufgenommen, neu: ja }
+  return { admitted: admitted, new: yes }
 ```
 
 **Notes:**
@@ -56,7 +73,7 @@ aufnahme(anfrage) =
   (no hooks, no attachment resolution).
 * Preparation runs **interruptibly**, the rest does not. An interruption
   leaves **no** half-admission.
-* `veroeffentliche` is atomic: event + inbox row arise together or not at all.
+* `publish` is atomic: event + inbox row arise together or not at all.
 
 ---
 
@@ -66,47 +83,47 @@ aufnahme(anfrage) =
 active, the work is remembered for one more pass.
 
 ```
-wecke(sitzungsID, umfang) =
-    laufend ← aktive_ausfuehrung(sitzungsID)
-    if laufend existiert:
-        laufend.tuerklingel ← vereinige(laufend.tuerklingel, umfang)   # "Input" dominates "Control"
+wake(sessionID, scope) =
+    running ← active_execution(sessionID)
+    if running exists:
+        running.doorbell ← merge(running.doorbell, scope)   # "Input" dominates "Control"
         return
-    starte_ausfuehrung(sitzungsID, umfang)
+    start_execution(sessionID, scope)
 
-starte_ausfuehrung(sitzungsID, umfang) =
-    ausfuehrung ← neues_gehaeuse(sitzungsID, umfang)
-    laufende_ausfuehrungen[sitzungsID] ← ausfuehrung
+start_execution(sessionID, scope) =
+    execution ← new_execution(sessionID, scope)
+    running_executions[sessionID] ← execution
 
-    unterbrechbar {
+    interruptible {
         # one tick delay: the owner is assigned before the run can fail
-        warte_einen_tick()
+        wait_one_tick()
 
-        maskierend {
-            veroeffentliche(ExecutionStarted { sitzungsID })   # sets the claim in the same transaction
+        masking {
+            publish(ExecutionStarted { sessionID })   # sets the claim in the same transaction
         }
 
-        wiederhol {
-            ergebnis ← drain(sitzungsID, ausfuehrung.umfang, ausfuehrung.fortsetzung)
-            if ausfuehrung.stoppend: brich ab
-            if ausfuehrung.tuerklingel nicht gesetzt: brich ab
-            ausfuehrung.umfang ← ausfuehrung.tuerklingel
-            ausfuehrung.tuerklingel ← nicht gesetzt
-            ausfuehrung.fortsetzung ← nicht gesetzt
-        } bis ergebnis terminal
+        repeat {
+            result ← drain(sessionID, execution.scope, execution.continuation)
+            if execution.stopping: break
+            if execution.doorbell not set: break
+            execution.scope ← execution.doorbell
+            execution.doorbell ← not set
+            execution.continuation ← not set
+        } until result terminal
 
         # exactly one terminal event for the whole execution period
-        maskierend {
-            je nach ergebnis:
-                Erfolg   → veroeffentliche(ExecutionSucceeded)
-                Abbruch  → veroeffentliche(ExecutionInterrupted { grund: Nutzer oder Shutdown })
-                Fehler e → veroeffentliche(ExecutionFailed { fehler: e })
+        masking {
+            depending on result:
+                Success   → publish(ExecutionSucceeded)
+                Abort     → publish(ExecutionInterrupted { reason: User or Shutdown })
+                Error e → publish(ExecutionFailed { error: e })
         }
     }
 
-    if ausfuehrung.tuerklingel gesetzt:     # work arrived during ending
-        starte_ausfuehrung(sitzungsID, ausfuehrung.tuerklingel)   # follow-up execution
+    if execution.doorbell set:     # work arrived during ending
+        start_execution(sessionID, execution.doorbell)   # follow-up execution
     else:
-        entferne laufende_ausfuehrungen[sitzungsID]
+        remove running_executions[sessionID]
 ```
 
 **Notes:**
@@ -120,97 +137,97 @@ starte_ausfuehrung(sitzungsID, umfang) =
 
 ## C. Pass (Drain)
 
-**Postcondition:** Either the work is done (`Fertig`), or execution must
-continue elsewhere (`Umgezogen`, `NeuGeladen`).
+**Postcondition:** Either the work is done (`Done`), or execution must
+continue elsewhere (`Moved`, `Reloaded`).
 
 ```
-drain(sitzungsID, umfang, fortsetzung) =
-    warte_auf_aktive_plugins()
+drain(sessionID, scope, continuation) =
+    wait_for_active_plugins()
 
     # clean up orphaned state from an earlier process
-    rueume_verwaiste_verdichtungen(sitzungsID)
-    rueume_verwaiste_werkzeugaufrufe(sitzungsID)
+    clean_orphaned_compactions(sessionID)
+    clean_orphaned_tool_calls(sessionID)
 
-    weiter := wahr
-    schritt := fortsetzung.schritt oder 1
-    betrete := wahr
+    proceed := true
+    step := continuation.step or 1
+    enter := true
 
-    solange weiter:
-        ergebnis ← grenze_erreichen(sitzungsID, umfang, schritt, betrete, fortsetzung)
-        if ergebnis.typ ≠ Bereit:
-            return ergebnis
-        fortsetzung ← ergebnis.fortsetzung
-        weitermachen ← run_step(ergebnis.kontext, schritt)
-        schritt ← schritt + 1
-        betrete ← falsch
+    while proceed:
+        result ← reach_boundary(sessionID, scope, step, enter, continuation)
+        if result.type ≠ Ready:
+            return result
+        continuation ← result.continuation
+        continue_flag ← run_step(result.context, step)
+        step ← step + 1
+        enter ← false
 ```
 
 ---
 
-## D. Boundary logic (`grenze_erreichen`)
+## D. Boundary logic (`reach_boundary`)
 
 This is the part that decides **when** something happens: delivery,
 compaction, move, or nothing at all.
 
 ```
-grenze_erreichen(sitzungsID, umfang, schritt, betrete, fortsetzung) =
-    schleife:
-        if standort_geschlossen():
-            schließe_transport(sitzungsID)
-            return { typ: NeuGeladen, forsetzung: fortsetzung }
+reach_boundary(sessionID, scope, step, enter, continuation) =
+    loop:
+        if location_closed():
+            close_transport(sessionID)
+            return { type: Reloaded, continuation: continuation }
 
         # -- Control elements take precedence --
-        serialisiert_für(sitzungsID) {
-            naechstes ← wähle_zustellbares(sitzungsID, umfang = (betrete oder nicht fortsetzung) ? Eingabe : Steuern)
+        serialized_for(sessionID) {
+            next ← choose_deliverable(sessionID, scope = (enter or not continuation) ? Input : Control)
 
-            if naechstes.typ = Verdichtung:
-                veroeffentliche_alle([
-                    InboxDelivered { inboxID: naechstes.id },
-                    CompactionStarted { grund: Manuell, eingabeID: naechstes.id }
+            if next.type = Compaction:
+                publish_all([
+                    InboxDelivered { inboxID: next.id },
+                    CompactionStarted { reason: Manual, inputID: next.id }
                 ])
-                fuehre_verdichtung_aus(naechstes)
+                run_compaction(next)
                 # the loop continues: after compaction the basis is new
 
-            if naechstes.typ = Umzug:
-                schließe_transport(sitzungsID)
-                veroeffentliche_alle([
-                    InboxDelivered { inboxID: naechstes.id },
-                    SessionMoved { ... }
+            if next.type = Move:
+                close_transport(sessionID)
+                publish_all([
+                    InboxDelivered { inboxID: next.id },
+                    SessionMoved { … }
                 ])
-                return { typ: Umgezogen, forsetzung: fortsetzung }
+                return { type: Moved, continuation: continuation }
         }
 
         # -- Reset the step when delivery is not control --
-        if nicht fortsetzung und naechstes.zustellmodus ≠ Steuern:
-            betrete ← wahr
-            schritt ← 1
+        if not continuation and next.delivery_mode ≠ Control:
+            enter ← true
+            step ← 1
 
         # -- nothing to do? --
-        if nicht erzwungen und nicht fortsetzung
-           und (naechstes fehlt oder (naechstes.zustellmodus = Warteschlange und umfang = Steuern)):
-            return { typ: Fertig }
+        if not forced and not continuation
+           and (next missing or (next.delivery_mode = Queue and scope = Control)):
+            return { type: Done }
 
         # -- prepare context and then deliver --
-        auswahl ← select_context(sitzungsID)         # fail(AgentNichtGefunden)
-        anzahl ← befoerder(sitzungsID, zustellumfang = (betrete und nicht fortsetzung) ? umfang : Steuern)
+        selection ← select_context(sessionID)         # fail(AgentNotFound)
+        count ← deliver(sessionID, delivery_scope = (enter and not continuation) ? scope : Control)
 
-        if anzahl = undefiniert:
-            weiter   # a control element took over this boundary
+        if count = undefined:
+            continue   # a control element took over this boundary
 
-        if anzahl > 0 und sitzung.kein_elternteil und sitzung.unbenannt:
-            starte_titelgenerierung(sitzungsID)      # in the background, does not block
+        if count > 0 and session.no_parent and session.unnamed:
+            start_title_generation(sessionID)      # in the background, does not block
 
-        if anzahl > 0:
-            schritt ← 1
+        if count > 0:
+            step ← 1
 
-        geladen ← lade_kontext(auswahl)
-        return { typ: Bereit, kontext: geladen }
+        loaded ← load_context(selection)
+        return { type: Ready, context: loaded }
 ```
 
 **Notes:**
 
-* **Controls** (`Steuern`) are delivered at the next **safe** boundary –
-  with precedence over parked (`Warteschlange`) inputs.
+* **Controls** (`Control`) are delivered at the next **safe** boundary –
+  with precedence over parked (`Queue`) inputs.
 * **Control elements** (compaction, move) form a **boundary**: they are
   delivered before everything else, even before older controls, so their text
   lands literally and not in a summary.
@@ -220,36 +237,36 @@ grenze_erreichen(sitzungsID, umfang, schritt, betrete, fortsetzung) =
 
 ---
 
-## E. Delivery (`befoerder`)
+## E. Delivery (`deliver`)
 
 **Postcondition:** Delivered inputs are visible; waiting ones stay waiting.
 
 ```
-befoerder(sitzungsID, umfang) =
-    serialisiert_für(sitzungsID) {
-        steuerungen ← alle_inbox_einträge_mit_modus(Steuern)
+deliver(sessionID, scope) =
+    serialized_for(sessionID) {
+        controls ← all_inbox_entries_with_mode(Control)
 
-        if steuerungen nicht leer oder umfang = Steuern:
-            grenze ← index_des_ersten_control_elements(steuerungen)
-            if grenze = 0:
-                return undefiniert      # the caller must handle the control element
-            veroeffentliche_für_alle(steuerungen[0 .. grenze-1], InboxDelivered)
-            return anzahl_der_zugestellten
+        if controls not empty or scope = Control:
+            boundary ← index_of_first_control_element(controls)
+            if boundary = 0:
+                return undefined      # the caller must handle the control element
+            publish_for_all(controls[0 .. boundary-1], InboxDelivered)
+            return number_of_delivered
 
         # only at the quiet boundary: exactly one parked input
-        geparkt ← älteste_inbox_einträge_mit_modus(Warteschlange)     # 1 entry
-        if geparkt fehlt:
+        parked ← oldest_inbox_entries_with_mode(Queue)     # 1 entry
+        if parked missing:
             return 0
-        if geparkt.typ = Control:
-            return undefiniert
-        veroeffentliche(InboxDelivered { inboxID: geparkt.id })
+        if parked.type = Control:
+            return undefined
+        publish(InboxDelivered { inboxID: parked.id })
 
         # pick up newly arrived controls in the meantime
-        neu ← alle_inbox_einträge_mit_modus(Steuern)
-        grenze ← index_des_ersten_control_elements(neu)
-        veroeffentliche_für_alle(neu[0 .. grenze-1], InboxDelivered)
+        new ← all_inbox_entries_with_mode(Control)
+        boundary ← index_of_first_control_element(new)
+        publish_for_all(new[0 .. boundary-1], InboxDelivered)
 
-        return anzahl_der_zugestellten
+        return number_of_delivered
     }
 ```
 
@@ -262,39 +279,39 @@ befoerder(sitzungsID, umfang) =
 ## F. Selecting and loading context
 
 ```
-select_context(sitzungsID) =
-    sitzung ← lade_sitzung(sitzungsID)
-    if sitzung.standort ≠ aktueller_standort:
-        unterbreche()                      # the execution belongs elsewhere
+select_context(sessionID) =
+    session ← load_session(sessionID)
+    if session.location ≠ current_location:
+        interrupt()                      # the execution belongs elsewhere
 
-    aktualisiere_mcp_werkzeuge()
+    refresh_mcp_tools()
 
-    agent ← wähle_agent(sitzung.agent)     # fail(AgentNichtGefunden)
-    rechte ← vereinige(agent.rechte, sitzung.rechte)
+    agent ← choose_agent(session.agent)     # fail(AgentNotFound)
+    rights ← merge(agent.rights, session.rights)
 
     parallel {
-        werkzeuge ← werkzeug_snapshot(rechte)
-        eingebaut ← lade_eingebaute_instructions()
-        entdeckt  ← lade_umgebungs_instructions()
-        fähigkeiten ← lade_faehigkeits_instructions(rechte)
-        verweise  ← lade_verweis_instructions()
-        mcp       ← lade_mcp_instructions(rechte)
-        einträge  ← lade_sitzungs_eintraege(sitzungsID)
+        tools ← tool_snapshot(rights)
+        builtin ← load_builtin_instructions()
+        discovered ← load_environment_instructions()
+        capabilities ← load_capability_instructions(rights)
+        references ← load_reference_instructions()
+        mcp ← load_mcp_instructions(rights)
+        entries ← load_session_entries(sessionID)
     }
 
-    anweisungen ← vereinige_instructions([
-        code_mode, mcp, verweise, fähigkeiten, entdeckt, eingebaut, einträge
+    instructions ← merge_instructions([
+        code_mode, mcp, references, capabilities, discovered, builtin, entries
     ])
 
-    return { sitzung, agent, anweisungen, werkzeuge }
+    return { session, agent, instructions, tools }
 
-lade_kontext(auswahl) =
-    modell ← löse_modell(auswahl.sitzung)        # fail(ModellNichtGewählt / ModellNichtVerfügbar)
-    atomisch {
-        historie ← lade_historie(sitzungsID, anweisungen, modell)
-        grundlage ← lade_instruction_grundlage(sitzungsID, anweisungen)
+load_context(selection) =
+    model ← resolve_model(selection.session)        # fail(ModelNotSelected / ModelNotAvailable)
+    atomically {
+        history ← load_history(sessionID, instructions, model)
+        basis ← load_instruction_basis(sessionID, instructions)
     }
-    return { …auswahl, modell, grundlage, historie }
+    return { …selection, model, basis, history }
 ```
 
 **Notes:**
@@ -310,35 +327,35 @@ lade_kontext(auswahl) =
 ## G. Building the request
 
 ```
-baue_anfrage(kontext, schritt) =
-    system  ← [ agent.system oder basis_prompt(werkzeugnamen), kontext.grundlage ]
-    nachrichten ← kontext.historie
+build_request(context, step) =
+    system  ← [ agent.system or base_prompt(tool_names), context.basis ]
+    messages ← context.history
 
-    grenze_erreicht ← agent.maximale_schritte und schritt ≥ agent.maximale_schritte
-    if grenze_erreicht:
-        nachrichten ← nachrichten + [aufforderung_zusammenfassung]
-        werkzeugwahl ← keine
+    limit_reached ← agent.max_steps and step ≥ agent.max_steps
+    if limit_reached:
+        messages ← messages + [summary_prompt]
+        tool_choice ← none
     else:
-        werkzeugwahl ← keine_angabe
+        tool_choice ← unspecified
 
-    anfrage ← {
-        system, nachrichten,
-        werkzeuge: kontext.werkzeuge,
-        modell: kontext.modell,
-        ausgabebudget: berechne_ausgabebudget(kontext.modell, kontext.eingangsgröße),
-        kopfzeilen: [ sitzungs-, projekt- und affinitätsbezogene Kennungen ],
-        zwischenspeicherschlüssel: kontext.affinität
+    request ← {
+        system, messages,
+        tools: context.tools,
+        model: context.model,
+        output_budget: compute_output_budget(context.model, context.input_size),
+        headers: [ session-, project- and affinity-related identifiers ],
+        cache_key: context.affinity
     }
 
     # Extension hooks may change request/tools/options
-    geändert ← hook("kontext", anfrage)
+    changed ← hook("context", request)
     # Tool renames are traced back via object identity:
     # a hook may move a definition; invented entries drop out
-    anfrage ← binde_werkzeuge(geändert, kontext.werkzeuge)
-    return anfrage
+    request ← bind_tools(changed, context.tools)
+    return request
 ```
 
-> **The texts behind `basis_prompt` and `aufforderung_zusammenfassung`**
+> **The texts behind `base_prompt` and `summary_prompt`**
 > are given with identifier, order and wording in
 > [`13-internal-prompts.md`](./13-internal-prompts.md). That file also states
 > that the step-limit prompt is inserted as an **assistant** message.
@@ -348,43 +365,43 @@ baue_anfrage(kontext, schritt) =
 ## H. Executing a step
 
 ```
-run_step(kontext, schritt) =
-    weitere_versuche ← wahr
-    assistant ← neue_nachrichten_id()
+run_step(context, step) =
+    more_attempts ← true
+    assistant ← new_message_id()
 
-    solange weitere_versuche:
-        geladen ← lade_kontext(select_context(kontext.sitzung.id))
+    while more_attempts:
+        loaded ← load_context(select_context(context.session.id))
 
         # automatic compaction before the request blows the window
-        verdichtung ← verdichte(grund = Automatisch, geladen)
-        if verdichtung fehlgeschlagen:
-            fail(SchrittFehlgeschlagen(verdichtung.fehler))
-        if verdichtung.durchgeführt:
-            assistant ← neue_nachrichten_id()
-            weiter               # retry with new basis
+        compaction ← compact(reason = Automatic, loaded)
+        if compaction failed:
+            fail(StepFailed(compaction.error))
+        if compaction.performed:
+            assistant ← new_message_id()
+            continue               # retry with new basis
 
-        anfrage ← baue_anfrage(geladen, schritt)
-        ergebnis ← versuch(geladen, anfrage, assistant)
+        request ← build_request(loaded, step)
+        result ← attempt(loaded, request, assistant)
 
-        je nach ergebnis.typ:
-            Fertig:
-                return ergebnis.weiter_machen
-            Wiederholung:
-                warte_bis(ergebnis.zeitpunkt)        # publishes "Retry scheduled"
-                assistant bleibt gleich
-            Fortsetzung:
-                warte_bis(ergebnis.zeitpunkt)
-                veroeffentliche(SyntheticRaised { text: "Continue without retry" })
-                assistant ← neue_nachrichten_id()
-            Ausgabelimit:
-                if ausgabe_limiter_erschöpft:
-                    fail(SchrittFehlgeschlagen(Ausgabelimit))
-                veroeffentliche(SyntheticRaised { text: "Split the work" })
-                assistant ← neue_nachrichten_id()
-            Verdichtet:
-                assistant ← neue_nachrichten_id()
-            Voll neu aufgebaut:
-                weiter
+        depending on result.type:
+            Done:
+                return result.continue_working
+            Retry:
+                wait_until(result.time)        # publishes "Retry scheduled"
+                assistant stays the same
+            Continuation:
+                wait_until(result.time)
+                publish(SyntheticRaised { text: "Continue without retry" })
+                assistant ← new_message_id()
+            OutputLimit:
+                if output_limiter_exhausted:
+                    fail(StepFailed(OutputLimit))
+                publish(SyntheticRaised { text: "Split the work" })
+                assistant ← new_message_id()
+            Compacted:
+                assistant ← new_message_id()
+            FullyRebuilt:
+                continue
 ```
 
 ---
@@ -392,45 +409,45 @@ run_step(kontext, schritt) =
 ## I. Attempt (one model call)
 
 ```
-versuch(kontext, anfrage, assistant) =
-    startbild ← erfasse_startzustand()          # parallel to the request
-    werkzeuglaeufe ← []
+attempt(context, request, assistant) =
+    start_snapshot ← capture_start_state()          # parallel to the request
+    tool_runs ← []
 
-    strom ← starte_modellaufruf(anfrage)
+    stream ← start_model_call(request)
 
-    for eachs ereignis im strom:
-        if ereignis = Werkzeugaufruf_angefordert und nicht vom_anbieter_ausgeführt:
+    for each event in stream:
+        if event = ToolCall_requested and not executed_by_provider:
             # Important: execution starts AFTER publishing "called"
-            lauf ← starte_nebenläufig {
-                maskierend {
-                    ergebnis ← werkzeug_ausfuehren(ereignis, kontext)
-                    if ergebnis erfolgreich:
-                        veroeffentliche(ToolSuccess { … })
-                        return gekuerzt(ergebnis)
-                    if ergebnis fehler:
-                        veroeffentliche(ToolFailed { fehler: klassifiziere(ergebnis.fehler) })
+            run ← start_concurrently {
+                masking {
+                    result ← execute_tool(event, context)
+                    if result successful:
+                        publish(ToolSuccess { … })
+                        return truncated(result)
+                    if result error:
+                        publish(ToolFailed { error: classify(result.error) })
                 }
             }
-            werkzeuglaeufe ← werkzeuglaeufe + [lauf]
+            tool_runs ← tool_runs + [run]
 
-    warte_alle(werkzeuglaeufe)
+    wait_all(tool_runs)
 
-    je nach ende:
-        Fehler_vor_ausgabe:
-            if klassifizierbar_als_wiederholbar:
-                return { typ: Wiederholung, … }
-        Fehler_nach_ausgabe:
-            if klassifizierbar_als_wiederholbar:
-                return { typ: Fortsetzung, … }
-        Kontextueberlauf_vor_ausgabe:
-            if verdichtung_möglich:
-                return { typ: Verdichtet }
+    depending on end:
+        Error_before_output:
+            if classifiable_as_retryable:
+                return { type: Retry, … }
+        Error_after_output:
+            if classifiable_as_retryable:
+                return { type: Continuation, … }
+        ContextOverflow_before_output:
+            if compaction_possible:
+                return { type: Compacted }
             # otherwise terminal
-        Ablehnung_durch_nutzer:
-            return { typ: Fertig, weiter_machen: nein }
+        UserRejection:
+            return { type: Done, continue_working: no }
         Normal:
-            veroeffentliche(StepEnded { verbrauch, kosten, token, bild, dateien })
-            return { typ: Fertig, weiter_machen: (noch offene werkzeugaufrufe) }
+            publish(StepEnded { usage, cost, tokens, image, files })
+            return { type: Done, continue_working: (still open tool calls) }
 ```
 
 ---
@@ -438,42 +455,42 @@ versuch(kontext, anfrage, assistant) =
 ## J. Tool execution
 
 ```
-werkzeug_ausfuehren(aufruf, kontext) =
-    kontext ← { sitzungsID, agent, nachrichtenID, aufrufID }
+execute_tool(call, context) =
+    context ← { sessionID, agent, messageID, callID }
 
     # 1. Pre-hook may change the input (only hook that may fail)
-    ereignis ← hook("werkzeug_vor", aufruf.name, aufruf.eingabe)
-    if ereignis abgelehnt:
-        fail(WerkzeugFehler { meldung: ereignis.meldung })
+    event ← hook("tool_before", call.name, call.input)
+    if event rejected:
+        fail(ToolError { message: event.message })
 
     # 2. Only the tools advertised in this request are callable
-    definition ← definitione_von(ereignis.name)
-    if definition fehlt:
-        fail(WerkzeugFehler { meldung: "In diesem Request nicht verfügbar" })
-    if unbekannter_name:
-        fail(WerkzeugFehler { meldung: "Kein Werkzeug mit diesem Namen" })
+    definition ← definition_of(event.name)
+    if definition missing:
+        fail(ToolError { message: "Not available in this request" })
+    if unknown_name:
+        fail(ToolError { message: "No tool with this name" })
 
     # 3. Decode input — on error do NOT execute
-    eingabe ← dekodiere(definition.eingabe, ereignis.eingabe)
-    if fehler:
-        fail(WerkzeugFehler { meldung: "Ungültige Argumente: … bitte korrigieren und erneut aufrufen" })
+    input ← decode(definition.input, event.input)
+    if error:
+        fail(ToolError { message: "Invalid arguments: … please correct and call again" })
 
     # 4. Leaf tool: resolution, permissions, side effect — in this order
-    ergebnis ← definition.ausfuehren(eingabe, kontext)
+    result ← definition.execute(input, context)
 
     # 5. Encode output
-    if definition.ausgabeschema:
-        ausgabe ← kodiere(definition.ausgabeschema, ergebnis.ausgabe)
-        if fehler:
-            fail(WerkzeugFehler { meldung: "Ungültiger Ausgabewert" })
+    if definition.output_schema:
+        output ← encode(definition.output_schema, result.output)
+        if error:
+            fail(ToolError { message: "Invalid output value" })
 
     # 6. Post-hook may change the result (must never fail)
-    ergebnis ← hook("werkzeug_nach", ergebnis)
+    result ← hook("tool_after", result)
 
     # 7. Normalize content (empty ⇒ derive from output)
-    inhalt ← normalisiere_inhalt(ergebnis.inhalt, ergebnis.ausgabe)
+    content ← normalize_content(result.content, result.output)
 
-    return { ausgabe: ergebnis.ausgabe, inhalt, metadaten: ergebnis.metadaten }
+    return { output: result.output, content, metadata: result.metadata }
 ```
 
 ---
@@ -481,40 +498,40 @@ werkzeug_ausfuehren(aufruf, kontext) =
 ## K. Permission check
 
 ```
-pruefe_rechte(anfrage) =
+check_permissions(request) =
     # 1. Assemble rule set
-    regeln ← agent_rechte(anfrage.agent) + sitzungs_rechte(anfrage.sitzungID)
-    if regeln leer:
-        regeln ← [ {aktion: alles, ressource: alles, wirkung: Verweigern} ]
+    rules ← agent_rights(request.agent) + session_rights(request.sessionID)
+    if rules empty:
+        rules ← [ { action: all, resource: all, effect: Deny } ]
 
     # 2. Denial first — it beats any stored approval
-    if irgendeine_ressource_ergibt(regeln, anfrage.aktion, anfrage.ressourcen, Verweigern):
-        fail(Verweigert { regeln, aktion, ressourcen })
+    if any_resource_yields(rules, request.action, request.resources, Deny):
+        fail(Denied { rules, action, resources })
 
     # 3. Add stored approvals (per project)
-    alle ← regeln + gespeicherte_freigaben(projekt)
+    all ← rules + stored_approvals(project)
 
     # 4. Determine effect: ask dominates allow
-    wirkung ← if irgendeine_ressource_ergibt(alle, …, Fragen) dann Fragen else Erlauben
+    effect ← if any_resource_yields(all, …, Ask) then Ask else Allow
 
     # 5. Extension hook may change effect and message
-    ergebnis ← hook("rechte_bewerten", wirkung)
-    if ergebnis.wirkung = Verweigern:
-        fail(Verweigert { … })
-    if ergebnis.wirkung = Erlauben:
-        return erlauben
+    result ← hook("rights_evaluate", effect)
+    if result.effect = Deny:
+        fail(Denied { … })
+    if result.effect = Allow:
+        return allow
 
     # 6. Ask: publish request and wait
-    anfrage_id ← anfrage.veroeffentliche(FrageGestellt)
-    antwort ← warte_auf_antwort(anfrage_id)
-    je nach antwort:
-        Einmalig:   return erlauben
-        Dauerhaft:  speichere_freigabe(projekt, aktion, antwort.vorschlag); return erlauben
-        Ablehnen:
-            if antwort.ruckmeldung:
-                fail(AblehnungMitRueckmeldung { ruckmeldung })   # stays typed
+    request_id ← request.publish(QuestionAsked)
+    answer ← wait_for_answer(request_id)
+    depending on answer:
+        Once:   return allow
+        Permanent:  store_approval(project, action, answer.suggestion); return allow
+        Reject:
+            if answer.feedback:
+                fail(RejectionWithFeedback { feedback })   # stays typed
             else:
-                unterbreche_mit(Ablehnung)                      # special abort, not an ordinary error
+                interrupt_with(Rejection)                      # special abort, not an ordinary error
 ```
 
 **Notes:** The order 1→6 is the **permission chain**. Each layer can only
@@ -527,21 +544,21 @@ would be a way around "deny".
 ## L. Recovery after process abort
 
 ```
-wiederherstellen() =
-    for each sitzung mit offenem Claim, die nicht lokal läuft:
-        versuche ← zähle_wiederaufnahme(sitzung)     # durable, incremented BEFORE the run
-        if versuche > maximum (10):
-            veroeffentliche(ExecutionFailed { grund: "repeatedly interrupted" })
+recover() =
+    for each session with open claim that is not running locally:
+        attempts ← count_resumption(session)     # durable, incremented BEFORE the run
+        if attempts > maximum (10):
+            publish(ExecutionFailed { reason: "repeatedly interrupted" })
             # releases the claim and resets the counter
-            weiter
-        veroeffentliche(SyntheticRaised { text: "The server was restarted. Continuing." })
-        starte_ausfuehrung(sitzung, umfang = Eingabe)
+            continue
+        publish(SyntheticRaised { text: "The server was restarted. Continuing." })
+        start_execution(session, scope = Input)
 
     # report running background work first, then start children
-    for each hintergrundarbeit:
-        je nach art:
-            Shell:    melde_ergebnis(oder Abbruch durch Neustart)
-            Subagent: melde_ergebnis, dann starte kind, falls nicht lokal läuft
+    for each background_work:
+        depending on kind:
+            Shell:    report_result(or Abort by restart)
+            Subagent: report_result, then start child if not running locally
 ```
 
 **Notes:** Recovery is **at-least-once**. It prevents concurrent runs, but not
@@ -553,17 +570,17 @@ session), so a process that keeps dying does not create a restart loop.
 ## M. Compaction (shortened)
 
 ```
-verdichte(grund, kontext) =
-    veroeffentliche(CompactionStarted { grund })
-    fenster ← berechne_fenster(kontext)          # remainder + summarized old load
-    antwort ← modellaufruf(fenster, auftrag = "summarize")
-    if antwort fehler:
-        veroeffentliche(CompactionFailed { fehler })
-        return { durchgeführt: nein, fehler }
-    speichere_zusammenfassung(antwort)            # full transcript is retained
-    schiebe_epoch_start(auf exakte_sequenz)
-    veroeffentliche(CompactionEnded { … })
-    return { durchgeführt: ja }
+compact(reason, context) =
+    publish(CompactionStarted { reason })
+    window ← compute_window(context)          # remainder + summarized old load
+    answer ← model_call(window, task = "summarize")
+    if answer error:
+        publish(CompactionFailed { error })
+        return { performed: no, error }
+    save_summary(answer)            # full transcript is retained
+    push_epoch_start(to exact_sequence)
+    publish(CompactionEnded { … })
+    return { performed: yes }
 ```
 
 ---

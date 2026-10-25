@@ -6,7 +6,7 @@
  * `docs/04-change-impact.md` zitiert werden.
  *
  * Aufruf:  node docs/tools/coupling-analysis.mjs [repoRoot]
- * Default: /home/torsten/dev/my-projects/oc
+ * Default: ../oc (relativ zur QOC-Wurzel ausführen)
  *
  * Messmethode:
  *  - Imports werden per Regex `from "<relativer Pfad>"` erfasst.
@@ -21,7 +21,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-const repo = process.argv[2] ?? "/home/torsten/dev/my-projects/oc"
+const repo = process.argv[2] ?? "../oc"
 const coreSrc = path.join(repo, "packages/core/src")
 
 function walk(dir, acc = [], skip = new Set(["node_modules", ".git", "dist", "build"])) {

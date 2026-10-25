@@ -10,6 +10,20 @@
 A skill is **not a tool** and **not a plugin**. It executes nothing. It
 delivers instructions and files the model can read.
 
+## Contents
+
+- [1. Sources](#1-sources)
+- [2. File format](#2-file-format)
+- [3. Discovery](#3-discovery)
+- [4. Visibility](#4-visibility)
+- [5. Activation](#5-activation)
+- [6. The three skills of the base environment](#6-the-three-skills-of-the-base-environment)
+- [7. Tools and rights](#7-tools-and-rights)
+- [8. Error cases](#8-error-cases)
+- [9. Rules](#9-rules)
+- [10. Evidence](#10-evidence)
+- [11. Open points](#11-open-points)
+
 ## 1. Sources
 
 | Source | Form | Base environment | Evidence |

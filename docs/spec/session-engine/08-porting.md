@@ -139,4 +139,4 @@ not testable.
 ```
 
 The order is the reverse of the usual "compiler first" logic: without log
-and projections no test is meaningful, because state cannot be observed.<|end|><|start|>write to=assistant<|channel|>analysis<|message|>Wrote file successfully: spec/session-engine/08-porting.md
+and projections no test is meaningful, because state cannot be observed.

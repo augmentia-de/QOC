@@ -1,5 +1,8 @@
 # 01 – Use Cases & Business Logic
 
+> **Rolle:** reference analysis des OpenCode-V2-Checkouts, not an operative
+> QOC-Spec. For the implementation, see [`spec/`](../spec/README.md).
+
 > **Workflow 1:** Use-Case & Business-Logic Extraction
 > `[Code] ➔ [Structure Parsing] ➔ [LLM with domain-role focus] ➔ [Gherkin/BDD + FR document]`
 >
@@ -20,6 +23,16 @@
 > `services/www/src/docs/content/`; all other paths point to the repo root.
 
 ---
+
+## Contents
+
+- [1. Domain Model (derived from the code)](#1-domain-model-derived-from-the-code)
+- [2. Use Cases](#2-use-cases)
+- [3. Business Rules (implicit domain logic, extracted)](#3-business-rules-implicit-domain-logic-extracted)
+- [4. Validation rules and edge cases (excerpt)](#4-validation-rules-and-edge-cases-excerpt)
+- [5. Aggregation – Functional Requirements](#5-aggregation-functional-requirements)
+- [6. Still-open domain questions](#6-still-open-domain-questions)
+- [7. Next step](#7-next-step)
 
 ## 1. Domain Model (derived from the code)
 

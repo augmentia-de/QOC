@@ -1,17 +1,17 @@
-# 10 – Deployment: JVM, Native, Docker und GCP
+# 10 – Deployment: JVM, Native, Docker, and GCP
 
-## Zweck
+## Purpose
 
-QOC kann als JVM-Anwendung oder als Native-Image betrieben werden. Das
-Native-Image enthält bewusst **kein Git** und keine Build-Umgebung. Auf der
-GCP-VM läuft das Native-Binary direkt unter systemd, nicht in Docker.
+QOC can be operated as a JVM application or as a Native Image. The
+Native Image deliberately contains **no Git** and no build environment. On the
+GCP VM the Native binary runs directly under systemd, not in Docker.
 
 ```mermaid
 flowchart TB
-  subgraph Local["Lokal / Docker"]
+  subgraph Local["Local / Docker"]
     Jvm["JVM-Image<br/>Dockerfile<br/>JRE + git + util-linux"]:::ext
     JvmPort["Port 8099 / 8333"]:::ext
-    Native["Native-Image<br/>Dockerfile.native<br/>Binary + util-linux<br/>kein git"]:::ext
+    Native["Native-Image<br/>Dockerfile.native<br/>Binary + util-linux<br/>no git"]:::ext
     NativePort["Port 8099 / 8334"]:::ext
     Jvm --> JvmPort
     Native --> NativePort
@@ -26,7 +26,7 @@ flowchart TB
     Env["/etc/qoc/env<br/>OPENCODE_SERVER_PASSWORD"]:::ext
     Db[("/data/qoc.db<br/>SQLite")]:::store
     Workspace[("/data/workspace")]:::store
-    Agents["AGENTS.md<br/>Native-Regeln"]:::ext
+    Agents["AGENTS.md<br/>Native rules"]:::ext
 
     User -->|"http://34.72.145.97/"| Nginx
     Nginx --> Auth
@@ -43,47 +43,47 @@ flowchart TB
   classDef store fill:#e3f2fd,stroke:#1565c0,stroke-width:1px,color:#111;
 ```
 
-## Varianten
+## Variants
 
-| Variante | Build-Umgebung | Git | Worktree-Tools | Typischer Einsatz |
+| Variant | Build environment | Git | Worktree tools | Typical use |
 |---|---|---|---|---|
-| **JVM** | JRE, Maven-Build außerhalb | ja | verfügbar, wenn Workspace ein Git-Repo ist | lokale Entwicklung, CI, Debugging |
-| **Native** | kein JDK/Maven im Image | nein | deaktiviert | schlanke Runtime, GCP |
-| **GCP** | kein Docker, kein Git | nein | deaktiviert | produktiver Single-Node |
+| **JVM** | JRE, Maven build outside | yes | available if workspace is a Git repo | local development, CI, debugging |
+| **Native** | no JDK/Maven in image | no | disabled | lean runtime, GCP |
+| **GCP** | no Docker, no Git | no | disabled | productive single-node |
 
-> **Offen:** Ein separates JVM-**Build**-Image mit JDK, Maven und
-> Maven-Cache ist noch nicht umgesetzt. Das aktuelle `deploy/Dockerfile` ist ein
-> JVM-**Runtime**-Image auf Basis einer JRE.
+> **Open:** A separate JVM **build** image with JDK, Maven, and
+> Maven cache is not yet implemented. The current `deploy/Dockerfile` is a
+> JVM **runtime** image based on a JRE.
 
-## Native-Regeln
+## Native rules
 
-- Keine Build-Umgebung im Image.
-- Kein Git, auch nicht optional.
-- `WorktreeTool.available(...)` prüft `git --version` und
+- No build environment in the image.
+- No Git, not even optionally.
+- `WorktreeTool.available(...)` checks `git --version` and
   `git -C <workspace> rev-parse --is-inside-work-tree`.
-- Wenn die Prüfung fehlschlägt, werden die Worktree-Tools nicht registriert.
-- `AGENTS.native.md` liegt im Image bzw. im Workspace und dokumentiert die
-  Einschränkungen.
+- If the check fails, the worktree tools are not registered.
+- `AGENTS.native.md` lies in the image or in the workspace and documents the
+  limitations.
 
-## GCP-Betrieb
+## GCP operation
 
-| Komponente | Wert |
+| Component | Value |
 |---|---|
-| Instanz | `quad-e2micro`, Zone `us-central1-a` |
-| Öffentliche IP | `34.72.145.97` |
-| Dienst | `qoc.service` (systemd) |
+| Instance | `quad-e2micro`, Zone `us-central1-a` |
+| Public IP | `34.72.145.97` |
+| Service | `qoc.service` (systemd) |
 | Binary | `/opt/qoc/qoc-runner` |
-| Umgebung | `/etc/qoc/env` |
-| Datenbank | `/data/qoc.db` |
+| Environment | `/etc/qoc/env` |
+| Database | `/data/qoc.db` |
 | Workspace | `/data/workspace` |
-| Reverse Proxy | nginx auf Port 80 → `127.0.0.1:8080` |
-| Auth | HTTP Basic, Benutzer `opencode` |
+| Reverse proxy | nginx on port 80 → `127.0.0.1:8080` |
+| Auth | HTTP Basic, user `opencode` |
 
-Das Passwort steht bewusst nicht im Repository. Es liegt in
-`/etc/qoc/env` und in der nginx-Passwortdatei. Bei einer Änderung müssen beide
-aktualisiert und die Dienste neu geladen werden.
+The password is deliberately not in the repository. It lives in
+`/etc/qoc/env` and in the nginx password file. When changed, both must be
+updated and the services reloaded.
 
-## Quellen
+## Sources
 
 - `qoc/deploy/Dockerfile`
 - `qoc/deploy/Dockerfile.native`
@@ -91,5 +91,5 @@ aktualisiert und die Dienste neu geladen werden.
 - `qoc/deploy/docker-compose.native.yml`
 - `qoc/deploy/AGENTS.jvm.md`
 - `qoc/deploy/AGENTS.native.md`
-- `qoc/deploy/vm.md` (gitignored, lokale Betriebsdoku)
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/tool/meta/WorktreeTool.java`
+- `qoc/deploy/vm.md` (gitignored, local operations doc)
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/tool/meta/WorktreeTool.java`

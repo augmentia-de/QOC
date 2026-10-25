@@ -1,5 +1,8 @@
 # Flow: "erstelle Service der DB luest"
 
+> **Rolle:** reference analysis des OpenCode-V2-Checkouts, not an operative
+> QOC-Spec. For the implementation, see [`../../spec/README.md`](../../spec/README.md).
+
 > **Goal:** make the complete flow of a prompt through OpenCode V2 traceable –
 > from pressing Enter to the written file, including all calls, events, DB
 > rows and error paths.
@@ -9,7 +12,7 @@
 > **Method:** the code was **read directly**, not derived from the
 > documentation. Every statement below carries evidence `path:line` against this
 > checkout. The codebase-memory graph is indexed under
-> `/home/torsten/dev/my-projects/oc` (different path) and was therefore **not**
+> `<oc-checkout>` (different path) and was therefore **not**
 > used as a source.
 >
 > **Assumptions:** the prompt is literally `"erstelle Service der DB luest"` –
@@ -79,7 +82,7 @@
 ```
 bun run check                    # lint + typecheck in root
 bun typecheck                    # in the affected package
-node docs/tools/coupling-analysis.mjs /home/torsten/dev/my-projects/2oc
+node docs/tools/coupling-analysis.mjs ../oc
 ```
 
 Tests do **not** run from the repo root (guard `do-not-run-tests-from-root`),

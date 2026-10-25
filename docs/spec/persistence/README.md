@@ -11,8 +11,25 @@
 >
 > **Status:** 2026-10-22
 >
-> **Further:** [`02-data-ownership.md`](./02-data-ownership.md) answers **who**
-> a table belongs to and who may write it.
+> **Further:** [`01-jdbc-flyway.md`](./01-jdbc-flyway.md) contains DDL,
+> Flyway and JDBC notes. [`02-data-ownership.md`](./02-data-ownership.md)
+> answers **who** a table belongs to and who may write it.
+
+## Contents
+
+- [1. Four principles](#1-four-principles)
+- [2. Overall picture](#2-overall-picture)
+- [3. Group A – The protocol](#3-group-a-the-protocol)
+- [4. Group B – The session](#4-group-b-the-session)
+- [5. Group C – Instructions](#5-group-c-instructions)
+- [6. Group D – Rights and projects](#6-group-d-rights-and-projects)
+- [7. What is **not** in the database](#7-what-is-not-in-the-database)
+- [8. Dead tables – **do not carry over**](#8-dead-tables-do-not-carry-over)
+- [9. Decisions for the new implementation](#9-decisions-for-the-new-implementation)
+- [10. Write patterns – who writes what in which transaction](#10-write-patterns-who-writes-what-in-which-transaction)
+- [11. Read patterns – the typical queries](#11-read-patterns-the-typical-queries)
+- [12. Cleanup and retention](#12-cleanup-and-retention)
+- [13. Proven semantics (reference checkout)](#13-proven-semantics-reference-checkout)
 
 ## 1. Four principles
 

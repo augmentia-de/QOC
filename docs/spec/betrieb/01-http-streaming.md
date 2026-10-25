@@ -12,6 +12,25 @@ This chapter is the external contract. It describes no engine internals; event
 names and states come from
 [`../session-engine/02-events.md`](../session-engine/02-events.md).
 
+## Contents
+
+- [1. Principles](#1-principles)
+- [2. Transport](#2-transport)
+- [3. Connection lifecycle](#3-connection-lifecycle)
+- [4. The event envelope](#4-the-event-envelope)
+- [5. The minimal event set](#5-the-minimal-event-set)
+- [6. The base-environment endpoints](#6-the-base-environment-endpoints)
+- [7. The flow of an input](#7-the-flow-of-an-input)
+- [8. Permissions](#8-permissions)
+- [9. Location](#9-location)
+- [10. Errors → status](#10-errors-status)
+- [11. Authentication](#11-authentication)
+- [12. Resumption](#12-resumption)
+- [13. Rules](#13-rules)
+- [14. Evidence](#14-evidence)
+- [15. Non-goals](#15-non-goals)
+- [16. Open points](#16-open-points)
+
 ## 1. Principles
 
 1. **One API tree.** Everything lives under `/api`. Stable endpoints are under

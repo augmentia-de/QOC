@@ -1,5 +1,8 @@
 # Analysis: Understandability of the Architecture and Feasibility in Java
 
+> **Rolle:** meta-analysis zur Java-Architektur; reference material, keine
+> operative spec. For the contract, see [`spec/`](../spec/README.md).
+
 > **File:** `docs/ANALYSIS-ARCHITECTURE-JAVA.md`
 > **Status:** 2026-10-22 · Repo state `dev` @ `3108505b2f` (v2.1.2)
 > **Source:** Entire `docs/` documentation (69 Markdown files, ~21,500 lines)
@@ -67,7 +70,7 @@ and two build-plan documents (`spec/module-plan.md`, `spec/java-packages.md`).
    criteria); `simulation → core` missing from the rule table;
    `core/src/session/` = 42 (document) vs. 49 (reality) in `packages.md`.
 7. **SCC/Tarjan not reproducible** with the supplied tool (no cycle
-   detection in it); default path `/home/torsten/dev/my-projects/oc`
+   detection in it); default path `<oc-checkout>`
    is outdated.
 8. **No entry point** for newcomers beyond the README table;
    11,700 lines / 37 files.
@@ -196,7 +199,7 @@ present). The remaining open points lie in the
 | Build form | **Two modules**: `engine` (pure Java) + `quarkus` (outer skin), root `de.augmentia.oc.engine` |
 | Ordering | **Nine stages `S0…S8`** + `adapter.*` (outside the stages), all inside `engine` |
 | Enforcement | **ArchUnit** in the build (inside `engine`), plus the Maven module boundary `engine` ↔ `quarkus` |
-| Binding file | [`spec/java-packages.md`](./spec/java-packages.md) |
+| Binding file | [`spec/java-packages.md`](../spec/java-packages.md) |
 | Outdated | The Maven multi-module sketch `engine-core`/`-runtime`/… in `Java-Impl.md` §4 |
 
 `Java-Impl.md` §4 was reworked: one table maps each stage to its
@@ -246,10 +249,10 @@ that §3 of this analysis marked as "not buildable" — but only for the
 
 | Contract | File | Rules | Closes |
 |---|---|---|---|
-| HTTP + SSE | [`spec/betrieb/01-http-streaming.md`](./spec/betrieb/01-http-streaming.md) | `HS-01…HS-12` | L-3 |
-| Skills | [`spec/betrieb/02-skills.md`](./spec/betrieb/02-skills.md) | `SK-01…SK-12` | L-4, PRM-D |
-| Credentials | [`spec/betrieb/03-credentials.md`](./spec/betrieb/03-credentials.md) | `CR-01…CR-12` | L-5 |
-| Environment | [`spec/betrieb/README.md`](./spec/betrieb/README.md) | `U-01…U-10` | – |
+| HTTP + SSE | [`spec/betrieb/01-http-streaming.md`](../spec/betrieb/01-http-streaming.md) | `HS-01…HS-12` | L-3 |
+| Skills | [`spec/betrieb/02-skills.md`](../spec/betrieb/02-skills.md) | `SK-01…SK-12` | L-4, PRM-D |
+| Credentials | [`spec/betrieb/03-credentials.md`](../spec/betrieb/03-credentials.md) | `CR-01…CR-12` | L-5 |
+| Environment | [`spec/betrieb/README.md`](../spec/betrieb/README.md) | `U-01…U-10` | – |
 
 Thus the verdict shifts: **core and baseline environment are buildable**,
 the full product surface is not. Remaining open: the agent catalog (L-1),

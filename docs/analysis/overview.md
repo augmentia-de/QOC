@@ -1,5 +1,8 @@
 # OpenCode (V2) – Project Overview
 
+> **Rolle:** reference analysis des OpenCode-V2-Checkouts, not an operative
+> QOC-Spec. For the implementation, see [`spec/`](../spec/README.md).
+
 > **Status:** First overview, dated 2026-10-21, repo state `dev` @ `3108505b2f`
 > (Source: `https://github.com/anomalyco/opencode.git`, version `2.1.2`).
 >
@@ -9,6 +12,23 @@
 > are marked as such.
 
 ---
+
+## Contents
+
+- [1. What is this?](#1-what-is-this)
+- [2. Repo overview](#2-repo-overview)
+- [3. Use cases (from the user's perspective)](#3-use-cases-from-the-users-perspective)
+- [4. Data flow: a request from keystroke to file](#4-data-flow-a-request-from-keystroke-to-file)
+- [5. Prompts & agents](#5-prompts-agents)
+- [6. Tools](#6-tools)
+- [7. Permission system](#7-permission-system)
+- [8. Providers & models](#8-providers-models)
+- [9. Interfaces](#9-interfaces)
+- [10. Configuration](#10-configuration)
+- [11. Documentation (in the repo)](#11-documentation-in-the-repo)
+- [12. Development & operations](#12-development-operations)
+- [13. Open points / next steps](#13-open-points-next-steps)
+- [Appendix: evidence overview](#appendix-evidence-overview)
 
 ## 1. What is this?
 

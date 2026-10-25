@@ -1,9 +1,10 @@
 # Tools – specification
 
-> **Subject:** The tool contract and the three tool families of the
-> reference implementation: **filesystem**, **Bash (with HITL)** and **MCP**.
+> **Subject:** The tool contract and the tool families of the reference
+> implementation and the QOC target: **filesystem**, **Bash (with HITL)**,
+> **MCP**, **subagent** and **remote shell**.
 >
-> **Status:** 2026-10-22 · Reference checkout `dev` @ `3108505b2f`
+> **Status:** 2026-10-25 · Reference checkout `dev` @ `3108505b2f`
 > **Relation:** This spec describes what a tool **does** – not what it is
 > called in OpenCode. The session engine
 > ([`../session-engine/`](../session-engine/README.md)) uses them but does
@@ -19,17 +20,28 @@
 | [`04-mcp.md`](./04-mcp.md) | Server types, protocol, namespace, discovery, contents, errors |
 | [`05-contract-invariants.md`](./05-contract-invariants.md) | Execution chain, error channels, invariants `W-01…` |
 | [`06-java.md`](./06-java.md) | Java 21 implementation: `sealed`/`record`, registry, scanner, MCP client |
+| [`07-subagent.md`](./07-subagent.md) | Subagent delegation, child sessions, recursion limit, cost attribution |
+| [`08-remote-shell.md`](./08-remote-shell.md) | SSH `exec`/`read`/`write`/`list`/`stat` and recursive copy (`download`/`upload`) – **spec-only** |
 
-## The three families at a glance
+The current status of `08-remote-shell.md` is tracked in
+[`../../STATUS.md`](../../STATUS.md).
+
+## The tool families at a glance
 
 | Family | Tools | Permission action | Resource |
 |---|---|---|---|
 | **Filesystem** | `read`, `write`, `edit`, `patch`, `glob`, `grep` | `read`, `edit`, `glob`, `grep` | path or pattern |
 | **Bash** | `shell` | `shell` | the **scanned command string** |
 | **MCP** | `<server>_<tool>` | `<server>_<tool>` | `*` |
+| **Subagent** | `subagent` (V1 name: `task`) | `subagent` | `*` |
+| **Remote Shell** | `remote` | `remote.exec`, `remote.read`, `remote.write`, `remote.list`, `remote.stat`, `remote.download`, `remote.upload` | `<host-alias>:<target>` |
 
 > `edit`, `write` and `patch` share the action **`edit`**
 > (`packages/core/src/tool/AGENTS.md`).
+
+> Remote actions must never be allowed implicitly by a broad `*` rule. A host
+> alias and the concrete `remote.*` action need an explicit rule; see
+> [`08-remote-shell.md`](./08-remote-shell.md) §5.
 
 ## The five properties that make a tool
 
@@ -59,3 +71,15 @@
 > **A tool is a value with an execution function.** It has no state, no
 > own thread, no own lifecycle. Anyone who wants to give it state gives
 > it via the context (session, agent, message, call).
+
+## Invariants
+
+* `W-*` – tool contract and execution chain:
+  [`05-contract-invariants.md`](./05-contract-invariants.md)
+* `S-*` – subagent delegation:
+  [`07-subagent.md`](./07-subagent.md) §6
+* `R-*` – remote shell, policy and copy:
+  [`08-remote-shell.md`](./08-remote-shell.md) §12
+
+The central register is
+[`../INVARIANTS.md`](../INVARIANTS.md).

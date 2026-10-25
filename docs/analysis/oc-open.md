@@ -1,7 +1,7 @@
 # oc-open.md – What QOC can learn from OpenCode (oc)
 
 > **Status:** Analysis · 2026-10-24
-> **Reference:** `/home/torsten/dev/my-projects/2oc/oc` (OpenCode)
+> **Reference:** `../oc` (OpenCode)
 > **Target:** `de.augmentia.oc.engine` (Java 21 / Quarkus / LangChain4j)
 >
 > This document is the OpenCode counterpart of `pi-learnings.md`. pi and oc are

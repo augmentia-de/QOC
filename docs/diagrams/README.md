@@ -1,69 +1,68 @@
-# QOC – Architektur- und Laufzeitdiagramme
+# QOC – Architecture and Runtime Diagrams
 
-Stand: 2026-10-24  
-Basis: aktueller Code in `qoc/engine` und `qoc/quarkus`, dazu die Spec unter
-`qoc/docs/spec/`.
+As of: 2026-10-24  
+Based on: current code in `engine` and `quarkus`, plus the spec under
+`docs/spec/`.
 
-Diese Sammlung beantwortet die Frage: **Wie ist QOC aufgebaut, wie fließt ein
-Prompt durch das System, und wo ist das Verhalten deterministisch – und wo
-entscheidet ein LLM?**
+This collection answers the question: **How is QOC built, how does a
+prompt flow through the system, and where is the behavior deterministic –
+and where does an LLM decide?**
 
-## Legende
+## Legend
 
-| Kennzeichnung | Bedeutung |
+| Marking | Meaning |
 |---|---|
-| **DETERMINISTIC** (grün) | Gleicher Zustand + gleiche Eingabe + gleiche Regeln ergeben denselben nächsten Zustand. Kein LLM, keine freie Interpretation. |
-| **LLM** (orange) | Ein Sprachmodell erzeugt Text, Tool-Calls oder eine Zusammenfassung. Das Ergebnis ist nicht deterministisch. |
-| **MIXED** (gelb) | Deterministischer Rahmen, in dem ein LLM als Baustein aufgerufen wird. Der Rahmen validiert und entscheidet über die Ausführung. |
-| **EXTERNAL / ADAPTER** (grau) | Technischer Adapter oder externer Dienst: HTTP, MCP, Firecrawl, Dateisystem, Git, Datenbank. |
-| **STORE** (blau) | Persistenz: Event-Log, Projektionen, Snapshots. |
+| **DETERMINISTIC** (green) | Same state + same input + same rules yield the same next state. No LLM, no free interpretation. |
+| **LLM** (orange) | A language model produces text, tool calls, or a summary. The result is not deterministic. |
+| **MIXED** (yellow) | Deterministic frame in which an LLM is invoked as a building block. The frame validates and decides on execution. |
+| **EXTERNAL / ADAPTER** (gray) | Technical adapter or external service: HTTP, MCP, Firecrawl, file system, Git, database. |
+| **STORE** (blue) | Persistence: event log, projections, snapshots. |
 
-Wichtig für die Einordnung:
+Important for the classification:
 
-- QOC ist **kein vollständig deterministischer Orchestrator**. Der
-  Session-Rahmen ist deterministisch, aber die Auswahl der Tool-Calls und der
-  Text kommen vom LLM.
-- Das LLM ist **nicht** die Instanz, die Zustandsübergänge schreibt. Es liefert
-  Vorschläge; die Engine validiert, autorisiert und führt aus.
-- Die Diagramme unterscheiden, wo nötig, zwischen **Ist-Stand** und
-  **Zielbild**. Ein Zielbild ist ausdrücklich als solches markiert.
+- QOC is **not a fully deterministic orchestrator**. The
+  session frame is deterministic, but the selection of tool calls and the
+  text come from the LLM.
+- The LLM is **not** the instance that writes state transitions. It
+  delivers proposals; the engine validates, authorizes, and executes.
+- The diagrams distinguish, where needed, between **current state** and
+  **target design**. A target design is explicitly marked as such.
 
-## Diagramme
+## Diagrams
 
-| Datei | Frage |
+| File | Question |
 |---|---|
-| [`01-system-context.md`](./01-system-context.md) | Welche Akteure, Dienste und Speicher bilden das Gesamtsystem? |
-| [`02-architecture.md`](./02-architecture.md) | Wie sind Maven-Module, Packages und Schichten aufgebaut? |
-| [`03-runtime-dataflow.md`](./03-runtime-dataflow.md) | Was passiert bei einem Prompt von HTTP bis SSE und DB? |
-| [`04-session-lifecycle.md`](./04-session-lifecycle.md) | Welche Zustände durchläuft eine Session, und wie werden Läufe koordiniert? |
-| [`05-class-model.md`](./05-class-model.md) | Welche zentralen Klassen und Ports tragen das System? |
-| [`06-dependencies.md`](./06-dependencies.md) | Welche Abhängigkeiten sind erlaubt, welche verboten? |
-| [`07-tool-permission-chain.md`](./07-tool-permission-chain.md) | Wie wird ein Tool-Call autorisiert und ausgeführt? |
-| [`08-agent-orchestrator.md`](./08-agent-orchestrator.md) | Wie funktionieren Agenten/Subagents heute – und wie sähe ein deterministischer Orchestrator mit LLM-Fallback aus? |
-| [`09-persistence.md`](./09-persistence.md) | Welche Tabellen, Events und Transaktionsgrenzen gibt es? |
-| [`10-deployment.md`](./10-deployment.md) | JVM, Native, Docker und GCP-Betrieb ohne Git. |
+| [`01-system-context.md`](./01-system-context.md) | Which actors, services, and stores make up the overall system? |
+| [`02-architecture.md`](./02-architecture.md) | How are Maven modules, packages, and layers structured? |
+| [`03-runtime-dataflow.md`](./03-runtime-dataflow.md) | What happens to a prompt from HTTP to SSE and DB? |
+| [`04-session-lifecycle.md`](./04-session-lifecycle.md) | Which states does a session pass through, and how are runs coordinated? |
+| [`05-class-model.md`](./05-class-model.md) | Which central classes and ports carry the system? |
+| [`06-dependencies.md`](./06-dependencies.md) | Which dependencies are allowed, which forbidden? |
+| [`07-tool-permission-chain.md`](./07-tool-permission-chain.md) | How is a tool call authorized and executed? |
+| [`08-agent-orchestrator.md`](./08-agent-orchestrator.md) | How do agents/subagents work today – and what would a deterministic orchestrator with LLM fallback look like? |
+| [`09-persistence.md`](./09-persistence.md) | Which tables, events, and transaction boundaries exist? |
+| [`10-deployment.md`](./10-deployment.md) | JVM, Native, Docker, and GCP operation without Git. |
 
-## Deterministische Teile auf einen Blick
+## Deterministic parts at a glance
 
-| Bereich | Status | Begründung |
+| Area | Status | Reason |
 |---|---|---|
-| HTTP-Validierung, ID-Parsing, Fehlercodes | deterministisch | reine Übersetzung und Validierung |
-| Session Admission / Inbox / Delivery | deterministisch | feste Reihenfolge, Idempotenz, Regeln |
-| Event-Log | deterministisch | append-only, lückenlose Sequenz, Transaktion |
-| Projektionen | deterministisch | eigene Transaktionen; einzelne Cross-Store-Schritte sind noch nicht atomar |
-| Permission Engine | deterministisch | Regeln, Wildcards, deny/ask/allow |
-| Tool-Snapshot und Tool-Ausführung | deterministisch | Registry, Schema-Decode, Authorizer, Bounding |
-| Context Builder | deterministisch | feste Reihenfolge, History-Folding, Budget |
-| Step-Rahmen | gemischt | LLM liefert Events/Tool-Calls, Engine führt aus |
-| Provider-Aufruf | LLM/extern | Inhalt und Tool-Auswahl kommen vom Modell |
-| Compaction-Trigger | deterministisch | Overflow-Erkennung und genau eine Compaction |
-| Compaction-Inhalt | LLM | Zusammenfassung wird generiert |
-| Subagent-Aufruf | gemischt | Rahmen/Depth/Semaphore deterministisch, Inhalt LLM |
-| Retention | deterministisch | Zeitstempel, Konfiguration, Löschregeln |
+| HTTP validation, ID parsing, error codes | deterministic | pure translation and validation |
+| Session Admission / Inbox / Delivery | deterministic | fixed order, idempotency, rules |
+| Event log | deterministic | append-only, gapless sequence, transaction |
+| Projections | deterministic | own transactions; individual cross-store steps are not yet atomic |
+| Permission Engine | deterministic | rules, wildcards, deny/ask/allow |
+| Tool snapshot and tool execution | deterministic | registry, schema decode, authorizer, bounding |
+| Context Builder | deterministic | fixed order, history folding, budget |
+| Step frame | mixed | LLM delivers events/tool calls, engine executes |
+| Provider call | LLM/external | content and tool selection come from the model |
+| Compaction trigger | deterministic | overflow detection and exactly one compaction |
+| Compaction content | LLM | summary is generated |
+| Subagent call | mixed | frame/depth/semaphore deterministic, content LLM |
+| Retention | deterministic | timestamps, configuration, deletion rules |
 
-## Rendern
+## Rendering
 
-Die Diagramme sind Mermaid-Code in Markdown. Sie rendern in GitHub, in der
-VS-Code-Markdown-Vorschau (Mermaid-Erweiterung) und in IntelliJ mit
-Mermaid-Plugin. Für lokale Checks kann `@mermaid-js/mermaid-cli` verwendet
-werden.
+The diagrams are Mermaid code in Markdown. They render in GitHub, in the
+VS Code Markdown preview (Mermaid extension), and in IntelliJ with the
+Mermaid plugin. For local checks, `@mermaid-js/mermaid-cli` can be used.

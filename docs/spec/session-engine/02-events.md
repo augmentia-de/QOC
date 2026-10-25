@@ -237,5 +237,4 @@ Rules:
 | E-07 | Inputs are visible only after delivery. |
 | E-08 | Unknown event shapes are an error, not a silent drop. |
 | E-09 | Live encoding happens once per event; each connection has its own budget. |
-| E-10 | Terminal events are exclusive (one success **or** one failure). |<|end|><|start|>write to=assistant<|channel|>analysis<|message|>Good. Now 03-states.md.<|end|><|start|><|start|>assistant to=read<|channel|>analysis <|constrain|>xml<|message|><rfl:parameter name="path">
-/home/torsten/dev/my-projects/2oc/qoc/docs/spec/session-engine/03-states.md
+| E-10 | Terminal events are exclusive (one success **or** one failure). |

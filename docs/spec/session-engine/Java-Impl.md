@@ -22,6 +22,27 @@
 
 ---
 
+## Contents
+
+- [1. Scope](#1-scope)
+- [2. The six spec corrections – already incorporated here](#2-the-six-spec-corrections-already-incorporated-here)
+- [3. The open decisions – with proposal](#3-the-open-decisions-with-proposal)
+- [4. Module structure](#4-module-structure)
+- [5. Data model in Java 21](#5-data-model-in-java-21)
+- [6. Persistence](#6-persistence)
+- [7. Permissions](#7-permissions)
+- [8. Tool chain](#8-tool-chain)
+- [9. Execution, claim, recovery](#9-execution-claim-recovery)
+- [10. Provider interface](#10-provider-interface)
+- [11. Live feed (SSE)](#11-live-feed-sse)
+- [12. Test strategy](#12-test-strategy)
+- [13. Build plan](#13-build-plan)
+- [14. Acceptance checklist](#14-acceptance-checklist)
+- [15. The five most common errors in this implementation](#15-the-five-most-common-errors-in-this-implementation)
+- [16. Open for the domain decision](#16-open-for-the-domain-decision)
+- [17. SessionError taxonomy (from the reference checkout)](#17-sessionerror-taxonomy-from-the-reference-checkout)
+- [18. Debugging checklist and pitfalls](#18-debugging-checklist-and-pitfalls)
+
 ## 1. Scope
 
 | Content | Content |

@@ -1,11 +1,10 @@
-# 05 – Klassen- und Rollenmodell
+# 05 – Class and Role Model
 
-## Zweck
+## Purpose
 
-Das Diagramm zeigt die zentralen Typen und ihre wichtigsten Beziehungen –
-nicht jede Hilfsklasse. Die Stereotype markieren die Rolle im
-Determinismus-Modell; sie ersetzen hier die Farbkennzeichnung der
-Flussdiagramme.
+The diagram shows the central types and their most important relationships –
+not every helper class. The stereotypes mark the role in the determinism
+model; here they replace the color coding of the flow diagrams.
 
 ```mermaid
 classDiagram
@@ -197,45 +196,44 @@ classDiagram
   JdkHttpTransport ..|> HttpTransport
   JdkProcessRunner ..|> ProcessRunner
 
-  note for Step "MIXED: LLM liefert Text/Tool-Calls; Ausführung und Validierung sind deterministisch"
-  note for Engine "Wiring + Prompt-Loop; aktuell kein separater Workflow-Orchestrator"
-  note for PermissionGate "im Engine-Wiring als Lambda implementiert; delegiert an PermissionEngine"
-  note for ProviderAdapter "übersetzt Request/Stream deterministisch; der entfernte LLM-Dienst ist nicht deterministisch"
+  note for Step "MIXED: LLM provides text/tool calls; execution and validation are deterministic"
+  note for Engine "Wiring + prompt loop; currently no separate workflow orchestrator"
+  note for PermissionGate "implemented as a lambda in the engine wiring; delegates to PermissionEngine"
+  note for ProviderAdapter "translates request/stream deterministically; the remote LLM service is not deterministic"
 ```
 
-## Legende
+## Legend
 
-| Stereotyp | Bedeutung |
+| Stereotype | Meaning |
 |---|---|
-| `<<deterministic>>` | feste Regeln, keine Modellentscheidung |
-| `<<mixed>>` | deterministischer Rahmen mit LLM-Aufruf |
-| `<<llm / external>>` | Modell oder externer Dienst |
-| `<<port>>` | Schnittstelle, die von einem Adapter erfüllt wird |
-| `<<adapter>>` | technische Implementierung eines Ports |
-| `<<wiring + mixed loop>>` | verdrahtet alles und enthält den Prompt-Loop |
+| `<<deterministic>>` | fixed rules, no model decision |
+| `<<mixed>>` | deterministic framework with an LLM call |
+| `<<llm / external>>` | model or external service |
+| `<<port>>` | interface implemented by an adapter |
+| `<<adapter>>` | technical implementation of a port |
+| `<<wiring + mixed loop>>` | wires everything together and contains the prompt loop |
 
-## Die wichtigsten Verträge
+## The most important contracts
 
-| Vertrag | Bedeutung |
+| Contract | Meaning |
 |---|---|
-| `ProviderAdapter.stream(request)` | ein Stream von `ModelEvent`, keine Callback-/Future-Semantik |
+| `ProviderAdapter.stream(request)` | a stream of `ModelEvent`, no callback/future semantics |
 | `ToolRuntime.execute(call, context)` | Decode → Permission → Execute → Encode/Bound |
-| `PermissionEngine.assertAllowed(check)` | `Denied` ist modellseitig sichtbar, `Aborted` beendet den Step ohne Modellsicht |
-| `Journal.append(draft)` | vergibt die nächste Sequenz und schreibt das Event; die Spec fordert zusätzlich die Projektionen in derselben Transaktion, der Ist-Stand trennt sie |
-| `SessionWake.wake(session)` | entkoppelt Session-Schreibseite von der Ausführung |
+| `PermissionEngine.assertAllowed(check)` | `Denied` is visible to the model, `Aborted` ends the step without model visibility |
+| `Journal.append(draft)` | assigns the next sequence and writes the event; the spec additionally requires the projections in the same transaction, the current state separates them |
+| `SessionWake.wake(session)` | decouples the session write side from execution |
 
-## Warum diese Aufteilung?
+## Why this split?
 
-- `core` kennt nur Werte, Ports und Verträge.
-- `runtime` orchestriert, ohne HTTP oder Quarkus zu kennen.
-- `quarkus` verdrahtet die Technik und stellt REST/SSE bereit.
-- Adapter implementieren Ports und werden nur von der Wiring-Schicht
-  instanziiert.
+- `core` knows only values, ports and contracts.
+- `runtime` orchestrates without knowing HTTP or Quarkus.
+- `quarkus` wires the technology and provides REST/SSE.
+- Adapters implement ports and are instantiated only by the wiring layer.
 
-## Quellen
+## Sources
 
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/core/port/`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/core/contract/`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/`
-- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/`
-- `qoc/docs/spec/java-packages.md`
+- `engine/src/main/java/de/augmentia/oc/engine/core/port/`
+- `engine/src/main/java/de/augmentia/oc/engine/core/contract/`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/`
+- `quarkus/src/main/java/de/augmentia/oc/engine/http/`
+- `docs/spec/java-packages.md`

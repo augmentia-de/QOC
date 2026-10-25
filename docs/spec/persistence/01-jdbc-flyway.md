@@ -4,6 +4,16 @@
 > [`README.md`](./README.md) in Java 21 on PostgreSQL.
 > **Status:** 2026-10-22
 
+## Contents
+
+- [1. DDL (PostgreSQL 16)](#1-ddl-postgresql-16)
+- [2. Sequence allocation – atomic without a lock](#2-sequence-allocation-atomic-without-a-lock)
+- [3. JDBC access patterns](#3-jdbc-access-patterns)
+- [4. Projections](#4-projections)
+- [5. Migrations (Flyway)](#5-migrations-flyway)
+- [6. Operation](#6-operation)
+- [7. Implementation checklist](#7-implementation-checklist)
+
 ## 1. DDL (PostgreSQL 16)
 
 ```sql

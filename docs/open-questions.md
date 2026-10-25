@@ -14,7 +14,21 @@
 > else (see §8).
 >
 > **Status:** 2026-10-22 · Repo state `dev` @ `3108505b2f`
-> **Basis:** [`spec/`](./spec/README.md), [`ANALYSIS-ARCHITECTURE-JAVA.md`](./ANALYSIS-ARCHITECTURE-JAVA.md)
+> **Basis:** [`spec/`](./spec/README.md), [`ANALYSIS-ARCHITECTURE-JAVA.md`](./analysis/ANALYSIS-ARCHITECTURE-JAVA.md)
+
+## Contents
+
+- [Legend](#legend)
+- [1. Summary](#1-summary)
+- [2. The four big gaps](#2-the-four-big-gaps)
+- [3. Behavioural decisions](#3-behavioural-decisions)
+- [4. Prompt and product decisions](#4-prompt-and-product-decisions)
+- [5. Detail decisions in closed areas](#5-detail-decisions-in-closed-areas)
+- [6. Architecture and package decisions](#6-architecture-and-package-decisions)
+- [7. Findings when porting (example Java port)](#7-findings-when-porting-example-java-port)
+- [8. What "open" means for tests](#8-what-open-means-for-tests)
+- [9. Recommended order](#9-recommended-order)
+- [10. Decision log](#10-decision-log)
 
 ## Legend
 

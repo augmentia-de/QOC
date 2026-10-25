@@ -1,20 +1,20 @@
-# 02 – Architektur und Schichten
+# 02 – Architecture and Layers
 
-## Zweck
+## Purpose
 
-QOC besteht aus zwei Maven-Modulen: einer **reinen Java-Engine** und einer
-**Quarkus-Outer-Skin**. Die Engine ist in vier Bereiche gegliedert:
-`core`, `runtime`, `adapter` und – laut Spec – `http`. Im aktuellen Code liegt
-die HTTP-/Wiring-Schicht im Quarkus-Modul.
+QOC consists of two Maven modules: a **pure Java engine** and a
+**Quarkus outer skin**. The engine is divided into four areas:
+`core`, `runtime`, `adapter` and – per spec – `http`. In the current code the
+HTTP/wiring layer lives in the Quarkus module.
 
 ```mermaid
 flowchart TB
   subgraph Client["Client"]
     UI["Web UI"]:::ext
-    SDK["REST-/SSE-Clients"]:::ext
+    SDK["REST/SSE Clients"]:::ext
   end
 
-  subgraph Quarkus["qoc/quarkus – Outer Skin"]
+  subgraph Quarkus["quarkus – Outer Skin"]
     Http["HttpApi<br/>REST · SSE"]:::mixed
     Auth["BasicAuthFilter"]:::det
     Engine["Engine<br/>Wiring · Prompt-Loop"]:::mixed
@@ -23,12 +23,12 @@ flowchart TB
     Producer["ProviderProducer"]:::ext
   end
 
-  subgraph EngineModule["qoc/engine – pure Java"]
+  subgraph EngineModule["engine – pure Java"]
     subgraph Core["core S0–S2"]
       Model["model<br/>IDs · Messages · Events"]:::det
       Ports["port.*<br/>Store · World · Human · Runtime"]:::det
       Contract["contract.*<br/>Tool · Permission · Provider"]:::det
-      Eval["eval<br/>Regeln · Budget · Klassifikation"]:::det
+      Eval["eval<br/>Rules · Budget · Classification"]:::det
     end
 
     subgraph Runtime["runtime S3–S7"]
@@ -67,7 +67,7 @@ flowchart TB
   ToolReg --> Tools
   ToolReg --> Perm
   Runtime --> Core
-  Adapters -.->|"implementiert Ports"| Ports
+  Adapters -.->|"implements Ports"| Ports
   Quarkus --> EngineModule
 
   classDef det fill:#d9f7d9,stroke:#2e7d32,stroke-width:1px,color:#111;
@@ -76,7 +76,7 @@ flowchart TB
   classDef ext fill:#eceff1,stroke:#546e7a,stroke-width:1px,color:#111;
 ```
 
-## Maven-Module
+## Maven modules
 
 ```mermaid
 flowchart LR
@@ -93,51 +93,51 @@ flowchart LR
   classDef ext fill:#eceff1,stroke:#546e7a,stroke-width:1px,color:#111;
 ```
 
-## Schichten und Stages
+## Layers and stages
 
-| Stage | Package / Modul | Aufgabe | Determinismus |
+| Stage | Package / module | Task | Determinism |
 |---|---|---|---|
-| **S0** | `core.model`, `core.error`, `core.json`, `core.pattern`, `core.shell.scan`, `core.port.*` | Werte, Ports, reine Hilfen | deterministisch |
-| **S1** | `core.event`, `core.contract.*` | Typen und Verträge | deterministisch |
-| **S2** | `core.eval` | reine Auswerter: Regeln, Budget, Klassifikation | deterministisch |
-| **S3** | `runtime.tool.registry`, `runtime.permission.engine`, `runtime.provider.client`, `runtime.context`, `runtime.skill`, `runtime.credential` | Registry, Authorisierung, Provider-Übersetzung, Kontext | überwiegend deterministisch; Provider ruft LLM |
-| **S4** | `runtime.tool.runtime`, `runtime.tool.fs`, `runtime.tool.shell`, `runtime.tool.mcp`, `runtime.tool.web`, `runtime.tool.subagent` | Tool-Ausführung | Ausführung deterministisch; externe Wirkung/LLM möglich |
-| **S5** | `runtime.step`, `runtime.compaction` | ein Modell-Step, Compaction | gemischt |
-| **S6** | `runtime.session.core`, `runtime.session.delivery`, `runtime.session.revert` | Session, Inbox, Delivery, Revert | deterministisch |
-| **S7** | `runtime.execution` | Claim, Coordinator, Recovery | deterministisch |
-| **S8** | `quarkus` (`HttpApi`, `Engine`, `EventBus`, `EngineConfig`) | HTTP/SSE und Wiring | gemischt |
+| **S0** | `core.model`, `core.error`, `core.json`, `core.pattern`, `core.shell.scan`, `core.port.*` | values, ports, pure helpers | deterministic |
+| **S1** | `core.event`, `core.contract.*` | types and contracts | deterministic |
+| **S2** | `core.eval` | pure evaluators: rules, budget, classification | deterministic |
+| **S3** | `runtime.tool.registry`, `runtime.permission.engine`, `runtime.provider.client`, `runtime.context`, `runtime.skill`, `runtime.credential` | registry, authorization, provider translation, context | mostly deterministic; provider calls LLM |
+| **S4** | `runtime.tool.runtime`, `runtime.tool.fs`, `runtime.tool.shell`, `runtime.tool.mcp`, `runtime.tool.web`, `runtime.tool.subagent` | tool execution | execution deterministic; external effect/LLM possible |
+| **S5** | `runtime.step`, `runtime.compaction` | one model step, compaction | mixed |
+| **S6** | `runtime.session.core`, `runtime.session.delivery`, `runtime.session.revert` | session, inbox, delivery, revert | deterministic |
+| **S7** | `runtime.execution` | claim, coordinator, recovery | deterministic |
+| **S8** | `quarkus` (`HttpApi`, `Engine`, `EventBus`, `EngineConfig`) | HTTP/SSE and wiring | mixed |
 
-> Die Spec beschreibt S8 als `engine.http` innerhalb der Engine. Im aktuellen
-> Build liegt diese Schicht im Modul `quarkus`. Das ist die effektive
-> Architektur; die Engine bleibt frei von Quarkus-, CDI- und HTTP-Abhängigkeiten.
+> The spec describes S8 as `engine.http` inside the engine. In the current
+> build this layer lives in the module `quarkus`. This is the effective
+> architecture; the engine stays free of Quarkus, CDI and HTTP dependencies.
 
-## Zentrale Architekturregeln
+## Central architectural rules
 
-1. **Abhängigkeiten zeigen nur nach unten.** S0 → S1 → … → S8.
-2. **Über eine Stage-Grenze geht nur eine Schnittstelle**, keine konkrete
-   Adapter-Klasse.
-3. **Ports gehören dem Verbraucher**, nicht dem Adapter.
-4. **Adapter liegen außerhalb der Stages** und werden nur von der
-   Wiring-Schicht verwendet.
-5. **`core` ist reines Java**: keine Quarkus-, Jackson-, CDI- oder
-   HTTP-Abhängigkeiten.
-6. **ArchUnit prüft die Regeln** in
-   `qoc/engine/src/test/java/de/augmentia/oc/engine/arch/ArchitectureTest.java`.
+1. **Dependencies point only downward.** S0 → S1 → … → S8.
+2. **Only an interface crosses a stage boundary**, not a concrete
+   adapter class.
+3. **Ports belong to the consumer**, not the adapter.
+4. **Adapters live outside the stages** and are only used by the
+   wiring layer.
+5. **`core` is pure Java**: no Quarkus, Jackson, CDI or
+   HTTP dependencies.
+6. **ArchUnit checks the rules** in
+   `engine/src/test/java/de/augmentia/oc/engine/arch/ArchitectureTest.java`.
 
-## Ist-Stand vs. Spec
+## Current state vs. spec
 
-| Punkt | Ist-Stand | Konsequenz |
+| Point | Current state | Consequence |
 |---|---|---|
-| HTTP/Wiring | im Modul `quarkus` | Quarkus-Abhängigkeiten bleiben aus der Engine heraus |
-| `Coordinator` | vorhanden und getestet, aber im HTTP-Pfad nicht verdrahtet | `Engine` nutzt aktuell einen eigenen Prompt-Loop mit `running`-Map |
-| Step-/Execution-Events | Event-Typen existieren | der aktuelle Prompt-Loop schreibt vor allem Conversation- und Inbox-Events |
-| Workflow-Orchestrator | nicht vorhanden | siehe Zielbild in `08-agent-orchestrator.md` |
+| HTTP/wiring | in module `quarkus` | Quarkus dependencies stay out of the engine |
+| `Coordinator` | present and tested, but not wired into the HTTP path | `Engine` currently uses its own prompt loop with a `running` map |
+| Step/execution events | event types exist | the current prompt loop mainly writes conversation and inbox events |
+| Workflow orchestrator | not present | see target picture in `08-agent-orchestrator.md` |
 
-## Quellen
+## Sources
 
-- `qoc/pom.xml`, `qoc/engine/pom.xml`, `qoc/quarkus/pom.xml`
-- `qoc/docs/spec/module-plan.md`
-- `qoc/docs/spec/java-packages.md`
-- `qoc/engine/src/test/java/de/augmentia/oc/engine/arch/ArchitectureTest.java`
-- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java`
+- `qoc/pom.xml`, `engine/pom.xml`, `quarkus/pom.xml`
+- `docs/spec/module-plan.md`
+- `docs/spec/java-packages.md`
+- `engine/src/test/java/de/augmentia/oc/engine/arch/ArchitectureTest.java`
+- `quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java`

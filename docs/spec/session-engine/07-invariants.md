@@ -18,6 +18,21 @@
 
 ---
 
+## Contents
+
+- [I-01 Identity and types](#i-01-identity-and-types)
+- [I-02 Admission and delivery](#i-02-admission-and-delivery)
+- [I-03 Execution and concurrency](#i-03-execution-and-concurrency)
+- [I-04 Step and model call](#i-04-step-and-model-call)
+- [I-05 Tools](#i-05-tools)
+- [I-06 Permissions](#i-06-permissions)
+- [I-07 Events and projections](#i-07-events-and-projections)
+- [I-08 Instructions](#i-08-instructions)
+- [I-09 Compaction](#i-09-compaction)
+- [I-10 Errors and recovery](#i-10-errors-and-recovery)
+- [I-11 System boundaries](#i-11-system-boundaries)
+- [I-12 Acceptance criteria](#i-12-acceptance-criteria)
+
 ## I-01 Identity and types
 
 | # | Rule | Check type |

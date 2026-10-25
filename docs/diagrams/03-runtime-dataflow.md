@@ -1,10 +1,10 @@
-# 03 – Laufzeit- und Datenfluss eines Prompts
+# 03 – Runtime and Data Flow of a Prompt
 
-## Zweck
+## Purpose
 
-Dieses Diagramm verfolgt einen Prompt vom HTTP-Aufruf bis zur Antwort, zu den
-persistierten Daten und zum SSE-Stream. Es zeigt außerdem, welche Schritte
-deterministisch sind und wo das LLM ins Spiel kommt.
+This diagram traces a prompt from the HTTP call to the response, to the
+persisted data and to the SSE stream. It also shows which steps are
+deterministic and where the LLM comes into play.
 
 ```mermaid
 sequenceDiagram
@@ -28,7 +28,7 @@ sequenceDiagram
   Client->>Http: POST /api/session/{id}/prompt
   Http->>Engine: prompt(id, text)
 
-  Note over Engine,Journal: DETERMINISTIC<br/>Validierung · Idempotenz · Inbox · Event-Log
+  Note over Engine,Journal: DETERMINISTIC<br/>Validation · Idempotency · Inbox · Event Log
   Engine->>Session: enqueue(session, inboxId, item)
   Session->>Admission: admit(...)
   Admission->>Journal: append(InboxEnqueued)
@@ -37,22 +37,22 @@ sequenceDiagram
   Delivery->>Journal: append(InboxDelivered)
   Engine->>Journal: insert UserMessage
 
-  Note over Context: DETERMINISTIC<br/>History-Folding · Prompt-Aufbau · Tool-Snapshot · Budget
+  Note over Context: DETERMINISTIC<br/>History Folding · Prompt Build · Tool Snapshot · Budget
   Engine->>Context: prepare(session, agent, model, tools)
   Context->>Journal: read history / messages
   Context-->>Engine: Prepared
 
-  loop bis keine Tool-Calls oder maxSteps erreicht
+  loop until no tool calls or maxSteps reached
     Engine->>Step: run(prepared, context)
 
-    Note over Step,Provider: MIXED<br/>Engine liest den Stream vollständig
+    Note over Step,Provider: MIXED<br/>Engine reads the stream completely
     Step->>Provider: stream(request)
     Provider->>Llm: HTTP/SSE
-    Llm-->>Provider: ModelEvent-Stream
+    Llm-->>Provider: ModelEvent stream
     Provider-->>Step: ModelEvents
     Step->>Bus: publishLive(ModelEvent)
 
-    alt Tool-Call angefordert
+    alt Tool call requested
       Note over ToolRuntime,Tool: DETERMINISTIC<br/>Decode · Permission · Execute · Bound
       Step->>ToolRuntime: execute(call, context)
       ToolRuntime->>Permission: assertAllowed(request)
@@ -76,77 +76,74 @@ sequenceDiagram
 ```
 
 ```text
-Hinweis: Im Sequenzdiagramm steht „Journal / DB“ als Sammelbezeichnung für
-Event-Log, Conversation-Projektion und die übrigen Stores. Die konkrete
-Persistenz ist in `09-persistence.md` getrennt dargestellt.
+Note: In the sequence diagram "Journal / DB" is a collective term for
+the event log, the conversation projection and the other stores. The
+concrete persistence is shown separately in `09-persistence.md`.
 ```
 
-## API-Oberfläche (Auszug)
+## API surface (excerpt)
 
-| Endpoint | Aufgabe |
+| Endpoint | Task |
 |---|---|
-| `POST /api/session` | Session anlegen, optional mit Agent |
-| `GET /api/session` | Sessions auflisten |
-| `GET /api/session/{id}` | Session lesen |
-| `DELETE /api/session/{id}` | Session löschen |
-| `POST /api/session/{id}/agent` | Agent in bestehender Session wechseln |
-| `POST /api/session/{id}/prompt` | Prompt ausführen |
-| `POST /api/session/{id}/command` | Slash-Command als Prompt ausführen |
-| `GET /api/event` | SSE: Replay + Live-Events |
-| `GET /api/session/{id}/messages` | Nachrichten lesen |
-| `POST /api/session/{id}/interrupt` | Lauf unterbrechen |
-| `POST /api/session/{id}/revert` | letzten User-Turn zurücknehmen |
-| `POST /api/session/{id}/compact` | manuelle Compaction |
-| `POST /api/session/{id}/permission/{requestId}/reply` | Permission beantworten |
-| `POST /api/session/{id}/question/{questionId}/reply` | Frage beantworten |
-| `GET /api/agent` | Agenten auflisten |
-| `GET /api/skill` | Skills auflisten |
-| `GET /api/mcp` | MCP-Server und Status |
-| `GET /api/health` | Health |
+| `POST /api/session` | create a session, optionally with an agent |
+| `GET /api/session` | list sessions |
+| `GET /api/session/{id}` | read a session |
+| `DELETE /api/session/{id}` | delete a session |
+| `POST /api/session/{id}/agent` | switch agent in an existing session |
+| `POST /api/session/{id}/prompt` | execute a prompt |
+| `POST /api/session/{id}/command` | execute a slash command as a prompt |
+| `GET /api/event` | SSE: replay + live events |
+| `GET /api/session/{id}/messages` | read messages |
+| `POST /api/session/{id}/interrupt` | interrupt a run |
+| `POST /api/session/{id}/revert` | revert the last user turn |
+| `POST /api/session/{id}/compact` | manual compaction |
+| `POST /api/session/{id}/permission/{requestId}/reply` | answer a permission request |
+| `POST /api/session/{id}/question/{questionId}/reply` | answer a question |
+| `GET /api/agent` | list agents |
+| `GET /api/skill` | list skills |
+| `GET /api/mcp` | MCP servers and status |
+| `GET /api/health` | health |
 
-## Deterministische Schritte
+## Deterministic steps
 
-1. **Request-Validierung** in `HttpApi`.
-2. **Admission**: Idempotenzprüfung, `InboxEnqueued`, Scheduling.
-3. **Delivery**: Steer vor Queue, ein Queue-Eintrag pro Lauf.
-4. **ContextBuilder**: feste Reihenfolge von System-Prompt, Instructions,
-   History, Tool-Snapshot und Budget.
-5. **Permission Engine**: Regeln, Wildcards, Saved Approvals, Ask/Deny.
-6. **ToolRuntime**: Input-Decode, Authorisierung, Ausführung, Output-Decode,
-   Bounding.
-7. **Persistenz**: Event-Sequenz und Projektionen.
-8. **SSE-Replay**: History nach Sequenz, dann Live-Subscription.
+1. **Request validation** in `HttpApi`.
+2. **Admission**: idempotency check, `InboxEnqueued`, scheduling.
+3. **Delivery**: steer before queue, one queue entry per run.
+4. **ContextBuilder**: fixed order of system prompt, instructions,
+   history, tool snapshot and budget.
+5. **Permission Engine**: rules, wildcards, saved approvals, ask/deny.
+6. **ToolRuntime**: input decode, authorization, execution, output decode,
+   bounding.
+7. **Persistence**: event sequence and projections.
+8. **SSE replay**: history after sequence, then live subscription.
 
-## LLM-/Mixed-Schritte
+## LLM / mixed steps
 
-1. **Provider-Aufruf** liefert Text, Reasoning und Tool-Call-Vorschläge.
-2. **Step** führt die vom Modell gewählten Tool-Calls aus.
-3. **Titelgenerierung** und **Compaction-Zusammenfassung** nutzen ebenfalls das
-   Modell.
-4. **Subagent** ist ein eigener LLM-Lauf in einer Child-Session.
+1. **Provider call** returns text, reasoning and tool-call suggestions.
+2. **Step** executes the tool calls chosen by the model.
+3. **Title generation** and **compaction summary** also use the model.
+4. **Subagent** is a separate LLM run in a child session.
 
-## Beobachtete Abweichungen zum Spec-Ideal
+## Observed deviations from the spec ideal
 
-- Der aktuelle HTTP-Pfad persistiert die Assistant-Nachricht in
-  `session_message`. Die Event-Typen `StepStarted`, `StepEnded`, `ToolCalled`
-  usw. existieren, werden in diesem Pfad aber nicht vollständig geschrieben.
-- `Delivery` schreibt `InboxDelivered` und entfernt den Inbox-Eintrag über
-  getrennte Store-Aufrufe; das ist keine gemeinsame Transaktion.
-- Der `Coordinator` ist implementiert und getestet, wird vom HTTP-Pfad aber
-  nicht verwendet. `Engine` nutzt eine eigene `running`-Map und einen direkten
-  Prompt-Loop.
+- The current HTTP path persists the assistant message in
+  `session_message`. The event types `StepStarted`, `StepEnded`, `ToolCalled`
+  etc. exist, but are not fully written on this path.
+- `Delivery` writes `InboxDelivered` and removes the inbox entry via
+  separate store calls; this is not a single transaction.
+- The `Coordinator` is implemented and tested, but not used by the HTTP path.
+  `Engine` uses its own `running` map and a direct prompt loop.
 
-Diese Punkte sind für das Verständnis wichtig: Die **Bausteine** für einen
-stärker deterministischen Ablauf sind vorhanden, aber noch nicht überall
-verdrahtet.
+These points are important for understanding: the **building blocks** for a
+more deterministic flow are present, but not yet wired everywhere.
 
-## Quellen
+## Sources
 
-- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/HttpApi.java`
-- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/session/core/Admission.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/session/delivery/Delivery.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/context/ContextBuilder.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/step/Step.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/tool/runtime/ToolRuntime.java`
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/permission/engine/PermissionEngine.java`
+- `quarkus/src/main/java/de/augmentia/oc/engine/http/HttpApi.java`
+- `quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/session/core/Admission.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/session/delivery/Delivery.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/context/ContextBuilder.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/step/Step.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/tool/runtime/ToolRuntime.java`
+- `engine/src/main/java/de/augmentia/oc/engine/runtime/permission/engine/PermissionEngine.java`

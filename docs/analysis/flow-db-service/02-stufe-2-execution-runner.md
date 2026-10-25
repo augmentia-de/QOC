@@ -4,6 +4,18 @@
 > become a model request, and how is the concrete HTTP request to the provider
 > built?
 
+## Contents
+
+- [1. `wake` – the doorbell](#1-wake-the-doorbell)
+- [2. `drain` – the location-scoped runner](#2-drain-the-location-scoped-runner)
+- [3. `prepareContext` → `select` (context building, part 1)](#3-preparecontext-select-context-building-part-1)
+- [4. `context.load` (context building, part 2)](#4-contextload-context-building-part-2)
+- [5. The model request](#5-the-model-request)
+- [6. `runStep` – the step loop (`llm.ts:203-324`)](#6-runstep-the-step-loop-llmts203-324)
+- [7. What happens between two steps](#7-what-happens-between-two-steps)
+- [Checkpoints for your own changes](#checkpoints-for-your-own-changes)
+- [Next](#next)
+
 ## 1. `wake` – the doorbell
 
 ```

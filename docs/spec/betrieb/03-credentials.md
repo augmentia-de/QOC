@@ -9,6 +9,20 @@
 Credentials are **installation-wide**, not session-wide. They are not part of
 session state, appear in no session event and are not exported with a session.
 
+## Contents
+
+- [1. Terms](#1-terms)
+- [2. Kinds of credentials](#2-kinds-of-credentials)
+- [3. Store](#3-store)
+- [4. Resolution](#4-resolution)
+- [5. HTTP surface](#5-http-surface)
+- [6. What the base environment needs](#6-what-the-base-environment-needs)
+- [7. Start without a credential](#7-start-without-a-credential)
+- [8. Security](#8-security)
+- [9. Rules](#9-rules)
+- [10. Evidence](#10-evidence)
+- [11. Open points](#11-open-points)
+
 ## 1. Terms
 
 | Term | Meaning | Example |

@@ -9,6 +9,19 @@
 >
 > **Status:** 2026-10-24 · post-M14 hardening (revert, manual compaction, PTY, skill limit, LLM trace).
 
+## Contents
+
+- [0. Roadmap vs. reference](#0-roadmap-vs-reference)
+- [1. Prerequisites (once)](#1-prerequisites-once)
+- [2. Step by step (M0–M14)](#2-step-by-step-m0m14)
+- [3. Java-Impl phases (coarse milestones)](#3-java-impl-phases-coarse-milestones)
+- [4. Acceptance checklist (before "done")](#4-acceptance-checklist-before-done)
+- [5. Test strategy (short)](#5-test-strategy-short)
+- [6. Commit convention](#6-commit-convention)
+- [7. Prohibitions (short)](#7-prohibitions-short)
+- [3. Future milestones (M15+)](#3-future-milestones-m15)
+- [4. Post-M14 implementation status (2026-10-24)](#4-post-m14-implementation-status-2026-10-24)
+
 ## 0. Roadmap vs. reference
 
 **Roadmap (work through now, in this order):**

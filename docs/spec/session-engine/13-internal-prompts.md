@@ -15,6 +15,17 @@
 > **Boundary:** The quoted texts are **product content** of the reference
 > state. A port may replace them; it must follow the rules from §5.
 
+## Contents
+
+- [1. What a prompt is](#1-what-a-prompt-is)
+- [2. The catalog](#2-the-catalog)
+- [3. Composition](#3-composition)
+- [4. Storage in a port](#4-storage-in-a-port)
+- [5. Rules](#5-rules)
+- [6. The critical texts](#6-the-critical-texts)
+- [7. Tests](#7-tests)
+- [8. Open points](#8-open-points)
+
 ## 1. What a prompt is
 
 A prompt here is not only the system text. Four levels reach the model:

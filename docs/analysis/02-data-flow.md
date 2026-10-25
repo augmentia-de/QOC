@@ -1,5 +1,8 @@
 # 02 – Data Flow & Data Lineage
 
+> **Rolle:** reference analysis des OpenCode-V2-Checkouts, not an operative
+> QOC-Spec. For the implementation, see [`spec/`](../spec/README.md).
+
 > **Workflow 2:** Data-Flow & Data-Lineage Mapping
 > `[Codebase & DB-Schema] ➔ [Static Analysis] ➔ [LLM Data-Flow Agent] ➔ [Mermaid + Data Dictionary]`
 >
@@ -11,6 +14,16 @@
 > (121 paths / **146 operations**, counted manually).
 
 ---
+
+## Contents
+
+- [1. Entry Points](#1-entry-points)
+- [2. Event Catalog and Lineage](#2-event-catalog-and-lineage)
+- [3. Data Dictionary](#3-data-dictionary)
+- [4. Entity Lifecycles](#4-entity-lifecycles)
+- [5. Side effects outside the database](#5-side-effects-outside-the-database)
+- [6. Mermaid diagrams](#6-mermaid-diagrams)
+- [7. Notable observations](#7-notable-observations)
 
 ## 1. Entry Points
 

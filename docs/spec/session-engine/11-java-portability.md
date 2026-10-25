@@ -9,6 +9,19 @@
 > pattern matching, `sealed`, JDBC/JTA, `Flow`) and the practical runtime
 > environment (Quarkus 3.x, PostgreSQL, Flyway).
 
+## Contents
+
+- [1. Short verdict](#1-short-verdict)
+- [2. Mapping: neutral primitives → Java 21](#2-mapping-neutral-primitives-java-21)
+- [3. Six places where the spec assumes a functional language](#3-six-places-where-the-spec-assumes-a-functional-language)
+- [4. Five domain gaps that apply regardless of language](#4-five-domain-gaps-that-apply-regardless-of-language)
+- [5. What is easier in Java](#5-what-is-easier-in-java)
+- [6. What is harder in Java](#6-what-is-harder-in-java)
+- [7. Recommended changes to the spec before implementation start](#7-recommended-changes-to-the-spec-before-implementation-start)
+- [8. Compact build plan (if Java 21 + Quarkus)](#8-compact-build-plan-if-java-21-quarkus)
+- [9. What must be decided before starting](#9-what-must-be-decided-before-starting)
+- [10. Conclusion](#10-conclusion)
+
 ## 1. Short verdict
 
 > **Yes – about 90 % directly implementable, with six small but blocking
@@ -49,7 +62,7 @@ language** and block an independent reimplementation.
 | `abbruch(t)` | `Future.cancel(true)` → target throws `InterruptedException` | medium | `CompletableFuture.cancel` does **not** reliably abort: target code must also check the interrupt |
 | `warte_alle([…])` | `ExecutorService.invokeAll` / `CompletableFuture.allOf` | low | `StructuredTaskScope` is **preview** in Java 21 (JEP 453) → plan B needed, do not use as basis |
 | `parallel { … }` | `CompletableFuture.allOf` | medium | `allOf` aborts on the first error, siblings keep running → refine semantics (S-3) |
-| `serialisiert_für(sitzungsID)` | `Map<SessionID, ReentrantLock>` + `lock()` | none | per session, not global (avoid global locks) |
+| `serialized_for(sessionID)` | `Map<SessionID, ReentrantLock>` + `lock()` | none | per session, not global (avoid global locks) |
 | opaque identifiers | `record` with private constructor + static factory | none | prevents conversion between identifier types (I-01) |
 | Sum types (`Event`, `SessionError`, `Message`) | `sealed interface` + `record` + `switch` with pattern matching | **none** | pattern-matching switch is final in 21 (JEP 441) – the folding from `message-updater.ts` becomes **total** (compiler checks completeness) |
 | `Option<T>` | own `sealed interface Option<T>` | medium | `java.util.Optional` is unusual for fields/parameters and cannot express "present but null" |
@@ -194,5 +207,4 @@ check apply here too:
   read as "typed and closed" instead of "not exceptions".
 * The I-07-02 convention error ("both projection layers") **disappears by
   itself in the Java design** once the event ADT is `sealed`: the
-  compiler prevents the forgotten `switch` branch.<|end|><|start|>write to=assistant<|channel|>analysis<|message|>Now 12-execution-model.md.<|end|><|start|> fileList? read.<|end|><|start|><|start|>assistant to=read<|channel|>analysis <|constrain|>xml<|message|><rfl:parameter name="path">
-/home/torsten/dev/my-projects/2oc/qoc/docs/spec/session-engine/12-execution-model.md
+  compiler prevents the forgotten `switch` branch.

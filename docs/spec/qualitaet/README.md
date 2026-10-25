@@ -167,4 +167,4 @@ at the third – or, for data ownership and prompts, already at the first.
 | Tool choice (JUnit, Testcontainers, ArchUnit version) | implementation detail, not specification – the documents give examples, not prescriptions |
 | Team process (review obligation, four-eyes principle) | not enforceable by a spec |
 | Performance numbers | belong to operations, not correctness – tests check thresholds, not absolute values |
-| Security audit | own topic; the error and rights taxonomy covers only the runtime side |<|end|><|start|>write to=assistant<|channel|>analysis<|message|>Wrote file successfully: spec/qualitaet/README.md
+| Security audit | own topic; the error and rights taxonomy covers only the runtime side |
