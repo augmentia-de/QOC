@@ -1,15 +1,17 @@
-# QOC – Session Engine
+# QOC – AI Agent Runtime
 
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![Quarkus](https://img.shields.io/badge/Quarkus-3.40.1.1-blue)
 ![Maven](https://img.shields.io/badge/Build-Maven-red)
 ![Status](https://img.shields.io/badge/Status-M0--M14%20implemented-brightgreen)
 
-QOC is a **specification-driven Java implementation of an AI agent session
-engine**: prompt admission, context assembly, model calls, tool execution,
-streaming, persistence, and permissions. It is built as a library (`engine`)
-plus a Quarkus outer skin (`quarkus`, HTTP/SSE) and runs as a JVM application,
-a native image, or a container.
+QOC is a **Java runtime for AI coding agents**. It accepts prompts, assembles
+context, calls models, executes tools, streams results, persists sessions, and
+enforces permissions. It is not a new agent UI or product surface; it is the
+engine that makes an agent runnable.
+
+It is built as a library (`engine`) plus a Quarkus outer skin (`quarkus`,
+HTTP/SSE) and runs as a JVM application, a native image, or a container.
 
 The authoritative source of truth is [`docs/spec/`](./docs/spec/README.md), not
 the code.
