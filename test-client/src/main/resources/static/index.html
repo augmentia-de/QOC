@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>QOC Test Client</title>
+  <style>
+    body { font-family: sans-serif; max-width: 900px; margin: 2rem auto; }
+    label { display: block; margin: .5rem 0; }
+    textarea { width: 100%; min-height: 120px; }
+    pre { background: #f4f4f4; padding: 1rem; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>QOC Test Client</h1>
+  <label>Mode
+    <select id="mode">
+      <option value="rest">REST</option>
+      <option value="mcp">MCP</option>
+    </select>
+  </label>
+  <label>Agent
+    <select id="agent">
+      <option value="reviewer">reviewer</option>
+      <option value="researcher">researcher</option>
+      <option value="refactorer">refactorer</option>
+    </select>
+  </label>
+  <label>Prompt
+    <textarea id="prompt">Explain OrderService.totalFor in java-sample.</textarea>
+  </label>
+  <button id="run">Run</button>
+  <h2>Result</h2>
+  <pre id="result"></pre>
+
+  <script>
+    document.getElementById('run').onclick = async () => {
+      const body = {
+        mode: document.getElementById('mode').value,
+        agent: document.getElementById('agent').value,
+        prompt: document.getElementById('prompt').value
+      };
+      const res = await fetch('/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+    };
+  </script>
+</body>
+</html>
