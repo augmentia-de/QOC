@@ -25,7 +25,7 @@ public class TestController {
     @PostMapping("/api/run")
     public ResponseEntity<Map<String, Object>> run(@RequestBody Map<String, Object> request) {
         String mode = String.valueOf(request.getOrDefault("mode", "rest"));
-        String agent = String.valueOf(request.getOrDefault("agent", "reviewer"));
+        String agent = String.valueOf(request.getOrDefault("agent", "build"));
         String prompt = String.valueOf(request.getOrDefault("prompt", ""));
         Object structuredOutput = request.get("structuredOutput");
 
@@ -55,15 +55,17 @@ public class TestController {
                 .body(promptBody)
                 .retrieve().body(JsonNode.class);
 
-        return Map.of(
-                "mode", "rest",
-                "sessionId", sessionId,
-                "finish", response.path("finish").asText(),
-                "inputTokens", response.path("inputTokens").asLong(),
-                "outputTokens", response.path("outputTokens").asLong(),
-                "text", response.path("text").asText(),
-                "structured", response.has("structured") ? response.get("structured") : null
-        );
+        java.util.Map<String, Object> restResult = new java.util.LinkedHashMap<>();
+        restResult.put("mode", "rest");
+        restResult.put("sessionId", sessionId);
+        restResult.put("finish", response.path("finish").asText());
+        restResult.put("inputTokens", response.path("inputTokens").asLong());
+        restResult.put("outputTokens", response.path("outputTokens").asLong());
+        restResult.put("text", response.path("text").asText());
+        if (response.has("structured") && !response.get("structured").isNull()) {
+            restResult.put("structured", response.get("structured"));
+        }
+        return restResult;
     }
 
     private Map<String, Object> runMcp(String agent, String prompt, Object structuredOutput) {
@@ -93,13 +95,15 @@ public class TestController {
         Object structured = result != null && result.has("structuredContent") ? objectMapper.convertValue(result.get("structuredContent"), Object.class) : null;
         JsonNode meta = result != null ? result.get("_meta") : null;
 
-        return Map.of(
-                "mode", "mcp",
-                "finish", meta != null ? meta.path("finish").asText() : "",
-                "inputTokens", meta != null ? meta.path("inputTokens").asLong() : 0,
-                "outputTokens", meta != null ? meta.path("outputTokens").asLong() : 0,
-                "text", text,
-                "structured", structured
-        );
+        java.util.Map<String, Object> mcpResult = new java.util.LinkedHashMap<>();
+        mcpResult.put("mode", "mcp");
+        mcpResult.put("finish", meta != null ? meta.path("finish").asText() : "");
+        mcpResult.put("inputTokens", meta != null ? meta.path("inputTokens").asLong() : 0);
+        mcpResult.put("outputTokens", meta != null ? meta.path("outputTokens").asLong() : 0);
+        mcpResult.put("text", text);
+        if (structured != null) {
+            mcpResult.put("structured", structured);
+        }
+        return mcpResult;
     }
 }
