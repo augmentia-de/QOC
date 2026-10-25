@@ -17,6 +17,15 @@ class JsonEdgeTest {
     }
 
     @Test
+    void optionalFieldExplicitNullOk() {
+        Result<JsonValue> r = Json.decode("{\"a\":null}",
+                Schema.obj(Map.of("a", Schema.opt(Schema.str()))));
+        assertThat(r).isInstanceOf(Result.Ok.class);
+        JsonValue.Obj decoded = (JsonValue.Obj) ((Result.Ok<JsonValue>) r).value();
+        assertThat(decoded.values()).doesNotContainKey("a");
+    }
+
+    @Test
     void enumValidation() {
         Result<JsonValue> ok = Json.decode("\"b\"", Schema.enm(List.of("a", "b")));
         assertThat(ok).isInstanceOf(Result.Ok.class);

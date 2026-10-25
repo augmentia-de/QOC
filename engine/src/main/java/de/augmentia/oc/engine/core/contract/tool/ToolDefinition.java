@@ -19,6 +19,12 @@ public record ToolDefinition(
         if (options == null) options = ToolOptions.defaults();
     }
 
+    /** Returns a copy that asks the provider to enforce the input schema. */
+    public ToolDefinition withStrict(boolean strict) {
+        return new ToolDefinition(name, description, inputSchema, outputSchema, execute,
+                options.withStrict(strict));
+    }
+
     public String effectiveName() {
         String normalizedName = normalize(name.value());
         if (options.namespace().isPresent()) {

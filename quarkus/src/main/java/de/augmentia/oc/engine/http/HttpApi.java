@@ -3,6 +3,10 @@ package de.augmentia.oc.engine.http;
 import de.augmentia.oc.engine.core.model.SessionId;
 import de.augmentia.oc.engine.core.contract.permission.PermissionRequest;
 import de.augmentia.oc.engine.core.contract.permission.Reply;
+import de.augmentia.oc.engine.core.json.JsonSchema;
+import de.augmentia.oc.engine.core.json.JsonValues;
+import de.augmentia.oc.engine.core.json.Result;
+import de.augmentia.oc.engine.core.json.Schema;
 import de.augmentia.oc.engine.core.model.PermissionRequestId;
 import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.SessionInfo;
@@ -106,7 +110,16 @@ public class HttpApi {
         if (request == null || request.text() == null || request.text().isBlank()) {
             return badRequest("text must not be blank");
         }
-        return runPrompt(id, request.text());
+        Option<Schema> responseSchema = Option.none();
+        if (request.responseSchema() != null) {
+            Result<Schema> parsed = JsonSchema.parse(JsonValues.fromJava(request.responseSchema()));
+            if (parsed instanceof Result.Err<Schema> error) {
+                return badRequest("invalid responseSchema at " + error.error().path()
+                        + ": " + error.error().message());
+            }
+            responseSchema = Option.some(parsed.valueOrNull());
+        }
+        return runPrompt(id, request.text(), responseSchema);
     }
 
     @POST
@@ -567,10 +580,15 @@ public class HttpApi {
     }
 
     private Response runPrompt(String id, String text) {
+        return runPrompt(id, text, Option.none());
+    }
+
+    private Response runPrompt(String id, String text, Option<Schema> responseSchema) {
         try {
-            Engine.PromptResult result = engine.prompt(SessionId.parse(id), text);
+            Engine.PromptResult result = engine.prompt(SessionId.parse(id), text, responseSchema);
+            Object structured = result.structured().map(JsonValues::toJava).orElse(null);
             return Response.ok(new PromptResponse(result.finish(), result.inputTokens(),
-                    result.outputTokens(), result.text())).build();
+                    result.outputTokens(), result.text(), structured)).build();
         } catch (IllegalArgumentException e) {
             return badRequest(e.getMessage());
         } catch (IllegalStateException e) {
@@ -596,7 +614,11 @@ public class HttpApi {
         return new MessageDto(message.id().value(), message.getClass().getSimpleName(), text(message));
     }
 
-    public record PromptRequest(String text) {}
+    public record PromptRequest(String text, Map<String, Object> responseSchema) {
+        public PromptRequest(String text) {
+            this(text, null);
+        }
+    }
 
     public record CreateSessionRequest(String agent) {}
 
@@ -606,7 +628,8 @@ public class HttpApi {
 
     public record QuestionReply(List<String> selected, String text) {}
 
-    public record PromptResponse(String finish, long inputTokens, long outputTokens, String text) {}
+    public record PromptResponse(String finish, long inputTokens, long outputTokens, String text,
+                                 Object structured) {}
 
     public record SessionDto(String id, String title, String agent, String directory,
                              String cost, long tokens) {}

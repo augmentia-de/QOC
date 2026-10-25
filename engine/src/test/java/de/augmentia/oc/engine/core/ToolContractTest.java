@@ -83,6 +83,8 @@ class ToolContractTest {
         assertThat(options.permission().isEmpty()).isTrue();
         assertThat(options.codemode()).isTrue();
         assertThat(options.pinned()).isFalse();
+        assertThat(options.strict()).isFalse();
+        assertThat(options.withStrict(true).strict()).isTrue();
     }
 
     @Test

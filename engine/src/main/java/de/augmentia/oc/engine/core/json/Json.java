@@ -131,10 +131,17 @@ public final class Json {
                         }
                         yield new Result.Err<>(new DecodeError(path + "." + key, "missing required field"));
                     }
-                    Schema inner = (fs instanceof Schema.Opt opt) ? opt.inner() : fs;
-                    Result<JsonValue> r = validate(fv, inner, path + "." + key);
-                    if (r instanceof Result.Err<JsonValue> e) yield e;
-                    out.put(key, ((Result.Ok<JsonValue>) r).value());
+                    if (fs instanceof Schema.Opt opt) {
+                        // Strict providers send optional fields as explicit null.
+                        if (fv instanceof JsonValue.Null) continue;
+                        Result<JsonValue> r = validate(fv, opt.inner(), path + "." + key);
+                        if (r instanceof Result.Err<JsonValue> e) yield e;
+                        out.put(key, ((Result.Ok<JsonValue>) r).value());
+                    } else {
+                        Result<JsonValue> r = validate(fv, fs, path + "." + key);
+                        if (r instanceof Result.Err<JsonValue> e) yield e;
+                        out.put(key, ((Result.Ok<JsonValue>) r).value());
+                    }
                 }
                 if (!o.additionalProperties()) {
                     for (String key : obj.values().keySet()) {

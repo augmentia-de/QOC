@@ -136,12 +136,17 @@ public final class OpenAiRequestEncoder implements Function<ModelRequest, String
     }
 
     private JsonValue tool(ToolDefinition definition) {
+        Map<String, JsonValue> function = new LinkedHashMap<>();
+        function.put("name", JsonValue.of(definition.effectiveName()));
+        function.put("description", JsonValue.of(definition.description()));
+        function.put("parameters", schemas.encode(definition.inputSchema(),
+                definition.options().strict()));
+        if (definition.options().strict()) {
+            function.put("strict", JsonValue.of(true));
+        }
         return JsonValue.of(Map.of(
                 "type", JsonValue.of("function"),
-                "function", JsonValue.of(Map.of(
-                        "name", JsonValue.of(definition.effectiveName()),
-                        "description", JsonValue.of(definition.description()),
-                        "parameters", schemas.encode(definition.inputSchema())))));
+                "function", JsonValue.of(function)));
     }
 
     private JsonValue toolChoice(de.augmentia.oc.engine.core.model.Option<Choice> choice) {

@@ -3,6 +3,7 @@ package de.augmentia.oc.engine.http;
 import de.augmentia.oc.engine.core.contract.provider.ModelEvent;
 import de.augmentia.oc.engine.core.contract.provider.ModelInfo;
 import de.augmentia.oc.engine.core.contract.provider.Modality;
+import de.augmentia.oc.engine.core.contract.provider.Choice;
 import de.augmentia.oc.engine.core.contract.tool.Hooks;
 import de.augmentia.oc.engine.core.contract.tool.ToolCall;
 import de.augmentia.oc.engine.core.contract.tool.ToolContext;
@@ -16,6 +17,7 @@ import de.augmentia.oc.engine.core.json.Json;
 import de.augmentia.oc.engine.core.event.EventCodec;
 import de.augmentia.oc.engine.core.json.Json;
 import de.augmentia.oc.engine.core.json.JsonValue;
+import de.augmentia.oc.engine.core.json.Schema;
 import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.*;
 import de.augmentia.oc.engine.core.model.Content;
@@ -80,8 +82,10 @@ import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
 import de.augmentia.oc.engine.runtime.skill.SkillParser;
 import de.augmentia.oc.engine.runtime.skill.SkillScanner;
 import de.augmentia.oc.engine.runtime.tool.skill.SkillTool;
+import de.augmentia.oc.engine.runtime.tool.structured.SubmitResult;
 import de.augmentia.oc.engine.runtime.step.Step;
 import de.augmentia.oc.engine.runtime.step.StepResult;
+import de.augmentia.oc.engine.runtime.step.SubmittedResult;
 import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
 import de.augmentia.oc.engine.core.eval.PermissionCheck;
 import de.augmentia.oc.engine.runtime.tool.runtime.ToolAuthorizer;
@@ -687,6 +691,10 @@ public class Engine {
     }
 
     public PromptResult prompt(SessionId id, String text) {
+        return prompt(id, text, Option.none());
+    }
+
+    public PromptResult prompt(SessionId id, String text, Option<Schema> responseSchema) {
         if (text == null || text.isBlank()) throw new IllegalArgumentException("text must not be blank");
         LOG.infof("prompt start session=%s text=%s", id.value(), text.length() > 120 ? text.substring(0,120) + "..." : text);
         Option<SessionInfo> found = sessions.info(id);
@@ -701,7 +709,7 @@ public class Engine {
                 .startSpan();
         try (Scope scope = span.makeCurrent()) {
             try {
-                PromptResult r = runPrompt(id, text);
+                PromptResult r = runPrompt(id, text, null, responseSchema);
                 span.setAttribute("finish", r.finish());
                 span.setAttribute("usage.input_tokens", (long) r.inputTokens());
                 span.setAttribute("usage.output_tokens", (long) r.outputTokens());
@@ -721,9 +729,35 @@ public class Engine {
     }
 
     public PromptResult runPrompt(SessionId id, String text) {
-        return runPrompt(id, text, null);    }
+        return runPrompt(id, text, null, Option.none());
+    }
 
     public PromptResult runPrompt(SessionId id, String text, AgentProfile agentOverride) {
+        return runPrompt(id, text, agentOverride, Option.none());
+    }
+
+    public PromptResult runPrompt(SessionId id, String text, AgentProfile agentOverride,
+                                  Option<Schema> responseSchema) {
+        if (responseSchema == null) responseSchema = Option.none();
+        Schema resultSchema = responseSchema.orElse(null);
+
+        // Validate the reserved result-tool name before touching the inbox so a
+        // rejected schema request does not leave a queued item behind.
+        ToolSnapshot runSnapshot = toolSnapshot;
+        Step runStep = step;
+        if (resultSchema != null) {
+            runSnapshot = SubmitResult.withTool(toolSnapshot, resultSchema);
+            // The synthetic result tool only returns data; it must never wait
+            // for a permission decision on an otherwise restricted session.
+            PermissionGate structuredGate = request -> {
+                if (!SubmitResult.TOOL_NAME.equals(request.action())) {
+                    permissionGate.assertAllowed(request);
+                }
+            };
+            runStep = new Step(provider, new ToolRuntime(runSnapshot,
+                    ToolAuthorizer.defaultAuthorizer(), structuredGate, toolHooks, toolOutput));
+        }
+
         InboxId inboxId = InboxId.create();
         InboxItem item = new InboxItem.UserItem(text, List.of(), List.of(), List.of(), Map.of());
         sessionService.enqueue(id, inboxId, item);
@@ -774,6 +808,8 @@ public class Engine {
         FinishReason finishReason = FinishReason.NORMAL;
         TokenCount usage = TokenCount.zero();
         String finalText = "";
+        Option<JsonValue> structured = Option.none();
+        boolean submitForced = false;
 
         while (true) {
             LOG.debugf("step %d session=%s", stepNo, id.value());
@@ -782,9 +818,16 @@ public class Engine {
                     .setAttribute("step", (long) stepNo)
                     .startSpan();
             try (Scope stepScope = stepSpan.makeCurrent()) {
-            var prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), stepNo);
+            Option<Choice> forcedChoice = resultSchema != null && submitForced
+                    ? Option.some(new Choice.One(new ToolName(SubmitResult.TOOL_NAME)))
+                    : Option.none();
+            var prepared = contextBuilder.prepare(info, agent, model, runSnapshot, Seq.zero(),
+                    stepNo, forcedChoice);
+            if (resultSchema != null) {
+                prepared = prepared.withSystem(SubmitResult.INSTRUCTION);
+            }
             ToolContext context = new ToolContext(id, info.agent(), MessageId.create(), CallId.create());
-            StepResult result = step.run(prepared, context, liveSink);
+            StepResult result = runStep.run(prepared, context, liveSink);
             if (result instanceof StepResult.NeedsCompaction) {
                 // Automatic compaction (I-07, I-09): exactly one per step.
                 Span cspan = tracer().spanBuilder("compaction").setAttribute("session.id", id.value()).startSpan();
@@ -794,8 +837,12 @@ public class Engine {
                         clock.now());
                 cspan.end();
                 }
-                prepared = contextBuilder.prepare(info, agent, model, toolSnapshot, Seq.zero(), stepNo);
-                result = step.run(prepared, context, liveSink);
+                prepared = contextBuilder.prepare(info, agent, model, runSnapshot, Seq.zero(),
+                        stepNo, forcedChoice);
+                if (resultSchema != null) {
+                    prepared = prepared.withSystem(SubmitResult.INSTRUCTION);
+                }
+                result = runStep.run(prepared, context, liveSink);
             }
             if (result instanceof StepResult.Failed failed) {
                 throw new IllegalStateException("model call failed: " + failed.message());
@@ -846,14 +893,37 @@ public class Engine {
             stepSpan.end();
             }
 
+            if (resultSchema != null) {
+                Option<JsonValue> submitted = SubmittedResult.result(finished, resultSchema);
+                if (submitted.isPresent()) {
+                    structured = submitted;
+                    break;
+                }
+            }
+            if (submitForced) break;
+
             boolean hasToolCalls = !finished.toolCalls().isEmpty();
-            if (!hasToolCalls) break;
-            if (stepNo >= agent.maxSteps()) break;
+            if (!hasToolCalls) {
+                if (resultSchema != null) {
+                    submitForced = true;
+                    stepNo++;
+                    continue;
+                }
+                break;
+            }
+            if (stepNo >= agent.maxSteps()) {
+                if (resultSchema != null) {
+                    submitForced = true;
+                    stepNo++;
+                    continue;
+                }
+                break;
+            }
             stepNo++;
         }
 
         PromptResult promptResult = new PromptResult(finishReason.name(),
-                usage.input(), usage.output(), finalText);
+                usage.input(), usage.output(), finalText, structured);
 
         // Generate title after the first successful prompt if not yet set.
         // Generate title after the first successful prompt if not yet set.
@@ -1320,7 +1390,16 @@ public class Engine {
         };
     }
 
-    public record PromptResult(String finish, long inputTokens, long outputTokens, String text) {}
+    public record PromptResult(String finish, long inputTokens, long outputTokens, String text,
+                               Option<JsonValue> structured) {
+        public PromptResult {
+            if (structured == null) structured = Option.none();
+        }
+
+        public PromptResult(String finish, long inputTokens, long outputTokens, String text) {
+            this(finish, inputTokens, outputTokens, text, Option.none());
+        }
+    }
 
     public record FileEntry(String name, String path, String relative, boolean directory, long size) {}
 

@@ -139,6 +139,19 @@ class ContextBuilderTest {
     }
 
     @Test
+    void forcedToolChoiceSkipsStepLimitPrompt() {
+        Prepared prepared = builder().prepare(session, agent(Option.none(), 2), model, tools,
+                Seq.zero(), 2, Option.some(new Choice.One(new ToolName("submit_result"))));
+
+        assertThat(prepared.toolChoice().orElseThrow()).isInstanceOf(Choice.One.class);
+        assertThat(prepared.messages()).noneMatch(message ->
+                message instanceof ModelMessage.Assistant assistant
+                        && assistant.content().stream().anyMatch(content ->
+                        content instanceof ModelContent.Text text
+                                && ContextBuilder.STEP_LIMIT_PROMPT.equals(text.text())));
+    }
+
+    @Test
     void budgetAndAffinityAreSet() {
         Prepared prepared = builder().prepare(session, agent(Option.none(), 0), model, tools, Seq.zero(), 0);
 

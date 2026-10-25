@@ -4,13 +4,16 @@ import de.augmentia.oc.engine.adapter.log.RotatingLlmTrace;
 import de.augmentia.oc.engine.adapter.net.JdkHttpTransport;
 import de.augmentia.oc.engine.core.contract.provider.*;
 import de.augmentia.oc.engine.core.json.JsonValue;
+import de.augmentia.oc.engine.core.model.CallId;
 import de.augmentia.oc.engine.core.model.FinishReason;
 import de.augmentia.oc.engine.core.model.TokenCount;
+import de.augmentia.oc.engine.core.model.ToolName;
 import de.augmentia.oc.engine.runtime.provider.client.HttpProviderAdapter;
 import de.augmentia.oc.engine.runtime.provider.client.OpenAiEventTranslator;
 import de.augmentia.oc.engine.runtime.provider.client.OpenAiRequestEncoder;
 import de.augmentia.oc.engine.runtime.provider.client.ProviderErrorClassifier;
 import de.augmentia.oc.engine.runtime.provider.client.SseReader;
+import de.augmentia.oc.engine.runtime.tool.structured.SubmitResult;
 import de.augmentia.oc.engine.core.contract.provider.LlmTrace;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -65,6 +68,19 @@ public class ProviderProducer {
 
     private static ProviderAdapter scripted() {
         return request -> {
+            boolean structured = request.tools().stream()
+                    .anyMatch(tool -> SubmitResult.TOOL_NAME.equals(tool.effectiveName()));
+            if (structured) {
+                // The demo provider answers the reserved result tool with a
+                // minimal object; real models produce schema-specific arguments.
+                List<ModelEvent> events = List.of(
+                        new ModelEvent.ToolCallRequested(CallId.create(),
+                                new ToolName(SubmitResult.TOOL_NAME),
+                                JsonValue.of(Map.of("answer", JsonValue.of("structured")))),
+                        new ModelEvent.Finished(FinishReason.NORMAL, TokenCount.of(1, 8),
+                                JsonValue.ofNull()));
+                return events.stream();
+            }
             String text = "Hallo aus der Session Engine.";
             List<ModelEvent> events = List.of(
                     new ModelEvent.TextStarted("block-1"),

@@ -51,6 +51,12 @@ public final class ContextBuilder {
 
     public Prepared prepare(SessionInfo session, AgentProfile agent, ModelInfo model,
                             ToolSnapshot tools, Seq afterSeq, int step) {
+        return prepare(session, agent, model, tools, afterSeq, step, Option.none());
+    }
+
+    public Prepared prepare(SessionInfo session, AgentProfile agent, ModelInfo model,
+                            ToolSnapshot tools, Seq afterSeq, int step,
+                            Option<Choice> forcedChoice) {
         if (session == null || agent == null || model == null || tools == null) {
             throw new IllegalArgumentException("context inputs must not be null");
         }
@@ -73,8 +79,8 @@ public final class ContextBuilder {
 
         List<ModelMessage> messages = history(session.id(), from, agent);
         LOG.fine("prepare step=" + step + " messages=" + messages.size() + " tools=" + tools.list().size());
-        Option<Choice> toolChoice = Option.none();
-        if (agent.maxSteps() > 0 && step >= agent.maxSteps()) {
+        Option<Choice> toolChoice = forcedChoice == null ? Option.none() : forcedChoice;
+        if (toolChoice.isEmpty() && agent.maxSteps() > 0 && step >= agent.maxSteps()) {
             messages.add(new ModelMessage.Assistant(List.of(new ModelContent.Text(STEP_LIMIT_PROMPT))));
             toolChoice = Option.some(new Choice.None());
         }

@@ -5,6 +5,7 @@ import io.restassured.http.ContentType;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
@@ -12,6 +13,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 
 @QuarkusTest
 class EngineHttpTest {
@@ -31,7 +33,8 @@ class EngineHttpTest {
                 .post("/api/session/" + id + "/prompt")
                 .then().statusCode(200)
                 .body("text", containsString("Session Engine"))
-                .body("finish", equalTo("NORMAL"));
+                .body("finish", equalTo("NORMAL"))
+                .body("structured", nullValue());
 
         given()
                 .get("/api/session/" + id)
@@ -173,6 +176,48 @@ class EngineHttpTest {
         given().post("/api/session/" + id + "/compact")
                 .then().statusCode(200)
                 .body("compacted", equalTo(true));
+    }
+
+    @Test
+    void promptWithResponseSchemaReturnsStructuredResult() {
+        String id = given()
+                .contentType(ContentType.JSON)
+                .post("/api/session")
+                .then().statusCode(200)
+                .extract().path("id");
+
+        given()
+                .contentType(ContentType.JSON)
+                .body(Map.of(
+                        "text", "Gib mir ein strukturiertes Ergebnis",
+                        "responseSchema", Map.of(
+                                "type", "object",
+                                "properties", Map.of("answer", Map.of("type", "string")),
+                                "required", List.of("answer"))))
+                .post("/api/session/" + id + "/prompt")
+                .then().statusCode(200)
+                .body("finish", equalTo("NORMAL"))
+                .body("structured.answer", equalTo("structured"));
+    }
+
+    @Test
+    void invalidResponseSchemaIsRejected() {
+        String id = given()
+                .contentType(ContentType.JSON)
+                .post("/api/session")
+                .then().statusCode(200)
+                .extract().path("id");
+
+        given()
+                .contentType(ContentType.JSON)
+                .body(Map.of(
+                        "text", "Gib mir ein strukturiertes Ergebnis",
+                        "responseSchema", Map.of(
+                                "type", "object",
+                                "properties", Map.of("answer", Map.of("type", "unknown")))))
+                .post("/api/session/" + id + "/prompt")
+                .then().statusCode(400)
+                .body("message", containsString("responseSchema"));
     }
 
     @Test

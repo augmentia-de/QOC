@@ -2,6 +2,7 @@ package de.augmentia.oc.engine.runtime;
 
 import de.augmentia.oc.engine.core.contract.provider.*;
 import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
+import de.augmentia.oc.engine.core.contract.tool.ToolOptions;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
 import de.augmentia.oc.engine.core.json.Json;
@@ -76,6 +77,40 @@ class OpenAiRequestEncoderTest {
         String json = new OpenAiRequestEncoder("m").apply(request);
         JsonValue.Obj object = (JsonValue.Obj) Json.parse(json).valueOrNull();
         assertThat(((JsonValue.Str) object.values().get("tool_choice")).value()).isEqualTo("none");
+    }
+
+    @Test
+    void strictToolEncodesRequiredNullableFields() {
+        ToolDefinition strictTool = new ToolDefinition(new ToolName("submit_result"), "submit",
+                Schema.obj(Map.of("answer", Schema.str(), "note", Schema.opt(Schema.str()))),
+                Option.none(),
+                (input, context) -> new ToolOutcome.Ok(ToolResult.of("ok")),
+                ToolOptions.defaults().withStrict(true));
+        ModelRequest request = new ModelRequest(ModelRef.of(ProviderId.create(), ModelId.create()),
+                List.of(), List.of(), List.of(strictTool), Option.none(),
+                GenerationOptions.defaults(), Map.of(), Map.of(), Option.none());
+
+        JsonValue.Obj root = (JsonValue.Obj) Json.parse(
+                new OpenAiRequestEncoder("gpt-4o-mini").apply(request)).valueOrNull();
+        JsonValue.Arr tools = (JsonValue.Arr) root.values().get("tools");
+        JsonValue.Obj function = (JsonValue.Obj) ((JsonValue.Obj) tools.values().get(0))
+                .values().get("function");
+
+        assertThat(((JsonValue.Bool) function.values().get("strict")).value()).isTrue();
+        JsonValue.Obj parameters = (JsonValue.Obj) function.values().get("parameters");
+        assertThat(((JsonValue.Bool) parameters.values().get("additionalProperties")).value()).isFalse();
+
+        JsonValue.Arr required = (JsonValue.Arr) parameters.values().get("required");
+        List<String> requiredNames = required.values().stream()
+                .map(value -> ((JsonValue.Str) value).value()).toList();
+        assertThat(requiredNames).containsExactlyInAnyOrder("answer", "note");
+
+        JsonValue.Obj properties = (JsonValue.Obj) parameters.values().get("properties");
+        JsonValue.Obj note = (JsonValue.Obj) properties.values().get("note");
+        JsonValue.Arr anyOf = (JsonValue.Arr) note.values().get("anyOf");
+        assertThat(anyOf.values()).hasSize(2);
+        assertThat(((JsonValue.Str) ((JsonValue.Obj) anyOf.values().get(1)).values().get("type")).value())
+                .isEqualTo("null");
     }
 
     private static ToolDefinition tool() {
