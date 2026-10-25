@@ -167,9 +167,12 @@ All endpoints live under `/api`. The full surface is defined in
 | `GET` | `/api/mcp/{server}/authorize` | start OAuth |
 | `GET` | `/api/mcp/{server}/callback` | OAuth callback |
 | `GET` | `/api/files?path=...` | list a directory |
-| `GET` | `/api/file?path=...` | read a file |
-| `POST` | `/api/file` | write a file |
-| `DELETE` | `/api/file?path=...` | delete a file |
+| `GET` | `/api/file?path=...` | read a text file |
+| `GET` | `/api/file/download?path=...` | download a file (raw bytes) |
+| `GET` | `/api/dir/download?path=...` | download a directory as ZIP |
+| `POST` | `/api/file` | write a text file |
+| `POST` | `/api/file/upload?path=...` | upload a file (octet-stream) |
+| `DELETE` | `/api/file?path=...` | delete a file or directory (recursive) |
 
 ---
 

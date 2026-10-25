@@ -386,13 +386,29 @@ public class Engine {
     }
 
     public SessionId createSession() {
-        return createSession(null);
+        return createSession(null, null);
     }
 
     public SessionId createSession(String agentName) {
-        Path directory = Path.of(config.workspace()).toAbsolutePath().normalize();
+        return createSession(agentName, null);
+    }
+
+    public SessionId createSession(String agentName, String user) {
+        String normalizedUser = (user == null || user.isBlank()) ? "opencode" : user.trim();
+        Path base = Path.of(config.workspace()).toAbsolutePath().normalize();
+        Path directory = base;
+        if (!"opencode".equalsIgnoreCase(normalizedUser)) {
+            Path candidate = base.resolve(normalizedUser).normalize();
+            if (candidate.startsWith(base) && java.nio.file.Files.isDirectory(candidate)) {
+                directory = candidate;
+            }
+        }
         Location location = new Location(directory, ProjectId.create(), Option.none());
         AgentId selected = resolveAgent(agentName);
+        if (selected == null && (agentName == null || agentName.isBlank())
+                && "guest".equalsIgnoreCase(normalizedUser)) {
+            selected = resolveAgent("guest-reviewer");
+        }
         AgentId agent = selected == null ? agentCatalogue.primaryId() : selected;
         Instant now = clock.now();
         SessionId id = sessionService.create(location, agent, Option.none(), now);
@@ -1034,12 +1050,14 @@ public class Engine {
 
     public List<FileEntry> listFiles(String path) {
         String target = (path == null || path.isBlank()) ? "." : path;
-        Path resolved = fileSystem.realPath(Path.of(config.workspace()).toAbsolutePath().normalize().resolve(target));
+        Path root = workspaceRoot();
+        Path resolved = fileSystem.realPath(resolvePath(target));
         List<FileEntry> entries = new ArrayList<>();
         for (Path child : fileSystem.list(resolved)) {
             try {
                 FileSystem.FileStat stat = fileSystem.stat(child);
                 entries.add(new FileEntry(child.getFileName().toString(), child.toString(),
+                        root.relativize(child).toString().replace('\\', '/'),
                         stat.directory(), stat.size()));
             } catch (Exception ignored) { }
         }
@@ -1047,22 +1065,101 @@ public class Engine {
     }
 
     public String readFile(String path) {
-        if (path == null || path.isBlank()) throw new IllegalArgumentException("path must not be blank");
-        Path resolved = fileSystem.realPath(Path.of(config.workspace()).toAbsolutePath().normalize().resolve(path));
+        Path resolved = fileSystem.realPath(resolvePath(path));
+        if (java.nio.file.Files.isDirectory(resolved)) {
+            throw new IllegalArgumentException("path is a directory: " + path);
+        }
         return fileSystem.readText(resolved);
     }
 
-    public void createFile(String path, String content) {
-        if (path == null || path.isBlank()) throw new IllegalArgumentException("path must not be blank");
-        Path resolved = Path.of(config.workspace()).toAbsolutePath().normalize().resolve(path);
-        fileSystem.write(resolved, (content == null ? "" : content).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    public byte[] readFileBytes(String path) {
+        Path resolved = fileSystem.realPath(resolvePath(path));
+        if (java.nio.file.Files.isDirectory(resolved)) {
+            throw new IllegalArgumentException("path is a directory: " + path);
+        }
+        return fileSystem.read(resolved);
     }
 
-    public void deleteFile(String path) {
+    public void writeFile(String path, byte[] content) {
+        fileSystem.write(resolvePath(path), content == null ? new byte[0] : content);
+    }
+
+    public void createFile(String path, String content) {
+        writeFile(path, (content == null ? "" : content).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    public void deletePath(String path) {
+        Path resolved = resolvePath(path);
+        Path root = workspaceRoot();
+        if (resolved.equals(root)) {
+            throw new IllegalArgumentException("cannot delete the workspace root");
+        }
+        if (!java.nio.file.Files.exists(resolved)) {
+            throw new IllegalArgumentException("path does not exist: " + path);
+        }
+        try {
+            java.nio.file.Files.walkFileTree(resolved, new java.nio.file.SimpleFileVisitor<>() {
+                @Override
+                public java.nio.file.FileVisitResult visitFile(Path file,
+                        java.nio.file.attribute.BasicFileAttributes attrs) throws java.io.IOException {
+                    java.nio.file.Files.delete(file);
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public java.nio.file.FileVisitResult postVisitDirectory(Path dir,
+                        java.io.IOException exc) throws java.io.IOException {
+                    if (exc != null) throw exc;
+                    java.nio.file.Files.delete(dir);
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("cannot delete: " + path, e);
+        }
+    }
+
+    public byte[] zipDirectory(String path) {
+        Path dir = fileSystem.realPath(resolvePath(path));
+        if (!java.nio.file.Files.isDirectory(dir)) {
+            throw new IllegalArgumentException("path is not a directory: " + path);
+        }
+        String prefix = dir.getFileName() == null ? "download" : dir.getFileName().toString();
+        try (java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+             java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(out)) {
+            try (java.util.stream.Stream<Path> walk = java.nio.file.Files.walk(dir)) {
+                for (Path entry : walk.sorted().toList()) {
+                    if (entry.equals(dir)) continue;
+                    String name = prefix + "/" + dir.relativize(entry).toString().replace('\\', '/');
+                    if (java.nio.file.Files.isDirectory(entry)) {
+                        zip.putNextEntry(new java.util.zip.ZipEntry(name + "/"));
+                        zip.closeEntry();
+                    } else {
+                        zip.putNextEntry(new java.util.zip.ZipEntry(name));
+                        java.nio.file.Files.copy(entry, zip);
+                        zip.closeEntry();
+                    }
+                }
+            }
+            zip.finish();
+            return out.toByteArray();
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("cannot zip: " + path, e);
+        }
+    }
+
+    private Path workspaceRoot() {
+        return Path.of(config.workspace()).toAbsolutePath().normalize();
+    }
+
+    private Path resolvePath(String path) {
         if (path == null || path.isBlank()) throw new IllegalArgumentException("path must not be blank");
-        Path resolved = fileSystem.realPath(Path.of(config.workspace()).toAbsolutePath().normalize().resolve(path));
-        try { java.nio.file.Files.delete(resolved); }
-        catch (java.io.IOException e) { throw new RuntimeException("cannot delete: " + path, e); }
+        Path root = workspaceRoot();
+        Path resolved = root.resolve(path).normalize();
+        if (!resolved.startsWith(root)) {
+            throw new IllegalArgumentException("path escapes workspace: " + path);
+        }
+        return resolved;
     }
 
     public Map<String, Object> health() {
@@ -1187,7 +1284,7 @@ public class Engine {
 
     public record PromptResult(String finish, long inputTokens, long outputTokens, String text) {}
 
-    public record FileEntry(String name, String path, boolean directory, long size) {}
+    public record FileEntry(String name, String path, String relative, boolean directory, long size) {}
 
     public record ConfigDto(String provider, String model, String workspace) {}
 

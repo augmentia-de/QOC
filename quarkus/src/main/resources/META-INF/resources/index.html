@@ -50,8 +50,14 @@
   .section h2 { margin:0 0 .5rem; font-size:.85rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; display:flex; justify-content:space-between; align-items:center; }
   .section h2 button { background:none; border:none; color:var(--muted); cursor:pointer; font-size:.9rem; }
   .filetree { flex:1; overflow:auto; padding:.5rem 1rem; font-family: ui-monospace, monospace; font-size:.85rem; }
-  .filetree .entry { cursor:pointer; padding:.15rem 0; display:flex; align-items:center; gap:.3rem; }
+  .filetree .entry { cursor:pointer; padding:.15rem 0; display:flex; align-items:center; gap:.3rem; border-radius:4px; }
   .filetree .entry:hover { color:var(--accent); }
+  .filetree .entry.selected { background:#1f2937; }
+  .filetree .entry .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .filetree .entry .actions { display:flex; gap:.1rem; opacity:0; }
+  .filetree .entry:hover .actions, .filetree .entry.selected .actions { opacity:1; }
+  .filetree .entry .actions button { background:none; border:none; color:var(--muted); cursor:pointer; padding:0 .15rem; font-size:.8rem; line-height:1; }
+  .filetree .entry .actions button:hover { color:var(--accent); }
   .filetree .dir::before { content:"📁 "; }
   .filetree .file::before { content:"📄 "; }
   .filetree .indent { padding-left:1.2rem; }
@@ -84,8 +90,14 @@
     .side { position:fixed; top:0; right:0; height:100vh; width:86vw; max-width:360px; transform:translateX(100%); z-index:60; box-shadow:-2px 0 12px rgba(0,0,0,.5); }
     .side.open { transform:translateX(0); }
     .side .close-side { display:block; }
+    .toggle-side { display:block; }
+    .filetree .entry .actions { opacity:1; }
   }
   .close-side { display:none; position:absolute; top:.4rem; right:.6rem; background:none; border:none; color:var(--muted); font-size:1.2rem; cursor:pointer; }
+  .toggle-side { display:none; position:fixed; right:0; top:50%; transform:translateY(-50%); z-index:65;
+    background:var(--panel); color:var(--fg); border:1px solid var(--border); border-right:none;
+    border-radius:6px 0 0 6px; padding:.7rem .25rem; cursor:pointer; font-size:1rem; line-height:1; }
+  .file-actions { display:flex; gap:.15rem; align-items:center; }
 </style>
 </head>
 <body>
@@ -117,12 +129,21 @@
   <aside class="side" id="side">
     <button class="close-side" id="closeSide" title="Schließen">×</button>
     <section class="section panel" id="panelFiles">
-      <h2>Arbeitsverzeichnis <button id="newFile" title="Neue Datei">+</button> <button id="refreshFiles" title="Aktualisieren">↻</button></h2>
+      <h2>Arbeitsverzeichnis
+        <span class="file-actions">
+          <button id="uploadFile" title="Dateien hochladen">⤒</button>
+          <button id="uploadDir" title="Ordner hochladen">⇪</button>
+          <button id="newFile" title="Neue Datei">+</button>
+          <button id="refreshFiles" title="Aktualisieren">↻</button>
+        </span>
+      </h2>
       <div class="filetree" id="filetree"></div>
+      <input type="file" id="uploadFileInput" multiple hidden>
+      <input type="file" id="uploadDirInput" webkitdirectory multiple hidden>
     </section>
     <div class="resizer" data-i="0"></div>
     <section class="section panel" id="panelViewer">
-      <h2>Datei <button id="deleteFile" title="Löschen">🗑</button></h2>
+      <h2>Datei <span id="currentFileName" style="color:var(--muted);font-weight:normal;text-transform:none;letter-spacing:0"></span></h2>
       <pre class="viewer" id="viewer">Datei auswählen…</pre>
     </section>
     <div class="resizer" data-i="1"></div>
@@ -132,6 +153,7 @@
     </section>
   </aside>
 </main>
+<button class="toggle-side" id="toggleSide" title="Dateien anzeigen" aria-label="Dateien anzeigen">‹</button>
 <div class="backdrop" id="backdrop"></div>
 
 <div class="modal" id="permModal">
@@ -166,12 +188,14 @@ const status = document.getElementById('status');
 const healthDot = document.getElementById('healthDot');
 const filetree = document.getElementById('filetree');
 const viewer = document.getElementById('viewer');
+const currentFileName = document.getElementById('currentFileName');
 const logs = document.getElementById('logs');
 
 let sessionId = null;
 let es = null;
 let currentAssistant = null;
 let currentFile = null;
+let currentDir = '.';
 let pendingPermission = null;
 const sessionsSel = document.getElementById('sessions');
 const sessionTitle = document.getElementById('sessionTitle');
@@ -297,21 +321,30 @@ function initSideResizer() {
 function openSide() {
   const side = document.getElementById('side');
   const bd = document.getElementById('backdrop');
+  const toggle = document.getElementById('toggleSide');
   if (side) side.classList.add('open');
   if (bd) bd.classList.add('open');
+  if (toggle) { toggle.textContent = '›'; toggle.title = 'Dateien ausblenden'; toggle.setAttribute('aria-label', 'Dateien ausblenden'); }
 }
 function closeSide() {
   const side = document.getElementById('side');
   const bd = document.getElementById('backdrop');
+  const toggle = document.getElementById('toggleSide');
   if (side) side.classList.remove('open');
   if (bd) bd.classList.remove('open');
+  if (toggle) { toggle.textContent = '‹'; toggle.title = 'Dateien anzeigen'; toggle.setAttribute('aria-label', 'Dateien anzeigen'); }
 }
 
 function initMobileSide() {
   const bd = document.getElementById('backdrop');
   const closeBtn = document.getElementById('closeSide');
+  const toggle = document.getElementById('toggleSide');
   if (bd) bd.addEventListener('click', closeSide);
   if (closeBtn) closeBtn.addEventListener('click', closeSide);
+  if (toggle) toggle.addEventListener('click', () => {
+    const side = document.getElementById('side');
+    if (side && side.classList.contains('open')) closeSide(); else openSide();
+  });
   // Touch right edge to reveal
   let startX = 0;
   document.addEventListener('touchstart', (e) => {
@@ -535,7 +568,7 @@ function connectSSE() {
           break;
         case 'Finished':
           logEvent('Fertig: ' + ev.reason + ' (' + (ev.usage?ev.usage.input:0) + '/' + (ev.usage?ev.usage.output:0) + ')');
-          loadFiles('.');
+          loadFiles(currentDir);
           break;
         case 'ProviderFailed':
           addMessage('error', 'Provider-Fehler: ' + ev.message);
@@ -573,7 +606,7 @@ async function send() {
     });
     if (!res.ok) {
       const err = await res.json().catch(()=>({}));
-      addMessage('error', 'Fehler: ' + (err.error || res.status));
+      addMessage('error', 'Fehler: ' + (err.message || err.error || res.status));
     } else {
       const data = await res.json();
       if (data.text && !currentAssistant) addMessage('assistant', data.text);
@@ -586,7 +619,7 @@ async function send() {
     sendBtn.disabled = false;
     status.textContent = 'bereit';
     loadSessions();
-    loadFiles('.');
+    loadFiles(currentDir);
   }
 }
 
@@ -641,19 +674,76 @@ function fill(id, items) {
   items.forEach(it => { const o=document.createElement('option'); o.value=it.value; o.textContent=it.label; sel.appendChild(o); });
 }
 
+function joinPath(dir, name) {
+  if (!name) return dir || '.';
+  if (!dir || dir === '.') return name;
+  return dir.replace(/\/+$/, '') + '/' + (name.startsWith('/') ? name.slice(1) : name);
+}
+
+function parentPath(path) {
+  if (!path || path === '.' || path === '/') return '.';
+  const norm = path.replace(/\/+$/, '');
+  const idx = norm.lastIndexOf('/');
+  if (idx < 0) return '.';
+  if (idx === 0) return '/';
+  return norm.slice(0, idx);
+}
+
+function fileName(path) {
+  if (!path) return '';
+  const norm = path.replace(/\/+$/, '');
+  const idx = norm.lastIndexOf('/');
+  return idx < 0 ? norm : norm.slice(idx + 1);
+}
+
 async function loadFiles(path) {
+  const target = path || '.';
   try {
-    const res = await fetch('/api/files?path=' + encodeURIComponent(path||'.'));
+    const res = await fetch('/api/files?path=' + encodeURIComponent(target));
     const data = await res.json();
+    if (!res.ok) throw new Error(data.message || data.error || ('HTTP ' + res.status));
     filetree.innerHTML = '';
+    currentDir = target;
+    if (target !== '.' && target !== '/') {
+      const up = document.createElement('div');
+      up.className = 'entry dir';
+      const upName = document.createElement('span');
+      upName.className = 'name';
+      upName.textContent = '..';
+      upName.onclick = () => loadFiles(parentPath(target));
+      up.appendChild(upName);
+      filetree.appendChild(up);
+    }
     (data.data||[]).forEach(e => {
-      const div = document.createElement('div');
-      div.className = 'entry ' + (e.directory ? 'dir' : 'file');
-      div.textContent = e.name;
-      div.onclick = () => e.directory ? loadFiles(e.path) : viewFile(e.path);
-      filetree.appendChild(div);
+      const row = document.createElement('div');
+      row.className = 'entry ' + (e.directory ? 'dir' : 'file');
+      row.dataset.path = e.relative;
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = e.name;
+      name.onclick = () => e.directory ? loadFiles(e.relative) : viewFile(e.relative);
+      row.appendChild(name);
+
+      const actions = document.createElement('span');
+      actions.className = 'actions';
+      const dl = document.createElement('button');
+      dl.textContent = '⬇';
+      dl.title = e.directory ? 'Ordner als ZIP herunterladen' : 'Datei herunterladen';
+      dl.onclick = (ev) => { ev.stopPropagation(); e.directory ? downloadDirectory(e.relative) : downloadFile(e.relative); };
+      const del = document.createElement('button');
+      del.textContent = '🗑';
+      del.title = e.directory ? 'Ordner löschen' : 'Datei löschen';
+      del.onclick = (ev) => { ev.stopPropagation(); deletePath(e.relative, e.directory); };
+      actions.appendChild(dl);
+      actions.appendChild(del);
+      row.appendChild(actions);
+
+      if (currentFile === e.relative) row.classList.add('selected');
+      filetree.appendChild(row);
     });
-    if (!(data.data||[]).length) filetree.textContent = '(leer)';
+    if (!(data.data||[]).length) {
+      filetree.appendChild(document.createTextNode('(leer)'));
+    }
   } catch (e) { filetree.textContent = 'Fehler: ' + e.message; }
 }
 
@@ -661,9 +751,18 @@ async function viewFile(path) {
   try {
     const res = await fetch('/api/file?path=' + encodeURIComponent(path));
     const data = await res.json();
+    if (!res.ok) throw new Error(data.message || data.error || ('HTTP ' + res.status));
     viewer.textContent = data.data ? data.data.content : JSON.stringify(data);
     currentFile = path;
-  } catch (e) { viewer.textContent = 'Fehler: ' + e.message; }
+    currentFileName.textContent = fileName(path);
+    Array.from(filetree.querySelectorAll('.entry')).forEach(row => {
+      row.classList.toggle('selected', row.dataset.path === path);
+    });
+  } catch (e) {
+    viewer.textContent = 'Fehler: ' + e.message;
+    currentFile = null;
+    currentFileName.textContent = '';
+  }
 }
 
 async function createFile() {
@@ -671,25 +770,99 @@ async function createFile() {
   if (!name) return;
   const content = prompt('Inhalt (leer = leer):') || '';
   try {
-    await fetch('/api/file', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path:name, content})});
-    await loadFiles('.');
+    const res = await fetch('/api/file', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path: joinPath(currentDir, name), content})});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || ('HTTP ' + res.status));
+    await loadFiles(currentDir);
   } catch (e) { alert('Fehler: ' + e.message); }
 }
 
-async function deleteFile() {
-  if (!currentFile) { alert('Keine Datei ausgewählt'); return; }
-  if (!confirm('Löschen: ' + currentFile + '?')) return;
+function triggerDownload(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name || 'download';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+async function downloadFile(path) {
   try {
-    await fetch('/api/file?path=' + encodeURIComponent(currentFile), {method:'DELETE'});
-    viewer.textContent = 'Gelöscht.';
-    currentFile = null;
-    await loadFiles('.');
-  } catch (e) { alert('Fehler: ' + e.message); }
+    const res = await fetch('/api/file/download?path=' + encodeURIComponent(path));
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || ('HTTP ' + res.status));
+    }
+    triggerDownload(await res.blob(), fileName(path));
+  } catch (e) { alert('Download fehlgeschlagen: ' + e.message); }
+}
+
+async function downloadDirectory(path) {
+  try {
+    const res = await fetch('/api/dir/download?path=' + encodeURIComponent(path));
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || err.error || ('HTTP ' + res.status));
+    }
+    triggerDownload(await res.blob(), fileName(path) + '.zip');
+  } catch (e) { alert('Download fehlgeschlagen: ' + e.message); }
+}
+
+async function deletePath(path, isDir) {
+  const label = (isDir ? 'Ordner (rekursiv)' : 'Datei') + ': ' + path;
+  if (!confirm('Löschen?\n\n' + label)) return;
+  try {
+    const res = await fetch('/api/file?path=' + encodeURIComponent(path), {method:'DELETE'});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || ('HTTP ' + res.status));
+    if (currentFile === path || (isDir && currentFile && currentFile.startsWith(path + '/'))) {
+      currentFile = null;
+      currentFileName.textContent = '';
+      viewer.textContent = 'Datei auswählen…';
+    }
+    await loadFiles(currentDir);
+  } catch (e) { alert('Löschen fehlgeschlagen: ' + e.message); }
+}
+
+async function uploadFiles(files) {
+  if (!files || !files.length) return;
+  let failed = 0;
+  for (const file of files) {
+    const rel = file.webkitRelativePath || file.name;
+    const target = joinPath(currentDir, rel);
+    try {
+      const res = await fetch('/api/file/upload?path=' + encodeURIComponent(target), {
+        method:'POST', headers:{'Content-Type':'application/octet-stream'}, body:file
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || ('HTTP ' + res.status));
+      }
+    } catch (e) {
+      failed++;
+      logEvent('Upload fehlgeschlagen (' + target + '): ' + e.message);
+    }
+  }
+  await loadFiles(currentDir);
+  if (failed) alert(failed + ' Datei(en) konnten nicht hochgeladen werden.');
 }
 
 document.getElementById('newFile').onclick = createFile;
-document.getElementById('deleteFile').onclick = deleteFile;
-document.getElementById('refreshFiles').onclick = () => loadFiles('.');
+document.getElementById('refreshFiles').onclick = () => loadFiles(currentDir);
+const uploadFileInput = document.getElementById('uploadFileInput');
+const uploadDirInput = document.getElementById('uploadDirInput');
+document.getElementById('uploadFile').onclick = () => uploadFileInput.click();
+document.getElementById('uploadDir').onclick = () => uploadDirInput.click();
+uploadFileInput.addEventListener('change', async () => {
+  await uploadFiles(uploadFileInput.files);
+  uploadFileInput.value = '';
+});
+uploadDirInput.addEventListener('change', async () => {
+  await uploadFiles(uploadDirInput.files);
+  uploadDirInput.value = '';
+});
 document.getElementById('newSession').onclick = () => {
   const agent = document.getElementById('agent').value;
   newSession(agent || null);

@@ -30,8 +30,9 @@ public class HttpApi {
 
     @POST
     @Path("/session")
-    public Response createSession(CreateSessionRequest request) {
-        SessionId id = engine.createSession(request == null ? null : request.agent());
+    public Response createSession(CreateSessionRequest request,
+                                 @HeaderParam("X-QOC-User") String user) {
+        SessionId id = engine.createSession(request == null ? null : request.agent(), user);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("id", id.value());
         engine.session(id).ifPresent(info -> body.put("data", dto(info)));
@@ -341,7 +342,7 @@ public class HttpApi {
     public Response files(@QueryParam("path") String path) {
         try {
             return Response.ok(Map.of("data", engine.listFiles(path))).build();
-        } catch (IllegalArgumentException e) {
+        } catch (RuntimeException e) {
             return badRequest(e.getMessage());
         }
     }
@@ -352,7 +353,36 @@ public class HttpApi {
         try {
             String content = engine.readFile(path);
             return Response.ok(Map.of("data", Map.of("path", path, "content", content))).build();
-        } catch (IllegalArgumentException e) {
+        } catch (RuntimeException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @GET
+    @Path("/file/download")
+    @Produces(MediaType.APPLICATION_OCTET_STREAM)
+    public Response downloadFile(@QueryParam("path") String path) {
+        try {
+            byte[] content = engine.readFileBytes(path);
+            return Response.ok(content)
+                    .header("Content-Disposition", attachment(path))
+                    .build();
+        } catch (RuntimeException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @GET
+    @Path("/dir/download")
+    @Produces("application/zip")
+    public Response downloadDirectory(@QueryParam("path") String path) {
+        try {
+            byte[] zip = engine.zipDirectory(path);
+            return Response.ok(zip)
+                    .header("Content-Disposition",
+                            "attachment; filename=\"" + fileName(path) + ".zip\"")
+                    .build();
+        } catch (RuntimeException e) {
             return badRequest(e.getMessage());
         }
     }
@@ -474,15 +504,46 @@ public class HttpApi {
         }
     }
 
+    @POST
+    @Path("/file/upload")
+    @Consumes(MediaType.APPLICATION_OCTET_STREAM)
+    public Response uploadFile(@QueryParam("path") String path, java.io.InputStream body) {
+        if (path == null || path.isBlank()) {
+            return badRequest("path must not be blank");
+        }
+        try {
+            engine.writeFile(path, body == null ? new byte[0] : body.readAllBytes());
+            return Response.ok(Map.of("ok", true)).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        } catch (java.io.IOException e) {
+            return badRequest("cannot read upload: " + e.getMessage());
+        }
+    }
+
     @DELETE
     @Path("/file")
     public Response deleteFile(@QueryParam("path") String path) {
         try {
-            engine.deleteFile(path);
+            engine.deletePath(path);
             return Response.ok(Map.of("ok", true)).build();
         } catch (RuntimeException e) {
             return badRequest(e.getMessage());
         }
+    }
+
+    private static String fileName(String path) {
+        try {
+            java.nio.file.Path name = java.nio.file.Path.of(path == null ? "" : path).getFileName();
+            return name == null ? "download"
+                    : name.toString().replace("\"", "").replace("\r", "").replace("\n", "");
+        } catch (RuntimeException e) {
+            return "download";
+        }
+    }
+
+    private static String attachment(String path) {
+        return "attachment; filename=\"" + fileName(path) + "\"";
     }
 
     @GET
@@ -505,7 +566,10 @@ public class HttpApi {
 
     private static Response badRequest(String message) {
         return Response.status(Response.Status.BAD_REQUEST)
-                .entity(Map.of("_tag", "InvalidRequestError", "message", message)).build();
+                .type(MediaType.APPLICATION_JSON)
+                .entity(Map.of("_tag", "InvalidRequestError",
+                        "message", message == null ? "invalid request" : message))
+                .build();
     }
 
     private static SessionDto dto(SessionInfo session) {
