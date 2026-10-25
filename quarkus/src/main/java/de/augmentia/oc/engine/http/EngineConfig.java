@@ -68,6 +68,13 @@ public class EngineConfig {
 
     @PostConstruct
     void load() {
+        agents = new ArrayList<>();
+        mcpServers = new ArrayList<>();
+        skillPaths = new ArrayList<>();
+        skillAllow = new ArrayList<>();
+        skillDeny = new ArrayList<>();
+        skillMax = 0;
+        entries.clear();
         workspace = workspaceProperty;
         provider = providerProperty;
         model = modelProperty;
@@ -151,6 +158,10 @@ public class EngineConfig {
         entries.add(new ConfigEntry("provider.url", url, "config"));
         entries.add(new ConfigEntry("workspace", workspace, "config"));
         entries.add(new ConfigEntry("auth.password", password == null || password.isBlank() ? "" : "***", "config"));
+    }
+
+    public void reload() {
+        load();
     }
 
     public String provider() { return provider; }

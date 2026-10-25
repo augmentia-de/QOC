@@ -112,6 +112,7 @@
   <button id="deleteSession" class="danger">Löschen</button>
   <button id="interrupt" class="danger">Interrupt</button>
   <button id="compact">Compact</button>
+  <button id="reloadConfig">Reload Config</button>
   <button id="revert">Revert</button>
   <label><input type="checkbox" id="showDetails"> Details</label>
   <span class="status"><span class="dot" id="healthDot"></span><span id="status">bereit</span></span>
@@ -872,6 +873,15 @@ document.getElementById('interrupt').onclick = () => {
   if (sessionId) fetch('/api/session/' + sessionId + '/interrupt', {method:'POST'});
 };
 document.getElementById('compact').onclick = () => compactNow();
+document.getElementById('reloadConfig').onclick = async () => {
+  try {
+    const r = await fetch('/api/config/reload', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { logEvent('Config reload failed: ' + (data.message || r.status)); return; }
+    logEvent('Config reloaded');
+    await loadSelectors();
+  } catch (e) { logEvent('Config reload error: ' + e.message); }
+};
 document.getElementById('revert').onclick = () => revertTurn();
 
 document.getElementById('permOnce').onclick = () => replyPermission('ONCE');

@@ -483,6 +483,20 @@ public class HttpApi {
         return engine.configEntries();
     }
 
+    @POST
+    @Path("/config/reload")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response reloadConfig(@HeaderParam("X-QOC-User") String user) {
+        String normalized = (user == null || user.isBlank()) ? "opencode" : user.trim();
+        if (!"opencode".equalsIgnoreCase(normalized)) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(Map.of("_tag", "Forbidden", "message", "config reload requires the opencode user"))
+                    .build();
+        }
+        engine.reloadConfig();
+        return Response.ok(Map.of("status", "reloaded")).build();
+    }
+
     @GET
     @Path("/health")
     public Response health() {

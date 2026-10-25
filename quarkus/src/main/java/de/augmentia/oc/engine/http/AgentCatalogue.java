@@ -21,6 +21,8 @@ public class AgentCatalogue {
 
     @PostConstruct
     void load() {
+        this.agents.clear();
+        this.configs.clear();
         List<EngineConfig.AgentConfig> agents = config.agents();
         if (agents.isEmpty()) {
             agents = List.of(
@@ -32,6 +34,10 @@ public class AgentCatalogue {
             this.agents.add(new Agent(id, agent.name(), agent.hidden()));
             configs.put(agent.name().toLowerCase(), agent);
         }
+    }
+
+    public void reload() {
+        load();
     }
 
     public AgentId primaryId() {

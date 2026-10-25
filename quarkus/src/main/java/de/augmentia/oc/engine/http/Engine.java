@@ -175,7 +175,14 @@ public class Engine {
     private TitleGenerator titleGenerator;
     private Step step;
     private ToolSnapshot toolSnapshot;
-    private ModelRef modelRef;    private NioFileSystem fileSystem;
+    private ToolRegistry registry;
+    private InstructionLoader instructionLoader = InstructionLoader.none();
+    private PermissionGate permissionGate;
+    private ToolOutputStore toolOutput;
+    private ToolRuntime toolRuntime;
+    private Hooks toolHooks = noopHooks();
+    private ModelRef modelRef;
+    private NioFileSystem fileSystem;
     private InstructionStore instructions;
     private CompactionService compaction;
     private McpServerManager mcp;
@@ -204,7 +211,7 @@ public class Engine {
         ClaimStore claims = sqlite ? new SqliteClaims(dataSource) : new SqlClaims(dataSource);
         ApprovalStore approvals = sqlite ? new SqliteApprovals(dataSource) : new SqlApprovals(dataSource);
         instructions = sqlite ? new SqliteInstructions(dataSource) : new SqlInstructions(dataSource);
-        ToolOutputStore toolOutput = sqlite
+        toolOutput = sqlite
                 ? new SqliteToolOutput(dataSource, Path.of("tool-output"))
                 : new SqlToolOutput(dataSource, Path.of("tool-output"));
         SessionWake wake = session -> {
@@ -240,7 +247,7 @@ public class Engine {
         snapshots = sqlite ? new SqliteSnapshots(dataSource, fs) : new SqlSnapshots(dataSource, fs);
         revert = new Revert(journal, Option.some(snapshots), Option.some(instructions));
         FileAccess access = new FileAccess(fs, workspacePath, workspacePath);
-        PermissionGate permissionGate = request -> {
+        permissionGate = request -> {
             SessionInfo info = sessions.info(request.sessionId()).orElse(null);
             List<Rule> sessionRules = info == null ? List.of() : info.permissions();
             Option<AgentId> agent = info == null ? Option.none() : Option.some(info.agent());
@@ -256,7 +263,7 @@ public class Engine {
             pspan.end();
             }
         };
-        ToolRegistry registry = new ToolRegistry();
+        registry = new ToolRegistry();
         registry.register(ReadTool.definition(fs, access, permissionGate));
         registry.register(WriteTool.definition(fs, access, permissionGate));
         registry.register(EditTool.definition(fs, access, permissionGate));
@@ -334,9 +341,9 @@ public class Engine {
         registry.register(McpResourceTools.list(mcp));
         registry.register(McpResourceTools.read(mcp));
         toolSnapshot = registry.snapshot(allowAll);
-        ToolRuntime toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
-                permissionGate, noopHooks(), toolOutput);
-        InstructionLoader instructionLoader = instructionsEnabled
+        toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
+                permissionGate, toolHooks, toolOutput);
+        instructionLoader = instructionsEnabled
                 ? new NioInstructionLoader(Path.of(System.getProperty("user.home", "."),
                         ".config", "opencode"))
                 : InstructionLoader.none();
@@ -952,6 +959,37 @@ public class Engine {
         if (thread == null) return false;
         thread.interrupt();
         return true;
+    }
+
+    public synchronized void reloadConfig() {
+        config.reload();
+        agentCatalogue.reload();
+        Path workspacePath = Path.of(config.workspace()).toAbsolutePath().normalize();
+        List<Path> skillRoots = new ArrayList<>();
+        skillRoots.add(workspacePath.resolve("skill"));
+        skillRoots.add(workspacePath.resolve("skills"));
+        skillRoots.add(workspacePath.resolve(".opencode").resolve("skills"));
+        for (String configured : config.skillPaths()) {
+            Path path = Path.of(configured);
+            skillRoots.add(path.isAbsolute() ? path : workspacePath.resolve(path));
+        }
+        SkillCatalog newSkillCatalog = config.skillsEnabled()
+                ? SkillCatalog.of(new SkillScanner(fileSystem).loadRoots(skillRoots, new SkillParser()),
+                        config.skillAllow(), config.skillDeny(), config.skillMax())
+                : SkillCatalog.empty();
+        skillCatalog = newSkillCatalog;
+        java.util.function.Function<AgentId, List<Rule>> skillRules = agentId ->
+                agentProfile(agentId, agentCatalogue.nameOf(agentId),
+                        agentCatalogue.config(agentCatalogue.nameOf(agentId))).permissions();
+        registry.register(SkillTool.definition(skillCatalog, skillRules));
+        registry.register(SkillTool.listDefinition(skillCatalog, skillRules));
+        allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
+        toolSnapshot = registry.snapshot(allowAll);
+        toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
+                permissionGate, toolHooks, toolOutput);
+        contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader);
+        LOG.infof("reloaded config: %d agent(s), %d skill(s)",
+                agentCatalogue.list().size(), skillCatalog.all().size());
     }
 
     public List<AgentCatalogue.AgentDto> agents() {
