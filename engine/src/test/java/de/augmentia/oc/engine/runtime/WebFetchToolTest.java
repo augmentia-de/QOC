@@ -76,6 +76,18 @@ class WebFetchToolTest {
     }
 
     @Test
+    void rejectsLoopbackAndMetadataDestinations() {
+        for (String url : List.of("http://127.0.0.1/", "http://localhost/",
+                "http://169.254.169.254/latest/meta-data/", "http://10.0.0.1/")) {
+            ToolOutcome outcome = execute(new FakeTransport(200, "text/plain", "x"),
+                    Map.of("url", JsonValue.of(url)));
+            assertThat(outcome).isInstanceOf(ToolOutcome.Failed.class);
+            assertThat(((ToolOutcome.Failed) outcome).error().message())
+                    .contains("destination is not allowed");
+        }
+    }
+
+    @Test
     void reportsHttpErrors() {
         ToolOutcome outcome = execute(new FakeTransport(404, "text/plain", "missing"),
                 Map.of("url", JsonValue.of("https://example.com/missing")));

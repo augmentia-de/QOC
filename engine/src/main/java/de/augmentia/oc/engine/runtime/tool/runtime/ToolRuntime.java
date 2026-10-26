@@ -76,7 +76,16 @@ public final class ToolRuntime {
                 decode(output, definition.outputSchema().orElseThrow(), "output");
             }
 
-            ToolResult hooked = hooks.afterToolCall(context, result);
+            ToolResult hooked;
+            try {
+                hooked = hooks.afterToolCall(context, result);
+            } catch (RuntimeException hookFailure) {
+                // Post-hooks are observability/redaction aids: a broken hook
+                // must not turn a successful tool call into a failure.
+                LOG.warning("afterToolCall hook failed for " + call.name() + ": "
+                        + hookFailure.getMessage());
+                hooked = result;
+            }
             ToolResult normalized = normalize(hooked);
             return new ToolOutcome.Ok(bound(normalized, call, context));
         } catch (PermissionDenied denied) {

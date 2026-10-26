@@ -211,6 +211,30 @@ class ToolRuntimeTest {
         assertThat(result.output().orElseThrow()).isEqualTo(JsonValue.of(Map.of("text", JsonValue.of("rewritten"))));
     }
 
+    @Test
+    void failingPostHookDoesNotFailTheToolCall() {
+        ToolDefinition definition = definition((input, context) -> new ToolOutcome.Ok(
+                ToolResult.of("ok")), inputSchema());
+        Hooks hooks = new Hooks() {
+            @Override
+            public ToolCall beforeToolCall(ToolContext context, ToolCall call) {
+                return call;
+            }
+
+            @Override
+            public ToolResult afterToolCall(ToolContext context, ToolResult result) {
+                throw new IllegalStateException("hook bug");
+            }
+        };
+
+        ToolOutcome outcome = runtime(definition, noopGate(), hooks)
+                .execute(call(Map.of("text", JsonValue.of("x"))), context());
+
+        assertThat(outcome).isInstanceOf(ToolOutcome.Ok.class);
+        assertThat(((ToolOutcome.Ok) outcome).result().content().getFirst())
+                .isEqualTo(new ToolContent.TextItem("ok"));
+    }
+
     private static ToolRuntime runtime(ToolDefinition definition, PermissionGate gate, Hooks hooks) {
         return new ToolRuntime(snapshot(definition), ToolAuthorizer.defaultAuthorizer(), gate, hooks,
                 new InMemoryToolOutput());

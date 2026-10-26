@@ -69,6 +69,7 @@ public final class WebFetchTool {
             if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
                 return failure("URL must use http:// or https://");
             }
+            validateDestination(uri);
             String format = JsonArgs.string(value, "format");
             format = format == null || format.isBlank()
                     ? "markdown" : format.toLowerCase(Locale.ROOT);
@@ -104,6 +105,42 @@ public final class WebFetchTool {
             return failure(e.getMessage());
         } catch (RuntimeException e) {
             return failure("unable to fetch " + raw + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Blocks literal loopback, link-local, private and metadata destinations.
+     * This is a first line of defence, not a DNS-rebinding-proof sandbox.
+     */
+    private static void validateDestination(URI uri) {
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) {
+            throw new IllegalArgumentException("URL must contain a host");
+        }
+        String normalized = host.toLowerCase(Locale.ROOT);
+        if (normalized.equals("localhost") || normalized.equals("metadata")
+                || normalized.equals("metadata.google.internal")) {
+            throw new IllegalArgumentException("destination is not allowed");
+        }
+        if (normalized.startsWith("127.") || normalized.startsWith("10.")
+                || normalized.startsWith("192.168.") || normalized.startsWith("169.254.")
+                || normalized.startsWith("0.") || normalized.equals("::1")
+                || normalized.startsWith("fe80:") || normalized.startsWith("fc")
+                || normalized.startsWith("fd")) {
+            throw new IllegalArgumentException("destination is not allowed");
+        }
+        if (normalized.startsWith("172.")) {
+            String[] parts = normalized.split("\\.");
+            if (parts.length > 1) {
+                try {
+                    int second = Integer.parseInt(parts[1]);
+                    if (second >= 16 && second <= 31) {
+                        throw new IllegalArgumentException("destination is not allowed");
+                    }
+                } catch (NumberFormatException ignored) {
+                    // Not an IPv4 literal; leave it to normal URL handling.
+                }
+            }
         }
     }
 
