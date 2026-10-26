@@ -34,6 +34,7 @@ public class WebApprovalSource implements ApprovalSource {
 
     private static final long TIMEOUT_SECONDS = 300;
     private static final String PENDING = "PENDING";
+    private static final String ORPHANED = "ORPHANED";
     private static final String DECIDED = "DECIDED";
     private static final String EXPIRED = "EXPIRED";
 
@@ -89,11 +90,12 @@ public class WebApprovalSource implements ApprovalSource {
     public List<PendingApproval> pending(String sessionId) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(
-                     "select id, session_id, action, context, created_at, deadline_at " +
-                             "from pending_approval where session_id = ? and state = ? " +
-                             "order by created_at")) {
+                     "select id, session_id, action, context, created_at, deadline_at, state " +
+                             "from pending_approval where session_id = ? " +
+                             "and state in (?, ?) order by created_at")) {
             statement.setString(1, sessionId);
             statement.setString(2, PENDING);
+            statement.setString(3, ORPHANED);
             try (ResultSet resultSet = statement.executeQuery()) {
                 List<PendingApproval> rows = new ArrayList<>();
                 while (resultSet.next()) {
@@ -103,7 +105,8 @@ public class WebApprovalSource implements ApprovalSource {
                             resultSet.getString("action"),
                             resultSet.getString("context"),
                             instant(resultSet, "created_at"),
-                            instant(resultSet, "deadline_at")));
+                            instant(resultSet, "deadline_at"),
+                            resultSet.getString("state")));
                 }
                 return List.copyOf(rows);
             }
@@ -139,13 +142,27 @@ public class WebApprovalSource implements ApprovalSource {
         updateState(requestId, EXPIRED);
     }
 
+    /** Marks approvals from a previous process as orphaned, not silently lost. */
+    public int recoverOrphans() {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "update pending_approval set state = ? where state = ?")) {
+            statement.setString(1, ORPHANED);
+            statement.setString(2, PENDING);
+            return statement.executeUpdate();
+        } catch (SQLException e) {
+            return 0;
+        }
+    }
+
     private boolean updateState(String requestId, String state) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(
-                     "update pending_approval set state = ? where id = ? and state = ?")) {
+                     "update pending_approval set state = ? where id = ? and state in (?, ?)")) {
             statement.setString(1, state);
             statement.setString(2, requestId);
             statement.setString(3, PENDING);
+            statement.setString(4, ORPHANED);
             return statement.executeUpdate() > 0;
         } catch (SQLException e) {
             return false;
@@ -164,5 +181,6 @@ public class WebApprovalSource implements ApprovalSource {
     }
 
     public record PendingApproval(String id, String sessionId, String action,
-                                  String context, Instant createdAt, Instant deadline) {}
+                                  String context, Instant createdAt, Instant deadline,
+                                  String state) {}
 }

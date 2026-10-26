@@ -28,6 +28,7 @@ import de.augmentia.oc.engine.runtime.permission.engine.ReplyOutcome;
 import de.augmentia.oc.engine.core.model.SessionEvent;
 import de.augmentia.oc.engine.core.port.store.ConversationStore;
 import de.augmentia.oc.engine.runtime.tool.fs.FileAccess;
+import de.augmentia.oc.engine.adapter.fs.CachedFileSystem;
 import de.augmentia.oc.engine.adapter.fs.NioFileSystem;
 import de.augmentia.oc.engine.adapter.fs.NioInstructionLoader;
 import de.augmentia.oc.engine.adapter.net.JdkHttpTransport;
@@ -76,6 +77,7 @@ import de.augmentia.oc.engine.core.port.runtime.SessionWake;
 import de.augmentia.oc.engine.runtime.context.AgentProfile;
 import de.augmentia.oc.engine.runtime.context.ContextBuilder;
 import de.augmentia.oc.engine.runtime.context.TitleGenerator;
+import de.augmentia.oc.engine.runtime.command.CommandLoader;
 import de.augmentia.oc.engine.runtime.compaction.Compaction;
 import de.augmentia.oc.engine.runtime.compaction.CompactionService;
 import de.augmentia.oc.engine.runtime.session.revert.Revert;
@@ -123,6 +125,9 @@ public class Engine {
 
     @Inject
     DataSource dataSource;
+
+    @Inject
+    EngineMetrics metrics;
 
     @Inject
     de.augmentia.oc.engine.core.contract.provider.ProviderAdapter provider;
@@ -179,6 +184,7 @@ public class Engine {
     private SessionStore sessions;
     private SessionService sessionService;
     private ContextBuilder contextBuilder;
+    private CommandLoader commandLoader;
     private SkillCatalog skillCatalog = SkillCatalog.empty();
     private TitleGenerator titleGenerator;
     private Step step;
@@ -190,7 +196,7 @@ public class Engine {
     private ToolRuntime toolRuntime;
     private Hooks toolHooks = noopHooks();
     private ModelRef modelRef;
-    private NioFileSystem fileSystem;
+    private FileSystem fileSystem;
     private InstructionStore instructions;
     private CompactionService compaction;
     private McpServerManager mcp;
@@ -252,10 +258,19 @@ public class Engine {
         CredentialStore credentialStore = sqlite ? new SqliteCredentials(dataSource) : new SqlCredentials(dataSource);
         permissionEngine = new PermissionEngine(Option.some(permissionApprovals),
                 Option.some(approvalSource), Option.some((PolicySource) () -> List.of()), Option.none());
+        if (approvalSource != null) {
+            int orphaned = approvalSource.recoverOrphans();
+            if (orphaned > 0) {
+                LOG.warnf("recovered %d orphaned approval request(s)", orphaned);
+            }
+        }
 
         Path workspacePath = Path.of(config.workspace()).toAbsolutePath().normalize();
-        fileSystem = new NioFileSystem(workspacePath);
-        NioFileSystem fs = fileSystem;
+        commandLoader = new CommandLoader(workspacePath,
+                Path.of(System.getProperty("user.home", "."), ".config", "opencode"));
+        NioFileSystem nio = new NioFileSystem(workspacePath);
+        fileSystem = new CachedFileSystem(nio);
+        FileSystem fs = fileSystem;
         snapshots = sqlite ? new SqliteSnapshots(dataSource, fs) : new SqlSnapshots(dataSource, fs);
         revert = new Revert(journal, Option.some(snapshots), Option.some(instructions));
         FileAccess access = new FileAccess(fs, workspacePath, workspacePath);
@@ -512,9 +527,11 @@ public class Engine {
                     durable.action(),
                     List.of(durable.context() == null ? durable.action() : durable.context()),
                     List.of(),
-                    Map.of("durable", true),
+                    Map.of("durable", true, "state", durable.state()),
                     null,
-                    "pending approval from an earlier process"));
+                    "ORPHANED".equals(durable.state())
+                            ? "orphaned approval from an earlier process"
+                            : "pending approval from an earlier process"));
         }
         return List.copyOf(merged);
     }
@@ -993,6 +1010,17 @@ public class Engine {
         return title;
     }
 
+    public PromptResult command(SessionId id, String name, String arguments) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("command name must not be blank");
+        }
+        String args = arguments == null ? "" : arguments;
+        Option<String> expanded = commandLoader == null ? Option.none()
+                : commandLoader.expand(name, args);
+        return prompt(id, expanded.orElse("/" + name + (args.isBlank() ? "" : " " + args)),
+                Option.none());
+    }
+
     public PromptResult prompt(SessionId id, String text) {
         return prompt(id, text, Option.none());
     }
@@ -1004,13 +1032,16 @@ public class Engine {
         if (found.isEmpty()) throw new IllegalArgumentException("unknown session: " + id);
 
         long before = journal.history(id.value(), Seq.zero()).size();
+        metrics.promptStarted();
         if (!promptSlots.tryAcquire()) {
+            metrics.promptBusy();
             LOG.warnf("prompt rejected: engine saturated session=%s", id.value());
             return PromptResult.busy("engine is saturated; retry later");
         }
         Thread existing = running.putIfAbsent(id, Thread.currentThread());
         if (existing != null) {
             promptSlots.release();
+            metrics.promptBusy();
             LOG.infof("prompt busy session=%s", id.value());
             return PromptResult.busy("session is currently running");
         }
@@ -1025,7 +1056,16 @@ public class Engine {
                 span.setAttribute("finish", r.finish());
                 span.setAttribute("usage.input_tokens", (long) r.inputTokens());
                 span.setAttribute("usage.output_tokens", (long) r.outputTokens());
-                LOG.infof("prompt finish session=%s finish=%s in=%d out=%d", id.value(), r.finish(), r.inputTokens(), r.outputTokens());
+                switch (r.outcome()) {
+                    case TurnOutcome.Completed ignored -> metrics.promptCompleted();
+                    case TurnOutcome.Busy ignored -> metrics.promptBusy();
+                    case TurnOutcome.Refused ignored -> metrics.promptFailed();
+                    case TurnOutcome.Failed ignored -> metrics.promptFailed();
+                    case TurnOutcome.Terminated ignored -> metrics.promptCancelled();
+                    case TurnOutcome.Cancelled ignored -> metrics.promptCancelled();
+                }
+                LOG.infof("prompt finish session=%s outcome=%s finish=%s in=%d out=%d", id.value(),
+                        r.outcome().getClass().getSimpleName(), r.finish(), r.inputTokens(), r.outputTokens());
                 return r;
             } catch (IllegalArgumentException e) {
                 span.recordException(e);
@@ -1033,13 +1073,16 @@ public class Engine {
                 throw e;
             } catch (de.augmentia.oc.engine.core.error.Aborted e) {
                 span.setAttribute("outcome", "CANCELLED");
+                metrics.promptCancelled();
                 LOG.infof("prompt cancelled session=%s reason=%s", id.value(), e.getMessage());
                 return PromptResult.cancelled();
             } catch (RuntimeException e) {
                 span.recordException(e);
                 span.setStatus(StatusCode.ERROR, e.getMessage());
                 LOG.errorf(e, "prompt failed session=%s", id.value());
+                metrics.promptFailed();
                 if (Thread.currentThread().isInterrupted()) {
+                    metrics.promptCancelled();
                     return PromptResult.cancelled();
                 }
                 return PromptResult.failed(new SessionError.Unknown("prompt_failed",
@@ -1140,6 +1183,13 @@ public class Engine {
         String finalText = "";
         Option<JsonValue> structured = Option.none();
         boolean submitForced = false;
+        de.augmentia.oc.engine.core.eval.TurnPolicy turnPolicy =
+                new de.augmentia.oc.engine.core.eval.TurnPolicy(
+                        Math.max(1, agent.maxSteps()) + 1, 64, 200_000,
+                        java.time.Duration.ofMinutes(30));
+        int totalToolCalls = 0;
+        long totalTokens = 0;
+        java.time.Instant turnStarted = clock.now();
 
         while (true) {
             LOG.debugf("step %d session=%s", stepNo, id.value());
@@ -1166,6 +1216,7 @@ public class Engine {
                         model.limits().context(), Option.none(),
                         Seq.of(journal.history(id.value(), Seq.zero()).size()),
                         clock.now());
+                metrics.compaction();
                 cspan.end();
                 }
                 prepared = contextBuilder.prepare(info, agent, model, agentToolSnapshot, Seq.zero(),
@@ -1184,6 +1235,9 @@ public class Engine {
             finished = done;
             finishReason = done.reason();
             usage = done.usage();
+            totalToolCalls += done.toolCalls().size();
+            totalTokens += usage.total();
+            metrics.toolCalls(done.toolCalls().size());
             String stepText = text(done.events());
             if (!stepText.isBlank()) finalText = stepText;
 
@@ -1242,7 +1296,11 @@ public class Engine {
                 }
                 break;
             }
-            if (stepNo >= agent.maxSteps()) {
+            de.augmentia.oc.engine.core.eval.TurnPolicy.Decision decision =
+                    turnPolicy.decide(stepNo, totalToolCalls,
+                            TokenCount.of(totalTokens, 0),
+                            java.time.Duration.between(turnStarted, clock.now()));
+            if (decision != de.augmentia.oc.engine.core.eval.TurnPolicy.Decision.CONTINUE) {
                 if (resultSchema != null) {
                     submitForced = true;
                     stepNo++;

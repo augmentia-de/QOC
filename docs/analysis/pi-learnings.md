@@ -1,8 +1,11 @@
 # pi-learnings.md – What QOC can learn from the pi coding agent
 
-> **Status:** Analysis · 2026-10-24
-> **Reference:** `<pi-checkout>` (pi coding agent, `packages/coding-agent`)
+> **Status:** Updated analysis · 2026-10-26
+> **Reference:** `/home/torsten/dev/my-projects/2oc/pi` (pi coding agent,
+> `packages/coding-agent`)
 > **Target:** `de.augmentia.oc.engine` (Java 21 / Quarkus / LangChain4j)
+> **Reassessment:** compared with `docs/analysis/learnings.md` and the current
+> QOC hook/guardrail state
 
 pi is a TypeScript coding agent (TUI + web UI) with a deliberately minimal core:
 four built-in tools (`read`, `write`, `edit`, `bash`); everything else comes
@@ -391,6 +394,76 @@ worth copying:
 
 ---
 
+### 2.11 Hooks and guardrails
+
+**pi reference:** `docs/extensions.md`, `src/core/extensions/types.ts`,
+`src/core/extensions/runner.ts`, `src/core/agent-session.ts`
+
+pi does not provide a built-in policy engine. Its guardrails are created by
+extensions:
+
+- `tool_call` can block a call or mutate its input.
+- `tool_result` can redact or replace a result; handler errors are logged and
+  ignored.
+- `input` can transform or consume user input.
+- `before_agent_start` can change prompt, tools and guidelines.
+- `project_trust` gates project extensions.
+- Tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint`) can be used by permission extensions.
+
+Important pi semantics:
+
+- `tool_call` mutation is **not revalidated** by pi.
+- `tool_result` handlers are **fail-open**.
+- `tool_call` handler failures are **fail-closed**.
+- Extensions run with the **same OS permissions** as pi.
+
+**QOC mapping**
+
+QOC is stronger in built-in guardrails, weaker in dynamic hooks:
+
+| Capability | pi | QOC today |
+|---|---|---|
+| Built-in permission chain | extension-based | `PermissionEngine`, `PermissionRules`, HITL, saved approvals |
+| Shell guardrails | extension-based | `ShellTool` scanner + `external_directory` |
+| Tool catalog guardrails | extension-based | agent `tools.allow`/`tools.deny` + snapshot filter |
+| Tool before-hook | many events, block/rewrite | `Hooks.beforeToolCall`, replace only |
+| Tool after-hook | redact/replace, fail-open | `Hooks.afterToolCall`, replace only, errors become tool failure |
+| Permission extension hook | event-based | `PermissionHook` exists, but is not wired in `Engine` |
+| Dynamic loading | `jiti`, hot reload | none |
+| Native safety | Node/Bun | Quarkus Native, no arbitrary hot code |
+
+Concrete QOC gaps:
+
+- `Engine.java:191` uses `noopHooks()`.
+- `Engine.java:250-251` passes `Option.none()` as `PermissionHook`.
+- `Hooks.evaluatePermission(...)` is unused.
+- `ToolRuntime` does not catch post-hook exceptions, so a failing post-hook
+  turns into a tool failure. This conflicts with W-17.
+- There is no hook ordering, no result redaction, and no hook audit.
+
+**Recommended QOC direction**
+
+Do not port pi's TypeScript extension runtime. Use a layered model:
+
+1. Fix existing hooks first: wire `PermissionHook`, make post-hooks fail-open,
+   and define ordered composition.
+2. Add declarative guardrails in `settings.json` with hot reload via
+   `/api/config/reload`.
+3. Add a Java SPI/CDI guardrail layer for trusted in-process code.
+4. Add an external webhook guardrail for central policy.
+5. Keep guardrails as policy/usability, not as a security sandbox.
+
+Dynamic realization in Quarkus:
+
+- `@ApplicationScoped` registry with `Instance<ToolGuardrail>`.
+- `StartupEvent` to build the registry.
+- `Engine.reloadConfig()` to rebuild from config.
+- `@ConfigProperty` for static switches, `settings.json` for dynamic rules.
+- Webhook calls with timeout and fail-closed before execution / fail-open after.
+- No hot-loading of arbitrary Java classes in native mode.
+
+
 ## 3. What does not fit
 
 | pi feature | Reason |
@@ -406,10 +479,43 @@ worth copying:
 
 ---
 
+## 3.1 Reassessment against `learnings.md`
+
+`learnings.md` synthesizes OpenCode, pi, oh-my-pi and Nessy into one backlog.
+The pi-specific contribution is narrower than it looked in the first version of
+this document:
+
+- pi is still the best reference for **compaction mechanics**, prompt templates,
+  settings and slash-command ergonomics.
+- pi's extension model is useful as a **hook surface specification**, but not as
+  an implementation model for QOC.
+- pi does not provide the production-correctness mechanisms that
+  `learnings.md` ranks highest. Those come mainly from Nessy.
+
+Updated assessment:
+
+| pi topic | Earlier assessment | New assessment after `learnings.md` |
+|---|---|---|
+| Context files / SYSTEM.md | High value | Still high, already implemented |
+| Prompt templates | High value | High value, but after P0 production gaps |
+| Compaction | High value | High value and now tied to QOC-010/QOC-012 |
+| Slash commands / export | Medium value | Medium value, client-side first |
+| Settings | Medium value | Medium value, useful but not blocking |
+| Message queue UI | Medium value | Medium value, after recovery work |
+| Image attachments | Low-medium | Low, depends on provider support |
+| Extensions/hooks | Out of scope | **Partially in scope** as a Java SPI/CDI layer, not as TypeScript runtime |
+| Branch/fork tree | Medium value | Medium value, after compaction stability |
+
+The key correction is the priority: pi's strongest ideas are ergonomics and
+context economy. They should not outrank Nessy-derived production work such as
+durable approvals, idempotency, outcome algebra and turn policy.
+
+
 ## 4. Recommended order
 
 1. ✅ **2.1** context files + system-prompt files — **done (2026-10-24)**.
-2. **2.2** prompt templates (matches L-6).
+2. **Hook repair first**: wire `PermissionHook`, fix post-hook fail-open, add ordered composition.
+3. **2.2** prompt templates (matches L-6).
 3. **2.7 + 2.8** `/reload`, settings keys and extended slash commands.
 4. **2.4** compaction details (reserve/keep tokens, custom instructions,
    cumulative file lists).
@@ -431,6 +537,8 @@ worth copying:
   or keep QOC's message-count `keepMessages`?
 - Is image paste worth the MIME/binary handling in `ReadTool`/`WriteTool`?
 - Do we want a real plugin SPI, or is the extension model out of scope for QOC?
+- Should guardrails be allowed to loosen permissions, or only tighten them?
+- Should declarative guardrails live in `settings.json` or in a separate policy file?
 
 ---
 

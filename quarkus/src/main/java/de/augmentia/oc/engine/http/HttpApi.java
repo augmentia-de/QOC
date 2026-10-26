@@ -32,6 +32,9 @@ public class HttpApi {
     @Inject
     EventBus eventBus;
 
+    @Inject
+    EngineMetrics metrics;
+
     @GET
     @Path("/health/live")
     public Response live() {
@@ -45,6 +48,12 @@ public class HttpApi {
         return Response.status(ready ? Response.Status.OK : Response.Status.SERVICE_UNAVAILABLE)
                 .entity(Map.of("status", ready ? "UP" : "DOWN", "check", "ready"))
                 .build();
+    }
+
+    @GET
+    @Path("/metrics")
+    public Response metrics() {
+        return Response.ok(metrics.snapshot()).build();
     }
 
     @POST
@@ -144,8 +153,13 @@ public class HttpApi {
         if (request == null || request.name() == null || request.name().isBlank()) {
             return badRequest("name must not be blank");
         }
-        String arguments = request.arguments() == null ? "" : request.arguments();
-        return runPrompt(id, "/" + request.name() + (arguments.isBlank() ? "" : " " + arguments));
+        try {
+            String arguments = request.arguments() == null ? "" : request.arguments();
+            Engine.PromptResult result = engine.command(SessionId.parse(id), request.name(), arguments);
+            return promptResponse(result);
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
     }
 
     @GET
@@ -678,54 +692,57 @@ public class HttpApi {
 
     private Response runPrompt(String id, String text, Option<Schema> responseSchema) {
         try {
-            Engine.PromptResult result = engine.prompt(SessionId.parse(id), text, responseSchema);
-            Object structured = result.structured().map(JsonValues::toJava).orElse(null);
-            if (result.outcome() instanceof Engine.TurnOutcome.Busy busy) {
-                return Response.status(Response.Status.CONFLICT)
-                        .entity(Map.of("_tag", "SessionBusyError",
-                                "outcome", "BUSY",
-                                "message", busy.message() == null ? "session is running" : busy.message()))
-                        .build();
-            }
-            if (result.outcome() instanceof Engine.TurnOutcome.Refused refused) {
-                Map<String, Object> body = new LinkedHashMap<>();
-                body.put("_tag", "TurnRefusedError");
-                body.put("outcome", "REFUSED");
-                body.put("reason", refused.reason());
-                body.put("message", refused.detail());
-                return Response.status(422).entity(body).build();
-            }
-            if (result.outcome() instanceof Engine.TurnOutcome.Failed failed) {
-                Map<String, Object> body = new LinkedHashMap<>();
-                body.put("_tag", "TurnFailedError");
-                body.put("outcome", "FAILED");
-                body.put("retryable", failed.retryable());
-                body.put("error", failed.error().type());
-                body.put("message", failed.error().message());
-                return Response.status(failed.retryable() ? 503 : 502).entity(body).build();
-            }
-            if (result.outcome() instanceof Engine.TurnOutcome.Terminated terminated) {
-                return Response.status(Response.Status.CONFLICT)
-                        .entity(Map.of("_tag", "TurnTerminatedError",
-                                "outcome", "TERMINATED",
-                                "reason", terminated.reason().name()))
-                        .build();
-            }
-            if (result.outcome() instanceof Engine.TurnOutcome.Cancelled) {
-                return Response.status(Response.Status.CONFLICT)
-                        .entity(Map.of("_tag", "TurnCancelledError",
-                                "outcome", "CANCELLED",
-                                "message", "turn was cancelled"))
-                        .build();
-            }
-            return Response.ok(new PromptResponse(outcomeName(result.outcome()),
-                    result.finish(), result.inputTokens(), result.outputTokens(),
-                    result.text(), structured)).build();
+            return promptResponse(engine.prompt(SessionId.parse(id), text, responseSchema));
         } catch (IllegalArgumentException e) {
             return badRequest(e.getMessage());
         } catch (IllegalStateException e) {
             return Response.status(422).entity(Map.of("_tag", "UnknownError", "message", e.getMessage())).build();
         }
+    }
+
+    private Response promptResponse(Engine.PromptResult result) {
+        Object structured = result.structured().map(JsonValues::toJava).orElse(null);
+        if (result.outcome() instanceof Engine.TurnOutcome.Busy busy) {
+            return Response.status(Response.Status.CONFLICT)
+                    .entity(Map.of("_tag", "SessionBusyError",
+                            "outcome", "BUSY",
+                            "message", busy.message() == null ? "session is running" : busy.message()))
+                    .build();
+        }
+        if (result.outcome() instanceof Engine.TurnOutcome.Refused refused) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("_tag", "TurnRefusedError");
+            body.put("outcome", "REFUSED");
+            body.put("reason", refused.reason());
+            body.put("message", refused.detail());
+            return Response.status(422).entity(body).build();
+        }
+        if (result.outcome() instanceof Engine.TurnOutcome.Failed failed) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("_tag", "TurnFailedError");
+            body.put("outcome", "FAILED");
+            body.put("retryable", failed.retryable());
+            body.put("error", failed.error().type());
+            body.put("message", failed.error().message());
+            return Response.status(failed.retryable() ? 503 : 502).entity(body).build();
+        }
+        if (result.outcome() instanceof Engine.TurnOutcome.Terminated terminated) {
+            return Response.status(Response.Status.CONFLICT)
+                    .entity(Map.of("_tag", "TurnTerminatedError",
+                            "outcome", "TERMINATED",
+                            "reason", terminated.reason().name()))
+                    .build();
+        }
+        if (result.outcome() instanceof Engine.TurnOutcome.Cancelled) {
+            return Response.status(Response.Status.CONFLICT)
+                    .entity(Map.of("_tag", "TurnCancelledError",
+                            "outcome", "CANCELLED",
+                            "message", "turn was cancelled"))
+                    .build();
+        }
+        return Response.ok(new PromptResponse(outcomeName(result.outcome()),
+                result.finish(), result.inputTokens(), result.outputTokens(),
+                result.text(), structured)).build();
     }
 
     private static String outcomeName(Engine.TurnOutcome outcome) {

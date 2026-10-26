@@ -10,6 +10,7 @@ import java.util.Map;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
@@ -46,6 +47,10 @@ class EngineHttpTest {
                 .body("text", containsString("Session Engine"))
                 .body("finish", equalTo("NORMAL"))
                 .body("structured", nullValue());
+
+        given().get("/api/metrics")
+                .then().statusCode(200)
+                .body("prompts", greaterThanOrEqualTo(1));
 
         given()
                 .get("/api/session/" + id)
