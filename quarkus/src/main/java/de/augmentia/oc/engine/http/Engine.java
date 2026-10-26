@@ -208,6 +208,9 @@ public class Engine {
     private final EventCodec codec = EventCodec.standard();
     private final java.util.concurrent.ConcurrentHashMap<SessionId, Thread> running =
             new java.util.concurrent.ConcurrentHashMap<>();
+    /** Bounded prompt admission: overload degrades to BUSY instead of OOM. */
+    private final java.util.concurrent.Semaphore promptSlots =
+            new java.util.concurrent.Semaphore(16);
 
     @PostConstruct
     void wire() {
@@ -496,7 +499,24 @@ public class Engine {
     }
 
     public List<PermissionRequest> pendingPermissions(SessionId id) {
-        return permissionEngine.pending().list(id);
+        List<PermissionRequest> inMemory = permissionEngine.pending().list(id);
+        if (approvalSource == null) return inMemory;
+        List<PermissionRequest> merged = new ArrayList<>(inMemory);
+        for (WebApprovalSource.PendingApproval durable : approvalSource.pending(id.value())) {
+            boolean present = inMemory.stream().anyMatch(request ->
+                    request.id().value().equals(durable.id()));
+            if (present) continue;
+            merged.add(new PermissionRequest(
+                    PermissionRequestId.parse(durable.id()),
+                    SessionId.parse(durable.sessionId()),
+                    durable.action(),
+                    List.of(durable.context() == null ? durable.action() : durable.context()),
+                    List.of(),
+                    Map.of("durable", true),
+                    null,
+                    "pending approval from an earlier process"));
+        }
+        return List.copyOf(merged);
     }
 
     public List<PermissionRequest> allPendingPermissions() {
@@ -642,7 +662,8 @@ public class Engine {
         }
         ModelRef model = preparedModel(info, modelInfo());
         Seq throughSeq = Seq.of(journal.history(id.value(), Seq.zero()).size());
-        return compaction.compact(id, CompactionReason.MANUAL, model, Option.none(), throughSeq, clock.now());
+        return compaction.compact(id, CompactionReason.MANUAL, model,
+                modelInfo().limits().context(), Option.none(), throughSeq, clock.now());
     }
 
     /** Background shell processes of a session. */
@@ -932,6 +953,23 @@ public class Engine {
         return questionSource.resolve(id, questionId, selected, text);
     }
 
+    /** Liveness is process-local; readiness also checks DB and workspace. */
+    public boolean ready() {
+        try (var connection = dataSource.getConnection()) {
+            if (!connection.isValid(2)) return false;
+        } catch (java.sql.SQLException e) {
+            LOG.warnf("readiness: database check failed: %s", e.getMessage());
+            return false;
+        }
+        try {
+            return java.nio.file.Files.isDirectory(
+                    Path.of(config.workspace()).toAbsolutePath().normalize());
+        } catch (RuntimeException e) {
+            LOG.warnf("readiness: workspace check failed: %s", e.getMessage());
+            return false;
+        }
+    }
+
     private static SessionInfo copy(SessionInfo info, Location location, String title) {
         return new SessionInfo(info.id(), info.projectId(), location, title, info.agent(),
                 info.model(), info.permissions(), info.cost(), info.tokens(), info.created(),
@@ -966,26 +1004,49 @@ public class Engine {
         if (found.isEmpty()) throw new IllegalArgumentException("unknown session: " + id);
 
         long before = journal.history(id.value(), Seq.zero()).size();
-        captureSnapshot(id);
-        running.put(id, Thread.currentThread());
+        if (!promptSlots.tryAcquire()) {
+            LOG.warnf("prompt rejected: engine saturated session=%s", id.value());
+            return PromptResult.busy("engine is saturated; retry later");
+        }
+        Thread existing = running.putIfAbsent(id, Thread.currentThread());
+        if (existing != null) {
+            promptSlots.release();
+            LOG.infof("prompt busy session=%s", id.value());
+            return PromptResult.busy("session is currently running");
+        }
         Span span = tracer().spanBuilder("engine.prompt")
                 .setAttribute("session.id", id.value())
                 .setAttribute("text.length", (long) text.length())
                 .startSpan();
         try (Scope scope = span.makeCurrent()) {
             try {
+                captureSnapshot(id);
                 PromptResult r = runPrompt(id, text, null, responseSchema);
                 span.setAttribute("finish", r.finish());
                 span.setAttribute("usage.input_tokens", (long) r.inputTokens());
                 span.setAttribute("usage.output_tokens", (long) r.outputTokens());
                 LOG.infof("prompt finish session=%s finish=%s in=%d out=%d", id.value(), r.finish(), r.inputTokens(), r.outputTokens());
                 return r;
-            } catch (RuntimeException e) {
+            } catch (IllegalArgumentException e) {
                 span.recordException(e);
                 span.setStatus(StatusCode.ERROR, e.getMessage());
                 throw e;
+            } catch (de.augmentia.oc.engine.core.error.Aborted e) {
+                span.setAttribute("outcome", "CANCELLED");
+                LOG.infof("prompt cancelled session=%s reason=%s", id.value(), e.getMessage());
+                return PromptResult.cancelled();
+            } catch (RuntimeException e) {
+                span.recordException(e);
+                span.setStatus(StatusCode.ERROR, e.getMessage());
+                LOG.errorf(e, "prompt failed session=%s", id.value());
+                if (Thread.currentThread().isInterrupted()) {
+                    return PromptResult.cancelled();
+                }
+                return PromptResult.failed(new SessionError.Unknown("prompt_failed",
+                        e.getMessage() == null ? "prompt failed" : e.getMessage()), false);
             } finally {
-                running.remove(id);
+                running.remove(id, Thread.currentThread());
+                promptSlots.release();
                 publishNew(id, before);
             }
         } finally {
@@ -1102,7 +1163,8 @@ public class Engine {
                 Span cspan = tracer().spanBuilder("compaction").setAttribute("session.id", id.value()).startSpan();
                 try (Scope cscope = cspan.makeCurrent()) {
                 compaction.compact(id, CompactionReason.OVERFLOW, preparedModel(info, model),
-                        Option.none(), Seq.of(journal.history(id.value(), Seq.zero()).size()),
+                        model.limits().context(), Option.none(),
+                        Seq.of(journal.history(id.value(), Seq.zero()).size()),
                         clock.now());
                 cspan.end();
                 }
@@ -1191,7 +1253,14 @@ public class Engine {
             stepNo++;
         }
 
-        PromptResult promptResult = new PromptResult(finishReason.name(),
+        TurnOutcome outcome = switch (finishReason) {
+            case CONTENT_FILTER -> new TurnOutcome.Refused("content_filter",
+                    "provider stopped the turn because of a content filter");
+            case ABORTED -> new TurnOutcome.Cancelled();
+            default -> new TurnOutcome.Completed(finishReason.name(), usage.input(),
+                    usage.output(), finalText, structured);
+        };
+        PromptResult promptResult = new PromptResult(outcome, finishReason.name(),
                 usage.input(), usage.output(), finalText, structured);
 
         // Generate title after the first successful prompt if not yet set.
@@ -1664,14 +1733,65 @@ public class Engine {
         };
     }
 
-    public record PromptResult(String finish, long inputTokens, long outputTokens, String text,
-                               Option<JsonValue> structured) {
+    /**
+     * Explicit outcome of a prompt/turn. Clients can distinguish "no turn
+     * happened" from a model refusal, a technical failure and a cancellation
+     * without parsing a finish string.
+     */
+    public sealed interface TurnOutcome permits TurnOutcome.Completed, TurnOutcome.Busy,
+            TurnOutcome.Refused, TurnOutcome.Failed, TurnOutcome.Terminated, TurnOutcome.Cancelled {
+
+        record Completed(String finish, long inputTokens, long outputTokens, String text,
+                         Option<JsonValue> structured) implements TurnOutcome {}
+
+        record Busy(String message) implements TurnOutcome {}
+
+        record Refused(String reason, String detail) implements TurnOutcome {}
+
+        record Failed(SessionError error, boolean retryable) implements TurnOutcome {}
+
+        record Terminated(InterruptReason reason) implements TurnOutcome {}
+
+        record Cancelled() implements TurnOutcome {}
+    }
+
+    public record PromptResult(TurnOutcome outcome, String finish, long inputTokens,
+                               long outputTokens, String text, Option<JsonValue> structured) {
         public PromptResult {
             if (structured == null) structured = Option.none();
+            if (outcome == null) {
+                outcome = new TurnOutcome.Completed(finish, inputTokens, outputTokens, text, structured);
+            }
+        }
+
+        public PromptResult(String finish, long inputTokens, long outputTokens, String text,
+                            Option<JsonValue> structured) {
+            this(new TurnOutcome.Completed(finish, inputTokens, outputTokens, text,
+                    structured == null ? Option.none() : structured),
+                    finish, inputTokens, outputTokens, text, structured);
         }
 
         public PromptResult(String finish, long inputTokens, long outputTokens, String text) {
             this(finish, inputTokens, outputTokens, text, Option.none());
+        }
+
+        public static PromptResult busy(String message) {
+            return new PromptResult(new TurnOutcome.Busy(message), "BUSY", 0, 0, "",
+                    Option.none());
+        }
+
+        public static PromptResult failed(SessionError error, boolean retryable) {
+            return new PromptResult(new TurnOutcome.Failed(error, retryable), "FAILED", 0, 0, "",
+                    Option.none());
+        }
+
+        public static PromptResult cancelled() {
+            return new PromptResult(new TurnOutcome.Cancelled(), "CANCELLED", 0, 0, "",
+                    Option.none());
+        }
+
+        public boolean completed() {
+            return outcome instanceof TurnOutcome.Completed;
         }
     }
 

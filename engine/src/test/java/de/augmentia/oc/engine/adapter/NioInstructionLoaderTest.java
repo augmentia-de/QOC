@@ -22,6 +22,7 @@ class NioInstructionLoaderTest {
         Files.writeString(root.resolve("work/AGENTS.md"), "project rules");
         Files.writeString(sub.resolve("CLAUDE.md"), "sub rules");
         Files.writeString(sub.resolve("SYSTEM.md"), "custom system");
+        Files.writeString(sub.resolve("RULES.md"), "sticky rules");
         Files.writeString(sub.resolve("APPEND_SYSTEM.md"), "appended");
 
         List<InstructionLoader.InstructionFile> files =
@@ -32,9 +33,11 @@ class NioInstructionLoaderTest {
                 InstructionLoader.Kind.AGENTS,
                 InstructionLoader.Kind.AGENTS,
                 InstructionLoader.Kind.AGENTS,
+                InstructionLoader.Kind.RULES,
                 InstructionLoader.Kind.APPEND_SYSTEM);
         assertThat(files).extracting(InstructionLoader.InstructionFile::text).containsExactly(
-                "custom system", "global rules", "project rules", "sub rules", "appended");
+                "custom system", "global rules", "project rules", "sub rules",
+                "sticky rules", "appended");
     }
 
     @Test

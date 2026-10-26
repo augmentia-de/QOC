@@ -19,6 +19,16 @@ import static org.hamcrest.Matchers.nullValue;
 class EngineHttpTest {
 
     @Test
+    void healthEndpointsAreAvailableWithoutBusinessAuth() {
+        given().get("/api/health/live")
+                .then().statusCode(200)
+                .body("status", equalTo("UP"));
+        given().get("/api/health/ready")
+                .then().statusCode(200)
+                .body("status", equalTo("UP"));
+    }
+
+    @Test
     void createSessionPromptAndReadItBack() {
         String id = given()
                 .contentType(ContentType.JSON)
@@ -32,6 +42,7 @@ class EngineHttpTest {
                 .body(Map.of("text", "Hallo"))
                 .post("/api/session/" + id + "/prompt")
                 .then().statusCode(200)
+                .body("outcome", equalTo("COMPLETED"))
                 .body("text", containsString("Session Engine"))
                 .body("finish", equalTo("NORMAL"))
                 .body("structured", nullValue());

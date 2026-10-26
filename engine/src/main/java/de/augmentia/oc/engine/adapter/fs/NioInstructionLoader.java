@@ -40,6 +40,8 @@ public final class NioInstructionLoader implements InstructionLoader {
         addSingle(files, Kind.SYSTEM, directory.resolve(".opencode").resolve("SYSTEM.md"),
                 directory.resolve("SYSTEM.md"), globalDirectory.resolve("SYSTEM.md"));
         addContextFiles(files, directory);
+        addSingle(files, Kind.RULES, directory.resolve(".opencode").resolve("RULES.md"),
+                directory.resolve("RULES.md"), globalDirectory.resolve("RULES.md"));
         addSingle(files, Kind.APPEND_SYSTEM, directory.resolve(".opencode").resolve("APPEND_SYSTEM.md"),
                 directory.resolve("APPEND_SYSTEM.md"), globalDirectory.resolve("APPEND_SYSTEM.md"));
         return List.copyOf(files);

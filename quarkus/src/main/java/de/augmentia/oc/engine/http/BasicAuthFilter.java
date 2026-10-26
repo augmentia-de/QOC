@@ -23,6 +23,9 @@ public class BasicAuthFilter implements ContainerRequestFilter {
 
     @Override
     public void filter(ContainerRequestContext request) {
+        String path = request.getUriInfo().getPath();
+        if ("health/live".equals(path) || "health/ready".equals(path)) return;
+
         String password = config.password();
         if (password == null || password.isBlank()) return;
 

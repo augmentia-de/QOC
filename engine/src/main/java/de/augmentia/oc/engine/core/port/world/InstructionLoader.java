@@ -11,8 +11,9 @@ public interface InstructionLoader {
 
     /**
      * Returns files in application order: {@code SYSTEM} first, then
-     * {@code AGENTS} (global, then root to working directory), then
-     * {@code APPEND_SYSTEM}. Missing or unreadable files are skipped.
+     * {@code AGENTS} (global, then root to working directory), then sticky
+     * {@code RULES}, then {@code APPEND_SYSTEM}. Missing or unreadable files
+     * are skipped.
      */
     List<InstructionFile> load(Path startDirectory);
 
@@ -24,7 +25,7 @@ public interface InstructionLoader {
         }
     }
 
-    enum Kind { SYSTEM, AGENTS, APPEND_SYSTEM }
+    enum Kind { SYSTEM, AGENTS, RULES, APPEND_SYSTEM }
 
     /** No instruction files (used by tests and when the feature is disabled). */
     static InstructionLoader none() {

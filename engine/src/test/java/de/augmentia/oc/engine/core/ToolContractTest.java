@@ -38,8 +38,12 @@ class ToolContractTest {
 
     @Test
     void toolContextRequiresAllIds() {
-        ToolContext context = new ToolContext(SessionId.create(), AgentId.create(), MessageId.create(), CallId.create());
-        assertThat(context.callId()).isNotNull();
+        SessionId session = SessionId.create();
+        CallId call = CallId.create();
+        ToolContext context = new ToolContext(session, AgentId.create(), MessageId.create(), call);
+        assertThat(context.callId()).isEqualTo(call);
+        assertThat(context.idempotencyKey().value())
+                .isEqualTo("idem_" + session.value() + "_" + call.value());
         assertThatThrownBy(() -> new ToolContext(null, AgentId.create(), MessageId.create(), CallId.create()))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ToolContext(SessionId.create(), AgentId.create(), null, CallId.create()))

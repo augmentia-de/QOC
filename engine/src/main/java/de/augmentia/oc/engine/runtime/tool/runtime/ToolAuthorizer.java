@@ -18,7 +18,8 @@ public interface ToolAuthorizer {
                 definition.options().permission().orElse(definition.effectiveName()),
                 java.util.List.of(call.input().toString()),
                 java.util.List.of(),
-                java.util.Map.of("tool", definition.effectiveName()),
+                java.util.Map.of("tool", definition.effectiveName(),
+                        "idempotencyKey", context.idempotencyKey().value()),
                 null,
                 null);
     }

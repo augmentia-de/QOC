@@ -32,6 +32,21 @@ public class HttpApi {
     @Inject
     EventBus eventBus;
 
+    @GET
+    @Path("/health/live")
+    public Response live() {
+        return Response.ok(Map.of("status", "UP", "check", "live")).build();
+    }
+
+    @GET
+    @Path("/health/ready")
+    public Response ready() {
+        boolean ready = engine.ready();
+        return Response.status(ready ? Response.Status.OK : Response.Status.SERVICE_UNAVAILABLE)
+                .entity(Map.of("status", ready ? "UP" : "DOWN", "check", "ready"))
+                .build();
+    }
+
     @POST
     @Path("/session")
     public Response createSession(CreateSessionRequest request,
@@ -665,13 +680,63 @@ public class HttpApi {
         try {
             Engine.PromptResult result = engine.prompt(SessionId.parse(id), text, responseSchema);
             Object structured = result.structured().map(JsonValues::toJava).orElse(null);
-            return Response.ok(new PromptResponse(result.finish(), result.inputTokens(),
-                    result.outputTokens(), result.text(), structured)).build();
+            if (result.outcome() instanceof Engine.TurnOutcome.Busy busy) {
+                return Response.status(Response.Status.CONFLICT)
+                        .entity(Map.of("_tag", "SessionBusyError",
+                                "outcome", "BUSY",
+                                "message", busy.message() == null ? "session is running" : busy.message()))
+                        .build();
+            }
+            if (result.outcome() instanceof Engine.TurnOutcome.Refused refused) {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("_tag", "TurnRefusedError");
+                body.put("outcome", "REFUSED");
+                body.put("reason", refused.reason());
+                body.put("message", refused.detail());
+                return Response.status(422).entity(body).build();
+            }
+            if (result.outcome() instanceof Engine.TurnOutcome.Failed failed) {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("_tag", "TurnFailedError");
+                body.put("outcome", "FAILED");
+                body.put("retryable", failed.retryable());
+                body.put("error", failed.error().type());
+                body.put("message", failed.error().message());
+                return Response.status(failed.retryable() ? 503 : 502).entity(body).build();
+            }
+            if (result.outcome() instanceof Engine.TurnOutcome.Terminated terminated) {
+                return Response.status(Response.Status.CONFLICT)
+                        .entity(Map.of("_tag", "TurnTerminatedError",
+                                "outcome", "TERMINATED",
+                                "reason", terminated.reason().name()))
+                        .build();
+            }
+            if (result.outcome() instanceof Engine.TurnOutcome.Cancelled) {
+                return Response.status(Response.Status.CONFLICT)
+                        .entity(Map.of("_tag", "TurnCancelledError",
+                                "outcome", "CANCELLED",
+                                "message", "turn was cancelled"))
+                        .build();
+            }
+            return Response.ok(new PromptResponse(outcomeName(result.outcome()),
+                    result.finish(), result.inputTokens(), result.outputTokens(),
+                    result.text(), structured)).build();
         } catch (IllegalArgumentException e) {
             return badRequest(e.getMessage());
         } catch (IllegalStateException e) {
             return Response.status(422).entity(Map.of("_tag", "UnknownError", "message", e.getMessage())).build();
         }
+    }
+
+    private static String outcomeName(Engine.TurnOutcome outcome) {
+        return switch (outcome) {
+            case Engine.TurnOutcome.Completed ignored -> "COMPLETED";
+            case Engine.TurnOutcome.Busy ignored -> "BUSY";
+            case Engine.TurnOutcome.Refused ignored -> "REFUSED";
+            case Engine.TurnOutcome.Failed ignored -> "FAILED";
+            case Engine.TurnOutcome.Terminated ignored -> "TERMINATED";
+            case Engine.TurnOutcome.Cancelled ignored -> "CANCELLED";
+        };
     }
 
     private static Response badRequest(String message) {
@@ -737,8 +802,8 @@ public class HttpApi {
 
     public record QuestionReply(List<String> selected, String text) {}
 
-    public record PromptResponse(String finish, long inputTokens, long outputTokens, String text,
-                                 Object structured) {}
+    public record PromptResponse(String outcome, String finish, long inputTokens,
+                                 long outputTokens, String text, Object structured) {}
 
     public record SessionDto(String id, String title, String agent, String directory,
                              String cost, long tokens) {}

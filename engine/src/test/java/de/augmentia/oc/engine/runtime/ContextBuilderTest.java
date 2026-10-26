@@ -20,6 +20,7 @@ import de.augmentia.oc.engine.runtime.context.Prepared;
 import de.augmentia.oc.engine.runtime.skill.Skill;
 import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
 import de.augmentia.oc.engine.testing.InMemoryConversation;
+import de.augmentia.oc.engine.testing.InMemoryInstructions;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -92,6 +93,25 @@ class ContextBuilderTest {
 
         assertThat(prepared.system().getFirst()).isEqualTo("custom system");
         assertThat(prepared.system()).noneMatch(text -> text.contains("Available tools:"));
+    }
+
+    @Test
+    void compactionCheckpointIsASystemBlockNotMessageZero() {
+        InMemoryInstructions store = new InMemoryInstructions();
+        store.putBlob("summary-hash", "compacted summary");
+        store.putState(session.id(), new InstructionState(Seq.of(1), Seq.of(1),
+                Map.of(), Map.of("compaction.summary", "summary-hash")));
+
+        Prepared prepared = new ContextBuilder(conversation, skills, InstructionLoader.none(),
+                Option.some(store))
+                .prepare(session, agent(Option.none(), 0), model, tools, Seq.zero(), 0);
+
+        assertThat(prepared.system()).anyMatch(text -> text.contains("compacted summary"));
+        assertThat(prepared.messages()).noneMatch(message ->
+                message instanceof ModelMessage.User user
+                        && user.content().stream().anyMatch(content ->
+                        content instanceof ModelContent.Text text
+                                && text.text().contains("compacted summary")));
     }
 
     @Test

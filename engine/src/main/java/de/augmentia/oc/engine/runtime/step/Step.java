@@ -106,8 +106,10 @@ public final class Step {
                 for (ModelEvent.ToolCallRequested call : toolCalls) {
                     tasks.add(() -> {
                         LOG.fine("tool call requested: " + call.name());
+                        ToolContext callContext = new ToolContext(context.sessionId(),
+                                context.agentId(), context.messageId(), call.callId());
                         ToolOutcome outcome = tools.execute(
-                                new ToolCall(call.callId(), call.name(), call.input()), context);
+                                new ToolCall(call.callId(), call.name(), call.input()), callContext);
                         return new StepResult.ToolCallOutcome(
                                 new ToolCall(call.callId(), call.name(), call.input()), outcome);
                     });

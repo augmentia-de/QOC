@@ -14,6 +14,7 @@ import de.augmentia.oc.engine.core.model.SessionId;
 import de.augmentia.oc.engine.core.port.store.Conversation;
 import de.augmentia.oc.engine.core.port.store.InstructionStore;
 import de.augmentia.oc.engine.core.eval.InstructionEpoch;
+import de.augmentia.oc.engine.core.eval.TokenEstimator;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,9 +40,34 @@ public final class CompactionWindow {
      * summarized. At least one message must remain (the last user turn).
      */
     public static Window split(List<Message> history, int keep) {
+        return split(history, new CompactionPolicy(Math.max(1, keep), 0, 0), 0);
+    }
+
+    /**
+     * Token-aware split. Keeps at least {@code policy.keepMessages()} messages
+     * and roughly {@code policy.keepRecentTokens()}, then moves the boundary
+     * back to a user turn so a tool call and its result are never separated.
+     */
+    public static Window split(List<Message> history, CompactionPolicy policy, int contextWindow) {
         if (history == null || history.isEmpty()) return new Window(List.of(), List.of());
-        int keepCount = Math.max(1, Math.min(keep, history.size()));
+        if (policy == null) policy = CompactionPolicy.DEFAULT;
+
+        int keepCount = Math.max(1, Math.min(policy.keepMessages(), history.size()));
         int split = history.size() - keepCount;
+
+        if (contextWindow > 0 && policy.keepRecentTokens() > 0) {
+            int tokens = 0;
+            while (split > 0 && tokens < policy.keepRecentTokens()) {
+                split--;
+                tokens += TokenEstimator.estimate(history.get(split));
+            }
+            int budget = Math.max(1, contextWindow - policy.reserveTokens());
+            while (split > 0 && tokens > budget) {
+                split--;
+                tokens += TokenEstimator.estimate(history.get(split));
+            }
+        }
+
         // Keep whole turns: never split between a user input and the assistant
         // turn it opened. A turn starts at a UserMessage; move the split back
         // to the nearest such boundary. If none exists, do not split.

@@ -84,6 +84,9 @@ public final class ContextBuilder {
         }
         String instruction = skills.instructions(rules);
         if (!instruction.isBlank()) system.add(instruction);
+        // Keep the compaction checkpoint at the end of the stable system
+        // blocks instead of rewriting message index 0 on every compaction.
+        checkpoint(session.id()).ifPresent(system::add);
 
         List<ModelMessage> messages = history(session.id(), from, agent);
         LOG.fine("prepare step=" + step + " messages=" + messages.size() + " tools=" + tools.list().size());
@@ -107,6 +110,19 @@ public final class ContextBuilder {
                 Option.some(CacheAffinity.promptCacheKey(affinity)), Map.of());
     }
 
+    private Option<String> checkpoint(SessionId session) {
+        if (instructionStore.isEmpty()) return Option.none();
+        InstructionStore store = instructionStore.orElseThrow();
+        Option<InstructionState> state = store.state(session);
+        if (state.isEmpty()) return Option.none();
+        String hash = state.orElseThrow().currentValues().get("compaction.summary");
+        if (hash == null || hash.isBlank()) return Option.none();
+        Option<String> summary = store.blob(hash);
+        if (summary.isEmpty()) return Option.none();
+        return Option.some(PromptLoader.render("ctx-checkpoint", Map.of(
+                "summary", summary.orElseThrow(), "recent", "")));
+    }
+
     private List<ModelMessage> history(SessionId session, Seq afterSeq, AgentProfile agent) {
         Seq from = afterSeq == null ? Seq.zero() : afterSeq;
         Option<InstructionState> state = Option.none();
@@ -115,15 +131,6 @@ public final class ContextBuilder {
             if (state.isPresent()) from = state.orElseThrow().epochStart();
         }
         List<ModelMessage> messages = ConversationFolding.fold(conversation.messages(session, from));
-        if (state.isPresent()) {
-            String hash = state.orElseThrow().currentValues().get("compaction.summary");
-            if (hash != null && !hash.isBlank() && instructionStore.orElseThrow().blob(hash).isPresent()) {
-                String summary = instructionStore.orElseThrow().blob(hash).orElseThrow();
-                String checkpoint = PromptLoader.render("ctx-checkpoint", Map.of(
-                        "summary", summary, "recent", ""));
-                messages.add(0, new ModelMessage.User(List.of(new ModelContent.Text(checkpoint))));
-            }
-        }
         // MODE-PLAN: insert reminders as messages (PR-7: logged synthetically).
         boolean hasEnter = messages.stream().anyMatch(m ->
                 m instanceof ModelMessage.User u && u.content().stream()

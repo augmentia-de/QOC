@@ -49,22 +49,29 @@ public final class CompactionService {
     private final Compaction compaction;
     private final Clock clock;
     private final ProviderAdapter provider;
-    private final int keepMessages;
+    private final CompactionPolicy policy;
 
     public CompactionService(Journal journal, Conversation conversation,
                              InstructionStore instructions, Compaction compaction, Clock clock) {
-        this(journal, conversation, instructions, compaction, clock, 8, null);
+        this(journal, conversation, instructions, compaction, clock, CompactionPolicy.DEFAULT, null);
     }
 
     public CompactionService(Journal journal, Conversation conversation,
                              InstructionStore instructions, Compaction compaction, Clock clock,
                              ProviderAdapter provider) {
-        this(journal, conversation, instructions, compaction, clock, 8, provider);
+        this(journal, conversation, instructions, compaction, clock, CompactionPolicy.DEFAULT, provider);
     }
 
     public CompactionService(Journal journal, Conversation conversation,
                              InstructionStore instructions, Compaction compaction, Clock clock,
                              int keepMessages, ProviderAdapter provider) {
+        this(journal, conversation, instructions, compaction, clock,
+                new CompactionPolicy(keepMessages, 0, 0), provider);
+    }
+
+    public CompactionService(Journal journal, Conversation conversation,
+                             InstructionStore instructions, Compaction compaction, Clock clock,
+                             CompactionPolicy policy, ProviderAdapter provider) {
         if (journal == null || conversation == null || instructions == null
                 || compaction == null || clock == null) {
             throw new IllegalArgumentException("compaction dependencies must not be null");
@@ -73,23 +80,34 @@ public final class CompactionService {
         this.instructions = instructions;
         this.compaction = compaction;
         this.clock = clock;
-        this.keepMessages = Math.max(1, keepMessages);
+        this.policy = policy == null ? CompactionPolicy.DEFAULT : policy;
         this.provider = provider;
     }
 
     /** True when at least one message would be summarized by a manual pass. */
     public boolean hasWork(SessionId session) {
         if (session == null) throw new IllegalArgumentException("session must not be null");
-        return !CompactionWindow.split(conversation.messages(session, Seq.zero()), keepMessages)
+        return !CompactionWindow.split(conversation.messages(session, Seq.zero()), policy, 0)
                 .toSummarize().isEmpty();
     }
 
     /**
-     * Compacts everything except the last {@code keepMessages} messages and
-     * advances the instruction epoch to {@code throughSeq}.
+     * Compacts everything except the recent tail and advances the instruction
+     * epoch to {@code throughSeq}. This overload keeps the legacy
+     * message-count behavior; the engine uses the context-aware overload.
      */
     public CompactionResult compact(SessionId session, CompactionReason reason, ModelRef model,
                                     Option<InboxId> inputId, Seq throughSeq, Instant now) {
+        return compact(session, reason, model, 0, inputId, throughSeq, now);
+    }
+
+    /**
+     * Compacts with the model's context window so the recent tail is chosen by
+     * tokens, not only by message count.
+     */
+    public CompactionResult compact(SessionId session, CompactionReason reason, ModelRef model,
+                                    int contextWindow, Option<InboxId> inputId, Seq throughSeq,
+                                    Instant now) {
         if (session == null || reason == null || model == null || throughSeq == null) {
             throw new IllegalArgumentException("compaction inputs must not be null");
         }
@@ -97,7 +115,7 @@ public final class CompactionService {
         if (now == null) now = clock.now();
 
         List<Message> history = conversation.messages(session, Seq.zero());
-        CompactionWindow.Window window = CompactionWindow.split(history, keepMessages);
+        CompactionWindow.Window window = CompactionWindow.split(history, policy, contextWindow);
 
         StringBuilder body = new StringBuilder();
         for (Message message : window.toSummarize()) {
