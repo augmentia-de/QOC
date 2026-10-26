@@ -22,8 +22,8 @@
   .chat { flex:1 1 auto; min-width:240px; display:flex; flex-direction:column; border-right:1px solid var(--border); }
   .side-resizer { flex:0 0 6px; width:6px; cursor:col-resize; background:var(--border); }
   .side-resizer:hover { background:var(--accent); }
-  .side { flex:0 0 380px; min-width:220px; max-width:60vw; display:flex; flex-direction:column; overflow:hidden; position:relative; transition:transform .2s ease; }
-  .backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:55; }
+  .side { flex:0 0 380px; min-width:220px; max-width:60vw; display:flex; flex-direction:column; overflow:hidden; position:relative; transition:transform .2s ease; background:var(--panel); border-left:1px solid var(--border); }
+  .backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:55; backdrop-filter:blur(2px); }
   .backdrop.open { display:block; }
   .chat { display:flex; flex-direction:column; border-right:1px solid var(--border); }
   .messages { flex:1; overflow:auto; padding:1rem; display:flex; flex-direction:column; gap:.75rem; }
@@ -83,22 +83,41 @@
   .md a { color:var(--accent); }
   .cmd-hint { font-size:.75rem; color:var(--muted); padding:.25rem 1rem; border-top:1px solid var(--border); }
 
-  @media (max-width: 768px) {
-    main { overflow:visible; }
-    .chat { min-width:0; }
-    .side-resizer { display:none; }
-    .side { position:fixed; top:0; right:0; height:100vh; width:86vw; max-width:360px; transform:translateX(100%); z-index:60; box-shadow:-2px 0 12px rgba(0,0,0,.5); background: var(--panel); }
-    .side.open { transform:translateX(0); }
-    .side .close-side { display:block; }
-    .toggle-side { display:block !important; }
-    .filetree .entry .actions { opacity:1; }
-  }
   .close-side { display:none; position:absolute; top:.4rem; right:.6rem; background:none; border:none; color:var(--muted); font-size:1.2rem; cursor:pointer; }
   .toggle-side { display:none; position:fixed; right:0; top:50%; transform:translateY(-50%); z-index:65;
     background:var(--panel); color:var(--fg); border:1px solid var(--border); border-right:none;
     border-radius:6px 0 0 6px; padding:.7rem .25rem; cursor:pointer; font-size:1rem; line-height:1; }
   .file-actions { display:flex; gap:.15rem; align-items:center; }
   #agent { max-width: 300px; }
+  /* Header-Stabilität: verhindert Layout-Sprünge durch lange Session-/Agent-Namen */
+  header { flex-wrap: wrap; }
+  #sessions { min-width: 140px; max-width: 40vw; flex: 0 1 auto; }
+  #sessionTitle { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; color: var(--muted); font-size: .85rem; }
+  #agent { min-width: 120px; }
+  header .status { margin-left: auto; white-space: nowrap; flex: 0 0 auto; }
+  header button, header select, header input, header label { flex: 0 0 auto; }
+  .messages { overflow-y: auto; overscroll-behavior: contain; }
+  .logs { overscroll-behavior: contain; }
+
+  /* Media-Queries zuletzt, damit sie die Basisregeln überschreiben */
+  @media (max-width: 768px) {
+    main { overflow: hidden; height: 100%; }
+    .chat { min-width: 0; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .messages { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+    .inputbar { flex: 0 0 auto; }
+    .side-resizer { display:none; }
+    .side { position:fixed; top:0; right:0; height:100vh; width:86vw; max-width:360px; transform:translateX(100%); z-index:60; box-shadow:-2px 0 12px rgba(0,0,0,.5); background: var(--panel); }
+    .side.open { transform:translateX(0); }
+    .side .close-side { display:block; }
+    .toggle-side { display:block !important; z-index: 70; }
+    .filetree .entry .actions { opacity:1; }
+  }
+  @media (max-width: 480px) {
+    header h1 { font-size: .95rem; }
+    #sessions { max-width: 55vw; }
+    #sessionTitle { max-width: 45vw; }
+    #agent { max-width: 40vw; min-width: 90px; }
+  }
 </style>
 </head>
 <body>
@@ -199,6 +218,8 @@ let currentAssistant = null;
 let currentFile = null;
 let currentDir = '.';
 let pendingPermission = null;
+let resizersBound = false;
+let isMobileLayout = window.innerWidth <= 768;
 const sessionsSel = document.getElementById('sessions');
 const sessionTitle = document.getElementById('sessionTitle');
 const showDetails = document.getElementById('showDetails');
@@ -261,9 +282,18 @@ function initResizers() {
   const side = document.querySelector('.side');
   const panels = [document.getElementById('panelFiles'), document.getElementById('panelViewer'), document.getElementById('panelLogs')];
   const resizers = side.querySelectorAll('.resizer');
+  if (window.innerWidth <= 768) {
+    // Auf Mobilgeräten: flexible Panels statt fester Resizer-Höhen
+    panels.forEach(p => { p.style.flex = '1 1 auto'; p.style.height = ''; });
+    resizers.forEach(r => { r.style.display = 'none'; });
+    return;
+  }
   const total = side.clientHeight || 600;
   const init = [Math.round(total*0.4), Math.round(total*0.35), total - Math.round(total*0.4) - Math.round(total*0.35)];
   panels.forEach((p,i) => { p.style.flex = '0 0 auto'; p.style.height = init[i] + 'px'; });
+  resizers.forEach(r => { r.style.display = ''; });
+  if (resizersBound) return;
+  resizersBound = true;
   resizers.forEach((r, i) => {
     r.addEventListener('mousedown', (e) => {
       const top = panels[i], bot = panels[i+1];
@@ -326,7 +356,13 @@ function openSide() {
   const toggle = document.getElementById('toggleSide');
   if (side) side.classList.add('open');
   if (bd) bd.classList.add('open');
-  if (toggle) { toggle.textContent = '›'; toggle.title = 'Dateien ausblenden'; toggle.setAttribute('aria-label', 'Dateien ausblenden'); }
+  if (toggle) {
+    toggle.textContent = '›';
+    toggle.title = 'Dateien ausblenden';
+    toggle.setAttribute('aria-label', 'Dateien ausblenden');
+    // Panel überdeckt den Button im geöffneten Zustand → ausblenden
+    toggle.style.setProperty('display', 'none', 'important');
+  }
 }
 function closeSide() {
   const side = document.getElementById('side');
@@ -334,7 +370,12 @@ function closeSide() {
   const toggle = document.getElementById('toggleSide');
   if (side) side.classList.remove('open');
   if (bd) bd.classList.remove('open');
-  if (toggle) { toggle.textContent = '‹'; toggle.title = 'Dateien anzeigen'; toggle.setAttribute('aria-label', 'Dateien anzeigen'); }
+  if (toggle) {
+    toggle.textContent = '‹';
+    toggle.title = 'Dateien anzeigen';
+    toggle.setAttribute('aria-label', 'Dateien anzeigen');
+    toggle.style.removeProperty('display');
+  }
 }
 
 function initMobileSide() {
@@ -372,6 +413,12 @@ async function init() {
     initResizers();
     initSideResizer();
     initMobileSide();
+    window.addEventListener('resize', () => {
+      const nowMobile = window.innerWidth <= 768;
+      if (nowMobile === isMobileLayout) return;
+      isMobileLayout = nowMobile;
+      initResizers();
+    });
     await loadFiles('.');
   } catch (e) {
     status.textContent = 'Fehler: ' + e.message;
