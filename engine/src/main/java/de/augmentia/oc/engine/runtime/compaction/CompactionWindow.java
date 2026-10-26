@@ -42,6 +42,15 @@ public final class CompactionWindow {
         if (history == null || history.isEmpty()) return new Window(List.of(), List.of());
         int keepCount = Math.max(1, Math.min(keep, history.size()));
         int split = history.size() - keepCount;
+        // Keep whole turns: never split between a user input and the assistant
+        // turn it opened. A turn starts at a UserMessage; move the split back
+        // to the nearest such boundary. If none exists, do not split.
+        while (split > 0 && !(history.get(split) instanceof Message.UserMessage)) {
+            split--;
+        }
+        if (split <= 0) {
+            return new Window(List.of(), List.copyOf(history));
+        }
         return new Window(history.subList(0, split), history.subList(split, history.size()));
     }
 }

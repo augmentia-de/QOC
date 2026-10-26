@@ -1106,7 +1106,7 @@ public class Engine {
                         clock.now());
                 cspan.end();
                 }
-                prepared = contextBuilder.prepare(info, agent, model, runSnapshot, Seq.zero(),
+                prepared = contextBuilder.prepare(info, agent, model, agentToolSnapshot, Seq.zero(),
                         stepNo, forcedChoice);
                 if (resultSchema != null) {
                     prepared = prepared.withSystem(SubmitResult.INSTRUCTION);

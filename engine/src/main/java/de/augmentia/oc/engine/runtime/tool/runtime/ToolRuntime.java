@@ -7,6 +7,7 @@ import de.augmentia.oc.engine.core.contract.tool.ToolCall;
 import de.augmentia.oc.engine.core.contract.tool.ToolContext;
 import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
 import de.augmentia.oc.engine.core.contract.tool.ToolFailure;
+import de.augmentia.oc.engine.core.contract.permission.PermissionDenied;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
 import de.augmentia.oc.engine.core.contract.tool.ToolSnapshot;
@@ -78,6 +79,9 @@ public final class ToolRuntime {
             ToolResult hooked = hooks.afterToolCall(context, result);
             ToolResult normalized = normalize(hooked);
             return new ToolOutcome.Ok(bound(normalized, call, context));
+        } catch (PermissionDenied denied) {
+            return new ToolOutcome.Failed(new SessionError.ToolExecutionError("permission_denied",
+                    denied.getMessage()));
         } catch (ToolFailure failure) {
             return new ToolOutcome.Failed(new SessionError.ToolExecutionError("tool_failure",
                     failure.getMessage()));

@@ -76,10 +76,10 @@ problem is a proposal rather than a current defect, write it in
 
 | Metric | Value |
 |---|---|
-| Current problems | 6 |
-| Done | 6 |
+| Current problems | 13 |
+| Done | 9 |
 | In progress | 0 |
-| Open | 0 |
+| Open | 4 |
 | Blocked | 0 |
 
 **Final verification:** `mvn test` — engine 650, quarkus 51, 0 failures/errors,
@@ -97,6 +97,13 @@ problem is a proposal rather than a current defect, write it in
 | QOC-004 | Search/glob silently degrade on real trees | P1 | DONE | `NioFileSystem`, `GrepTool`, `GlobTool` |
 | QOC-005 | Stored output cannot be resolved as an artifact | P1 | DONE | `ToolOutputStore`, `OutputBounding` |
 | QOC-006 | Session fork model is dead and cannot represent branches | P1 | DONE | `SessionEvent`, `session_message` |
+| QOC-007 | Tool catalog filter leaks after overflow compaction | P0 | DONE | `Engine`, `ContextBuilder` |
+| QOC-008 | PermissionDenied escapes ToolRuntime and becomes HTTP 500 | P0 | DONE | `ToolRuntime`, `HttpApi` |
+| QOC-009 | Open approval requests are ephemeral | P1 | OPEN | `PendingApprovals` |
+| QOC-010 | Compaction can split a turn | P1 | DONE | `CompactionService`, `CompactionWindow` |
+| QOC-011 | Tool calls have no idempotency key | P1 | OPEN | `ToolContext` |
+| QOC-012 | Compaction checkpoint is written at message index 0 | P2 | OPEN | `ContextBuilder` |
+| QOC-013 | Prompt API has no outcome algebra for Busy/Refused/Terminated | P2 | OPEN | `Engine`, `HttpApi` |
 
 ---
 
@@ -436,6 +443,213 @@ problem is a proposal rather than a current defect, write it in
     parent link, copy-on-fork and invalid boundary covered. Uncommitted.
 
 ---
+
+### QOC-007 — Tool catalog filter leaks after overflow compaction
+
+- **Status:** `DONE`
+- **Priority:** `P0`
+- **Source:** Nessy comparison, 2026-10-26
+- **Finding:**
+  - The first context build in a step uses `agentToolSnapshot`, so denied
+    tools are removed from the model request.
+  - After an automatic overflow compaction, `Engine` rebuilds the context with
+    the global `runSnapshot` instead of `agentToolSnapshot`.
+  - In that path, `tools.allow` and `tools.deny` are no longer applied.
+  - This violates tool restriction TR-01 and can re-expose `shell`, `glob`,
+    MCP tools or other denied tools to the model.
+- **Evidence:**
+  - `quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java:1093`
+  - `quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java:1109`
+  - `docs/spec/agents/02-tool-restrictions.md`
+- **Impact:** A restricted agent can regain tools after context overflow; the
+  restriction depends on whether compaction happened.
+- **Work:**
+  - [ ] Use `agentToolSnapshot` in both context builds of the step.
+  - [ ] Add a regression test that forces overflow compaction for an
+        agent with `tools.allow: ["read", "write"]` and asserts that `shell`
+        and `glob` are absent from the second request.
+  - [ ] Verify `runStep` uses the same filtered snapshot.
+- **Acceptance:**
+  - [ ] Denied tools are absent before and after overflow compaction.
+  - [ ] The global registry is unchanged.
+- **Tests:** agent with read/write only; forced `NeedsCompaction`; request
+  tool list assertion for both builds.
+
+---
+
+### QOC-008 — PermissionDenied escapes ToolRuntime and becomes HTTP 500
+
+- **Status:** `DONE`
+- **Priority:** `P0`
+- **Source:** Nessy comparison, 2026-10-26
+- **Finding:**
+  - `ToolRuntime.execute` catches `ToolFailure`, but not `PermissionDenied`.
+  - A permission denial therefore propagates as an unchecked
+    `RuntimeException`.
+  - `HttpApi.runPrompt` catches `IllegalArgumentException` and
+    `IllegalStateException`, but not `PermissionDenied`, so the user sees
+    HTTP 500.
+  - The spec says a permission denial is a tool error that the model can
+    read, not an internal server error.
+- **Evidence:**
+  - `engine/src/main/java/de/augmentia/oc/engine/runtime/tool/runtime/ToolRuntime.java:77`
+  - `quarkus/src/main/java/de/augmentia/oc/engine/http/HttpApi.java:664`
+  - `engine/src/main/java/de/augmentia/oc/engine/core/contract/permission/PermissionDenied.java`
+  - `docs/spec/session-engine/06-errors.md`
+- **Impact:** A denied tool call aborts the whole prompt instead of becoming
+  a model-facing tool result; clients receive 500.
+- **Work:**
+  - [ ] Catch `PermissionDenied` in `ToolRuntime` and return
+        `ToolOutcome.Failed` with a tool error.
+  - [ ] Keep `Aborted` as a separate abort channel.
+  - [ ] Map remaining permission errors explicitly in `HttpApi`.
+  - [ ] Add regression tests for denied rule and denied user reply.
+- **Acceptance:**
+  - [ ] A denied tool call produces a tool result and lets the model
+        continue.
+  - [ ] No HTTP 500 is returned for a permission denial.
+- **Tests:** rule denial, user rejection with feedback, user rejection
+  without feedback (abort), scoped agent permissions.
+
+---
+
+### QOC-009 — Open approval requests are ephemeral
+
+- **Status:** `OPEN`
+- **Priority:** `P1`
+- **Source:** Nessy comparison, 2026-10-26
+- **Finding:**
+  - `PendingApprovals` stores open permission requests only in memory.
+  - Its own documentation says a restart loses them.
+  - A process restart during an open approval can lose the request while the
+    execution claim remains.
+  - Nessy models approval as a durable, addressable request with a deadline
+    and deferral.
+- **Evidence:**
+  - `engine/src/main/java/de/augmentia/oc/engine/runtime/permission/engine/PendingApprovals.java:16`
+  - `engine/src/main/java/de/augmentia/oc/engine/runtime/permission/engine/PermissionEngine.java`
+- **Impact:** Approval UI and pending requests can become inconsistent after
+  restart; long-running approvals cannot survive process loss.
+- **Work:**
+  - [ ] Design a durable approval store with request, deadline, facts and
+        decision metadata.
+  - [ ] Reconcile pending approvals during recovery.
+  - [ ] Decide whether approval waiting should park instead of blocking the
+        execution thread.
+- **Acceptance:**
+  - [ ] A pending approval is visible after restart.
+  - [ ] Its deadline and request metadata survive restart.
+- **Tests:** restart with pending approval; deadline expiry; duplicate reply.
+
+---
+
+### QOC-010 — Compaction can split a turn
+
+- **Status:** `DONE`
+- **Priority:** `P1`
+- **Source:** Nessy comparison, 2026-10-26
+- **Finding:**
+  - `CompactionWindow.split` cuts history by message count, not by turn
+    boundary.
+  - A compaction can therefore separate an assistant tool call from its
+    result or retain only part of a turn.
+  - Nessy explicitly keeps whole turns in the tail and cuts only between
+    turns.
+- **Evidence:**
+  - `engine/src/main/java/de/augmentia/oc/engine/runtime/compaction/CompactionWindow.java`
+  - `engine/src/main/java/de/augmentia/oc/engine/runtime/compaction/CompactionService.java:100`
+  - `docs/spec/session-engine/04-algorithms.md`
+- **Impact:** The model can see incomplete tool interactions after compaction.
+- **Work:**
+  - [ ] Define compaction boundaries in terms of delivered turns or message
+        groups.
+  - [ ] Keep at least one complete user/assistant/tool turn in the tail.
+  - [ ] Add a regression test for a tool call at the split point.
+- **Acceptance:**
+  - [ ] No compaction splits a tool call from its result.
+  - [ ] The last retained messages form a complete turn.
+- **Tests:** history with tool call at boundary; repeated compaction.
+
+---
+
+### QOC-011 — Tool calls have no idempotency key
+
+- **Status:** `OPEN`
+- **Priority:** `P1`
+- **Source:** Nessy comparison, 2026-10-26
+- **Finding:**
+  - `ToolContext` contains session, agent, message and call ids, but no
+    stable idempotency key.
+  - QOC guarantees at-least-once execution after a crash, but tools have no
+    standard key for deduplication.
+  - Nessy carries an `IdempotencyKey` on every tool and approval request.
+- **Evidence:**
+  - `engine/src/main/java/de/augmentia/oc/engine/core/contract/tool/ToolContext.java`
+  - `docs/spec/session-engine/06-errors.md`
+- **Impact:** Side-effecting tools may execute twice after recovery.
+- **Work:**
+  - [ ] Add an idempotency key to `ToolContext` and tool events.
+  - [ ] Document the contract for tool authors.
+  - [ ] Expose it to approvals and subagents where applicable.
+- **Acceptance:**
+  - [ ] A recovered tool call can be identified by a stable key.
+  - [ ] Side-effecting tools can deduplicate on that key.
+- **Tests:** recovery scenario; duplicate delivery; key stability.
+
+---
+
+### QOC-012 — Compaction checkpoint is written at message index 0
+
+- **Status:** `OPEN`
+- **Priority:** `P2`
+- **Source:** Nessy comparison, 2026-10-26
+- **Finding:**
+  - `ContextBuilder` inserts the compaction checkpoint at index 0 of the
+    message list.
+  - Every compaction therefore rewrites the beginning of the cached prompt
+    prefix.
+  - Nessy keeps earlier strata stable and appends summaries as closed
+    chapters.
+- **Evidence:**
+  - `engine/src/main/java/de/augmentia/oc/engine/runtime/context/ContextBuilder.java:124`
+  - `engine/src/main/java/de/augmentia/oc/engine/runtime/compaction/CompactionService.java`
+- **Impact:** Cache hits may drop after compaction even when the recent tail
+  is unchanged.
+- **Work:**
+  - [ ] Evaluate placing the checkpoint after stable system/instruction
+        content.
+  - [ ] Measure cache impact before changing prompt layout.
+- **Acceptance:**
+  - [ ] Cache behavior is documented and tested.
+- **Tests:** cache affinity tests; compaction request capture.
+
+---
+
+### QOC-013 — Prompt API has no outcome algebra
+
+- **Status:** `OPEN`
+- **Priority:** `P2`
+- **Source:** Nessy comparison, 2026-10-26
+- **Finding:**
+  - `PromptResult` exposes only `finish`, token counts, text and structured
+    output.
+  - There is no explicit `Busy`, `Refused`, `Failed` or `Terminated` outcome.
+  - Clients cannot distinguish "no turn happened" from "turn failed".
+  - Nessy uses sealed `AskOutcome`/`TellOutcome` for this distinction.
+- **Evidence:**
+  - `quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java:1667`
+  - `quarkus/src/main/java/de/augmentia/oc/engine/http/HttpApi.java:664`
+- **Impact:** Client error handling and retries are ambiguous.
+- **Work:**
+  - [ ] Design a sealed prompt/turn outcome.
+  - [ ] Map it explicitly in `HttpApi`.
+  - [ ] Keep usage absent for no-turn outcomes.
+- **Acceptance:**
+  - [ ] Busy/refused/failed/terminated are distinguishable in the API.
+- **Tests:** busy session, terminated session, refused model response.
+
+---
+
 
 ## 5. Decisions required for the fixes
 

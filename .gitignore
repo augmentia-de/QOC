@@ -8,3 +8,4 @@ log/
 quarkus/log/
 data/
 deploy/vm.md
+/deploy/gcp-ssl.sh

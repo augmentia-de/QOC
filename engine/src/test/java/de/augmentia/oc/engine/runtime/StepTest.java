@@ -122,7 +122,7 @@ class StepTest {
     }
 
     @Test
-    void permissionDenialPropagates() {
+    void permissionDenialBecomesToolFailure() {
         CallId call = CallId.create();
         Step step = new Step(provider(List.of(
                 new ModelEvent.ToolCallRequested(call, ECHO, JsonValue.of(Map.of())),
@@ -131,8 +131,14 @@ class StepTest {
                     throw new PermissionDenied(request, "no");
                 }));
 
-        assertThatThrownBy(() -> step.run(emptyPrepared(), context()))
-                .isInstanceOf(PermissionDenied.class);
+        StepResult result = step.run(emptyPrepared(), context());
+
+        assertThat(result).isInstanceOf(StepResult.Finished.class);
+        StepResult.Finished finished = (StepResult.Finished) result;
+        assertThat(finished.toolCalls()).hasSize(1);
+        assertThat(finished.toolCalls().get(0).outcome()).isInstanceOf(ToolOutcome.Failed.class);
+        assertThat(((ToolOutcome.Failed) finished.toolCalls().get(0).outcome()).error().message())
+                .isEqualTo("no");
     }
 
     private static ProviderAdapter provider(List<ModelEvent> events) {

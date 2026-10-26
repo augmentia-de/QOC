@@ -99,9 +99,11 @@ class ToolRuntimeTest {
             throw new PermissionDenied(request, "no");
         };
 
-        assertThatThrownBy(() -> runtime(definition, denying, noopHooks())
-                .execute(call(Map.of("text", JsonValue.of("x"))), context()))
-                .isInstanceOf(PermissionDenied.class);
+        ToolOutcome outcome = runtime(definition, denying, noopHooks())
+                .execute(call(Map.of("text", JsonValue.of("x"))), context());
+
+        assertThat(outcome).isInstanceOf(ToolOutcome.Failed.class);
+        assertThat(((ToolOutcome.Failed) outcome).error().message()).isEqualTo("no");
         assertThat(executed).isFalse();
     }
 
