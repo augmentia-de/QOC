@@ -21,6 +21,7 @@ import de.augmentia.oc.engine.core.port.store.ToolOutputStore;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 
 /**
@@ -67,9 +68,9 @@ public final class ToolRuntime {
             ToolOutcome outcome = definition.execute().execute(decodedInput, context);
             LOG.fine("tool outcome: " + call.name() + " -> " + outcome.getClass().getSimpleName());
             if (outcome instanceof ToolOutcome.Failed failed) {
-                return failed;
+                return keyed(failed, context);
             }
-            ToolResult result = ((ToolOutcome.Ok) outcome).result();
+            ToolResult result = keyed(((ToolOutcome.Ok) outcome).result(), context);
 
             if (definition.outputSchema().isPresent()) {
                 JsonValue output = result.output().orElse(JsonValue.ofNull());
@@ -89,11 +90,11 @@ public final class ToolRuntime {
             ToolResult normalized = normalize(hooked);
             return new ToolOutcome.Ok(bound(normalized, call, context));
         } catch (PermissionDenied denied) {
-            return new ToolOutcome.Failed(new SessionError.ToolExecutionError("permission_denied",
-                    denied.getMessage()));
+            return keyed(new ToolOutcome.Failed(new SessionError.ToolExecutionError("permission_denied",
+                    denied.getMessage())), context);
         } catch (ToolFailure failure) {
-            return new ToolOutcome.Failed(new SessionError.ToolExecutionError("tool_failure",
-                    failure.getMessage()));
+            return keyed(new ToolOutcome.Failed(new SessionError.ToolExecutionError("tool_failure",
+                    failure.getMessage())), context);
         }
     }
 
@@ -104,6 +105,18 @@ public final class ToolRuntime {
                     + ": " + error.error().message());
         }
         return decoded.valueOrNull();
+    }
+
+    private static ToolResult keyed(ToolResult result, ToolContext context) {
+        Map<String, Object> metadata = new java.util.LinkedHashMap<>(result.metadata());
+        metadata.put("idempotencyKey", context.idempotencyKey().value());
+        return new ToolResult(result.output(), result.content(), metadata);
+    }
+
+    private static ToolOutcome.Failed keyed(ToolOutcome.Failed failed, ToolContext context) {
+        Map<String, Object> metadata = new java.util.LinkedHashMap<>(failed.metadata());
+        metadata.put("idempotencyKey", context.idempotencyKey().value());
+        return new ToolOutcome.Failed(failed.error(), metadata);
     }
 
     private static ToolResult normalize(ToolResult result) {

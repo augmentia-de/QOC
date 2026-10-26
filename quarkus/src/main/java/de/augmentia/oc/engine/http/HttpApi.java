@@ -56,6 +56,21 @@ public class HttpApi {
         return Response.ok(metrics.snapshot()).build();
     }
 
+    @GET
+    @Path("/audit")
+    public Response audit(@QueryParam("session") String session,
+                          @QueryParam("limit") int limit) {
+        if (session == null || session.isBlank()) {
+            return badRequest("session must not be blank");
+        }
+        try {
+            return Response.ok(Map.of("data",
+                    engine.audit(SessionId.parse(session), limit))).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest("invalid session id");
+        }
+    }
+
     @POST
     @Path("/session")
     public Response createSession(CreateSessionRequest request,

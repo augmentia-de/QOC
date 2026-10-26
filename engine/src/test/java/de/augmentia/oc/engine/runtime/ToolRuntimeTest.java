@@ -212,6 +212,19 @@ class ToolRuntimeTest {
     }
 
     @Test
+    void successfulResultCarriesTheIdempotencyKey() {
+        ToolDefinition definition = definition((input, context) -> new ToolOutcome.Ok(
+                ToolResult.of("ok")), inputSchema());
+        ToolContext context = context();
+
+        ToolOutcome outcome = runtime(definition, noopGate(), noopHooks())
+                .execute(call(Map.of("text", JsonValue.of("x"))), context);
+
+        assertThat(((ToolOutcome.Ok) outcome).result().metadata())
+                .containsEntry("idempotencyKey", context.idempotencyKey().value());
+    }
+
+    @Test
     void failingPostHookDoesNotFailTheToolCall() {
         ToolDefinition definition = definition((input, context) -> new ToolOutcome.Ok(
                 ToolResult.of("ok")), inputSchema());

@@ -215,12 +215,21 @@ public class Engine {
     private final java.util.concurrent.ConcurrentHashMap<SessionId, Thread> running =
             new java.util.concurrent.ConcurrentHashMap<>();
     /** Bounded prompt admission: overload degrades to BUSY instead of OOM. */
-    private final java.util.concurrent.Semaphore promptSlots =
-            new java.util.concurrent.Semaphore(16);
+    private java.util.concurrent.Semaphore promptSlots;
+
+    @ConfigProperty(name = "engine.max.concurrent.prompts", defaultValue = "16")
+    int maxConcurrentPrompts;
+
+    @ConfigProperty(name = "engine.turn.max.tool-calls", defaultValue = "64")
+    int maxTurnToolCalls;
+
+    @ConfigProperty(name = "engine.turn.max.wall-minutes", defaultValue = "30")
+    long maxTurnWallMinutes;
 
     @PostConstruct
     void wire() {
         clock = new SystemClock();
+        promptSlots = new java.util.concurrent.Semaphore(Math.max(1, maxConcurrentPrompts));
         boolean sqlite = "sqlite".equalsIgnoreCase(dbKind);
         if (sqlite) Sqlite.enableWal(dataSource);
         journal = sqlite ? new SqliteJournal(dataSource, clock) : new SqlJournal(dataSource, clock);
@@ -512,6 +521,25 @@ public class Engine {
     public Option<SessionInfo> session(SessionId id) {
         return sessions.info(id);
     }
+
+    /** Read-only audit projection over security- and execution-relevant events. */
+    public List<AuditEntry> audit(SessionId id, int limit) {
+        int max = Math.max(1, Math.min(limit <= 0 ? 100 : limit, 1_000));
+        List<StoredEvent> events = journal.history(id.value(), Seq.zero());
+        List<AuditEntry> entries = new ArrayList<>();
+        for (StoredEvent event : events) {
+            String type = event.type();
+            if (!type.startsWith("Tool") && !type.startsWith("Compaction")
+                    && !type.startsWith("Execution") && !type.startsWith("Step")) {
+                continue;
+            }
+            entries.add(new AuditEntry(event.seq().value(), type, event.time().toString()));
+        }
+        int from = Math.max(0, entries.size() - max);
+        return List.copyOf(entries.subList(from, entries.size()));
+    }
+
+    public record AuditEntry(long seq, String type, String time) {}
 
     public List<PermissionRequest> pendingPermissions(SessionId id) {
         List<PermissionRequest> inMemory = permissionEngine.pending().list(id);
@@ -1185,8 +1213,9 @@ public class Engine {
         boolean submitForced = false;
         de.augmentia.oc.engine.core.eval.TurnPolicy turnPolicy =
                 new de.augmentia.oc.engine.core.eval.TurnPolicy(
-                        Math.max(1, agent.maxSteps()) + 1, 64, 200_000,
-                        java.time.Duration.ofMinutes(30));
+                        Math.max(1, agent.maxSteps()) + 1,
+                        Math.max(1, maxTurnToolCalls), 200_000,
+                        java.time.Duration.ofMinutes(Math.max(1, maxTurnWallMinutes)));
         int totalToolCalls = 0;
         long totalTokens = 0;
         java.time.Instant turnStarted = clock.now();
