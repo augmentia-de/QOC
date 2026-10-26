@@ -23,7 +23,6 @@ public final class NioInstructionLoader implements InstructionLoader {
     public static final int MAX_FILE_BYTES = 32 * 1024;
 
     private static final Logger LOG = Logger.getLogger(NioInstructionLoader.class.getName());
-    private static final List<String> CONTEXT_NAMES = List.of("AGENTS.md", "CLAUDE.md");
 
     private final Path globalDirectory;
 

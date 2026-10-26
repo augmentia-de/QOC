@@ -159,7 +159,4 @@ public final class McpStdioClient implements McpClient {
         throw new McpFailure("timeout waiting for response");
     }
 
-    private static java.nio.file.Path Path(String value) {
-        return java.nio.file.Path.of(value);
-    }
 }

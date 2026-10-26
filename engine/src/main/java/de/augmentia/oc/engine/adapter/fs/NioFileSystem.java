@@ -8,7 +8,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
-import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -21,15 +20,12 @@ import java.util.stream.Stream;
 /** Real filesystem via java.nio. */
 public final class NioFileSystem implements FileSystem {
 
-    private final Path root;
-
     public NioFileSystem() {
         this(Path.of("."));
     }
 
     public NioFileSystem(Path root) {
         if (root == null) throw new IllegalArgumentException("root must not be null");
-        this.root = root.toAbsolutePath().normalize();
     }
 
     @Override

@@ -27,6 +27,7 @@ import de.augmentia.oc.engine.core.port.store.Journal;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import de.augmentia.oc.engine.core.model.Money;
@@ -41,7 +42,6 @@ public final class CompactionService {
     public static final String CTX_SUMMARY = PromptLoader.get("ctx-summary");
     public static final String CTX_SUMMARY_UPDATE = PromptLoader.get("ctx-summary-update");
 
-    private final Journal journal;
     private final Conversation conversation;
     private final InstructionStore instructions;
     private final Compaction compaction;
@@ -67,7 +67,6 @@ public final class CompactionService {
                 || compaction == null || clock == null) {
             throw new IllegalArgumentException("compaction dependencies must not be null");
         }
-        this.journal = journal;
         this.conversation = conversation;
         this.instructions = instructions;
         this.compaction = compaction;
@@ -165,10 +164,10 @@ public final class CompactionService {
 
     private void advanceEpoch(SessionId session, Seq throughSeq, String summary) {
         InstructionState current = instructions.state(session).orElse(null);
-        if (current == null) {
-            current = InstructionEpoch.start(Seq.zero(), Map.of());
-        }
-        InstructionState next = InstructionEpoch.start(throughSeq, current.initialValues());
+        Map<String, String> initialValues = current == null ? Map.of() : current.initialValues();
+        Map<String, String> currentValues = new LinkedHashMap<>(initialValues);
+        currentValues.put("compaction.summary", summaryHash(summary));
+        InstructionState next = new InstructionState(throughSeq, throughSeq, initialValues, currentValues);
         instructions.putState(session, next);
         instructions.putBlob(summaryHash(summary), summary);
     }

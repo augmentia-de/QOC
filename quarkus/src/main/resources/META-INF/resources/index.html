@@ -488,7 +488,7 @@ async function compactNow() {
     const res = await fetch('/api/session/' + sessionId + '/compact', {method:'POST'});
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
-    logEvent('Compact ausgeführt');
+    logEvent('Compact ausgeführt' + (data.summary ? ': ' + String(data.summary).slice(0, 120) : ''));
     const current = sessionId;
     sessionId = null;
     await switchSession(current);

@@ -255,14 +255,25 @@ public class Engine {
             SessionInfo info = sessions.info(request.sessionId()).orElse(null);
             List<Rule> sessionRules = info == null ? List.of() : info.permissions();
             Option<AgentId> agent = info == null ? Option.none() : Option.some(info.agent());
+            List<Rule> agentRules = List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK));
+            if (info != null) {
+                try {
+                    String agentName = agentCatalogue.nameOf(info.agent());
+                    EngineConfig.AgentConfig cfg = agentCatalogue.config(agentName);
+                    if (cfg != null && !cfg.permissions().isEmpty()) {
+                        agentRules = cfg.permissions();
+                    }
+                } catch (RuntimeException e) {
+                    LOG.warnf("cannot resolve agent rules for %s: %s", info.agent(), e.getMessage());
+                }
+            }
             LOG.debugf("permission check session=%s action=%s", request.sessionId().value(), request.action());
             Span pspan = tracer().spanBuilder("permission.assert")
                     .setAttribute("session.id", request.sessionId().value())
                     .setAttribute("action", request.action())
                     .startSpan();
             try (Scope pscope = pspan.makeCurrent()) {
-            permissionEngine.assertAllowed(new PermissionCheck(request, agent,
-                    List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK)), sessionRules, List.of(), List.of()));
+            permissionEngine.assertAllowed(new PermissionCheck(request, agent, agentRules, sessionRules, List.of(), List.of()));
             pspan.setAttribute("result", "checked");
             pspan.end();
             }
@@ -351,7 +362,8 @@ public class Engine {
                 ? new NioInstructionLoader(Path.of(System.getProperty("user.home", "."),
                         ".config", "opencode"))
                 : InstructionLoader.none();
-        contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader);
+        contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
+                instructions == null ? Option.none() : Option.some(instructions));
         modelRef = new ModelRef(ProviderId.create(), ModelId.create());
         titleGenerator = new TitleGenerator(provider, modelRef);
         step = new Step(provider, toolRuntime);
@@ -747,15 +759,6 @@ public class Engine {
         Step runStep = step;
         if (resultSchema != null) {
             runSnapshot = SubmitResult.withTool(toolSnapshot, resultSchema);
-            // The synthetic result tool only returns data; it must never wait
-            // for a permission decision on an otherwise restricted session.
-            PermissionGate structuredGate = request -> {
-                if (!SubmitResult.TOOL_NAME.equals(request.action())) {
-                    permissionGate.assertAllowed(request);
-                }
-            };
-            runStep = new Step(provider, new ToolRuntime(runSnapshot,
-                    ToolAuthorizer.defaultAuthorizer(), structuredGate, toolHooks, toolOutput));
         }
 
         InboxId inboxId = InboxId.create();
@@ -790,7 +793,20 @@ public class Engine {
         }
 
         // Agent-specific tool snapshot
-        ToolSnapshot agentToolSnapshot = filterToolSnapshot(toolSnapshot, agentConfig);
+        ToolSnapshot agentToolSnapshot = filterToolSnapshot(runSnapshot, agentConfig);
+
+        if (resultSchema != null) {
+            PermissionGate structuredGate = request -> {
+                if (!SubmitResult.TOOL_NAME.equals(request.action())) {
+                    permissionGate.assertAllowed(request);
+                }
+            };
+            runStep = new Step(provider, new ToolRuntime(agentToolSnapshot,
+                    ToolAuthorizer.defaultAuthorizer(), structuredGate, toolHooks, toolOutput));
+        } else if (agentToolSnapshot != runSnapshot) {
+            runStep = new Step(provider, new ToolRuntime(agentToolSnapshot,
+                    ToolAuthorizer.defaultAuthorizer(), permissionGate, toolHooks, toolOutput));
+        }
 
         // MODE-PLAN: log synthetic message when entering/leaving plan mode (PR-7).
         if (agent.planMode()) {
@@ -821,7 +837,7 @@ public class Engine {
             Option<Choice> forcedChoice = resultSchema != null && submitForced
                     ? Option.some(new Choice.One(new ToolName(SubmitResult.TOOL_NAME)))
                     : Option.none();
-            var prepared = contextBuilder.prepare(info, agent, model, runSnapshot, Seq.zero(),
+            var prepared = contextBuilder.prepare(info, agent, model, agentToolSnapshot, Seq.zero(),
                     stepNo, forcedChoice);
             if (resultSchema != null) {
                 prepared = prepared.withSystem(SubmitResult.INSTRUCTION);
@@ -1057,7 +1073,8 @@ public class Engine {
         toolSnapshot = registry.snapshot(allowAll);
         toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
                 permissionGate, toolHooks, toolOutput);
-        contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader);
+        contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
+                instructions == null ? Option.none() : Option.some(instructions));
         LOG.infof("reloaded config: %d agent(s), %d skill(s)",
                 agentCatalogue.list().size(), skillCatalog.all().size());
     }
@@ -1328,6 +1345,10 @@ public class Engine {
         java.util.Set<String> allowedNames = new java.util.LinkedHashSet<>();
         for (ToolDefinition def : global.list()) {
             String name = def.effectiveName();
+            if (SubmitResult.TOOL_NAME.equals(name)) {
+                allowedNames.add(name);
+                continue;
+            }
             if (!allowed(name, allow)) continue;
             if (denied(name, deny)) continue;
             if (isMcpTool(name) && !mcpAllowed(name, mcpServers)) continue;

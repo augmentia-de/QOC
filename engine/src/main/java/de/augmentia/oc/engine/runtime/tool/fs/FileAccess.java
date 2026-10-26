@@ -33,7 +33,7 @@ public final class FileAccess {
                 || (absolute.startsWith(projectRoot) && !absolute.equals(projectRoot));
         String resource = internal ? location.relativize(absolute).toString() : absolute.toString();
         Path boundary = directory ? absolute : absolute.getParent();
-        return new Resolved(absolute, resource, internal, boundary);
+        return new Resolved(absolute, resource, !internal, boundary);
     }
 
     public void write(Path path, byte[] content) {

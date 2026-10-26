@@ -36,7 +36,6 @@ public final class SubmittedResult {
             if (decoded instanceof Result.Ok<JsonValue> okValue) {
                 return Option.some(okValue.value());
             }
-            return Option.none();
         }
         return Option.none();
     }

@@ -65,7 +65,6 @@ public final class PermissionEngine {
         switch (decision) {
             case PermissionDecision.Allowed allowed -> {
                 LOG.fine("permission allowed: " + check.request().action());
-                return;
             }
             case PermissionDecision.Denied denied -> {
                 LOG.fine("permission denied: " + check.request().action() + " reason=" + denied.reason());
@@ -83,7 +82,6 @@ public final class PermissionEngine {
                 pending.remove(request.sessionId(), request.id());
                 switch (answer) {
                     case ApprovalResult.Approved approved -> {
-                        return;
                     }
                     case ApprovalResult.Denied denied -> throw rejection(request, denied.feedback());
                 }

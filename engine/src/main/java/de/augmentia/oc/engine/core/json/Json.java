@@ -77,7 +77,7 @@ public final class Json {
             case Schema.Int s -> {
                 if (value instanceof JsonValue.Num n && n.value().scale() <= 0) {
                     try {
-                        n.value().intValueExact();
+                        int ignored = n.value().intValueExact();
                         yield new Result.Ok<>(value);
                     } catch (ArithmeticException ex) {
                         yield new Result.Err<>(new DecodeError(path, "expected int"));
@@ -88,7 +88,7 @@ public final class Json {
             case Schema.Long s -> {
                 if (value instanceof JsonValue.Num n && n.value().scale() <= 0) {
                     try {
-                        n.value().longValueExact();
+                        long ignored = n.value().longValueExact();
                         yield new Result.Ok<>(value);
                     } catch (ArithmeticException ex) {
                         yield new Result.Err<>(new DecodeError(path, "expected long"));

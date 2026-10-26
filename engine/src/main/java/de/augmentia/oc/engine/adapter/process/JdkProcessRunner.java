@@ -121,12 +121,11 @@ public final class JdkProcessRunner implements ProcessRunner {
 
         private final Process process;
         private final StringBuilder output = new StringBuilder();
-        private final Thread reader;
         private boolean closed;
 
         private JdkHandle(Process process, Option<String> stdin) {
             this.process = process;
-            this.reader = Thread.ofVirtual().start(this::pump);
+            Thread.ofVirtual().start(this::pump);
             stdin.ifPresent(this::write);
         }
 

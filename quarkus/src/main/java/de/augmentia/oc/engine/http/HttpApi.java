@@ -534,17 +534,15 @@ public class HttpApi {
     @POST
     @Path("/file/upload")
     @Consumes(MediaType.APPLICATION_OCTET_STREAM)
-    public Response uploadFile(@QueryParam("path") String path, java.io.InputStream body) {
+    public Response uploadFile(@QueryParam("path") String path, byte[] body) {
         if (path == null || path.isBlank()) {
             return badRequest("path must not be blank");
         }
         try {
-            engine.writeFile(path, body == null ? new byte[0] : body.readAllBytes());
+            engine.writeFile(path, body == null ? new byte[0] : body);
             return Response.ok(Map.of("ok", true)).build();
         } catch (IllegalArgumentException e) {
             return badRequest(e.getMessage());
-        } catch (java.io.IOException e) {
-            return badRequest("cannot read upload: " + e.getMessage());
         }
     }
 

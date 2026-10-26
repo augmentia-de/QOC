@@ -71,7 +71,7 @@ public final class OpenAiSchema {
         if (!required.isEmpty()) {
             result.put("required", JsonValue.of(required.stream().map(JsonValue::of).toList()));
         }
-        result.put("additionalProperties", JsonValue.of(strict ? false : object.additionalProperties()));
+        result.put("additionalProperties", JsonValue.of(!strict && object.additionalProperties()));
         return JsonValue.of(result);
     }
 

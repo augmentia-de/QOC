@@ -14,6 +14,7 @@ import de.augmentia.oc.engine.core.eval.OutputBudget;
 import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.*;
 import de.augmentia.oc.engine.core.port.store.Conversation;
+import de.augmentia.oc.engine.core.port.store.InstructionStore;
 import de.augmentia.oc.engine.core.port.world.InstructionLoader;
 import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
 
@@ -36,17 +37,24 @@ public final class ContextBuilder {
 
     private final Conversation conversation;
     private final SkillCatalog skills;
-    private final InstructionLoader instructions;
+    private final InstructionLoader instructionLoader;
+    private final Option<InstructionStore> instructionStore;
 
     public ContextBuilder(Conversation conversation, SkillCatalog skills) {
-        this(conversation, skills, InstructionLoader.none());
+        this(conversation, skills, InstructionLoader.none(), Option.none());
     }
 
-    public ContextBuilder(Conversation conversation, SkillCatalog skills, InstructionLoader instructions) {
+    public ContextBuilder(Conversation conversation, SkillCatalog skills, InstructionLoader instructionLoader) {
+        this(conversation, skills, instructionLoader, Option.none());
+    }
+
+    public ContextBuilder(Conversation conversation, SkillCatalog skills, InstructionLoader instructionLoader,
+                         Option<InstructionStore> instructionStore) {
         if (conversation == null) throw new IllegalArgumentException("conversation must not be null");
         this.conversation = conversation;
         this.skills = skills == null ? SkillCatalog.empty() : skills;
-        this.instructions = instructions == null ? InstructionLoader.none() : instructions;
+        this.instructionLoader = instructionLoader == null ? InstructionLoader.none() : instructionLoader;
+        this.instructionStore = instructionStore == null ? Option.none() : instructionStore;
     }
 
     public Prepared prepare(SessionInfo session, AgentProfile agent, ModelInfo model,
@@ -67,7 +75,7 @@ public final class ContextBuilder {
         String base = agent.system().orElse(basePrompt(tools));
         if (!base.isBlank()) system.add(base);
         for (InstructionLoader.InstructionFile file
-                : instructions.load(session.location().directory())) {
+                : instructionLoader.load(session.location().directory())) {
             if (file.text().isBlank()) continue;
             if (file.kind() == InstructionLoader.Kind.SYSTEM) {
                 system.clear();
@@ -100,7 +108,22 @@ public final class ContextBuilder {
     }
 
     private List<ModelMessage> history(SessionId session, Seq afterSeq, AgentProfile agent) {
-        List<ModelMessage> messages = ConversationFolding.fold(conversation.messages(session, afterSeq));
+        Seq from = afterSeq == null ? Seq.zero() : afterSeq;
+        Option<InstructionState> state = Option.none();
+        if (instructionStore.isPresent()) {
+            state = instructionStore.orElseThrow().state(session);
+            if (state.isPresent()) from = state.orElseThrow().epochStart();
+        }
+        List<ModelMessage> messages = ConversationFolding.fold(conversation.messages(session, from));
+        if (state.isPresent()) {
+            String hash = state.orElseThrow().currentValues().get("compaction.summary");
+            if (hash != null && !hash.isBlank() && instructionStore.orElseThrow().blob(hash).isPresent()) {
+                String summary = instructionStore.orElseThrow().blob(hash).orElseThrow();
+                String checkpoint = PromptLoader.render("ctx-checkpoint", Map.of(
+                        "summary", summary, "recent", ""));
+                messages.add(0, new ModelMessage.User(List.of(new ModelContent.Text(checkpoint))));
+            }
+        }
         // MODE-PLAN: insert reminders as messages (PR-7: logged synthetically).
         boolean hasEnter = messages.stream().anyMatch(m ->
                 m instanceof ModelMessage.User u && u.content().stream()
@@ -125,7 +148,6 @@ public final class ContextBuilder {
         StringBuilder base = new StringBuilder(
                 PromptLoader.get("base-prompt").replace("${tools}", String.join(", ", names)));
         // SYS-GUIDE: tool-specific hints rendered from the snapshot (PR-5).
-        StringBuilder guide = new StringBuilder();
         boolean hasShell = names.stream().anyMatch(n -> n.equals("shell"));
         boolean hasWrite = names.stream().anyMatch(n -> n.equals("write"));
         boolean hasEdit = names.stream().anyMatch(n -> n.equals("edit"));
