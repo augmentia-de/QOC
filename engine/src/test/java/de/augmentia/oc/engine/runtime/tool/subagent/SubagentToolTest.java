@@ -9,6 +9,7 @@ import de.augmentia.oc.engine.core.model.CallId;
 import de.augmentia.oc.engine.core.model.MessageId;
 import de.augmentia.oc.engine.core.model.SessionId;
 import de.augmentia.oc.engine.core.model.TokenCount;
+import de.augmentia.oc.engine.core.model.ToolContent;
 
 import org.junit.jupiter.api.Test;
 
@@ -29,6 +30,28 @@ class SubagentToolTest {
 
         assertThat(outcome).isInstanceOf(ToolOutcome.Ok.class);
         assertThat(((ToolOutcome.Ok) outcome).result().content().getFirst().toString()).contains("done: hi");
+    }
+
+    @Test
+    void executesATypedTaskBatchInOrder() {
+        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) ->
+                new SubagentRunner.SubagentResult(agent + ":" + prompt, TokenCount.zero()),
+                request -> { });
+        ToolContext context = context();
+
+        ToolOutcome outcome = SubagentTool.definition(tool).execute().execute(
+                JsonValue.of(Map.of("tasks", JsonValue.of(java.util.List.of(
+                        JsonValue.of(Map.of("agent", JsonValue.of("a"),
+                                "prompt", JsonValue.of("one"), "name", JsonValue.of("first"))),
+                        JsonValue.of(Map.of("agent", JsonValue.of("b"),
+                                "prompt", JsonValue.of("two"))))))),
+                context);
+
+        assertThat(outcome).isInstanceOf(ToolOutcome.Ok.class);
+        String text = ((ToolContent.TextItem) ((ToolOutcome.Ok) outcome).result()
+                .content().getFirst()).text();
+        assertThat(text).contains("first: a:one").contains("task-2: b:two");
+        assertThat(((ToolOutcome.Ok) outcome).result().metadata()).containsEntry("tasks", 2);
     }
 
     @Test

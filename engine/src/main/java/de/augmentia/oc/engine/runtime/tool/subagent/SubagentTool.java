@@ -56,11 +56,16 @@ public final class SubagentTool {
 
     public static ToolDefinition definition(SubagentTool tool) {
         if (tool == null) throw new IllegalArgumentException("tool must not be null");
-        Schema input = Schema.obj(Map.of(
+        Schema task = Schema.obj(Map.of(
                 "agent", Schema.str(),
                 "prompt", Schema.str(),
+                "name", Schema.opt(Schema.str())));
+        Schema input = Schema.obj(Map.of(
+                "agent", Schema.opt(Schema.str()),
+                "prompt", Schema.opt(Schema.str()),
                 "description", Schema.opt(Schema.str()),
-                "background", Schema.opt(Schema.bool())));
+                "background", Schema.opt(Schema.bool()),
+                "tasks", Schema.opt(Schema.arr(task))));
         return new ToolDefinition(new ToolName("subagent"), "Delegate a task to a specialized subagent",
                 input, Option.none(),
                 (value, context) -> {
@@ -78,6 +83,10 @@ public final class SubagentTool {
     static ToolOutcome execute(SubagentRunner runner, PermissionGate permissionGate, JsonValue value,
                                de.augmentia.oc.engine.core.contract.tool.ToolContext context) {
         try {
+            JsonValue tasks = JsonArgs.field(value, "tasks");
+            if (tasks instanceof JsonValue.Arr arr && !arr.values().isEmpty()) {
+                return executeBatch(runner, permissionGate, arr, context);
+            }
             String agent = JsonArgs.requiredString(value, "agent");
             String prompt = JsonArgs.requiredString(value, "prompt");
 
@@ -103,6 +112,34 @@ public final class SubagentTool {
         } catch (RuntimeException e) {
             return ReadTool.failure("subagent", e.getMessage());
         }
+    }
+
+    private static ToolOutcome executeBatch(SubagentRunner runner, PermissionGate permissionGate,
+                                            JsonValue.Arr tasks,
+                                            de.augmentia.oc.engine.core.contract.tool.ToolContext context) {
+        StringBuilder output = new StringBuilder();
+        int index = 0;
+        for (JsonValue task : tasks.values()) {
+            index++;
+            String agent = JsonArgs.requiredString(task, "agent");
+            String prompt = JsonArgs.requiredString(task, "prompt");
+            String name = JsonArgs.string(task, "name");
+            ToolOutcome outcome = execute(runner, permissionGate,
+                    JsonValue.of(Map.of("agent", JsonValue.of(agent),
+                            "prompt", JsonValue.of(prompt))), context);
+            if (outcome instanceof ToolOutcome.Failed failed) {
+                return new ToolOutcome.Failed(failed.error(), Map.of(
+                        "taskIndex", index, "taskName", name == null ? agent : name));
+            }
+            String text = ((ToolOutcome.Ok) outcome).result().content().stream()
+                    .map(content -> content instanceof ToolContent.TextItem item ? item.text() : "")
+                    .reduce("", String::concat);
+            output.append(name == null ? "task-" + index : name)
+                    .append(": ").append(text).append('\n');
+        }
+        return new ToolOutcome.Ok(new ToolResult(Option.none(),
+                List.of(new ToolContent.TextItem(output.toString().stripTrailing())),
+                Map.of("tasks", tasks.values().size())));
     }
 
     ToolOutcome executeBackground(SubagentRunner runner, JsonValue value,
