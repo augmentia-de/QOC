@@ -19,7 +19,9 @@ public interface ToolAuthorizer {
                 java.util.List.of(call.input().toString()),
                 java.util.List.of(),
                 java.util.Map.of("tool", definition.effectiveName(),
-                        "idempotencyKey", context.idempotencyKey().value()),
+                        "idempotencyKey", context.idempotencyKey().value(),
+                        "approvalTier", de.augmentia.oc.engine.core.model.ApprovalTier
+                                .forTool(definition.effectiveName()).name()),
                 null,
                 null);
     }
