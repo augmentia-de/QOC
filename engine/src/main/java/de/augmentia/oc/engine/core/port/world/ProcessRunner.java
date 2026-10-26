@@ -40,6 +40,11 @@ public interface ProcessRunner {
 
         String output();
 
+        /** Stderr captured so far. Implementations that do not separate streams return empty. */
+        default String errorOutput() {
+            return "";
+        }
+
         Option<Integer> exitCode();
 
         void kill();

@@ -1,21 +1,30 @@
 package de.augmentia.oc.engine.runtime;
 
+import de.augmentia.oc.engine.core.contract.tool.ToolCall;
 import de.augmentia.oc.engine.core.contract.tool.ToolContext;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
+import de.augmentia.oc.engine.core.contract.tool.ToolSnapshot;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.model.AgentId;
 import de.augmentia.oc.engine.core.model.CallId;
 import de.augmentia.oc.engine.core.model.MessageId;
 import de.augmentia.oc.engine.core.model.SessionId;
+import de.augmentia.oc.engine.core.model.ToolName;
 import de.augmentia.oc.engine.core.port.world.ProcessRunner;
 import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
 import de.augmentia.oc.engine.core.shell.scan.ScanResult;
+import de.augmentia.oc.engine.runtime.tool.runtime.ToolAuthorizer;
+import de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime;
+import de.augmentia.oc.engine.runtime.tool.shell.ProcessRegistry;
 import de.augmentia.oc.engine.runtime.tool.shell.ShellTool;
 import de.augmentia.oc.engine.testing.FakeProcess;
+import de.augmentia.oc.engine.testing.InMemoryToolOutput;
 
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -80,6 +89,104 @@ class ShellToolTest {
     }
 
     @Test
+    void successfulCommandKeepsStderrVisible() {
+        FakeProcess process = new FakeProcess(new ProcessRunner.Exit(0, "hello", "warning", false));
+
+        ToolOutcome outcome = execute(process, args("echo hello", null, null, false));
+
+        assertThat(text(outcome)).contains("[stdout]").contains("hello")
+                .contains("[stderr]").contains("warning");
+    }
+
+    @Test
+    void nonZeroExitExposesStdoutAndStderr() {
+        FakeProcess process = new FakeProcess(new ProcessRunner.Exit(2, "partial", "bad", false));
+
+        ToolOutcome outcome = execute(process, args("false", null, null, false));
+
+        assertThat(outcome).isInstanceOf(ToolOutcome.Failed.class);
+        assertThat(((ToolOutcome.Failed) outcome).error().message())
+                .contains("command exited with 2")
+                .contains("[stdout]").contains("partial")
+                .contains("[stderr]").contains("bad");
+        assertThat(((ToolOutcome.Failed) outcome).metadata()).containsEntry("exit", 2);
+    }
+
+    @Test
+    void toolDoesNotPreTruncateLargeOutput() {
+        String large = "x".repeat(60 * 1024);
+        FakeProcess process = new FakeProcess(new ProcessRunner.Exit(0, large, "", false));
+
+        ToolOutcome outcome = execute(process, args("generate", null, null, false));
+
+        assertThat(text(outcome)).hasSize(large.length());
+        assertThat(((ToolOutcome.Ok) outcome).result().metadata()).doesNotContainKey("truncated");
+    }
+
+    @Test
+    void toolRuntimeStoresTheFullLargeShellOutput() {
+        String large = "line\n".repeat(2_500);
+        FakeProcess process = new FakeProcess(new ProcessRunner.Exit(0, large, "", false));
+        InMemoryToolOutput store = new InMemoryToolOutput();
+        var definition = ShellTool.definition(process, ROOT, null);
+        ToolRuntime runtime = new ToolRuntime(
+                new ToolSnapshot(Map.of(new ToolName("shell"), definition)),
+                ToolAuthorizer.defaultAuthorizer(), request -> {}, noopHooks(), store);
+        SessionId session = SessionId.create();
+        ToolOutcome outcome = runtime.execute(
+                new ToolCall(CallId.create(), new ToolName("shell"),
+                        args("large", null, null, false)),
+                new ToolContext(session, AgentId.create(), MessageId.create(), CallId.create()));
+
+        assertThat(((ToolOutcome.Ok) outcome).result().metadata())
+                .containsEntry("truncated", "yes")
+                .containsEntry("exit", 0);
+        assertThat(store.size()).isEqualTo(1);
+        var parsed = de.augmentia.oc.engine.core.model.ArtifactRef.parse(String.valueOf(
+                ((ToolOutcome.Ok) outcome).result().metadata().get("outputPath")));
+        assertThat(parsed.session()).isEqualTo(session);
+        assertThat(store.text(parsed.session(), parsed.id())).contains(large);
+    }
+
+    @Test
+    void backgroundProcessHasAStableIdAndCanBeInspected() {
+        ProcessRegistry registry = new ProcessRegistry();
+        FakeProcess process = new FakeProcess(new ProcessRunner.Exit(0, "done", "", false));
+        SessionId session = SessionId.create();
+        ToolContext context = new ToolContext(session, AgentId.create(), MessageId.create(), CallId.create());
+
+        ToolOutcome outcome = ShellTool.definition(process, ROOT, ROOT, null, null, registry)
+                .execute().execute(args("sleep 1", null, null, true), context);
+        String shellId = String.valueOf(((ToolOutcome.Ok) outcome).result().metadata().get("shellId"));
+
+        assertThat(shellId).startsWith("sh_");
+        assertThat(registry.get(session, shellId).isPresent()).isTrue();
+        await(shellId, registry, session);
+        ProcessRegistry.Snapshot snapshot = registry.get(session, shellId).orElseThrow();
+        assertThat(snapshot.state()).isEqualTo(ProcessRegistry.State.COMPLETED);
+        assertThat(snapshot.stdout()).isEqualTo("done");
+        assertThat(snapshot.exit().orElseThrow()).isZero();
+        registry.closeAll();
+    }
+
+    @Test
+    void backgroundProcessIsScopedToItsSession() {
+        ProcessRegistry registry = new ProcessRegistry();
+        FakeProcess process = new FakeProcess(new ProcessRunner.Exit(0, "", "", false));
+        SessionId owner = SessionId.create();
+        SessionId other = SessionId.create();
+        ToolContext context = new ToolContext(owner, AgentId.create(), MessageId.create(), CallId.create());
+
+        ToolOutcome outcome = ShellTool.definition(process, ROOT, ROOT, null, null, registry)
+                .execute().execute(args("sleep 1", null, null, true), context);
+        String shellId = String.valueOf(((ToolOutcome.Ok) outcome).result().metadata().get("shellId"));
+
+        assertThat(registry.get(other, shellId).isEmpty()).isTrue();
+        assertThat(registry.list(other)).isEmpty();
+        registry.closeAll();
+    }
+
+    @Test
     void standardEnvironmentIsSet() {
         FakeProcess process = new FakeProcess(new ProcessRunner.Exit(0, "", "", false));
         String session = SessionId.create().value();
@@ -105,6 +212,34 @@ class ShellToolTest {
         ToolContext context = new ToolContext(SessionId.create(), AgentId.create(),
                 MessageId.create(), CallId.create());
         return ShellTool.definition(process, ROOT, null).execute().execute(args, context);
+    }
+
+    private static de.augmentia.oc.engine.core.contract.tool.Hooks noopHooks() {
+        return new de.augmentia.oc.engine.core.contract.tool.Hooks() {
+            @Override
+            public ToolCall beforeToolCall(ToolContext context, ToolCall call) {
+                return call;
+            }
+
+            @Override
+            public de.augmentia.oc.engine.core.contract.tool.ToolResult afterToolCall(
+                    ToolContext context, de.augmentia.oc.engine.core.contract.tool.ToolResult result) {
+                return result;
+            }
+        };
+    }
+
+    private static void await(String shellId, ProcessRegistry registry, SessionId session) {
+        long deadline = System.currentTimeMillis() + 2_000;
+        while (registry.get(session, shellId).orElseThrow().running()
+                && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
     }
 
     private static JsonValue args(String command, String workdir, Long timeout, boolean background) {

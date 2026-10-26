@@ -47,9 +47,13 @@ import de.augmentia.oc.engine.runtime.tool.fs.GlobTool;
 import de.augmentia.oc.engine.runtime.tool.fs.GrepTool;
 import de.augmentia.oc.engine.runtime.tool.fs.PatchTool;
 import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
+import de.augmentia.oc.engine.runtime.tool.shell.ProcessRegistry;
+import de.augmentia.oc.engine.runtime.tool.shell.ProcessTool;
 import de.augmentia.oc.engine.runtime.tool.shell.ShellTool;
+import de.augmentia.oc.engine.runtime.tool.subagent.BackgroundTasks;
 import de.augmentia.oc.engine.runtime.tool.subagent.SubagentRunner;
 import de.augmentia.oc.engine.runtime.tool.subagent.SubagentTool;
+import de.augmentia.oc.engine.runtime.tool.subagent.TaskTool;
 import de.augmentia.oc.engine.runtime.tool.web.FirecrawlTool;
 import de.augmentia.oc.engine.runtime.tool.web.WebFetchTool;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
@@ -192,6 +196,7 @@ public class Engine {
     private McpServerManager mcp;
     private List<Rule> allowAll;
     private SubagentTool subagentTool;
+    private ProcessRegistry processRegistry;
     private PermissionEngine permissionEngine;
     private SessionRetention sessionRetention;
     private ScheduledExecutorService retentionExecutor;
@@ -279,16 +284,20 @@ public class Engine {
             }
         };
         registry = new ToolRegistry();
-        registry.register(ReadTool.definition(fs, access, permissionGate));
+        registry.register(ReadTool.definition(fs, access, permissionGate, toolOutput));
         registry.register(WriteTool.definition(fs, access, permissionGate));
         registry.register(EditTool.definition(fs, access, permissionGate));
         registry.register(PatchTool.definition(fs, access, permissionGate));
         registry.register(GlobTool.definition(fs, access, permissionGate));
-        registry.register(GrepTool.definition(fs, access, permissionGate));
+        registry.register(GrepTool.definition(fs, access, permissionGate, toolOutput));
         JdkProcessRunner processRunner = new JdkProcessRunner();
-        registry.register(ShellTool.definition(processRunner, workspacePath, workspacePath, null, permissionGate));
+        processRegistry = new ProcessRegistry();
+        registry.register(ShellTool.definition(processRunner, workspacePath, workspacePath, null,
+                permissionGate, processRegistry));
+        registry.register(ProcessTool.definition(processRegistry));
         subagentTool = new SubagentTool(null, permissionGate);
         registry.register(SubagentTool.definition(subagentTool));
+        registry.register(TaskTool.definition(subagentTool));
         String firecrawlKey = firecrawlApiKey == null ? "" : firecrawlApiKey.orElse("");
         registry.register(FirecrawlTool.definition(
                 new FirecrawlTool(new JdkHttpTransport(), firecrawlKey, firecrawlEndpoint)));
@@ -398,6 +407,8 @@ public class Engine {
     @PreDestroy
     void shutdownRetention() {
         if (retentionExecutor != null) retentionExecutor.shutdownNow();
+        if (processRegistry != null) processRegistry.closeAll();
+        if (subagentTool != null) subagentTool.close();
     }
 
     public boolean deleteSession(SessionId id) {
@@ -405,6 +416,8 @@ public class Engine {
         if (running.containsKey(id)) {
             throw new IllegalStateException("session is currently running");
         }
+        if (processRegistry != null) processRegistry.closeSession(id);
+        if (subagentTool != null) subagentTool.closeSession(id);
         return sessionRetention.delete(id);
     }
 
@@ -630,6 +643,246 @@ public class Engine {
         ModelRef model = preparedModel(info, modelInfo());
         Seq throughSeq = Seq.of(journal.history(id.value(), Seq.zero()).size());
         return compaction.compact(id, CompactionReason.MANUAL, model, Option.none(), throughSeq, clock.now());
+    }
+
+    /** Background shell processes of a session. */
+    public List<ProcessRegistry.Snapshot> processes(SessionId id) {
+        return processRegistry == null ? List.of() : processRegistry.list(id);
+    }
+
+    public boolean killProcess(SessionId id, String processId) {
+        return processRegistry != null && processRegistry.kill(id, processId);
+    }
+
+    /** Background subagent tasks of a session. */
+    public List<BackgroundTasks.Snapshot> tasks(SessionId id) {
+        return subagentTool == null ? List.of() : subagentTool.backgroundTasks().list(id);
+    }
+
+    public boolean cancelTask(SessionId id, String taskId) {
+        return subagentTool != null && subagentTool.backgroundTasks().cancel(id, taskId);
+    }
+
+    /**
+     * Message tree of a session. QOC sessions are linear; a fork creates a
+     * separate session with copied messages up to the boundary.
+     */
+    public SessionTree tree(SessionId id) {
+        if (id == null) throw new IllegalArgumentException("session id must not be null");
+        List<Message> messages = conversation.messages(id, Seq.zero());
+        List<SessionTreeEntry> entries = new ArrayList<>();
+        MessageId previous = null;
+        for (Message message : messages) {
+            Option<Seq> seq = conversation.seqOf(id, message.id());
+            String parent = conversation.parentOf(id, message.id())
+                    .map(MessageId::value)
+                    .orElse(previous == null ? "" : previous.value());
+            entries.add(new SessionTreeEntry(message.id().value(), parent,
+                    seq.map(Seq::value).orElse(0L),
+                    message.getClass().getSimpleName(), treeText(message)));
+            previous = message.id();
+        }
+        String leaf = messages.isEmpty() ? "" : messages.getLast().id().value();
+        String parentSession = parentSession(id);
+        return new SessionTree(id.value(), parentSession, leaf, entries);
+    }
+
+    /**
+     * Creates a new session containing a copy of the parent messages through
+     * {@code boundary}. The child gets fresh message ids and its own parent
+     * chain; the parent is not mutated.
+     */
+    public SessionId fork(SessionId parentId, String boundary, String directory, String agentSelector) {
+        if (parentId == null || boundary == null || boundary.isBlank()) {
+            throw new IllegalArgumentException("session and boundary must be set");
+        }
+        if (running.containsKey(parentId)) {
+            throw new IllegalStateException("session is currently running");
+        }
+        SessionInfo parent = sessions.info(parentId)
+                .orElseThrow(() -> new IllegalArgumentException("unknown session: " + parentId));
+        MessageId boundaryId = MessageId.parse(boundary);
+        if (conversation.message(parentId, boundaryId).isEmpty()) {
+            throw new IllegalArgumentException("fork boundary not found: " + boundary);
+        }
+        List<Message> history = conversation.messages(parentId, Seq.zero());
+        int boundaryIndex = -1;
+        for (int i = 0; i < history.size(); i++) {
+            if (history.get(i).id().equals(boundaryId)) {
+                boundaryIndex = i;
+                break;
+            }
+        }
+        if (boundaryIndex < 0) throw new IllegalArgumentException("fork boundary not found: " + boundary);
+
+        AgentId agent = resolveAgent(agentSelector);
+        if (agent == null) agent = parent.agent();
+        Location location = forkLocation(parent.location(), directory);
+        Instant now = clock.now();
+        SessionId child = sessionService.create(location, agent, parent.model(), now);
+        sessions.put(new SessionInfo(child, location.projectId(), location,
+                "Fork of " + parent.title(), agent, parent.model(), parent.permissions(),
+                Money.zero(), TokenCount.zero(), now, now, Option.none(), Option.none(), 0, Option.none()));
+
+        MessageId previous = null;
+        Map<String, String> copiedArtifacts = new java.util.HashMap<>();
+        for (int i = 0; i <= boundaryIndex; i++) {
+            Message copy = copyMessage(history.get(i), MessageId.create(), child, copiedArtifacts);
+            conversation.insertWithParent(child, Seq.of(i + 1), copy,
+                    previous == null ? Option.none() : Option.some(previous));
+            previous = copy.id();
+        }
+        journal.append(new EventDraft(child.value(), 1,
+                new SessionEvent.SessionForked(child, parentId, new ForkBoundary(boundaryId))));
+        return child;
+    }
+
+    private Location forkLocation(Location parent, String directory) {
+        if (directory == null || directory.isBlank()) return parent;
+        Path target = Path.of(directory);
+        if (!target.isAbsolute()) target = Path.of(config.workspace()).resolve(directory);
+        return new Location(target.toAbsolutePath().normalize(), parent.projectId(), parent.workspaceId());
+    }
+
+    private String parentSession(SessionId id) {
+        return journal.historyOfType(id.value(), "SessionForked", Seq.zero()).stream()
+                .filter(event -> event.payload() instanceof SessionEvent.SessionForked)
+                .map(event -> ((SessionEvent.SessionForked) event.payload()).parentId().value())
+                .findFirst()
+                .orElse("");
+    }
+
+    private Message copyMessage(Message message, MessageId id, SessionId child,
+                                Map<String, String> copiedArtifacts) {
+        return switch (message) {
+            case Message.UserMessage user -> new Message.UserMessage(id, user.text(), user.files(),
+                    user.agents(), user.skills(), user.metadata(), user.time());
+            case Message.SyntheticMessage synthetic -> new Message.SyntheticMessage(id, synthetic.text(),
+                    synthetic.description(), synthetic.metadata(), synthetic.time());
+            case Message.SystemMessage system -> new Message.SystemMessage(id, system.text(),
+                    system.description(), system.metadata(), system.time());
+            case Message.SkillMessage skill -> new Message.SkillMessage(id, skill.skill(), skill.name(),
+                    skill.text(), skill.metadata(), skill.time());
+            case Message.ShellMessage shell -> new Message.ShellMessage(id, shell.shell(), shell.time());
+            case Message.AssistantMessage assistant -> new Message.AssistantMessage(id, assistant.agent(),
+                    assistant.model(), copyContent(assistant.content(), child, copiedArtifacts),
+                    assistant.finish(), assistant.error(), assistant.retry(), assistant.snapshot(),
+                    assistant.cost(), assistant.tokens(), assistant.assistantTime());
+            case Message.CompactionMessage compaction -> new Message.CompactionMessage(id,
+                    compaction.status(), compaction.reason(), compaction.summary(), compaction.error(),
+                    compaction.cost(), compaction.tokens(), compaction.time());
+            case Message.AgentSwitched switched -> new Message.AgentSwitched(id, switched.agent(),
+                    switched.previous(), switched.time());
+            case Message.ModelSwitched switched -> new Message.ModelSwitched(id, switched.model(),
+                    switched.previous(), switched.time());
+            case Message.LocationSwitched switched -> new Message.LocationSwitched(id, switched.location(),
+                    switched.previous(), switched.time());
+            case Message.IdleMessage idle -> new Message.IdleMessage(id, idle.outcome(), idle.error(),
+                    idle.time());
+        };
+    }
+
+    private List<Content> copyContent(List<Content> content, SessionId child,
+                                      Map<String, String> copiedArtifacts) {
+        List<Content> copied = new ArrayList<>();
+        for (Content item : content) {
+            if (item instanceof Content.ToolCardContent cardContent) {
+                copied.add(new Content.ToolCardContent(copyCard(cardContent.card(), child, copiedArtifacts)));
+            } else {
+                copied.add(item);
+            }
+        }
+        return copied;
+    }
+
+    private ToolCard copyCard(ToolCard card, SessionId child, Map<String, String> copiedArtifacts) {
+        ToolState state = switch (card.state()) {
+            case ToolState.Completed completed -> new ToolState.Completed(completed.input(),
+                    copyToolContent(completed.content(), child, copiedArtifacts),
+                    rewriteMetadata(completed.metadata(), child, copiedArtifacts));
+            case ToolState.Failed failed -> new ToolState.Failed(failed.input(), failed.error(),
+                    failed.content().map(items -> copyToolContent(items, child, copiedArtifacts)),
+                    rewriteMetadata(failed.metadata(), child, copiedArtifacts));
+            case ToolState.Running running -> new ToolState.Running(running.input(),
+                    rewriteMetadata(running.metadata(), child, copiedArtifacts));
+            case ToolState.Streaming ignored -> card.state();
+        };
+        return new ToolCard(card.id(), card.name(), card.input(), state, card.executed(), card.time());
+    }
+
+    private List<ToolContent> copyToolContent(List<ToolContent> content, SessionId child,
+                                              Map<String, String> copiedArtifacts) {
+        List<ToolContent> copied = new ArrayList<>();
+        for (ToolContent item : content) {
+            if (item instanceof ToolContent.FileItem file) {
+                copied.add(new ToolContent.FileItem(
+                        copyArtifactUri(file.uri(), child, copiedArtifacts), file.mime(), file.name()));
+            } else {
+                copied.add(item);
+            }
+        }
+        return copied;
+    }
+
+    private Map<String, Object> rewriteMetadata(Map<String, Object> metadata, SessionId child,
+                                                Map<String, String> copiedArtifacts) {
+        Map<String, Object> rewritten = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof String text && text.startsWith(ArtifactRef.SCHEME)) {
+                rewritten.put(entry.getKey(), copyArtifactUri(text, child, copiedArtifacts));
+            } else {
+                rewritten.put(entry.getKey(), value);
+            }
+        }
+        return rewritten;
+    }
+
+    private String copyArtifactUri(String uri, SessionId child, Map<String, String> copiedArtifacts) {
+        if (!uri.startsWith(ArtifactRef.SCHEME) || toolOutput == null) return uri;
+        String cached = copiedArtifacts.get(uri);
+        if (cached != null) return cached;
+        try {
+            ArtifactRef.Parsed parsed = ArtifactRef.parse(uri);
+            if (parsed.session().equals(child)) return uri;
+            if (toolOutput.find(parsed.session(), parsed.id()).isEmpty()) return uri;
+            ArtifactRef copy = toolOutput.copy(parsed.session(), child, parsed.id());
+            copiedArtifacts.put(uri, copy.uri());
+            return copy.uri();
+        } catch (RuntimeException e) {
+            LOG.warnf("cannot copy artifact %s into fork %s: %s", uri, child.value(), e.getMessage());
+            return uri;
+        }
+    }
+
+    private static String treeText(Message message) {
+        return switch (message) {
+            case Message.UserMessage user -> user.text();
+            case Message.SyntheticMessage synthetic -> synthetic.text();
+            case Message.SystemMessage system -> system.text();
+            case Message.SkillMessage skill -> skill.text();
+            case Message.ShellMessage shell -> shell.shell().command();
+            case Message.AssistantMessage assistant -> assistant.content().stream()
+                    .filter(item -> item instanceof Content.TextContent)
+                    .map(item -> ((Content.TextContent) item).text())
+                    .reduce("", String::concat);
+            case Message.CompactionMessage compaction -> compaction.summary();
+            case Message.AgentSwitched switched -> "agent switched to " + switched.agent();
+            case Message.ModelSwitched switched -> "model switched to " + switched.model();
+            case Message.LocationSwitched ignored -> "location switched";
+            case Message.IdleMessage idle -> "idle: " + idle.outcome();
+        };
+    }
+
+    /** One message in the session tree projection. */
+    public record SessionTreeEntry(String id, String parentId, long seq, String type, String text) {}
+
+    /** Tree read model; a fork links to its parent session through the event log. */
+    public record SessionTree(String session, String parentSession, String leaf,
+                              List<SessionTreeEntry> entries) {
+        public SessionTree {
+            entries = entries == null ? List.of() : List.copyOf(entries);
+        }
     }
 
     /** Renames a session and records the event. */
@@ -883,7 +1136,7 @@ public class Engine {
                 if (outcome.outcome() instanceof ToolOutcome.Ok ok) {
                     state = new ToolState.Completed(call.input(), ok.result().content(), ok.result().metadata());
                 } else if (outcome.outcome() instanceof ToolOutcome.Failed failed) {
-                    state = new ToolState.Failed(call.input(), failed.error(), Option.none(), Map.of());
+                    state = new ToolState.Failed(call.input(), failed.error(), Option.none(), failed.metadata());
                 } else {
                     state = new ToolState.Completed(call.input(), List.of(), Map.of());
                 }

@@ -30,8 +30,8 @@
   .msg { padding:.6rem .8rem; border-radius:8px; max-width:92%; }
   .msg.user { background:#1f2937; align-self:flex-end; }
   .msg.assistant { background:#111827; border:1px solid var(--border); align-self:flex-start; }
-  .msg.tool { background:#0b1a12; border:1px solid #1f3a2a; align-self:flex-start; font-family: ui-monospace, monospace; font-size:.8rem; }
-  .msg.error { background:#2a1215; border:1px solid #5a1f24; color:#ffb4b4; }
+  .msg.tool { background:#0b1a12; border:1px solid #1f3a2a; align-self:flex-start; font-family: ui-monospace, monospace; font-size:.8rem; white-space:pre-wrap; }
+  .msg.error { background:#2a1215; border:1px solid #5a1f24; color:#ffb4b4; white-space:pre-wrap; }
   .msg .meta { font-size:.7rem; color:var(--muted); margin-top:.3rem; }
   .msg details { margin-top:.4rem; }
   .msg details summary { cursor:pointer; color:var(--muted); font-size:.75rem; }
@@ -134,13 +134,14 @@
   <button id="compact">Compact</button>
   <button id="reloadConfig">Reload Config</button>
   <button id="revert">Revert</button>
+  <button id="fork">Fork</button>
   <label><input type="checkbox" id="showDetails"> Details</label>
   <span class="status"><span class="dot" id="healthDot"></span><span id="status">bereit</span></span>
 </header>
 <main>
   <div class="chat">
     <div class="messages" id="messages"></div>
-    <div class="cmd-hint">Slash-Commands: /compact, /revert, /interrupt, /title, /new. Strg+Enter sendet.</div>
+    <div class="cmd-hint">Slash-Commands: /compact, /revert, /fork, /interrupt, /title, /new. Strg+Enter sendet.</div>
     <div class="inputbar">
       <textarea id="input" placeholder="Prompt eingeben…"></textarea>
       <button id="send">Senden</button>
@@ -559,6 +560,26 @@ async function revertTurn() {
   }
 }
 
+async function forkSession() {
+  if (!sessionId) return;
+  try {
+    const tree = await (await fetch('/api/session/' + sessionId + '/tree')).json();
+    if (!tree.leaf) throw new Error('Session hat keine Nachricht zum Forken');
+    const res = await fetch('/api/session/' + sessionId + '/fork', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({boundary: tree.leaf})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
+    logEvent('Fork erstellt: ' + data.id.slice(0,12));
+    await loadSessions();
+    sessionId = null;
+    await switchSession(data.id);
+  } catch (e) {
+    alert('Fork fehlgeschlagen: ' + e.message);
+  }
+}
+
 async function deleteCurrentSession() {
   if (!sessionId) return;
   const selected = sessionsSel.options[sessionsSel.selectedIndex];
@@ -697,6 +718,9 @@ async function handleCommand(cmd) {
       break;
     case 'revert':
       await revertTurn();
+      break;
+    case 'fork':
+      await forkSession();
       break;
     default:
       // treat as prompt
@@ -931,6 +955,7 @@ document.getElementById('reloadConfig').onclick = async () => {
   } catch (e) { logEvent('Config reload error: ' + e.message); }
 };
 document.getElementById('revert').onclick = () => revertTurn();
+document.getElementById('fork').onclick = () => forkSession();
 
 document.getElementById('permOnce').onclick = () => replyPermission('ONCE');
 document.getElementById('permAlways').onclick = () => replyPermission('ALWAYS');

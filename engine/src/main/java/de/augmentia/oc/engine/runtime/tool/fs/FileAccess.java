@@ -25,6 +25,9 @@ public final class FileAccess {
 
     public Resolved resolve(String raw, boolean directory) {
         if (raw == null || raw.isBlank()) throw new IllegalArgumentException("path must not be blank");
+        if (raw.startsWith(de.augmentia.oc.engine.core.model.ArtifactRef.SCHEME)) {
+            throw new IllegalArgumentException("artifact URIs are read-only");
+        }
         Path input = expandHome(raw);
         Path absolute = input.isAbsolute()
                 ? input.normalize()

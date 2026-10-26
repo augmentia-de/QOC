@@ -28,19 +28,38 @@ public final class SqliteConversation implements ConversationStore {
     }
 
     /** Projection helper: writes one folded message at a sequence boundary. */
-    public void insert(SessionId session, Seq seq, Message message) {
+    @Override
+    public void insertWithParent(SessionId session, Seq seq, Message message, Option<MessageId> parent) {
         if (session == null || seq == null || message == null) {
             throw new IllegalArgumentException("message fields must not be null");
         }
+        Option<MessageId> requested = parent == null ? Option.none() : parent;
         Sqlite.transaction(dataSource, connection -> {
+            Option<MessageId> effective = requested.isEmpty()
+                    ? previousId(connection, session) : requested;
             Sqlite.execute(connection,
-                    "insert into session_message (id, session_id, seq, type, data, created_at) " +
-                            "values (?, ?, ?, ?, ?, datetime('now'))",
+                    "insert into session_message (id, session_id, seq, type, data, parent_id, created_at) " +
+                            "values (?, ?, ?, ?, ?, ?, datetime('now'))",
                     message.id().value(), session.value(), seq.value(),
                     message.getClass().getSimpleName(),
-                    Sqlite.json(ContractCodec.encode(message, Message.class)));
+                    Sqlite.json(ContractCodec.encode(message, Message.class)),
+                    effective.map(MessageId::value).orElse(null));
             return null;
         });
+    }
+
+    private static Option<MessageId> previousId(Connection connection, SessionId session) {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "select id from session_message where session_id = ? order by seq desc limit 1")) {
+            statement.setString(1, session.value());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next()
+                        ? Option.some(MessageId.parse(resultSet.getString("id")))
+                        : Option.none();
+            }
+        } catch (java.sql.SQLException e) {
+            throw new StoreFailure("cannot read previous message", e);
+        }
     }
 
 
@@ -119,6 +138,23 @@ public final class SqliteConversation implements ConversationStore {
             }
         } catch (java.sql.SQLException e) {
             throw new StoreFailure("cannot read message", e);
+        }
+    }
+
+    @Override
+    public Option<MessageId> parentOf(SessionId session, MessageId id) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "select parent_id from session_message where session_id = ? and id = ?")) {
+            statement.setString(1, session.value());
+            statement.setString(2, id.value());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) return Option.none();
+                return Option.of(resultSet.getString("parent_id"))
+                        .map(MessageId::parse);
+            }
+        } catch (java.sql.SQLException e) {
+            throw new StoreFailure("cannot read message parent", e);
         }
     }
 

@@ -4,6 +4,7 @@ import de.augmentia.oc.engine.core.contract.tool.ToolContext;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.model.AgentId;
+import de.augmentia.oc.engine.core.model.ArtifactRef;
 import de.augmentia.oc.engine.core.model.CallId;
 import de.augmentia.oc.engine.core.model.MessageId;
 import de.augmentia.oc.engine.core.model.SessionId;
@@ -15,6 +16,7 @@ import de.augmentia.oc.engine.runtime.tool.fs.PatchTool;
 import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
 import de.augmentia.oc.engine.testing.FakeFileSystem;
+import de.augmentia.oc.engine.testing.InMemoryToolOutput;
 import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -157,6 +159,88 @@ class FsToolsTest {
 
         assertThat(text(outcome)).contains("a.txt:1: alpha").contains("a.txt:2: beta")
                 .contains("b.txt:1: gamma");
+    }
+
+    @Test
+    void grepPagesThroughResultsWithACursor() {
+        for (int i = 0; i < 5; i++) {
+            fs.putText(root.resolve("file" + i + ".txt"), "match " + i);
+        }
+
+        ToolOutcome first = GrepTool.definition(fs, access).execute().execute(
+                args(Map.of("pattern", JsonValue.of("match"), "maxResults", JsonValue.of(2L))), context);
+        ToolOutcome second = GrepTool.definition(fs, access).execute().execute(
+                args(Map.of("pattern", JsonValue.of("match"), "maxResults", JsonValue.of(2L),
+                        "cursor", JsonValue.of("2"))), context);
+
+        assertThat(((ToolOutcome.Ok) first).result().metadata())
+                .containsEntry("truncated", "yes")
+                .containsEntry("nextCursor", "2")
+                .containsEntry("total", 5);
+        assertThat(text(first)).contains("file0.txt").contains("file1.txt").doesNotContain("file4.txt");
+        assertThat(text(second)).contains("file2.txt").contains("file3.txt").doesNotContain("file0.txt");
+    }
+
+    @Test
+    void readAndGrepResolveSessionArtifacts() {
+        InMemoryToolOutput artifacts = new InMemoryToolOutput();
+        ArtifactRef ref = artifacts.save(context.sessionId(), "call",
+                "alpha\nbeta\ngamma".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        ToolOutcome read = ReadTool.definition(fs, access, null, artifacts).execute().execute(
+                args(Map.of("path", JsonValue.of(ref.uri()))), context);
+        ToolOutcome grep = GrepTool.definition(fs, access, null, artifacts).execute().execute(
+                args(Map.of("pattern", JsonValue.of("beta"), "path", JsonValue.of(ref.uri()))), context);
+
+        assertThat(read).isInstanceOf(ToolOutcome.Ok.class);
+        assertThat(text(read)).contains("Read artifact " + ref.uri()).contains("2: beta");
+        assertThat(grep).isInstanceOf(ToolOutcome.Ok.class);
+        assertThat(text(grep)).contains(ref.uri() + ":2: beta");
+    }
+
+    @Test
+    void artifactsAreIsolatedBetweenSessions() {
+        InMemoryToolOutput artifacts = new InMemoryToolOutput();
+        ArtifactRef ref = artifacts.save(context.sessionId(), "call",
+                "secret".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        ToolContext other = new ToolContext(SessionId.create(), AgentId.create(),
+                MessageId.create(), CallId.create());
+
+        ToolOutcome read = ReadTool.definition(fs, access, null, artifacts).execute().execute(
+                args(Map.of("path", JsonValue.of(ref.uri()))), other);
+        ToolOutcome grep = GrepTool.definition(fs, access, null, artifacts).execute().execute(
+                args(Map.of("pattern", JsonValue.of("secret"), "path", JsonValue.of(ref.uri()))), other);
+
+        assertThat(read).isInstanceOf(ToolOutcome.Failed.class);
+        assertThat(grep).isInstanceOf(ToolOutcome.Failed.class);
+    }
+
+    @Test
+    void artifactUrisAreRejectedByWritePaths() {
+        ToolOutcome outcome = WriteTool.definition(fs, access).execute().execute(
+                args(Map.of("path", JsonValue.of("artifact://" + context.sessionId().value() + "/art_call"),
+                        "content", JsonValue.of("x"))), context);
+
+        assertThat(outcome).isInstanceOf(ToolOutcome.Failed.class);
+    }
+
+    @Test
+    void globPagesThroughResultsWithACursor() {
+        for (int i = 0; i < 5; i++) {
+            fs.putText(root.resolve("file" + i + ".txt"), "x");
+        }
+
+        ToolOutcome first = GlobTool.definition(fs, access).execute().execute(
+                args(Map.of("pattern", JsonValue.of("*.txt"), "maxResults", JsonValue.of(2L))), context);
+        ToolOutcome second = GlobTool.definition(fs, access).execute().execute(
+                args(Map.of("pattern", JsonValue.of("*.txt"), "maxResults", JsonValue.of(2L),
+                        "cursor", JsonValue.of("2"))), context);
+
+        assertThat(((ToolOutcome.Ok) first).result().metadata())
+                .containsEntry("truncated", "yes")
+                .containsEntry("nextCursor", "2");
+        assertThat(text(first)).contains("file0.txt").contains("file1.txt").doesNotContain("file4.txt");
+        assertThat(text(second)).contains("file2.txt").contains("file3.txt").doesNotContain("file0.txt");
     }
 
     @Test

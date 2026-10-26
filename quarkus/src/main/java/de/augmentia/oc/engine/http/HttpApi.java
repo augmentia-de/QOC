@@ -274,12 +274,92 @@ public class HttpApi {
                 case de.augmentia.oc.engine.runtime.compaction.CompactionResult.Failed failed ->
                         Response.status(422).entity(Map.of("_tag", "UnknownError",
                                 "message", failed.message())).build();
+                case de.augmentia.oc.engine.runtime.compaction.CompactionResult.PredecessorMissing missing ->
+                        Response.status(422).entity(Map.of("_tag", "CompactionError",
+                                "message", missing.message())).build();
             };
         } catch (IllegalArgumentException e) {
             return badRequest(e.getMessage());
         } catch (IllegalStateException e) {
             return Response.status(422)
                     .entity(Map.of("_tag", "UnknownError", "message", e.getMessage())).build();
+        }
+    }
+
+    @GET
+    @Path("/session/{id}/processes")
+    public Response processes(@PathParam("id") String id) {
+        try {
+            List<Map<String, Object>> data = engine.processes(SessionId.parse(id)).stream()
+                    .map(HttpApi::processDto).toList();
+            return Response.ok(Map.of("data", data)).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @POST
+    @Path("/session/{id}/processes/{processId}/kill")
+    public Response killProcess(@PathParam("id") String id, @PathParam("processId") String processId) {
+        try {
+            boolean killed = engine.killProcess(SessionId.parse(id), processId);
+            return Response.ok(Map.of("killed", killed)).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @GET
+    @Path("/session/{id}/tasks")
+    public Response tasks(@PathParam("id") String id) {
+        try {
+            List<Map<String, Object>> data = engine.tasks(SessionId.parse(id)).stream()
+                    .map(HttpApi::taskDto).toList();
+            return Response.ok(Map.of("data", data)).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @POST
+    @Path("/session/{id}/tasks/{taskId}/cancel")
+    public Response cancelTask(@PathParam("id") String id, @PathParam("taskId") String taskId) {
+        try {
+            boolean cancelled = engine.cancelTask(SessionId.parse(id), taskId);
+            return Response.ok(Map.of("cancelled", cancelled)).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @GET
+    @Path("/session/{id}/tree")
+    public Response tree(@PathParam("id") String id) {
+        try {
+            return Response.ok(engine.tree(SessionId.parse(id))).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    @POST
+    @Path("/session/{id}/fork")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response fork(@PathParam("id") String id, ForkRequest request) {
+        if (request == null || request.boundary() == null || request.boundary().isBlank()) {
+            return badRequest("boundary must not be blank");
+        }
+        try {
+            SessionId child = engine.fork(SessionId.parse(id), request.boundary(),
+                    request.directory(), request.agent());
+            return Response.ok(Map.of("id", child.value())).build();
+        } catch (IllegalStateException e) {
+            return Response.status(Response.Status.CONFLICT)
+                    .entity(Map.of("_tag", "SessionRunningError",
+                            "message", e.getMessage() == null ? "session is running" : e.getMessage()))
+                    .build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
         }
     }
 
@@ -602,6 +682,35 @@ public class HttpApi {
                 .build();
     }
 
+    private static Map<String, Object> processDto(
+            de.augmentia.oc.engine.runtime.tool.shell.ProcessRegistry.Snapshot process) {
+        Map<String, Object> dto = new LinkedHashMap<>();
+        dto.put("id", process.id());
+        dto.put("state", process.state().name().toLowerCase());
+        dto.put("command", process.command());
+        dto.put("stdout", process.stdout());
+        dto.put("stderr", process.stderr());
+        process.exit().ifPresent(exit -> dto.put("exit", exit));
+        dto.put("started", process.started().toString());
+        if (process.finished() != null) dto.put("finished", process.finished().toString());
+        return dto;
+    }
+
+    private static Map<String, Object> taskDto(
+            de.augmentia.oc.engine.runtime.tool.subagent.BackgroundTasks.Snapshot task) {
+        Map<String, Object> dto = new LinkedHashMap<>();
+        dto.put("id", task.id());
+        dto.put("state", task.state().name().toLowerCase());
+        dto.put("agent", task.agent());
+        dto.put("text", task.text());
+        dto.put("error", task.error());
+        task.childSession().ifPresent(child -> dto.put("childSession", child.value()));
+        dto.put("tokens", task.usage().total());
+        dto.put("created", task.created().toString());
+        if (task.finished() != null) dto.put("finished", task.finished().toString());
+        return dto;
+    }
+
     private static SessionDto dto(SessionInfo session) {
         return new SessionDto(session.id().value(), session.title(), session.agent().value(),
                 session.location().directory().toString(), session.cost().toString(),
@@ -623,6 +732,8 @@ public class HttpApi {
     public record SwitchAgentRequest(String agent) {}
 
     public record CommandRequest(String name, String arguments) {}
+
+    public record ForkRequest(String boundary, String directory, String agent) {}
 
     public record QuestionReply(List<String> selected, String text) {}
 

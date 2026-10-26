@@ -1,6 +1,7 @@
 package de.augmentia.oc.engine.core.eval;
 
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
+import de.augmentia.oc.engine.core.model.ArtifactRef;
 import de.augmentia.oc.engine.core.model.ToolContent;
 
 import java.nio.charset.StandardCharsets;
@@ -27,20 +28,26 @@ public final class OutputBounding {
     public sealed interface Result {
         record Unchanged(ToolResult result) implements Result {}
 
-        record Truncated(ToolResult result, String fullText, Path outputPath) implements Result {}
+        record Truncated(ToolResult result, String fullText, String reference) implements Result {}
     }
 
-    public static Result boundStoring(ToolResult result, java.util.function.Function<String, Path> saver) {
+    public static Result boundStoring(ToolResult result,
+                                      java.util.function.Function<String, ArtifactRef> saver) {
         if (saver == null) throw new IllegalArgumentException("saver must not be null");
-        Result probe = bound(result, Path.of(""));
+        Result probe = bound(result, "");
         if (!(probe instanceof Result.Truncated truncated)) return probe;
-        Path path = saver.apply(truncated.fullText());
-        return bound(result, path);
+        ArtifactRef artifact = saver.apply(truncated.fullText());
+        return bound(result, artifact.uri());
     }
 
     public static Result bound(ToolResult result, Path outputPath) {
-        if (result == null) throw new IllegalArgumentException("result must not be null");
         if (outputPath == null) throw new IllegalArgumentException("outputPath must not be null");
+        return bound(result, outputPath.toString());
+    }
+
+    public static Result bound(ToolResult result, String reference) {
+        if (result == null) throw new IllegalArgumentException("result must not be null");
+        if (reference == null) throw new IllegalArgumentException("reference must not be null");
 
         if (isMarkedTruncated(result.metadata())) {
             return new Result.Unchanged(result);
@@ -62,7 +69,7 @@ public final class OutputBounding {
         String hint = PromptLoader.render("bounding-hint", Map.of(
                 "shown", String.valueOf(shown),
                 "total", String.valueOf(lines),
-                "path", outputPath.toString()));
+                "path", reference));
 
         List<ToolContent> content = new ArrayList<>();
         content.add(new ToolContent.TextItem(prefix.isEmpty() ? hint : hint + "\n" + prefix));
@@ -74,10 +81,10 @@ public final class OutputBounding {
 
         Map<String, Object> metadata = new LinkedHashMap<>(result.metadata());
         metadata.put(TRUNCATED, "yes");
-        metadata.put(OUTPUT_PATH, outputPath.toString());
+        metadata.put(OUTPUT_PATH, reference);
 
         ToolResult bounded = new ToolResult(result.output(), content, metadata);
-        return new Result.Truncated(bounded, text, outputPath);
+        return new Result.Truncated(bounded, text, reference);
     }
 
     private static boolean isMarkedTruncated(Map<String, Object> metadata) {

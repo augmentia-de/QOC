@@ -23,4 +23,14 @@ public sealed interface CompactionResult {
             if (message == null) message = "";
         }
     }
+
+    /**
+     * The instruction state points at a previous summary that cannot be read.
+     * The raw history is untouched, so a later repair or retry is safe.
+     */
+    record PredecessorMissing(String message) implements CompactionResult {
+        public PredecessorMissing {
+            if (message == null) message = "";
+        }
+    }
 }

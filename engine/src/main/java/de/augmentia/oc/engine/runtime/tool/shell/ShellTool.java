@@ -9,6 +9,7 @@ import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.json.Schema;
 import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.PermissionRequestId;
+import de.augmentia.oc.engine.core.model.SessionError;
 import de.augmentia.oc.engine.core.model.SessionId;
 import de.augmentia.oc.engine.core.model.ToolContent;
 import de.augmentia.oc.engine.core.model.ToolName;
@@ -22,24 +23,31 @@ import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** {@code shell}: scan first (W-50), then check external_directory, then run; output is truncated. */
+/** {@code shell}: scan first (W-50), then check external_directory, then run. */
 public final class ShellTool {
 
     public static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(2);
-    public static final int MAX_OUTPUT_BYTES = 50 * 1024;
 
     private ShellTool() {}
 
     public static ToolDefinition definition(ProcessRunner processes, Path location, Scanner scanner) {
-        return definition(processes, location, location, scanner, null);
+        return definition(processes, location, location, scanner, null, new ProcessRegistry());
     }
 
     public static ToolDefinition definition(ProcessRunner processes, Path location, Path projectRoot,
                                            Scanner scanner, PermissionGate permissionGate) {
+        return definition(processes, location, projectRoot, scanner, permissionGate, new ProcessRegistry());
+    }
+
+    public static ToolDefinition definition(ProcessRunner processes, Path location, Path projectRoot,
+                                           Scanner scanner, PermissionGate permissionGate,
+                                           ProcessRegistry registry) {
         if (processes == null || location == null) throw new IllegalArgumentException("dependencies must not be null");
+        if (registry == null) throw new IllegalArgumentException("process registry must not be null");
         Path root = projectRoot == null ? location : projectRoot;
         Scanner effective = scanner == null ? new PortableScanner() : scanner;
         Schema input = Schema.obj(Map.of(
@@ -50,7 +58,8 @@ public final class ShellTool {
                 "pty", Schema.opt(Schema.bool())));
         return new ToolDefinition(new ToolName("shell"), "Run a shell command",
                 input, Option.none(),
-                (value, context) -> execute(processes, location, root, effective, value, context, permissionGate), null);
+                (value, context) -> execute(processes, location, root, effective, value, context,
+                        permissionGate, registry), null);
     }
 
     public static ScanResult scan(String command, Path cwd) {
@@ -59,7 +68,7 @@ public final class ShellTool {
 
     static ToolOutcome execute(ProcessRunner processes, Path location, Path projectRoot, Scanner scanner,
                                JsonValue value, de.augmentia.oc.engine.core.contract.tool.ToolContext context,
-                               PermissionGate permissionGate) {
+                               PermissionGate permissionGate, ProcessRegistry registry) {
         try {
             String command = JsonArgs.requiredString(value, "command");
             String workdir = JsonArgs.string(value, "workdir");
@@ -101,37 +110,69 @@ public final class ShellTool {
 
             if (background) {
                 ProcessRunner.Handle handle = processes.start(spec);
-                String text = "Command moved to the background. Shell ID: " + handle;
+                String shellId = registry.register(context.sessionId(), command, handle);
+                String text = "Command moved to the background. Shell ID: " + shellId
+                        + ". Use process(action=status|output|wait|kill, id=" + shellId + ") to inspect it.";
                 return new ToolOutcome.Ok(new ToolResult(Option.none(),
                         List.of(new ToolContent.TextItem(text)),
-                        Map.of("status", "running", "shellId", String.valueOf(handle.hashCode()))));
+                        Map.of("status", "running", "shellId", shellId, "background", true)));
             }
 
             ProcessRunner.Exit exit = processes.run(spec, timeout);
             if (exit.timedOut()) {
-                return ReadTool.failure("shell", "command timed out after " + timeout.toSeconds()
-                        + "s; pass a larger timeout to continue");
+                String message = "command timed out after " + timeout.toSeconds()
+                        + "s; pass a larger timeout to continue";
+                return failure(withOutput(message, exit), exit);
             }
             if (exit.code() != 0) {
-                return ReadTool.failure("shell", "command exited with " + exit.code() + ": " + exit.stderr());
+                return failure(withOutput("command exited with " + exit.code(), exit), exit);
             }
-            String output = exit.stdout();
-            boolean truncated = output.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_OUTPUT_BYTES;
-            if (truncated) {
-                output = output.substring(0, Math.min(output.length(), MAX_OUTPUT_BYTES));
-            }
-            Map<String, Object> metadata = truncated
-                    ? Map.of("truncated", "yes", "exit", exit.code())
-                    : Map.of("exit", exit.code());
+            // The tool returns the complete streams. ToolRuntime/OutputBounding is
+            // the single place that truncates and spills the full text.
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("exit", exit.code());
+            metadata.put("status", "completed");
             return new ToolOutcome.Ok(new ToolResult(Option.none(),
-                    List.of(new ToolContent.TextItem(output)), metadata));
+                    List.of(new ToolContent.TextItem(combined(exit))), metadata));
         } catch (IllegalArgumentException e) {
             return ReadTool.failure("shell", e.getMessage());
         } catch (de.augmentia.oc.engine.core.contract.permission.PermissionDenied e) {
             return ReadTool.failure("shell", "permission denied: " + e.getMessage());
         } catch (de.augmentia.oc.engine.core.error.Aborted e) {
             return ReadTool.failure("shell", "aborted: " + e.getMessage());
+        } catch (java.io.UncheckedIOException e) {
+            return ReadTool.failure("shell", "unable to execute command: " + e.getMessage());
         }
+    }
+
+    /**
+     * Visible text for both streams. Markers appear only when a channel is
+     * non-empty, so the common stdout-only case stays byte-identical.
+     */
+    static String combined(ProcessRunner.Exit exit) {
+        String stdout = exit.stdout();
+        String stderr = exit.stderr();
+        if (stderr.isBlank()) return stdout;
+        StringBuilder text = new StringBuilder();
+        if (!stdout.isBlank()) {
+            text.append("[stdout]\n").append(stdout);
+            if (!stdout.endsWith("\n")) text.append('\n');
+        }
+        text.append("[stderr]\n").append(stderr);
+        return text.toString();
+    }
+
+    private static String withOutput(String message, ProcessRunner.Exit exit) {
+        String output = combined(exit);
+        return output.isBlank() ? message : message + "\n" + output;
+    }
+
+    private static ToolOutcome failure(String message, ProcessRunner.Exit exit) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("exit", exit.code());
+        metadata.put("status", exit.timedOut() ? "timed_out" : "failed");
+        return new ToolOutcome.Failed(
+                new SessionError.ToolExecutionError("shell", message), metadata);
     }
 
     private static ProcessRunner.ProcessSpec spec(String command, Path cwd, String sessionId, boolean pty) {

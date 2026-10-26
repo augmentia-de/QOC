@@ -180,7 +180,7 @@ class ToolRuntimeTest {
 
         ToolResult result = ((ToolOutcome.Ok) outcome).result();
         assertThat(result.metadata()).containsEntry("truncated", "yes");
-        assertThat(result.metadata().get("outputPath").toString()).startsWith("/tool-output/tool_");
+        assertThat(result.metadata().get("outputPath").toString()).startsWith("artifact://");
         assertThat(outputStore.size()).isEqualTo(1);
     }
 

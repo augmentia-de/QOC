@@ -7,12 +7,10 @@ import de.augmentia.oc.engine.core.contract.provider.ModelMessage;
 import de.augmentia.oc.engine.core.contract.provider.ModelEvent;
 import de.augmentia.oc.engine.core.contract.provider.ModelRequest;
 import de.augmentia.oc.engine.core.contract.provider.ProviderAdapter;
-import de.augmentia.oc.engine.core.eval.InstructionEpoch;
 import de.augmentia.oc.engine.core.eval.CacheAffinity;
 import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.CompactionReason;
 import de.augmentia.oc.engine.core.model.InboxId;
-import de.augmentia.oc.engine.core.model.InstructionEntry;
 import de.augmentia.oc.engine.core.model.InstructionState;
 import de.augmentia.oc.engine.core.model.Content;
 import de.augmentia.oc.engine.core.model.Message;
@@ -25,8 +23,11 @@ import de.augmentia.oc.engine.core.port.store.Conversation;
 import de.augmentia.oc.engine.core.port.store.InstructionStore;
 import de.augmentia.oc.engine.core.port.store.Journal;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,7 @@ public final class CompactionService {
 
     public static final String CTX_SUMMARY = PromptLoader.get("ctx-summary");
     public static final String CTX_SUMMARY_UPDATE = PromptLoader.get("ctx-summary-update");
+    public static final String SUMMARY_KEY = "compaction.summary";
 
     private final Conversation conversation;
     private final InstructionStore instructions;
@@ -104,14 +106,21 @@ public final class CompactionService {
         }
 
         // CTX-SUMMARY-UPDATE when a previous compaction exists (PR-8).
-        boolean hasPredecessor = hasPredecessor(session);
-        String prompt = hasPredecessor ? CTX_SUMMARY_UPDATE : CTX_SUMMARY;
-        if (hasPredecessor) {
-            InstructionState prev = instructions.state(session).orElse(null);
-            if (prev != null) {
-                body.insert(0, "Previous summary (update it):\n" + prev.currentValues() + "\n\n");
+        InstructionState previous = previousState(session);
+        if (previous != null) {
+            String key = previous.currentValues().get(SUMMARY_KEY);
+            if (key == null || key.isBlank()) {
+                return new CompactionResult.PredecessorMissing(
+                        "previous compaction has no summary reference");
             }
+            Option<String> stored = instructions.blob(key);
+            if (stored.isEmpty()) {
+                return new CompactionResult.PredecessorMissing(
+                        "previous summary blob is missing: " + key);
+            }
+            body.insert(0, "Previous summary (update it):\n" + stored.orElseThrow() + "\n\n");
         }
+        String prompt = previous != null ? CTX_SUMMARY_UPDATE : CTX_SUMMARY;
 
         Map<String, String> headers = CacheAffinity.headers(
                 CacheAffinity.affinity(session, Option.none(), Option.none()));
@@ -157,23 +166,33 @@ public final class CompactionService {
         return result;
     }
 
-    private boolean hasPredecessor(SessionId session) {
-        return instructions.state(session).isPresent()
-                && instructions.state(session).orElseThrow().epochStart().value() > 0;
+    private InstructionState previousState(SessionId session) {
+        InstructionState state = instructions.state(session).orElse(null);
+        return state != null && state.epochStart().value() > 0 ? state : null;
     }
 
     private void advanceEpoch(SessionId session, Seq throughSeq, String summary) {
         InstructionState current = instructions.state(session).orElse(null);
         Map<String, String> initialValues = current == null ? Map.of() : current.initialValues();
         Map<String, String> currentValues = new LinkedHashMap<>(initialValues);
-        currentValues.put("compaction.summary", summaryHash(summary));
+        String key = summaryKey(summary);
+        currentValues.put(SUMMARY_KEY, key);
         InstructionState next = new InstructionState(throughSeq, throughSeq, initialValues, currentValues);
+        // Store the text first: a state that points at a missing blob is worse
+        // than a blob that is not referenced yet.
+        instructions.putBlob(key, summary);
         instructions.putState(session, next);
-        instructions.putBlob(summaryHash(summary), summary);
     }
 
-    private static String summaryHash(String summary) {
-        return Integer.toHexString(summary.hashCode());
+    /** Collision-safe content address for compaction summaries. */
+    static String summaryKey(String summary) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(summary.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required by the JVM", e);
+        }
     }
 
     private static String messageText(Message message) {

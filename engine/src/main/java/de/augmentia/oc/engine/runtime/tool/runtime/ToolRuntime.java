@@ -77,7 +77,7 @@ public final class ToolRuntime {
 
             ToolResult hooked = hooks.afterToolCall(context, result);
             ToolResult normalized = normalize(hooked);
-            return new ToolOutcome.Ok(bound(normalized, call));
+            return new ToolOutcome.Ok(bound(normalized, call, context));
         } catch (ToolFailure failure) {
             return new ToolOutcome.Failed(new SessionError.ToolExecutionError("tool_failure",
                     failure.getMessage()));
@@ -101,9 +101,10 @@ public final class ToolRuntime {
         return new ToolResult(result.output(), List.of(new ToolContent.TextItem(text)), result.metadata());
     }
 
-    private ToolResult bound(ToolResult result, ToolCall call) {
+    private ToolResult bound(ToolResult result, ToolCall call, ToolContext context) {
         OutputBounding.Result bounded = OutputBounding.boundStoring(result,
-                fullText -> outputStore.save(call.id().value(), fullText.getBytes(StandardCharsets.UTF_8)));
+                fullText -> outputStore.save(context.sessionId(), call.id().value(),
+                        fullText.getBytes(StandardCharsets.UTF_8)));
         if (bounded instanceof OutputBounding.Result.Truncated truncated) {
             return truncated.result();
         }

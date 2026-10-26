@@ -8,8 +8,12 @@ import de.augmentia.oc.engine.runtime.tool.fs.GrepTool;
 import de.augmentia.oc.engine.runtime.tool.fs.PatchTool;
 import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
+import de.augmentia.oc.engine.runtime.tool.shell.ProcessRegistry;
+import de.augmentia.oc.engine.runtime.tool.shell.ProcessTool;
 import de.augmentia.oc.engine.runtime.tool.shell.ShellTool;
 import de.augmentia.oc.engine.runtime.tool.skill.SkillTool;
+import de.augmentia.oc.engine.runtime.tool.subagent.SubagentTool;
+import de.augmentia.oc.engine.runtime.tool.subagent.TaskTool;
 import de.augmentia.oc.engine.runtime.tool.web.FirecrawlTool;
 import de.augmentia.oc.engine.testing.ScriptedHttp;
 import de.augmentia.oc.engine.core.port.world.FileSystem;
@@ -66,6 +70,18 @@ class ToolDescriptionGoldenTest {
     void shellDescription() {
         assertThat(ShellTool.definition(new de.augmentia.oc.engine.testing.FakeProcess(), ROOT, null)
                 .description()).isEqualTo("Run a shell command");
+    }
+
+    @Test
+    void processDescription() {
+        assertThat(ProcessTool.definition(new ProcessRegistry()).description())
+                .isEqualTo("Inspect or control a background shell process");
+    }
+
+    @Test
+    void taskDescription() {
+        assertThat(TaskTool.definition(new SubagentTool(null, request -> { })).description())
+                .isEqualTo("Inspect or control a background subagent task");
     }
 
     @Test

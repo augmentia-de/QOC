@@ -16,12 +16,25 @@ import java.util.Map;
 public final class InMemoryConversation implements Conversation {
 
     private final Map<SessionId, List<Entry>> entries = new LinkedHashMap<>();
+    private final Map<SessionId, Map<MessageId, MessageId>> parents = new LinkedHashMap<>();
 
     public synchronized void add(SessionId session, Seq seq, Message message) {
         if (session == null || seq == null || message == null) {
             throw new IllegalArgumentException("conversation entry fields must not be null");
         }
-        entries.computeIfAbsent(session, key -> new ArrayList<>()).add(new Entry(seq, message));
+        List<Entry> list = entries.computeIfAbsent(session, key -> new ArrayList<>());
+        MessageId parent = list.isEmpty() ? null : list.getLast().message().id();
+        list.add(new Entry(seq, message));
+        if (parent != null) {
+            parents.computeIfAbsent(session, key -> new LinkedHashMap<>()).put(message.id(), parent);
+        }
+    }
+
+    public synchronized void addWithParent(SessionId session, Seq seq, Message message, MessageId parent) {
+        add(session, seq, message);
+        if (parent != null) {
+            parents.computeIfAbsent(session, key -> new LinkedHashMap<>()).put(message.id(), parent);
+        }
     }
 
     @Override
@@ -40,6 +53,11 @@ public final class InMemoryConversation implements Conversation {
                 .filter(message -> message.id().equals(id))
                 .findFirst()
                 .orElse(null));
+    }
+
+    @Override
+    public synchronized Option<MessageId> parentOf(SessionId session, MessageId id) {
+        return Option.of(parents.getOrDefault(session, Map.of()).get(id));
     }
 
     public synchronized int size(SessionId session) {

@@ -75,6 +75,21 @@ class JdkProcessRunnerTest {
     }
 
     @Test
+    void startHandleAccumulatesStderrSeparately() throws Exception {
+        ProcessRunner.Handle handle = runner.start(new ProcessRunner.ProcessSpec(
+                List.of("sh", "-c", "printf err >&2"),
+                de.augmentia.oc.engine.core.model.Option.none(), Map.of(),
+                de.augmentia.oc.engine.core.model.Option.none(), false));
+        long deadline = System.currentTimeMillis() + 2_000;
+        while (handle.errorOutput().isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
+        assertThat(handle.errorOutput()).contains("err");
+        assertThat(handle.output()).isEmpty();
+        handle.close();
+    }
+
+    @Test
     void startHandleAccumulatesOutput() throws Exception {
         ProcessRunner.Handle handle = runner.start(new ProcessRunner.ProcessSpec(
                 List.of("sh", "-c", "echo started"),

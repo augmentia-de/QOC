@@ -15,6 +15,8 @@ import de.augmentia.oc.engine.runtime.tool.JsonArgs;
 
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +24,9 @@ import java.util.Map;
 public final class GlobTool {
 
     public static final int MAX_HITS = 100;
+    public static final int MAX_PAGE = 1_000;
+    public static final long DEFAULT_TIMEOUT_MILLIS = 10_000;
+    public static final long MAX_TIMEOUT_MILLIS = 60_000;
 
     private GlobTool() {}
 
@@ -33,7 +38,13 @@ public final class GlobTool {
         if (fileSystem == null || access == null) throw new IllegalArgumentException("dependencies must not be null");
         Schema input = Schema.obj(Map.of(
                 "pattern", Schema.str(),
-                "path", Schema.opt(Schema.str())));
+                "path", Schema.opt(Schema.str()),
+                "maxResults", Schema.opt(Schema.intg()),
+                "cursor", Schema.opt(Schema.str()),
+                "timeout", Schema.opt(Schema.lng()),
+                "hidden", Schema.opt(Schema.bool()),
+                "ignore", Schema.opt(Schema.bool()),
+                "depth", Schema.opt(Schema.intg())));
         return new ToolDefinition(new ToolName("glob"), "Find files by pattern",
                 input, Option.none(),
                 (value, context) -> {
@@ -55,6 +66,7 @@ public final class GlobTool {
                                 }
                             }
                         } catch (IllegalArgumentException ignored) {
+                            // leave validation to execute()
                         }
                     }
                     return execute(fileSystem, access, value);
@@ -69,17 +81,30 @@ public final class GlobTool {
                     ? access.resolve(".", true).absolute()
                     : access.resolve(raw, true).absolute();
 
-            List<Path> matches = fileSystem.glob(root, pattern);
-            boolean truncated = matches.size() > MAX_HITS;
-            List<Path> page = truncated ? matches.subList(0, MAX_HITS) : matches;
+            int offset = cursor(value);
+            int maxResults = clamp(JsonArgs.intOr(value, "maxResults", MAX_HITS), 1, MAX_PAGE);
+            int depth = clamp(JsonArgs.intOr(value, "depth", 64), 1, 256);
+            long timeout = clamp(JsonArgs.longOr(value, "timeout", DEFAULT_TIMEOUT_MILLIS),
+                    0, MAX_TIMEOUT_MILLIS);
+            FileSystem.GlobOptions options = new FileSystem.GlobOptions(
+                    offset, maxResults, depth,
+                    JsonArgs.boolOr(value, "hidden", false),
+                    JsonArgs.boolOr(value, "ignore", true),
+                    Duration.ofMillis(timeout));
+            FileSystem.GlobOutcome outcome = fileSystem.glob(root, pattern, options);
 
             StringBuilder text = new StringBuilder();
-            for (Path match : page) {
+            for (Path match : outcome.matches()) {
                 text.append(match).append('\n');
             }
-            Map<String, Object> metadata = truncated
-                    ? Map.of("truncated", "yes", "total", matches.size())
-                    : Map.of();
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            if (outcome.truncated()) {
+                metadata.put("truncated", "yes");
+                metadata.put("nextCursor", String.valueOf(offset + outcome.matches().size()));
+            }
+            if (outcome.total() > 0) metadata.put("total", outcome.total());
+            if (outcome.timedOut()) metadata.put("timedOut", "yes");
+            if (outcome.skipped() > 0) metadata.put("skipped", outcome.skipped());
             return new ToolOutcome.Ok(new ToolResult(Option.none(),
                     List.of(new ToolContent.TextItem(text.toString())), metadata));
         } catch (IllegalArgumentException e) {
@@ -87,5 +112,23 @@ public final class GlobTool {
         } catch (UncheckedIOException e) {
             return ReadTool.failure("glob", "cannot search path");
         }
+    }
+
+    private static int cursor(JsonValue value) {
+        String cursor = JsonArgs.string(value, "cursor");
+        if (cursor == null || cursor.isBlank()) return 0;
+        try {
+            return Math.max(0, Integer.parseInt(cursor));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("invalid cursor: " + cursor);
+        }
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static long clamp(long value, long min, long max) {
+        return Math.max(min, Math.min(max, value));
     }
 }

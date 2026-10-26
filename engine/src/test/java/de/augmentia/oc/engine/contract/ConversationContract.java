@@ -52,6 +52,19 @@ class ConversationContract {
 
     @ParameterizedTest
     @MethodSource("de.augmentia.oc.engine.contract.Contracts#conversations")
+    void linearInsertLinksThePreviousMessageAsParent(Contracts.ConversationFixture fixture) {
+        Message first = message("first");
+        Message second = message("second");
+        fixture.writer().insert(fixture.session(), Seq.of(1), first);
+        fixture.writer().insert(fixture.session(), Seq.of(2), second);
+
+        assertThat(fixture.conversation().parentOf(fixture.session(), first.id()).isEmpty()).isTrue();
+        assertThat(fixture.conversation().parentOf(fixture.session(), second.id())
+                .orElseThrow()).isEqualTo(first.id());
+    }
+
+    @ParameterizedTest
+    @MethodSource("de.augmentia.oc.engine.contract.Contracts#conversations")
     void unknownSessionHasNoMessages(Contracts.ConversationFixture fixture) {
         assertThat(fixture.conversation().messages(SessionId.create(), Seq.zero())).isEmpty();
     }

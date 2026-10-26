@@ -75,6 +75,83 @@ class EngineHttpTest {
     }
 
     @Test
+    void backgroundRegistriesAreExposedAndScopedToTheSession() {
+        String first = given()
+                .contentType(ContentType.JSON)
+                .post("/api/session")
+                .then().statusCode(200)
+                .extract().path("id");
+        String second = given()
+                .contentType(ContentType.JSON)
+                .post("/api/session")
+                .then().statusCode(200)
+                .extract().path("id");
+
+        given().get("/api/session/" + first + "/processes")
+                .then().statusCode(200).body("data", notNullValue());
+        given().get("/api/session/" + first + "/tasks")
+                .then().statusCode(200).body("data", notNullValue());
+        given().post("/api/session/" + first + "/processes/sh_missing/kill")
+                .then().statusCode(200).body("killed", equalTo(false));
+        given().post("/api/session/" + first + "/tasks/task_missing/cancel")
+                .then().statusCode(200).body("cancelled", equalTo(false));
+
+        given().delete("/api/session/" + first).then().statusCode(204);
+        given().delete("/api/session/" + second).then().statusCode(204);
+    }
+
+    @Test
+    void treeAndForkExposeTheBranchBoundary() {
+        String parent = given()
+                .contentType(ContentType.JSON)
+                .post("/api/session")
+                .then().statusCode(200)
+                .extract().path("id");
+        given()
+                .contentType(ContentType.JSON)
+                .body(Map.of("text", "fork me"))
+                .post("/api/session/" + parent + "/prompt")
+                .then().statusCode(200);
+
+        String boundary = given().get("/api/session/" + parent + "/tree")
+                .then().statusCode(200)
+                .body("entries.size()", equalTo(2))
+                .body("parentSession", equalTo(""))
+                .body("leaf", notNullValue())
+                .extract().path("entries[0].id");
+        int parentSize = given().get("/api/session/" + parent + "/tree")
+                .then().statusCode(200)
+                .extract().path("entries.size()");
+
+        String child = given()
+                .contentType(ContentType.JSON)
+                .body(Map.of("boundary", boundary))
+                .post("/api/session/" + parent + "/fork")
+                .then().statusCode(200)
+                .body("id", containsString("ses_"))
+                .extract().path("id");
+
+        given().get("/api/session/" + child + "/tree")
+                .then().statusCode(200)
+                .body("entries.size()", equalTo(1))
+                .body("parentSession", equalTo(parent));
+        given().get("/api/session/" + child + "/messages")
+                .then().statusCode(200)
+                .body(containsString("fork me"));
+        given().get("/api/session/" + parent + "/tree")
+                .then().statusCode(200)
+                .body("entries.size()", equalTo(parentSize));
+
+        given().contentType(ContentType.JSON)
+                .body(Map.of("boundary", "msg_0000000000000000000000000000000000000000000000000000000000000000"))
+                .post("/api/session/" + parent + "/fork")
+                .then().statusCode(400);
+
+        given().delete("/api/session/" + child).then().statusCode(204);
+        given().delete("/api/session/" + parent).then().statusCode(204);
+    }
+
+    @Test
     void switchAgentInAnExistingSession() {
         String buildId = given().get("/api/agent")
                 .then().statusCode(200)

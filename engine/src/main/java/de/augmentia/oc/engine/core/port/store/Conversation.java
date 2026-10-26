@@ -14,4 +14,7 @@ public interface Conversation {
     List<Message> messages(SessionId session, Seq afterSeq);
 
     Option<Message> message(SessionId session, MessageId id);
+
+    /** Parent of a stored message, or empty for a first/linear-root message. */
+    Option<MessageId> parentOf(SessionId session, MessageId id);
 }

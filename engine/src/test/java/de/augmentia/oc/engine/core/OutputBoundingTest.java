@@ -37,7 +37,7 @@ class OutputBoundingTest {
         assertThat(bounded).isInstanceOf(OutputBounding.Result.Truncated.class);
         OutputBounding.Result.Truncated truncated = (OutputBounding.Result.Truncated) bounded;
         assertThat(truncated.fullText()).isEqualTo(text);
-        assertThat(truncated.outputPath()).isEqualTo(OUTPUT);
+        assertThat(truncated.reference()).isEqualTo(OUTPUT.toString());
         assertThat(truncated.result().metadata()).containsEntry(OutputBounding.TRUNCATED, "yes");
         assertThat(truncated.result().metadata()).containsEntry(OutputBounding.OUTPUT_PATH, OUTPUT.toString());
         assertThat(visible(truncated.result())).startsWith("[showing lines 1-2000 of 2010; full output saved to "
@@ -124,7 +124,7 @@ class OutputBoundingTest {
         ToolResult result = ToolResult.of("x");
         assertThatThrownBy(() -> OutputBounding.bound(null, OUTPUT))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> OutputBounding.bound(result, null))
+        assertThatThrownBy(() -> OutputBounding.bound(result, (Path) null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

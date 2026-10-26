@@ -34,6 +34,14 @@ public final class JsonArgs {
         return fallback;
     }
 
+    public static long longOr(JsonValue value, String key, long fallback) {
+        if (value instanceof JsonValue.Obj object
+                && object.values().get(key) instanceof JsonValue.Num num) {
+            return num.value().longValue();
+        }
+        return fallback;
+    }
+
     public static boolean boolOr(JsonValue value, String key, boolean fallback) {
         if (value instanceof JsonValue.Obj object
                 && object.values().get(key) instanceof JsonValue.Bool bool) {

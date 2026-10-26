@@ -8,7 +8,16 @@ import de.augmentia.oc.engine.core.model.SessionId;
 
 /** Conversation read/write projection. */
 public interface ConversationStore extends Conversation {
-    void insert(SessionId session, Seq seq, Message message);
+    /**
+     * Inserts a message with an explicit parent. Linear writers use
+     * {@link #insert(SessionId, Seq, Message)} and let the adapter infer the
+     * previous message as parent.
+     */
+    void insertWithParent(SessionId session, Seq seq, Message message, Option<MessageId> parent);
+
+    default void insert(SessionId session, Seq seq, Message message) {
+        insertWithParent(session, seq, message, Option.none());
+    }
 
     /** Next gapless sequence number for this session. */
     Seq nextSeq(SessionId session);

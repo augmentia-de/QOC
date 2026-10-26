@@ -29,17 +29,25 @@ public final class SubagentTool {
 
     private volatile SubagentRunner runner;
     private final PermissionGate permissionGate;
-    private static final java.util.concurrent.ConcurrentHashMap<de.augmentia.oc.engine.core.model.SessionId, String> backgroundResults =
-            new java.util.concurrent.ConcurrentHashMap<>();
-
-    /** Retrieves the result of a completed background subagent, or null if not yet done. */
-    public static String backgroundResult(de.augmentia.oc.engine.core.model.SessionId sessionId) {
-        return backgroundResults.get(sessionId);
-    }
+    private final BackgroundTasks backgroundTasks = new BackgroundTasks();
 
     public SubagentTool(SubagentRunner runner, PermissionGate permissionGate) {
         this.runner = runner;
         this.permissionGate = permissionGate;
+    }
+
+    /** Session-scoped registry for background tasks; used by the task tool and HTTP surface. */
+    public BackgroundTasks backgroundTasks() {
+        return backgroundTasks;
+    }
+
+    /** Cancels and forgets all background tasks of a session. */
+    public void closeSession(de.augmentia.oc.engine.core.model.SessionId session) {
+        backgroundTasks.closeSession(session);
+    }
+
+    public void close() {
+        backgroundTasks.closeAll();
     }
 
     public void setRunner(SubagentRunner runner) {
@@ -60,7 +68,7 @@ public final class SubagentTool {
                     if (r == null) return ReadTool.failure("subagent", "subagent runner not wired");
                     boolean background = JsonArgs.boolOr(value, "background", false);
                     if (background) {
-                        return executeBackground(r, tool.permissionGate, value, context);
+                        return tool.executeBackground(r, value, context);
                     }
                     return execute(r, tool.permissionGate, value, context);
                 },
@@ -97,8 +105,8 @@ public final class SubagentTool {
         }
     }
 
-    static ToolOutcome executeBackground(SubagentRunner runner, PermissionGate permissionGate, JsonValue value,
-                                         de.augmentia.oc.engine.core.contract.tool.ToolContext context) {
+    ToolOutcome executeBackground(SubagentRunner runner, JsonValue value,
+                                  de.augmentia.oc.engine.core.contract.tool.ToolContext context) {
         try {
             String agent = JsonArgs.requiredString(value, "agent");
             String prompt = JsonArgs.requiredString(value, "prompt");
@@ -115,23 +123,28 @@ public final class SubagentTool {
                 permissionGate.assertAllowed(req);
             }
 
-            Thread thread = new Thread(() -> {
+            String taskId = backgroundTasks.create(context.sessionId(), agent);
+            Thread thread = Thread.ofVirtual().name("subagent-" + taskId).unstarted(() -> {
                 try {
                     SubagentRunner.SubagentResult result = runner.run(context.sessionId(), agent, prompt, 0);
-                    if (result.childSession() != null) {
-                        backgroundResults.put(result.childSession(), result.text());
+                    if (result == null) {
+                        backgroundTasks.fail(taskId, new IllegalStateException("subagent returned no result"));
+                    } else {
+                        backgroundTasks.succeed(taskId, result);
                     }
-                } catch (RuntimeException ignored) {
-                    // Background failure: result is not stored; parent can retry.
+                } catch (Throwable error) {
+                    // A background failure must remain visible in the task registry.
+                    backgroundTasks.fail(taskId, error);
                 }
-            }, "subagent-" + agent);
-            thread.setDaemon(true);
+            });
+            backgroundTasks.attach(taskId, thread);
             thread.start();
 
             return new ToolOutcome.Ok(new ToolResult(Option.none(),
                     List.of(new ToolContent.TextItem(
-                            "Subagent launched in background. It will notify on completion.")),
-                    Map.of("agent", agent, "status", "running")));
+                            "Subagent launched in background. Task ID: " + taskId
+                                    + ". Use task(action=status|wait|cancel, id=" + taskId + ") to inspect it.")),
+                    Map.of("agent", agent, "status", "running", "taskId", taskId)));
         } catch (IllegalArgumentException e) {
             return ReadTool.failure("subagent", e.getMessage());
         } catch (RuntimeException e) {

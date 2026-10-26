@@ -121,22 +121,24 @@ public final class JdkProcessRunner implements ProcessRunner {
 
         private final Process process;
         private final StringBuilder output = new StringBuilder();
+        private final StringBuilder error = new StringBuilder();
         private boolean closed;
 
         private JdkHandle(Process process, Option<String> stdin) {
             this.process = process;
-            Thread.ofVirtual().start(this::pump);
+            Thread.ofVirtual().start(() -> pump(process.getInputStream(), output));
+            Thread.ofVirtual().start(() -> pump(process.getErrorStream(), error));
             stdin.ifPresent(this::write);
         }
 
-        private void pump() {
-            try (InputStream in = process.getInputStream()) {
+        private static void pump(InputStream stream, StringBuilder target) {
+            try (InputStream in = stream) {
                 byte[] buffer = new byte[4096];
                 int read;
                 while ((read = in.read(buffer)) >= 0) {
-                    synchronized (output) {
-                        output.append(new String(buffer, 0, read, StandardCharsets.UTF_8));
-                        output.notifyAll();
+                    synchronized (target) {
+                        target.append(new String(buffer, 0, read, StandardCharsets.UTF_8));
+                        target.notifyAll();
                     }
                 }
             } catch (IOException ignored) {
@@ -160,6 +162,13 @@ public final class JdkProcessRunner implements ProcessRunner {
         public String output() {
             synchronized (output) {
                 return output.toString();
+            }
+        }
+
+        @Override
+        public String errorOutput() {
+            synchronized (error) {
+                return error.toString();
             }
         }
 

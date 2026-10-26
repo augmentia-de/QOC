@@ -221,11 +221,19 @@ class SqlAdaptersTest {
     @Test
     void toolOutputRoundTripsAndSweeps() {
         SqlToolOutput output = new SqlToolOutput(dataSource, Path.of("/tool-output"));
-        Path path = output.save("call", new byte[]{1, 2, 3});
+        SessionId session = SessionId.create();
+        var artifact = output.save(session, "call", new byte[]{1, 2, 3});
 
-        assertThat(output.load(path)).containsExactly(1, 2, 3);
+        assertThat(artifact.uri()).startsWith("artifact://" + session.value() + "/art_");
+        assertThat(output.find(session, artifact.id()).orElseThrow()).isEqualTo(artifact);
+        assertThat(output.load(session, artifact.id())).containsExactly(1, 2, 3);
+        assertThat(output.find(SessionId.create(), artifact.id()).isEmpty()).isTrue();
+        SessionId fork = SessionId.create();
+        var copied = output.copy(session, fork, artifact.id());
+        assertThat(copied.session()).isEqualTo(fork);
+        assertThat(output.load(fork, copied.id())).containsExactly(1, 2, 3);
         output.sweep(Instant.now().plusSeconds(1));
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> output.load(path))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> output.load(session, artifact.id()))
                 .isInstanceOf(de.augmentia.oc.engine.core.error.StoreFailure.class);
     }
 

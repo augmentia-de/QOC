@@ -79,6 +79,11 @@ public final class FakeProcess implements ProcessRunner {
         }
 
         @Override
+        public String errorOutput() {
+            return exit.stderr();
+        }
+
+        @Override
         public Option<Integer> exitCode() {
             return killed ? Option.none() : Option.some(exit.code());
         }
