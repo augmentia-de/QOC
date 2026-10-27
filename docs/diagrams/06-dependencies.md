@@ -61,7 +61,7 @@ flowchart LR
 | `adapter.*` | S0 ports, technology | `runtime` |
 | `quarkus` | everything | – (outer skin) |
 
-## ArchUnit rules (current state)
+## ArchUnit rules (planned / not yet implemented)
 
 | Rule | Check |
 |---|---|
@@ -78,6 +78,11 @@ flowchart LR
 | `noStandardStreams` | no direct access to `System.out`/`System.err` |
 | `noGenericExceptions` | no generic exceptions |
 | `portsAreInterfaces` | top-level types in `core.port` are interfaces |
+
+
+> **Current state:** The dependency rules are documented and reviewed, but there
+> is currently **no ArchUnit test** in the repository. Enforcement today comes
+> from Maven module boundaries, package conventions and code review.
 
 ## Why this direction?
 

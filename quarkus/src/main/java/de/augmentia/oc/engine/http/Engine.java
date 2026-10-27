@@ -457,10 +457,10 @@ public class Engine {
     }
 
     public SessionId createSession(String agentName, String user) {
-        String normalizedUser = (user == null || user.isBlank()) ? "opencode" : user.trim();
+        String normalizedUser = (user == null || user.isBlank()) ? "anonymous" : user.trim();
         Path base = Path.of(config.workspace()).toAbsolutePath().normalize();
         Path directory = base;
-        if (!"opencode".equalsIgnoreCase(normalizedUser)) {
+        if (!"opencode".equalsIgnoreCase(normalizedUser) && !"anonymous".equalsIgnoreCase(normalizedUser)) {
             Path candidate = base.resolve(normalizedUser).normalize();
             if (candidate.startsWith(base) && java.nio.file.Files.isDirectory(candidate)) {
                 directory = candidate;

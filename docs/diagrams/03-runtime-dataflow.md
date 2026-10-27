@@ -102,7 +102,13 @@ concrete persistence is shown separately in `09-persistence.md`.
 | `GET /api/agent` | list agents |
 | `GET /api/skill` | list skills |
 | `GET /api/mcp` | MCP servers and status |
+| `POST /mcp` | QOC as MCP server: `qoc_run_agent` |
 | `GET /api/health` | health |
+
+
+> **MCP server path:** `/mcp` is separate from `/api`. It exposes
+> `qoc_run_agent` and is protected by Basic Auth today; OAuth resource-server
+> support is planned.
 
 ## Deterministic steps
 

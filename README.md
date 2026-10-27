@@ -33,6 +33,7 @@ the code.
   hidden skills via `disable-model-invocation`.
 - **Operations:** SQLite or PostgreSQL, Docker (JVM/native), systemd,
   OpenTelemetry, rotating LLM trace.
+- **Guardrails:** declarative rules, CDI SPI, [external webhook guardrail](docs/webhook.md) – [provider](webhook-guardrail/README.md).
 - **Quality gates:** ArchUnit, JaCoCo ≥ 80 %, `mvn verify`.
 
 ---

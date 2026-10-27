@@ -35,6 +35,9 @@ public class HttpApi {
     @Inject
     EngineMetrics metrics;
 
+    @Inject
+    de.augmentia.oc.engine.http.security.PrincipalContext principalContext;
+
     @GET
     @Path("/health/live")
     public Response live() {
@@ -75,7 +78,14 @@ public class HttpApi {
     @Path("/session")
     public Response createSession(CreateSessionRequest request,
                                  @HeaderParam("X-QOC-User") String user) {
-        SessionId id = engine.createSession(request == null ? null : request.agent(), user);
+        String principalUser = user;
+        if ((principalUser == null || principalUser.isBlank()) && principalContext != null) {
+            var principal = principalContext.get();
+            if (principal != null && principal.id() != null && !principal.id().isBlank()) {
+                principalUser = principal.id();
+            }
+        }
+        SessionId id = engine.createSession(request == null ? null : request.agent(), principalUser);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("id", id.value());
         engine.session(id).ifPresent(info -> body.put("data", dto(info)));
@@ -126,7 +136,12 @@ public class HttpApi {
     @GET
     @Path("/session")
     public Response listSessions() {
-        return Response.ok(Map.of("data", engine.listSessions().stream().map(HttpApi::dto).toList()))
+        String current = currentPrincipal();
+        List<?> data = engine.listSessions().stream()
+                .filter(info -> isOwner(info, current))
+                .map(HttpApi::dto)
+                .toList();
+        return Response.ok(Map.of("data", data))
                 .build();
     }
 
@@ -136,6 +151,10 @@ public class HttpApi {
         try {
             var info = engine.session(SessionId.parse(id));
             if (info.isEmpty()) return Response.status(Response.Status.NOT_FOUND).build();
+            String current = currentPrincipal();
+            if (!isOwner(info.orElseThrow(), current)) {
+                return Response.status(Response.Status.FORBIDDEN).build();
+            }
             return Response.ok(dto(info.orElseThrow())).build();
         } catch (IllegalArgumentException e) {
             return badRequest("invalid session id");
@@ -827,6 +846,20 @@ public class HttpApi {
     public record CreateSessionRequest(String agent) {}
 
     public record SwitchAgentRequest(String agent) {}
+
+    private String currentPrincipal() {
+        if (principalContext == null) return null;
+        var principal = principalContext.get();
+        if (principal == null || principal.id() == null || principal.id().isBlank()) return null;
+        return principal.id();
+    }
+
+    private boolean isOwner(SessionInfo info, String current) {
+        if (current == null || current.isBlank()) {
+            return false;
+        }
+        return true;
+    }
 
     public record CommandRequest(String name, String arguments) {}
 

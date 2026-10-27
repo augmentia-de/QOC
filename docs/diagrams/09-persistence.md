@@ -86,6 +86,16 @@ erDiagram
     string resource
   }
 
+  PENDING_APPROVAL {
+    string id PK
+    string session_id FK
+    string action
+    string context
+    timestamp created_at
+    timestamp deadline_at
+    string state
+  }
+
   CREDENTIAL {
     string id PK
     string integration
@@ -190,6 +200,11 @@ flowchart LR
 | WAL | `Sqlite.enableWal` | – |
 | Migrations | `db/migration-sqlite` | `db/migration` |
 | Suitable for | local instance, GCP single-node | distributed orchestrator/worker architecture |
+
+
+> **Current deviations:** `PENDING_APPROVAL` exists as migration V3. `CREDENTIAL`
+> stores secrets in plaintext and has no owner/audience fields yet. Session
+> ownership and credential encryption are planned security work.
 
 ## Sources
 

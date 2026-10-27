@@ -110,6 +110,41 @@ determinism boundary remains: the **selection** comes from the LLM, the
 | Tool error | `ToolOutcome.Failed` / `SessionError` |
 | Schema error | `ToolFailure` → `ToolOutcome.Failed` |
 
+
+## QOC as MCP server
+
+QOC can also act as an MCP server through `McpServerResource` under `/mcp`.
+
+| Item | Value |
+|---|---|
+| Endpoint | `/mcp` |
+| Exposed tool | `qoc_run_agent` |
+| Auth | Basic Auth today; OAuth 2.1 resource server planned |
+| User | currently hardcoded to `opencode` |
+| Session mode | `new` or `reuse` |
+| Ownership check | not implemented yet |
+| Structured output | optional JSON schema |
+
+This is separate from the MCP client tool chain above. The client-side `mcp`
+tool calls external MCP servers; the server-side `/mcp` endpoint exposes QOC
+as an MCP server.
+
+## Guardrails
+
+The current hook model is intentionally small:
+
+- `Hooks.beforeToolCall`
+- `Hooks.afterToolCall`
+- `PermissionHook` (present, but not wired in `Engine`)
+
+Planned guardrail layers:
+
+1. built-in rules
+2. declarative `settings.json` rules
+3. Java SPI / CDI guardrails
+4. optional external webhook guardrails
+
+
 ## Sources
 
 - `engine/src/main/java/de/augmentia/oc/engine/runtime/tool/runtime/ToolRuntime.java`

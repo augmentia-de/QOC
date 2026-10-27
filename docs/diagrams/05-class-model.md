@@ -237,3 +237,22 @@ classDiagram
 - `engine/src/main/java/de/augmentia/oc/engine/runtime/`
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/`
 - `docs/spec/java-packages.md`
+
+
+## Planned security and MCP types
+
+The following types are not yet present in the class model, but are planned
+for the security/MCP work:
+
+- `Principal`
+- `PermissionEvaluation` with principal
+- `CredentialStore` / `SqliteCredentials`
+- `McpServerManager`
+- `McpServerResource`
+- `McpDiscoveryClient`
+- `McpOAuth`
+- `GuardrailRegistry`
+- `ToolCallJournal`
+
+These are intentionally listed separately so the current class diagram stays
+accurate.

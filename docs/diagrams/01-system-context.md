@@ -21,6 +21,8 @@ flowchart LR
   ToolSet["Tools<br/>FS · Shell · Web · MCP · Subagent"]:::mixed
   Workspace[("Workspace<br/>Files")]:::store
   Mcp["MCP Server"]:::ext
+  QocMcp["QOC MCP Server<br/>/mcp · qoc_run_agent"]:::mixed
+  Guardrail["Guardrail Webhook<br/>optional"]:::ext
   Web["Firecrawl / WebFetch"]:::ext
   Child["Subagent<br/>Child Session"]:::llm
   Store[("SQLite / PostgreSQL<br/>Event Log · Projections")]:::store
@@ -40,6 +42,9 @@ flowchart LR
   ToolSet --> Workspace
   ToolSet --> Mcp
   ToolSet --> Web
+  User -->|"MCP"| QocMcp
+  QocMcp --> Engine
+  Tools -.->|"optional"| Guardrail
   ToolSet --> Child
   Session --> Store
   Engine --> Store

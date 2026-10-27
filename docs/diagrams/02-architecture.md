@@ -20,18 +20,20 @@ flowchart TB
     Engine["Engine<br/>Wiring · Prompt-Loop"]:::mixed
     Bus["EventBus"]:::det
     Agents["AgentCatalogue<br/>EngineConfig"]:::det
+    McpServer["McpServerResource<br/>/mcp"]:::mixed
+    Guardrails["GuardrailRegistry"]:::det
     Producer["ProviderProducer"]:::ext
   end
 
   subgraph EngineModule["engine – pure Java"]
-    subgraph Core["core S0–S2"]
+    subgraph Core["core"]
       Model["model<br/>IDs · Messages · Events"]:::det
       Ports["port.*<br/>Store · World · Human · Runtime"]:::det
       Contract["contract.*<br/>Tool · Permission · Provider"]:::det
       Eval["eval<br/>Rules · Budget · Classification"]:::det
     end
 
-    subgraph Runtime["runtime S3–S7"]
+    subgraph Runtime["runtime"]
       Session["session.core / delivery / revert"]:::det
       Step["step + compaction"]:::mixed
       Context["context"]:::det
@@ -121,8 +123,10 @@ flowchart LR
    wiring layer.
 5. **`core` is pure Java**: no Quarkus, Jackson, CDI or
    HTTP dependencies.
-6. **ArchUnit checks the rules** in
-   `engine/src/test/java/de/augmentia/oc/engine/arch/ArchitectureTest.java`.
+6. **ArchUnit rules are documented** and intended for
+   `engine/src/test/java/de/augmentia/oc/engine/arch/ArchitectureTest.java`,
+   but are not implemented yet; enforcement currently comes from module
+   boundaries and review.
 
 ## Current state vs. spec
 

@@ -23,20 +23,57 @@ public final class Sqlite {
 
     private Sqlite() {}
 
+    private static final Object SQLITE_WRITE_LOCK = new Object();
+
     static <T> T transaction(DataSource dataSource, Function<Connection, T> work) {
-        try (Connection connection = dataSource.getConnection()) {
-            connection.setAutoCommit(false);
-            try {
-                T result = work.apply(connection);
-                connection.commit();
-                return result;
-            } catch (RuntimeException e) {
-                connection.rollback();
-                throw e;
-            }
-        } catch (SQLException e) {
-            throw new StoreFailure("database transaction failed", e);
+        if (dataSource == null || work == null) {
+            throw new IllegalArgumentException("data source and work must not be null");
         }
+        int attempts = 0;
+        while (true) {
+            // SQLite has a single writer. Serialising transactions in this JVM
+            // avoids SQLITE_BUSY / SQLITE_BUSY_SNAPSHOT under concurrent requests.
+            // A short retry loop covers writers in other processes or races that
+            // still slip through.
+            synchronized (SQLITE_WRITE_LOCK) {
+                try (Connection connection = dataSource.getConnection()) {
+                    connection.setAutoCommit(false);
+                    try (Statement pragma = connection.createStatement()) {
+                        pragma.execute("PRAGMA busy_timeout=5000");
+                    }
+                    try {
+                        T result = work.apply(connection);
+                        connection.commit();
+                        return result;
+                    } catch (RuntimeException e) {
+                        connection.rollback();
+                        throw e;
+                    }
+                } catch (SQLException e) {
+                    if (isBusy(e) && attempts < 5) {
+                        attempts++;
+                        try {
+                            Thread.sleep(10L * attempts);
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            throw new StoreFailure("sqlite transaction interrupted", interrupted);
+                        }
+                        continue;
+                    }
+                    throw new StoreFailure("database transaction failed", e);
+                }
+            }
+        }
+    }
+
+    private static boolean isBusy(SQLException e) {
+        if (e == null) return false;
+        int code = e.getErrorCode();
+        if (code == 5 || code == 6) return true;
+        String message = e.getMessage();
+        return message != null
+                && (message.toLowerCase().contains("busy")
+                        || message.toLowerCase().contains("locked"));
     }
 
     static void execute(Connection connection, String sql, Object... parameters) {
@@ -99,6 +136,7 @@ public final class Sqlite {
         try (Connection connection = dataSource.getConnection();
              Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA journal_mode=WAL");
+            statement.execute("PRAGMA busy_timeout=5000");
             statement.execute("PRAGMA foreign_keys=ON");
         } catch (SQLException e) {
             throw new de.augmentia.oc.engine.core.error.StoreFailure("cannot enable sqlite wal", e);

@@ -1,6 +1,6 @@
 # QOC – Architecture and Runtime Diagrams
 
-As of: 2026-10-24  
+As of: 2026-10-27  
 Based on: current code in `engine` and `quarkus`, plus the spec under
 `docs/spec/`.
 
@@ -42,6 +42,7 @@ Important for the classification:
 | [`08-agent-orchestrator.md`](./08-agent-orchestrator.md) | How do agents/subagents work today – and what would a deterministic orchestrator with LLM fallback look like? |
 | [`09-persistence.md`](./09-persistence.md) | Which tables, events, and transaction boundaries exist? |
 | [`10-deployment.md`](./10-deployment.md) | JVM, Native, Docker, and GCP operation without Git. |
+| [`11-security-and-mcp.md`](./11-security-and-mcp.md) | Security, MCP server mode, OAuth, user access and guardrails. |
 
 ## Deterministic parts at a glance
 

@@ -1,4 +1,4 @@
-# 10 – Deployment: JVM, Native, Docker, and GCP
+# 10 – Deployment: Native and GCP
 
 ## Purpose
 
@@ -6,21 +6,15 @@ QOC can be operated as a JVM application or as a Native Image. The
 Native Image deliberately contains **no Git** and no build environment. On the
 GCP VM the Native binary runs directly under systemd, not in Docker.
 
+> **Rule:** Never expose QOC or the MCP server directly. All public access
+> goes through nginx with TLS. The engine listens on loopback only.
+
 ```mermaid
 flowchart TB
-  subgraph Local["Local / Docker"]
-    Jvm["JVM-Image<br/>Dockerfile<br/>JRE + git + util-linux"]:::ext
-    JvmPort["Port 8099 / 8333"]:::ext
-    Native["Native-Image<br/>Dockerfile.native<br/>Binary + util-linux<br/>no git"]:::ext
-    NativePort["Port 8099 / 8334"]:::ext
-    Jvm --> JvmPort
-    Native --> NativePort
-  end
-
   subgraph Gcp["GCP VM quad-e2micro"]
     User["User"]:::ext
     Nginx["nginx :80<br/>Reverse Proxy"]:::ext
-    Auth["HTTP Basic Auth<br/>/etc/nginx/.htpasswd_qoc"]:::ext
+    Auth["TLS only at nginx<br/>OAuth 2.1 + PKCE + Bearer for MCP"]:::ext
     Systemd["systemd<br/>qoc.service"]:::det
     Binary["/opt/qoc/qoc-runner<br/>Native-Binary"]:::ext
     Env["/etc/qoc/env<br/>OPENCODE_SERVER_PASSWORD"]:::ext
@@ -28,9 +22,11 @@ flowchart TB
     Workspace[("/data/workspace")]:::store
     Agents["AGENTS.md<br/>Native rules"]:::ext
 
-    User -->|"http://34.72.145.97/"| Nginx
+    User -->|"https://test.augmentia.de/"| Nginx
     Nginx --> Auth
     Auth -->|"proxy / and /api/"| Systemd
+    Direct["Direct public access<br/>FORBIDDEN"]:::ext
+    Direct -.->|"blocked"| Binary
     Systemd --> Binary
     Binary --> Env
     Binary --> Db
@@ -47,13 +43,9 @@ flowchart TB
 
 | Variant | Build environment | Git | Worktree tools | Typical use |
 |---|---|---|---|---|
-| **JVM** | JRE, Maven build outside | yes | available if workspace is a Git repo | local development, CI, debugging |
-| **Native** | no JDK/Maven in image | no | disabled | lean runtime, GCP |
-| **GCP** | no Docker, no Git | no | disabled | productive single-node |
+| **Native/GCP** | no JDK/Maven on the VM | no | disabled | productive single-node on GCP |
 
-> **Open:** A separate JVM **build** image with JDK, Maven, and
-> Maven cache is not yet implemented. The current `deploy/Dockerfile` is a
-> JVM **runtime** image based on a JRE.
+> Local Docker/JVM deployments are intentionally not part of this diagram.
 
 ## Native rules
 
@@ -76,8 +68,9 @@ flowchart TB
 | Environment | `/etc/qoc/env` |
 | Database | `/data/qoc.db` |
 | Workspace | `/data/workspace` |
-| Reverse proxy | nginx on port 80 → `127.0.0.1:8080` |
-| Auth | HTTP Basic, user `opencode` |
+| Reverse proxy | nginx on `80` → `443` (TLS), proxy to `127.0.0.1:8081`; static `/sites/` from `/data/workspace/sites` |
+| Auth | OAuth 2.1 + PKCE + Bearer for MCP; Basic Auth only for legacy/admin, never for MCP |
+| Direct access | None. Engine and MCP are reachable only through nginx over HTTPS. |
 
 The password is deliberately not in the repository. It lives in
 `/etc/qoc/env` and in the nginx password file. When changed, both must be

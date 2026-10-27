@@ -29,8 +29,7 @@ public class EngineConfig {
 
     private static final Logger LOG = Logger.getLogger(EngineConfig.class.getName());
     private static final List<String> KNOWN = List.of(
-            "model", "provider", "workspace", "auth", "agents", "mcp", "skills");
-
+            "model", "provider", "workspace", "auth", "agents", "mcp", "skills", "guardrails");
     @Inject
     @ConfigProperty(name = "engine.workspace", defaultValue = ".")
     String workspaceProperty;
@@ -64,8 +63,8 @@ public class EngineConfig {
     private List<String> skillAllow;
     private List<String> skillDeny;
     private int skillMax;
+    private WebhookConfig webhookConfig;
     private final List<ConfigEntry> entries = new ArrayList<>();
-
     @PostConstruct
     void load() {
         agents = new ArrayList<>();
@@ -74,8 +73,8 @@ public class EngineConfig {
         skillAllow = new ArrayList<>();
         skillDeny = new ArrayList<>();
         skillMax = 0;
-        entries.clear();
-        workspace = workspaceProperty;
+        webhookConfig = WebhookConfig.disabled();
+        entries.clear();        workspace = workspaceProperty;
         provider = providerProperty;
         model = modelProperty;
         url = urlProperty;
@@ -152,12 +151,18 @@ public class EngineConfig {
                 mcpServers.add(parseMcp(entry.getKey(), server));
             }
         }
+        webhookConfig = parseWebhook(merged.get("guardrails"));
 
         entries.add(new ConfigEntry("model.provider", provider, "config"));
         entries.add(new ConfigEntry("model.id", model, "config"));
         entries.add(new ConfigEntry("provider.url", url, "config"));
         entries.add(new ConfigEntry("workspace", workspace, "config"));
         entries.add(new ConfigEntry("auth.password", password == null || password.isBlank() ? "" : "***", "config"));
+        entries.add(new ConfigEntry("guardrails.webhook.enabled", String.valueOf(webhookConfig.enabled()), "config"));
+        if (webhookConfig.enabled()) {
+            entries.add(new ConfigEntry("guardrails.webhook.url", webhookConfig.url(), "config"));
+            entries.add(new ConfigEntry("guardrails.webhook.mode", webhookConfig.mode(), "config"));
+        }
     }
 
     public void reload() {
@@ -183,8 +188,9 @@ public class EngineConfig {
     public List<String> skillDeny() { return List.copyOf(skillDeny); }
     /** Caps the number of loaded skills (0 = unlimited). */
     public int skillMax() { return skillMax; }
+    public WebhookConfig webhook() { return webhookConfig == null ? WebhookConfig.disabled() : webhookConfig; }
+    public boolean webhookEnabled() { return webhook() != null && webhook().enabled(); }
     public List<ConfigEntry> entries() { return List.copyOf(entries); }
-
     private JsonValue read(Path file) {
         if (!Files.exists(file)) return JsonValue.of(Map.of());
         try {
@@ -245,6 +251,50 @@ public class EngineConfig {
                 .toList();
     }
 
+    private static WebhookConfig parseWebhook(JsonValue value) {
+        if (!(value instanceof JsonValue.Obj guardrails)) return WebhookConfig.disabled();
+        JsonValue webhookValue = guardrails.values().get("webhook");
+        JsonValue.Obj obj = null;
+        if (webhookValue instanceof JsonValue.Obj webhookObj) {
+            obj = webhookObj;
+        } else if (guardrails.values().get("webhooks") instanceof JsonValue.Arr arr && !arr.values().isEmpty()) {
+            if (arr.values().get(0) instanceof JsonValue.Obj first) {
+                obj = first;
+            }
+        }
+        if (obj == null) return WebhookConfig.disabled();
+        boolean enabled = Boolean.TRUE.equals(bool(obj, "enabled"));
+        if (!enabled) return WebhookConfig.disabled();
+        String url = string(obj, "url", "");
+        if (url == null || url.isBlank()) return WebhookConfig.disabled();
+        String mode = string(obj, "mode", "enabled");
+        int timeoutMs = (int) number(obj, "timeoutMs", 1500);
+        String failMode = string(obj, "failMode", "closed-before-open-after");
+        int maxPayloadBytes = (int) number(obj, "maxPayloadBytes", 65536);
+        String payloadMode = string(obj, "payloadMode", "full");
+        boolean tlsRequired = !Boolean.FALSE.equals(bool(obj, "tlsRequired"));
+        String authType = string(obj, "authType", "hmac-sha256");
+        String secretRef = string(obj, "secretRef", null);
+        List<String> allowedHosts = stringList(obj, "allowedHosts");
+        int clockSkewSeconds = (int) number(obj, "clockSkewSeconds", 60);
+        if (obj.values().get("security") instanceof JsonValue.Obj security) {
+            tlsRequired = !Boolean.FALSE.equals(bool(security, "tlsRequired"));
+            authType = string(security, "authType", authType);
+            secretRef = string(security, "secretRef", secretRef);
+            if (security.values().get("allowedHosts") instanceof JsonValue.Arr) {
+                allowedHosts = stringList(security, "allowedHosts");
+            }
+            clockSkewSeconds = (int) number(security, "clockSkewSeconds", clockSkewSeconds);
+        }
+        boolean piiEnabled = false;
+        String piiDefaultMode = "detect";
+        if (obj.values().get("pii") instanceof JsonValue.Obj pii) {
+            piiEnabled = Boolean.TRUE.equals(bool(pii, "enabled"));
+            piiDefaultMode = string(pii, "defaultMode", piiDefaultMode);
+        }
+        return new WebhookConfig(true, mode, url, timeoutMs, failMode, maxPayloadBytes, payloadMode,
+                tlsRequired, authType, secretRef, allowedHosts, clockSkewSeconds, piiEnabled, piiDefaultMode);
+    }
     private static List<Rule> rules(JsonValue.Obj agent) {
         if (!(agent.values().get("permissions") instanceof JsonValue.Arr arr)) return List.of();
         List<Rule> out = new ArrayList<>();
@@ -390,4 +440,22 @@ public class EngineConfig {
     }
 
     public record ConfigEntry(String key, String value, String source) {}
+
+    public record WebhookConfig(boolean enabled, String mode, String url, int timeoutMs, String failMode,
+                                int maxPayloadBytes, String payloadMode, boolean tlsRequired, String authType,
+                                String secretRef, List<String> allowedHosts, int clockSkewSeconds,
+                                boolean piiEnabled, String piiDefaultMode) {
+        public WebhookConfig {
+            allowedHosts = allowedHosts == null ? List.of() : List.copyOf(allowedHosts);
+            if (mode == null || mode.isBlank()) mode = "enabled";
+            if (failMode == null || failMode.isBlank()) failMode = "closed-before-open-after";
+            if (payloadMode == null || payloadMode.isBlank()) payloadMode = "full";
+            if (authType == null || authType.isBlank()) authType = "hmac-sha256";
+        }
+
+        public static WebhookConfig disabled() {
+            return new WebhookConfig(false, "disabled", "", 1500, "closed-before-open-after", 65536, "full",
+                    true, "hmac-sha256", null, List.of(), 60, false, "detect");
+        }
+    }
 }
