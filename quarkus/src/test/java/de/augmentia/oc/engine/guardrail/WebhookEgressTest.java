@@ -12,7 +12,7 @@ class WebhookEgressTest {
     void denyWhenHostNotAllowed() {
         EngineConfig.WebhookConfig cfg = new EngineConfig.WebhookConfig(true, "enabled",
                 "https://evil.example.com/webhook", 1500, "closed-before-open-after", 65536,
-                "full", true, "hmac-sha256", null, List.of("guardrail.example"), 60, false, "detect");
+                "full", true, "hmac-sha256", null, List.of("guardrail.example"), List.of(), 60, false, "detect");
         WebhookClient client = new WebhookClient();
         try {
             java.lang.reflect.Field f = WebhookClient.class.getDeclaredField("registry");

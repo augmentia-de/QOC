@@ -11,6 +11,7 @@ import jakarta.inject.Inject;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -162,24 +163,73 @@ public class WebhookClient {
 
     private boolean isAllowedUrl(EngineConfig.WebhookConfig webhook) {
         try {
-            if (webhook.allowedHosts() == null || webhook.allowedHosts().isEmpty()) {
-                return true;
-            }
             URI uri = URI.create(webhook.url());
             String host = uri.getHost();
             if (host == null) return false;
             if (webhook.tlsRequired() && !"https".equalsIgnoreCase(uri.getScheme())) {
                 return false;
             }
-            for (String allowed : webhook.allowedHosts()) {
-                if (allowed == null || allowed.isBlank()) continue;
-                String a = allowed.trim().toLowerCase();
-                String h = host.toLowerCase();
-                if (h.equals(a) || h.endsWith("." + a)) {
-                    return true;
+            if (webhook.allowedHosts() != null && !webhook.allowedHosts().isEmpty()) {
+                boolean hostAllowed = false;
+                for (String allowed : webhook.allowedHosts()) {
+                    if (allowed == null || allowed.isBlank()) continue;
+                    String a = allowed.trim().toLowerCase();
+                    String h = host.toLowerCase();
+                    if (h.equals(a) || h.endsWith("." + a)) {
+                        hostAllowed = true;
+                        break;
+                    }
                 }
+                if (!hostAllowed) return false;
             }
+            if (webhook.allowedIps() != null && !webhook.allowedIps().isEmpty()) {
+                InetAddress[] addresses;
+                try {
+                    addresses = InetAddress.getAllByName(host);
+                } catch (Exception e) {
+                    return false;
+                }
+                boolean ipAllowed = false;
+                outer: for (InetAddress addr : addresses) {
+                    String ip = addr.getHostAddress();
+                    for (String allowed : webhook.allowedIps()) {
+                        if (allowed == null || allowed.isBlank()) continue;
+                        String a = allowed.trim();
+                        if (a.contains("/")) {
+                            if (isInCidr(ip, a)) { ipAllowed = true; break outer; }
+                        } else if (ip.equals(a)) {
+                            ipAllowed = true; break outer;
+                        }
+                    }
+                }
+                if (!ipAllowed) return false;
+            }
+            return true;
+        } catch (Exception e) {
             return false;
+        }
+    }
+
+    private boolean isInCidr(String ip, String cidr) {
+        try {
+            String[] parts = cidr.split("/");
+            String network = parts[0];
+            int prefix = Integer.parseInt(parts[1]);
+            InetAddress ipAddr = InetAddress.getByName(ip);
+            InetAddress netAddr = InetAddress.getByName(network);
+            byte[] ipBytes = ipAddr.getAddress();
+            byte[] netBytes = netAddr.getAddress();
+            if (ipBytes.length != netBytes.length) return false;
+            int fullBytes = prefix / 8;
+            int bits = prefix % 8;
+            for (int i = 0; i < fullBytes; i++) {
+                if (ipBytes[i] != netBytes[i]) return false;
+            }
+            if (bits > 0 && fullBytes < ipBytes.length) {
+                int mask = 0xFF << (8 - bits);
+                if ((ipBytes[fullBytes] & mask) != (netBytes[fullBytes] & mask)) return false;
+            }
+            return true;
         } catch (Exception e) {
             return false;
         }

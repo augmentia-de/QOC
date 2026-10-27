@@ -276,6 +276,7 @@ public class EngineConfig {
         String authType = string(obj, "authType", "hmac-sha256");
         String secretRef = string(obj, "secretRef", null);
         List<String> allowedHosts = stringList(obj, "allowedHosts");
+        List<String> allowedIps = stringList(obj, "allowedIps");
         int clockSkewSeconds = (int) number(obj, "clockSkewSeconds", 60);
         if (obj.values().get("security") instanceof JsonValue.Obj security) {
             tlsRequired = !Boolean.FALSE.equals(bool(security, "tlsRequired"));
@@ -283,6 +284,9 @@ public class EngineConfig {
             secretRef = string(security, "secretRef", secretRef);
             if (security.values().get("allowedHosts") instanceof JsonValue.Arr) {
                 allowedHosts = stringList(security, "allowedHosts");
+            }
+            if (security.values().get("allowedIps") instanceof JsonValue.Arr) {
+                allowedIps = stringList(security, "allowedIps");
             }
             clockSkewSeconds = (int) number(security, "clockSkewSeconds", clockSkewSeconds);
         }
@@ -293,7 +297,7 @@ public class EngineConfig {
             piiDefaultMode = string(pii, "defaultMode", piiDefaultMode);
         }
         return new WebhookConfig(true, mode, url, timeoutMs, failMode, maxPayloadBytes, payloadMode,
-                tlsRequired, authType, secretRef, allowedHosts, clockSkewSeconds, piiEnabled, piiDefaultMode);
+                tlsRequired, authType, secretRef, allowedHosts, allowedIps, clockSkewSeconds, piiEnabled, piiDefaultMode);
     }
     private static List<Rule> rules(JsonValue.Obj agent) {
         if (!(agent.values().get("permissions") instanceof JsonValue.Arr arr)) return List.of();
@@ -443,10 +447,11 @@ public class EngineConfig {
 
     public record WebhookConfig(boolean enabled, String mode, String url, int timeoutMs, String failMode,
                                 int maxPayloadBytes, String payloadMode, boolean tlsRequired, String authType,
-                                String secretRef, List<String> allowedHosts, int clockSkewSeconds,
-                                boolean piiEnabled, String piiDefaultMode) {
+                                String secretRef, List<String> allowedHosts, List<String> allowedIps,
+                                int clockSkewSeconds, boolean piiEnabled, String piiDefaultMode) {
         public WebhookConfig {
             allowedHosts = allowedHosts == null ? List.of() : List.copyOf(allowedHosts);
+            allowedIps = allowedIps == null ? List.of() : List.copyOf(allowedIps);
             if (mode == null || mode.isBlank()) mode = "enabled";
             if (failMode == null || failMode.isBlank()) failMode = "closed-before-open-after";
             if (payloadMode == null || payloadMode.isBlank()) payloadMode = "full";
@@ -455,7 +460,7 @@ public class EngineConfig {
 
         public static WebhookConfig disabled() {
             return new WebhookConfig(false, "disabled", "", 1500, "closed-before-open-after", 65536, "full",
-                    true, "hmac-sha256", null, List.of(), 60, false, "detect");
+                    true, "hmac-sha256", null, List.of(), List.of(), 60, false, "detect");
         }
     }
 }

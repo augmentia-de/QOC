@@ -34,7 +34,7 @@ class WebhookFailModeTest {
     private EngineConfig.WebhookConfig cfg(String failMode) {
         return new EngineConfig.WebhookConfig(true, "enabled",
                 "http://127.0.0.1:1/webhook", 200, failMode, 65536,
-                "full", false, "hmac-sha256", null, List.of(), 60, false, "detect");
+                "full", false, "hmac-sha256", null, List.of(), List.of(), 60, false, "detect");
     }
 
     @Test
@@ -69,7 +69,7 @@ class WebhookFailModeTest {
     void shadowModeReturnsShadow() throws Exception {
         EngineConfig.WebhookConfig cfg = new EngineConfig.WebhookConfig(true, "shadow",
                 "http://127.0.0.1:1/webhook", 200, "closed-before-open-after", 65536,
-                "full", false, "hmac-sha256", null, List.of(), 60, false, "detect");
+                "full", false, "hmac-sha256", null, List.of(), List.of(), 60, false, "detect");
         WebhookClient client = client(cfg);
         WebhookClient.WebhookResult res = client.call("tool.before", java.util.Map.of());
         assertEquals("shadow", res.decision());
