@@ -21,11 +21,14 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 @Path("/mcp")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class McpServerResource {
+    private static final Logger LOG = Logger.getLogger(McpServerResource.class.getName());
 
     @Inject
     Engine engine;
@@ -52,6 +55,7 @@ public class McpServerResource {
         }
         if (oauthEnabled || (securityConfig != null && securityConfig.mode() == AuthMode.MCP_OAUTH)) {
             if (principalContext == null || principalContext.get() == null) {
+                LOG.log(Level.WARNING, "security.mcp_unauthorized");
                 return Response.status(Response.Status.UNAUTHORIZED)
                         .entity(Map.of("error", "unauthorized"))
                         .header("WWW-Authenticate", "Bearer")

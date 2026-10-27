@@ -15,10 +15,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 @Provider
 @Priority(Priorities.AUTHENTICATION - 10)
 public class TrustedProxyFilter implements ContainerRequestFilter {
+    private static final Logger LOG = Logger.getLogger(TrustedProxyFilter.class.getName());
     @Inject
     SecurityConfig securityConfig;
 
@@ -34,6 +37,7 @@ public class TrustedProxyFilter implements ContainerRequestFilter {
         String remote = request.getHeaderString("X-Forwarded-For");
         String clientIp = extractClientIp(remote);
         if (!isTrusted(clientIp)) {
+            LOG.log(Level.FINE, "security.trusted_proxy_ignored ip={0}", clientIp);
             return;
         }
         String user = firstNonBlank(request.getHeaderString("X-Forwarded-User"),
@@ -45,6 +49,7 @@ public class TrustedProxyFilter implements ContainerRequestFilter {
         String email = request.getHeaderString("X-Forwarded-Email");
         String groupsHeader = request.getHeaderString("X-Forwarded-Groups");
         List<String> groups = parseGroups(groupsHeader);
+        LOG.log(Level.FINE, "security.trusted_proxy_accepted user={0}", user);
         principalContext.set(new Principal(user, user, List.of(), groups,
                 AuthMode.PROXY, "proxy", Map.of("email", email == null ? "" : email)));
     }

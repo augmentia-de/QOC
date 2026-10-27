@@ -15,9 +15,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 @ApplicationScoped
 public class GuardrailHooks implements Hooks {
+    private static final Logger LOG = Logger.getLogger(GuardrailHooks.class.getName());
     @Inject
     WebhookClient webhookClient;
 
@@ -40,17 +43,20 @@ public class GuardrailHooks implements Hooks {
         payload.put("input", toMap(call.input()));
         WebhookClient.WebhookResult result = webhookClient.call("tool.before", payload);
         if (result.shouldBlockBefore()) {
+            LOG.log(Level.WARNING, "security.webhook_tool_before_blocked tool={0} reason={1}", new Object[]{call.name(), result.reason()});
             throw new RuntimeException(result.reason() == null ? "tool blocked by webhook guardrail" : result.reason());
         }
         if ("rewrite".equals(result.decision()) && result.input() != null) {
             try {
-                Object mapped = mapper.treeToValue(result.input(), Object.class);
-                if (mapped != null && call.input() != null) {
-                    // keep existing input type if possible; rewrite is limited without schema conversion
+                String json = mapper.writeValueAsString(result.input());
+                de.augmentia.oc.engine.core.json.Result<de.augmentia.oc.engine.core.json.JsonValue> parsed =
+                        de.augmentia.oc.engine.core.json.Json.parse(json);
+                if (parsed instanceof de.augmentia.oc.engine.core.json.Result.Ok<de.augmentia.oc.engine.core.json.JsonValue> ok
+                        && ok.value() != null) {
+                    return new ToolCall(call.id(), call.name(), ok.value());
                 }
             } catch (Exception ignored) {
             }
-            return call;
         }
         return call;
     }

@@ -17,11 +17,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /** HTTP Basic auth (HS: username {@code opencode}); disabled when no password/mode requires it. */
 @Provider
 @Priority(Priorities.AUTHENTICATION)
 public class BasicAuthFilter implements ContainerRequestFilter {
+    private static final Logger LOG = Logger.getLogger(BasicAuthFilter.class.getName());
 
     @Inject
     EngineConfig config;
@@ -70,6 +73,7 @@ public class BasicAuthFilter implements ContainerRequestFilter {
         String header = request.getHeaderString(HttpHeaders.AUTHORIZATION);
         if (header == null || !header.regionMatches(true, 0, "Basic ", 0, 6)) {
             principalContext.set(Principal.anonymous());
+            LOG.log(Level.WARNING, "security.basic_auth_failed path={0}", request.getUriInfo().getPath());
             abort(request);
             return;
         }
@@ -85,6 +89,7 @@ public class BasicAuthFilter implements ContainerRequestFilter {
                 return;
             }
             principalContext.set(Principal.opencode());
+            LOG.log(Level.FINE, "security.basic_auth_success");
         } catch (IllegalArgumentException e) {
             principalContext.set(Principal.anonymous());
             abort(request);

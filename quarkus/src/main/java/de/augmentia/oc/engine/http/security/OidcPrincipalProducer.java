@@ -14,11 +14,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.Set;
 
 @Provider
 @RequestScoped
 public class OidcPrincipalProducer implements ContainerRequestFilter {
+    private static final Logger LOG = Logger.getLogger(OidcPrincipalProducer.class.getName());
     @Inject
     SecurityConfig securityConfig;
 
@@ -79,6 +82,7 @@ public class OidcPrincipalProducer implements ContainerRequestFilter {
                 }
             }
             principalContext.set(new Principal(id, name, roles, groups, AuthMode.OIDC, "oidc", claims));
+            LOG.log(Level.FINE, "security.oidc_principal_set id={0}", id);
         } catch (Exception ignored) {
         }
     }

@@ -194,7 +194,10 @@ public class Engine {
     private PermissionGate permissionGate;
     private ToolOutputStore toolOutput;
     private ToolRuntime toolRuntime;
+    @Inject
     private Hooks toolHooks = noopHooks();
+    @Inject
+    ToolAuthorizer toolAuthorizer;
     private ModelRef modelRef;
     private FileSystem fileSystem;
     private InstructionStore instructions;
@@ -228,6 +231,7 @@ public class Engine {
 
     @PostConstruct
     void wire() {
+        ToolAuthorizer authorizer = toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer;
         clock = new SystemClock();
         promptSlots = new java.util.concurrent.Semaphore(Math.max(1, maxConcurrentPrompts));
         boolean sqlite = "sqlite".equalsIgnoreCase(dbKind);
@@ -392,7 +396,7 @@ public class Engine {
         registry.register(McpResourceTools.list(mcp));
         registry.register(McpResourceTools.read(mcp));
         toolSnapshot = registry.snapshot(allowAll);
-        toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
+        toolRuntime = new ToolRuntime(toolSnapshot, (toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer),
                 permissionGate, toolHooks, toolOutput);
         instructionLoader = instructionsEnabled
                 ? new NioInstructionLoader(Path.of(System.getProperty("user.home", "."),
@@ -1187,10 +1191,10 @@ public class Engine {
                 }
             };
             runStep = new Step(provider, new ToolRuntime(agentToolSnapshot,
-                    ToolAuthorizer.defaultAuthorizer(), structuredGate, toolHooks, toolOutput));
+                    (toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer), structuredGate, toolHooks, toolOutput));
         } else if (agentToolSnapshot != runSnapshot) {
             runStep = new Step(provider, new ToolRuntime(agentToolSnapshot,
-                    ToolAuthorizer.defaultAuthorizer(), permissionGate, toolHooks, toolOutput));
+                    (toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer), permissionGate, toolHooks, toolOutput));
         }
 
         // MODE-PLAN: log synthetic message when entering/leaving plan mode (PR-7).
@@ -1480,7 +1484,7 @@ public class Engine {
         registry.register(SkillTool.listDefinition(skillCatalog, skillRules));
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
         toolSnapshot = registry.snapshot(allowAll);
-        toolRuntime = new ToolRuntime(toolSnapshot, ToolAuthorizer.defaultAuthorizer(),
+        toolRuntime = new ToolRuntime(toolSnapshot, (toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer),
                 permissionGate, toolHooks, toolOutput);
         contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
                 instructions == null ? Option.none() : Option.some(instructions));

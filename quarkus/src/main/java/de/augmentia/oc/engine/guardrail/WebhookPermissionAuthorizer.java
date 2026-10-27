@@ -8,15 +8,16 @@ import de.augmentia.oc.engine.http.security.Principal;
 import de.augmentia.oc.engine.http.security.PrincipalContext;
 import de.augmentia.oc.engine.runtime.tool.runtime.ToolAuthorizer;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.inject.Alternative;
 import jakarta.inject.Inject;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 @ApplicationScoped
-@Alternative
 public class WebhookPermissionAuthorizer implements ToolAuthorizer {
+    private static final Logger LOG = Logger.getLogger(WebhookPermissionAuthorizer.class.getName());
     @Inject
     WebhookClient webhookClient;
 
@@ -26,13 +27,9 @@ public class WebhookPermissionAuthorizer implements ToolAuthorizer {
     @Inject
     PrincipalContext principalContext;
 
-    @Inject
-    ToolAuthorizer delegate;
-
     @Override
     public PermissionRequest request(ToolContext context, ToolDefinition definition, ToolCall call) {
-        PermissionRequest base = delegate == null ? ToolAuthorizer.defaultAuthorizer().request(context, definition, call)
-                : delegate.request(context, definition, call);
+        PermissionRequest base = ToolAuthorizer.defaultAuthorizer().request(context, definition, call);
         if (!registry.hasWebhook() || context == null) {
             return base;
         }
@@ -58,6 +55,7 @@ public class WebhookPermissionAuthorizer implements ToolAuthorizer {
         try {
             WebhookClient.WebhookResult result = webhookClient.call("permission.evaluate", payload);
             if (result.shouldDenyPermission()) {
+                LOG.log(Level.WARNING, "security.webhook_permission_denied tool={0} reason={1}", new Object[]{definition == null ? null : definition.effectiveName(), result.reason()});
                 Map<String, Object> deniedMeta = new HashMap<>(base.metadata());
                 deniedMeta.put("webhookDecision", "deny");
                 if (result.reason() != null) deniedMeta.put("webhookReason", result.reason());
@@ -70,6 +68,7 @@ public class WebhookPermissionAuthorizer implements ToolAuthorizer {
                         result.reason() == null ? "Denied by webhook guardrail" : result.reason());
             }
             if (result.shouldAskPermission()) {
+                LOG.log(Level.FINE, "security.webhook_permission_ask tool={0}", definition == null ? null : definition.effectiveName());
                 Map<String, Object> askMeta = new HashMap<>(base.metadata());
                 askMeta.put("webhookDecision", "ask");
                 if (result.reason() != null) askMeta.put("webhookReason", result.reason());
