@@ -541,18 +541,18 @@ A production deployment is acceptable when:
 - [ ] Sessions have owners and claiming is enforced.
 - [ ] MCP OAuth is enabled when MCP is exposed.
 - [ ] Guardrails are configured.
-- [ ] Webhook only active when configured; disabled without side effects.
-- [ ] Webhook TLS + hostname verification + HMAC-SHA256 configured if active.
-- [ ] `secretRef` used for webhook secrets; no secrets in `settings.json`.
-- [ ] Webhook fail-mode tested for `tool.before`/`permission.evaluate` (fail-closed by default).
+- [x] Webhook only active when configured; disabled without side effects.
+- [x] Webhook TLS + hostname verification + HMAC-SHA256 configured if active.
+- [x] `secretRef` used for webhook secrets; no secrets in `settings.json`.
+- [x] Webhook fail-mode tested for `tool.before`/`permission.evaluate` (fail-closed by default).
 - [ ] `payloadMode` set according to data minimization needs.
 - [ ] Webhook logs are redacted (no secrets/PII).
-- [ ] Trusted proxy only accepts headers from configured CIDRs.
+- [x] Trusted proxy only accepts headers from configured CIDRs.
 - [ ] OIDC tokens validated (JWKS/issuer/audience) when enabled.
-- [ ] Logs are redacted.
+- [x] Logs are redacted.
 - [ ] Backups are tested.
 - [ ] Recovery is tested.
-- [ ] Metrics and audit logs are available.
+- [x] Metrics and audit logs are available.
 
 ---
 
