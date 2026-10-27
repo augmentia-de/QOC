@@ -13,6 +13,9 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import de.augmentia.oc.engine.http.security.PrincipalContext;
+import de.augmentia.oc.engine.http.security.SecurityConfig;
+import de.augmentia.oc.engine.http.security.AuthMode;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -35,11 +38,25 @@ public class McpServerResource {
     @ConfigProperty(name = "engine.mcp.server.oauth.enabled", defaultValue = "false")
     boolean oauthEnabled;
 
+    @Inject
+    SecurityConfig securityConfig;
+
+    @Inject
+    PrincipalContext principalContext;
+
     @POST
     public Response handle(Map<String, Object> request) {
         if (!enabled) {
             return Response.status(Response.Status.SERVICE_UNAVAILABLE)
                     .entity(Map.of("error", "MCP server is disabled")).build();
+        }
+        if (oauthEnabled || (securityConfig != null && securityConfig.mode() == AuthMode.MCP_OAUTH)) {
+            if (principalContext == null || principalContext.get() == null) {
+                return Response.status(Response.Status.UNAUTHORIZED)
+                        .entity(Map.of("error", "unauthorized"))
+                        .header("WWW-Authenticate", "Bearer")
+                        .build();
+            }
         }
         Object id = request == null ? null : request.get("id");
         String method = request == null ? null : String.valueOf(request.get("method"));
@@ -115,7 +132,7 @@ public class McpServerResource {
     @GET
     @Path("/authorize")
     public Response authorize() {
-        if (!oauthEnabled) {
+        if (!oauthEnabled && (securityConfig == null || securityConfig.mode() != AuthMode.MCP_OAUTH)) {
             return Response.status(Response.Status.SERVICE_UNAVAILABLE)
                     .entity(Map.of("error", "OAuth is disabled")).build();
         }
@@ -127,7 +144,7 @@ public class McpServerResource {
     @Path("/callback")
     public Response callback(@QueryParam("code") String code,
                             @QueryParam("state") String state) {
-        if (!oauthEnabled) {
+        if (!oauthEnabled && (securityConfig == null || securityConfig.mode() != AuthMode.MCP_OAUTH)) {
             return Response.status(Response.Status.SERVICE_UNAVAILABLE)
                     .entity(Map.of("error", "OAuth is disabled")).build();
         }
