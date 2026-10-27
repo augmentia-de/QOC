@@ -6,6 +6,8 @@ import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
+import jakarta.ws.rs.Priorities;
+import jakarta.annotation.Priority;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.ext.Provider;
 import org.eclipse.microprofile.jwt.JsonWebToken;
@@ -20,6 +22,7 @@ import java.util.Set;
 
 @Provider
 @RequestScoped
+@Priority(Priorities.AUTHENTICATION - 5)
 public class OidcPrincipalProducer implements ContainerRequestFilter {
     private static final Logger LOG = Logger.getLogger(OidcPrincipalProducer.class.getName());
     @Inject

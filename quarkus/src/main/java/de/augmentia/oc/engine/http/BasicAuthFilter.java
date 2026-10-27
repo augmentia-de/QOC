@@ -55,13 +55,20 @@ public class BasicAuthFilter implements ContainerRequestFilter {
                 principalContext.set(Principal.anonymous());
                 return;
             }
-            if (mode != AuthMode.BASIC) {
-                // OIDC/proxy/mcp-oauth handled by dedicated filters/providers later
-                if (principalContext.get() == null || "anonymous".equals(principalContext.get().id())) {
-                    principalContext.set(new Principal("unknown", "unknown", List.of(), List.of(), mode, mode.name().toLowerCase(), Map.of()));
+            if (mode == AuthMode.OIDC || mode == AuthMode.PROXY || mode == AuthMode.MCP_OAUTH) {
+                Principal current = principalContext.get();
+                if (current == null || "anonymous".equals(current.id()) || "unknown".equals(current.id())) {
+                    principalContext.set(Principal.anonymous());
+                    abort(request, mode);
+                    return;
                 }
                 return;
             }
+            // other modes: keep existing behavior
+            if (principalContext.get() == null || "anonymous".equals(principalContext.get().id())) {
+                principalContext.set(new Principal("unknown", "unknown", List.of(), List.of(), mode, mode.name().toLowerCase(), Map.of()));
+            }
+            return;
         }
 
         String password = config.password();
@@ -97,8 +104,14 @@ public class BasicAuthFilter implements ContainerRequestFilter {
     }
 
     private static void abort(ContainerRequestContext request) {
+        abort(request, AuthMode.BASIC);
+    }
+
+    private static void abort(ContainerRequestContext request, AuthMode mode) {
+        String challenge = (mode == AuthMode.OIDC || mode == AuthMode.MCP_OAUTH)
+                ? "Bearer" : "Basic realm=\"Secure Area\"";
         request.abortWith(Response.status(Response.Status.UNAUTHORIZED)
-                .header(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"Secure Area\"")
+                .header(HttpHeaders.WWW_AUTHENTICATE, challenge)
                 .entity(Map.of("_tag", "UnauthorizedError", "message", "authentication required"))
                 .build());
     }
