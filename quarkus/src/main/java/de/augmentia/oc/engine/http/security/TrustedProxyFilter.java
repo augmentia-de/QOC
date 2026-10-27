@@ -31,6 +31,7 @@ public class TrustedProxyFilter implements ContainerRequestFilter {
     @Override
     public void filter(ContainerRequestContext request) {
         AuthMode mode = securityConfig == null ? AuthMode.NONE : securityConfig.mode();
+        LOG.log(Level.FINE, "trustedProxy.filter mode={0} path={1}", new Object[]{mode, request.getUriInfo().getPath()});
         if (mode != AuthMode.PROXY) {
             return;
         }
