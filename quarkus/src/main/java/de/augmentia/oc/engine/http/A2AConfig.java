@@ -1,5 +1,6 @@
 package de.augmentia.oc.engine.http;
 
+import de.augmentia.oc.engine.runtime.tool.a2a.A2AEgress;
 import de.augmentia.oc.engine.runtime.tool.a2a.A2AAgentCardCache;
 import de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider;
 import de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider.A2AEndpoint;
@@ -24,6 +25,9 @@ public class A2AConfig {
 
     private final Config config;
     private final A2AAgentCardCache cache;
+    private final java.util.List<String> globalAllowedHosts;
+    private final java.util.List<String> globalAllowedIps;
+    private final boolean globalTlsRequired;
 
     public A2AConfig(Config config) {
         this.config = config;
@@ -32,6 +36,9 @@ public class A2AConfig {
                 .orElse(DEFAULT_CACHE_TTL_SECONDS);
         long bounded = Math.max(0, Math.min(ttlSeconds, MAX_CACHE_TTL_SECONDS));
         this.cache = A2AAgentCardCache.defaults(Duration.ofSeconds(bounded));
+        this.globalAllowedHosts = splitList(config.getOptionalValue("engine.a2a.egress.allowedHosts", String.class));
+        this.globalAllowedIps = splitList(config.getOptionalValue("engine.a2a.egress.allowedIps", String.class));
+        this.globalTlsRequired = config.getOptionalValue("engine.a2a.egress.tlsRequired", Boolean.class).orElse(false);
     }
 
     /** Shared AgentCard cache used by tool registration and discovery. */
@@ -53,6 +60,14 @@ public class A2AConfig {
             if (!endpoint.enabled()) {
                 result.add(A2AAgentDiscovery.disabled(endpoint,
                         A2AToolProvider.toolName(endpoint, null)));
+                continue;
+            }
+            String egressError = A2AEgress.check(endpoint.url(), endpoint.allowedHosts(),
+                    endpoint.allowedIps(), endpoint.tlsRequired());
+            if (egressError != null) {
+                result.add(A2AAgentDiscovery.error(endpoint,
+                        A2AToolProvider.toolName(endpoint, null),
+                        "egress blocked: " + egressError));
                 continue;
             }
             try {
@@ -97,6 +112,9 @@ public class A2AConfig {
             String tool = "";
             boolean enabled = true;
             java.util.Map<String, String> headers = new java.util.LinkedHashMap<>();
+            java.util.List<String> allowedHosts = new java.util.ArrayList<>();
+            java.util.List<String> allowedIps = new java.util.ArrayList<>();
+            boolean tlsRequired = false;
             for (String pair : e.split("\\|")) {
                 String[] kv = pair.split("=", 2);
                 if (kv.length != 2) continue;
@@ -112,12 +130,31 @@ public class A2AConfig {
                         String[] hkv = hp.split(":", 2);
                         if (hkv.length == 2) headers.put(hkv[0].trim(), hkv[1].trim());
                     }
+                } else if ("allowedHosts".equalsIgnoreCase(k)) {
+                    for (String h : v.split(",")) if (!h.isBlank()) allowedHosts.add(h.trim());
+                } else if ("allowedIps".equalsIgnoreCase(k)) {
+                    for (String ip : v.split(",")) if (!ip.isBlank()) allowedIps.add(ip.trim());
+                } else if ("tlsRequired".equalsIgnoreCase(k)) {
+                    tlsRequired = Boolean.parseBoolean(v);
                 }
             }
             if (url != null && !url.isBlank()) {
-                result.add(new A2AEndpoint(id, url, enabled, tool, headers));
+                if (allowedHosts.isEmpty()) allowedHosts = new java.util.ArrayList<>(globalAllowedHosts);
+                if (allowedIps.isEmpty()) allowedIps = new java.util.ArrayList<>(globalAllowedIps);
+                boolean tls = tlsRequired || globalTlsRequired;
+                result.add(new A2AEndpoint(id, url, enabled, tool, headers,
+                        allowedHosts, allowedIps, tls));
                 i++;
             }
+        }
+        return result;
+    }
+
+    private java.util.List<String> splitList(java.util.Optional<String> value) {
+        java.util.List<String> result = new java.util.ArrayList<>();
+        if (value.isEmpty() || value.get().isBlank()) return result;
+        for (String part : value.get().split(",")) {
+            if (!part.isBlank()) result.add(part.trim());
         }
         return result;
     }

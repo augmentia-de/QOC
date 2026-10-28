@@ -40,6 +40,11 @@ public final class A2AToolProvider {
         A2AAgentCardCache cache = cards == null ? A2AAgentCardCache.defaults(DEFAULT_CACHE_TTL) : cards;
         for (A2AEndpoint endpoint : endpoints) {
             if (endpoint == null || !endpoint.enabled()) continue;
+            String egressError = A2AEgress.check(endpoint.url(), endpoint.allowedHosts(), endpoint.allowedIps(), endpoint.tlsRequired());
+            if (egressError != null) {
+                LOG.warning("A2A endpoint blocked by egress policy: " + endpoint.url() + " (" + egressError + ")");
+                continue;
+            }
             try {
                 AgentCard card = cache.resolve(endpoint.url(), endpoint.headers()).card();
                 ClientConfig config = new ClientConfig.Builder()
@@ -55,7 +60,8 @@ public final class A2AToolProvider {
                         .clientConfig(config)
                         .build();
                 String toolName = toolName(endpoint, card);
-                tools.add(A2ATool.definition(card, client, toolName, endpoint.headers()));
+                tools.add(A2ATool.definition(card, client, toolName, endpoint.headers(),
+                        endpoint.allowedHosts(), endpoint.allowedIps(), endpoint.tlsRequired()));
                 LOG.info("Registered A2A tool " + toolName + " for " + card.name() + " @ " + endpoint.url());
             } catch (RuntimeException e) {
                 LOG.warning("Failed to load A2A agent from " + endpoint.url() + ": " + e.getMessage());
@@ -82,18 +88,26 @@ public final class A2AToolProvider {
     }
 
     public record A2AEndpoint(String id, String url, boolean enabled, String toolName,
-                              Map<String, String> headers) {
+                              Map<String, String> headers,
+                              List<String> allowedHosts, List<String> allowedIps, boolean tlsRequired) {
         public A2AEndpoint {
             if (id == null) id = "";
             if (url == null) url = "";
             if (toolName == null) toolName = "";
             if (headers == null) headers = Map.of();
             else headers = Map.copyOf(headers);
+            if (allowedHosts == null) allowedHosts = List.of();
+            else allowedHosts = List.copyOf(allowedHosts);
+            if (allowedIps == null) allowedIps = List.of();
+            else allowedIps = List.copyOf(allowedIps);
         }
 
-        /** Backward-compatible constructor. */
         public A2AEndpoint(String id, String url, boolean enabled, String toolName) {
-            this(id, url, enabled, toolName, Map.of());
+            this(id, url, enabled, toolName, Map.of(), List.of(), List.of(), false);
+        }
+
+        public A2AEndpoint(String id, String url, boolean enabled, String toolName, Map<String, String> headers) {
+            this(id, url, enabled, toolName, headers, List.of(), List.of(), false);
         }
     }
 

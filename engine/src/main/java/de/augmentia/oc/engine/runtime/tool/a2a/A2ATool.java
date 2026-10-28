@@ -48,12 +48,19 @@ public final class A2ATool {
     }
 
     public static ToolDefinition definition(AgentCard card, Client client, String toolName) {
-        return definition(card, client, toolName, Map.of());
+        return definition(card, client, toolName, Map.of(), List.of(), List.of(), false);
+    }
+
+    public static ToolDefinition definition(AgentCard card, Client client, String toolName, Map<String, String> headers) {
+        return definition(card, client, toolName, headers, List.of(), List.of(), false);
     }
 
     public static ToolDefinition definition(AgentCard card, Client client, String toolName,
-                                           Map<String, String> headers) {
+                                           Map<String, String> headers, List<String> allowedHosts,
+                                           List<String> allowedIps, boolean tlsRequired) {
         Map<String, String> h = headers == null ? Map.of() : headers;
+        List<String> hosts = allowedHosts == null ? List.of() : allowedHosts;
+        List<String> ips = allowedIps == null ? List.of() : allowedIps;
         String name = toolName == null || toolName.isBlank()
                 ? "a2a_" + normalize(card.name())
                 : normalize(toolName);
@@ -77,11 +84,20 @@ public final class A2ATool {
         ), false);
         Map<String, String> finalHeaders = h;
         return new ToolDefinition(new ToolName(name), description, schema, Option.none(),
-                (input, context) -> execute(card, client, input, finalHeaders), ToolOptions.defaults());
+                (input, context) -> execute(card, client, input, finalHeaders, hosts, ips, tlsRequired), ToolOptions.defaults());
     }
 
-    private static ToolOutcome execute(AgentCard card, Client client, JsonValue input, Map<String, String> headers) {
+    private static ToolOutcome execute(AgentCard card, Client client, JsonValue input, Map<String, String> headers,
+                                      List<String> allowedHosts, List<String> allowedIps, boolean tlsRequired) {
         try {
+            String targetUrl = card.url();
+            if (targetUrl == null || targetUrl.isBlank()) {
+                if (card.supportedInterfaces() != null && !card.supportedInterfaces().isEmpty()) {
+                    targetUrl = card.supportedInterfaces().getFirst().url();
+                }
+            }
+            String egressError = A2AEgress.check(targetUrl, allowedHosts, allowedIps, tlsRequired);
+            if (egressError != null) return failure("egress_blocked", egressError);
             String text = extractText(input);
             String skill = extractSkill(input);
             if (text == null || text.isBlank()) {
