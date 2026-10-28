@@ -155,6 +155,7 @@ at the third – or, for data ownership and prompts, already at the first.
 | [`01-tests.md`](./01-tests.md) | Which test proves which rule, with which data, at which stage? | 5 test kinds, evidence rule, CI gates |
 | [`02-architecture-pipeline.md`](./02-architecture-pipeline.md) | Which rule breaks the build, and how is it bypassed? | 9 rules, Maven/CI, exceptions |
 | [`03-implementability.md`](./03-implementability.md) | Is the spec enough to build – and what is missing? | 24 building blocks, 4 gaps, MVP cut |
+| [`04-docker-a2a-mcp-e2e.md`](./04-docker-a2a-mcp-e2e.md) | How are A2A and MCP tested end-to-end across three Docker containers with different agents? | 3 containers, 2 protocols, 19 scenarios |
 | [`../betrieb/`](../betrieb/README.md) | What does the smallest runnable environment look like? | HTTP/SSE, 3 skills, credentials, 46 rules |
 | [`../persistence/02-data-ownership.md`](../persistence/02-data-ownership.md) | Who owns which table, and who may write it? | 12 tables, 10 rules |
 | [`../session-engine/12-execution-model.md`](../session-engine/12-execution-model.md) | How does an execution run, and where are its limits? | 8 invariants, shutdown, pinning |
