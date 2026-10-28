@@ -1,7 +1,13 @@
 package de.augmentia.oc.engine.http.a2a;
 
 import de.augmentia.oc.engine.core.model.SessionId;
+import de.augmentia.oc.engine.core.contract.provider.ModelEvent;
+import de.augmentia.oc.engine.core.event.ContractCodec;
+import de.augmentia.oc.engine.core.json.Json;
+import de.augmentia.oc.engine.core.json.JsonValue;
+import de.augmentia.oc.engine.core.json.Result;
 import de.augmentia.oc.engine.http.Engine;
+import de.augmentia.oc.engine.http.EventBus;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.a2aproject.sdk.server.ServerCallContext;
@@ -41,6 +47,9 @@ public class QocAgentExecutor implements AgentExecutor {
     @Inject
     A2AServerConfig config;
 
+    @Inject
+    EventBus eventBus;
+
     @Override
     public void execute(RequestContext context, AgentEmitter emitter) throws A2AError {
         if (!config.enabled()) {
@@ -58,11 +67,38 @@ public class QocAgentExecutor implements AgentExecutor {
 
             SessionId sessionId = sessions.sessionFor(
                     user, context.getContextId(), context.getTaskId());
-            Engine.PromptResult result = engine.prompt(sessionId, text);
+
+            // Stream text deltas to the A2A client as they are produced.
+            String artifactId = java.util.UUID.randomUUID().toString();
+            boolean[] firstChunk = {true};
+            boolean[] hadDelta = {false};
+            Runnable unsubscribe = eventBus.subscribeLive(sessionId.value(), json -> {
+                try {
+                    Result<JsonValue> parsed = Json.parse(json);
+                    if (!(parsed instanceof Result.Ok<JsonValue> ok)) return;
+                    Object decoded = ContractCodec.decode(ok.value(), ModelEvent.class);
+                    if (!(decoded instanceof ModelEvent.TextDelta delta)) return;
+                    if (delta.text() == null || delta.text().isBlank()) return;
+                    hadDelta[0] = true;
+                    emitter.addArtifact(List.of(new TextPart(delta.text(), null)), artifactId, null, null,
+                            firstChunk[0] ? null : Boolean.TRUE,
+                            null);
+                    firstChunk[0] = false;
+                } catch (Exception ignored) {
+                }
+            });
+
+            Engine.PromptResult result;
+            try {
+                result = engine.prompt(sessionId, text);
+            } finally {
+                unsubscribe.run();
+            }
+
             switch (result.outcome()) {
                 case Engine.TurnOutcome.Completed completed -> {
                     String output = completed.text();
-                    if (output != null && !output.isBlank()) {
+                    if (!hadDelta[0] && output != null && !output.isBlank()) {
                         emitter.addArtifact(List.of(new TextPart(output, null)));
                     }
                     emitter.complete();
