@@ -202,25 +202,47 @@ Gründe:
 5. **Server bleibt opt-in**: keine ungewollte Exposition
 
 **Nächste konkrete Schritte:**
-1. Token-level Streaming (erfordert Streaming-API in `Engine.prompt`)
-2. Egress-Gating für A2A-Ziele über Custom-HTTP-Client
-3. Push-Notifications an QOC-Events anbinden (optional)
-4. Tenant-Support (`/{tenant}`) — separat geplant
-5. Automatisierte Interop-Suite gegen externe Referenz-Agents
+1. Push-Notifications an QOC-Events anbinden (optional, niedrige Priorität)
+2. Egress-Gating über Custom-HTTP-Client auf Transport-Ebene (aktuell Application-Level-Guard)
+3. Tenant-Support (`/{tenant}`) — separat geplant
+4. Automatisierte Interop-Suite gegen externe Referenz-Agents
 
 ## 8. Offene Fragen
 
-- [x] SDK-Version finalisieren (`org.a2aproject.sdk:1.4.0.Final`)
+- [x] SDK-Version finalisiert (`org.a2aproject.sdk:1.4.0.Final`)
 - [x] Skill-to-Tool-Mapping: ein Tool pro Agent, Description mit Skills angereichert, optionaler `skill`-Parameter
-- [x] Task-Lifecycle: Blocking implementiert; `message/stream` (SSE) funktional; Token-Streaming offen (Engine-API)
+- [x] Task-Lifecycle: Blocking und SSE-Streaming (inkrementelle Chunks via EventBus) implementiert
 - [x] Auth für externe A2A-Agents: `auth=bearer:...`/`basic:...`/`headers=...` in `engine.a2a.endpoints`
 - [x] Content-Typen: TextPart, DataPart, FilePart werden client- und serverseitig verarbeitet
-- [ ] Wie mappt man QOC-Tool-Schemas auf A2A Message Parts? (DataPart genutzt; FilePart als Referenz)
+- [x] Egress-Gating: Application-Level-Guard (`A2AEgress`) mit Host/IP-Allowlists und TLS; Transport-Level offen
+- [ ] Wie mappt man QOC-Tool-Schemas auf A2A Message Parts vollständig? (DataPart genutzt; FilePart als Referenz)
 - [ ] Tenant-Support (`/{tenant}`) — separat geplant
-- [ ] Egress-Gating für A2A-Ziele — noch nicht implementiert
-- [ ] Caching von AgentCards?
-- [x] Error-Mapping A2A -> QOC Tool-Errors (typisierte `ToolExecutionError`)
-- [ ] Mandantenfähigkeit (`/{tenant}`-Routen) für den Server?
+- [ ] Caching von AgentCards auf Server-Seite? (Client-Cache implementiert)
+
+## 9. Verbesserungen / TODOs (nicht blockierend)
+
+### 9.1 Push-Notifications (optional, niedrige Priorität)
+- **Was:** SDK unterstützt `TaskPushNotificationConfig` (Webhook-URL, Auth) für asynchrone Task-Updates. QOC kann als Push-Empfänger fungieren.
+- **Warum noch nicht:** Erfordert `PushNotificationConfigStore`-Implementierung und Anbindung an QOC-EventBus/Webhooks. Nur für Clients relevant, die nicht blockierend warten können.
+- **Aufwand:** mittel. **Priorität:** niedrig.
+
+### 9.2 Egress-Gating auf Transport-Ebene
+- **Was:** Aktuell Application-Level-Guard in `A2AEgress` (prüft vor Card-Fetch und vor `sendMessage`). Ein Custom-`A2AHttpClient` (JDK-basiert) würde die Prüfung auf Transport-Ebene durchsetzen.
+- **Warum noch nicht:** Der SDK-HTTP-Client ist intern; ein Wrapper erfordert Implementierung aller Builder-Interfaces (`GetBuilder`, `PostBuilder`, `DeleteBuilder`).
+- **Aufwand:** mittel-hoch. **Priorität:** mittel (Sicherheit).
+
+### 9.3 Automatisierte Interop-Suite
+- **Was:** Docker-Konzept (`docs/spec/qualitaet/04-docker-a2a-mcp-e2e.md`) und Compose-Stack (`deploy/docker-compose.a2a-mcp-e2e.yml`) existieren und wurden manuell getestet. Keine automatisierte Test-Suite.
+- **Warum noch nicht:** Erfordert Runner-Container mit SDK-Client und Szenarien A2A-01…10 / MCP-01…06.
+- **Aufwand:** mittel. **Priorität:** mittel (Qualitätssicherung).
+
+### 9.4 Server-Card-Caching
+- **Was:** AgentCard wird bei jedem Request neu aus `AgentCatalogue` gebaut. Caching könnte sinnvoll sein.
+- **Aufwand:** gering. **Priorität:** niedrig.
+
+### 9.5 QOC-Tool-Schema → A2A Message Parts
+- **Was:** Aktuell werden QOC-Tool-Ergebnisse als Text an den Remote-Agent gesendet. DataPart/FilePart werden clientseitig verarbeitet, aber das Mapping von QOC-Tool-Schemas auf A2A Message Parts ist nicht vollständig.
+- **Aufwand:** mittel. **Priorität:** niedrig.
 
 ## Referenzen
 
