@@ -9,12 +9,9 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.ext.Provider;
 
-import java.net.InetAddress;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -36,8 +33,8 @@ public class TrustedProxyFilter implements ContainerRequestFilter {
             return;
         }
         String remote = request.getHeaderString("X-Forwarded-For");
-        String clientIp = extractClientIp(remote);
-        if (!isTrusted(clientIp)) {
+        String clientIp = TrustedProxy.clientIp(remote);
+        if (!TrustedProxy.isTrusted(securityConfig.trustedProxies(), clientIp)) {
             LOG.log(Level.FINE, "security.trusted_proxy_ignored ip={0}", clientIp);
             return;
         }
@@ -53,58 +50,6 @@ public class TrustedProxyFilter implements ContainerRequestFilter {
         LOG.log(Level.FINE, "security.trusted_proxy_accepted user={0}", user);
         principalContext.set(new Principal(user, user, List.of(), groups,
                 AuthMode.PROXY, "proxy", Map.of("email", email == null ? "" : email)));
-    }
-
-    private String extractClientIp(String xff) {
-        if (xff == null || xff.isBlank()) return null;
-        String first = xff.split(",")[0].trim();
-        return first.isBlank() ? null : first;
-    }
-
-    private boolean isTrusted(String ip) {
-        List<String> trusted = securityConfig.trustedProxies();
-        if (trusted == null || trusted.isEmpty()) {
-            return false;
-        }
-        if (ip == null || ip.isBlank()) {
-            return false;
-        }
-        for (String entry : trusted) {
-            if (entry == null) continue;
-            String t = entry.trim();
-            if (t.isEmpty()) continue;
-            if (t.equals("*")) return true;
-            if (ip.equals(t)) return true;
-            if (t.contains("/")) {
-                if (isInCidr(ip, t)) return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean isInCidr(String ip, String cidr) {
-        try {
-            String[] parts = cidr.split("/");
-            String network = parts[0];
-            int prefix = Integer.parseInt(parts[1]);
-            InetAddress ipAddr = InetAddress.getByName(ip);
-            InetAddress netAddr = InetAddress.getByName(network);
-            byte[] ipBytes = ipAddr.getAddress();
-            byte[] netBytes = netAddr.getAddress();
-            if (ipBytes.length != netBytes.length) return false;
-            int fullBytes = prefix / 8;
-            int bits = prefix % 8;
-            for (int i = 0; i < fullBytes; i++) {
-                if (ipBytes[i] != netBytes[i]) return false;
-            }
-            if (bits > 0 && fullBytes < ipBytes.length) {
-                int mask = 0xFF << (8 - bits);
-                if ((ipBytes[fullBytes] & mask) != (netBytes[fullBytes] & mask)) return false;
-            }
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     private List<String> parseGroups(String groupsHeader) {

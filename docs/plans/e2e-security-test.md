@@ -53,6 +53,17 @@ Webhook-Guardrail, Egress-Schutz, Session-Ownership und MCP-OAuth.
 1. `/mcp` mit `security.mode=mcp-oauth` ohne Token -> 401
 2. Mit gültigem Token -> Tool-Ausführung
 
+### 8. A2A Server
+1. `engine.a2a.server.enabled=false`: `GET /.well-known/agent-card.json` und `POST /` -> 404
+2. `enabled=true`, `security.mode=none`: AgentCard ist abrufbar, `message/send` liefert ein Text-Artifact
+3. `enabled=true`, `security.mode=basic`: ohne Credentials -> 401, mit korrekten Credentials -> 200
+4. Falsches Passwort -> 401
+5. Task-Ownership: User B kann einen Task von User A nicht lesen/fortsetzen
+6. Gleiche `contextId` verschiedener User führt zu getrennten QOC-Sessions
+7. Trusted-Proxy-Identität wird nur aus konfigurierten CIDRs akzeptiert
+8. `engine.a2a.server.base-url` zeigt auf die extern erreichbare URL
+9. A2A-Tool-Aufrufe laufen durch dieselben Permissions/Guardrails wie lokale Tools
+
 ## Automatisierung
 - Quarkus-Integrationstests mit `@QuarkusTest` und Testprofilen
 - Testcontainers für PostgreSQL + Keycloak + Webhook-Guardrail

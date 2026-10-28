@@ -16,14 +16,14 @@
 
     <dependencies>
         <dependency>
-            <groupId>io.github.a2asdk</groupId>
+            <groupId>org.a2aproject.sdk</groupId>
             <artifactId>a2a-java-sdk-client</artifactId>
-            <version>0.3.0.Alpha1</version>
+            <version>1.4.0.Final</version>
         </dependency>
         <dependency>
-            <groupId>io.github.a2asdk</groupId>
+            <groupId>org.a2aproject.sdk</groupId>
             <artifactId>a2a-java-sdk-client-transport-grpc</artifactId>
-            <version>0.3.0.Alpha1</version>
+            <version>1.4.0.Final</version>
             <optional>true</optional>
         </dependency>
         <dependency>

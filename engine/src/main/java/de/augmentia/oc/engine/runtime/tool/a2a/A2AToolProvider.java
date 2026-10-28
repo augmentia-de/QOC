@@ -1,21 +1,20 @@
 package de.augmentia.oc.engine.runtime.tool.a2a;
 
 import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
-import io.a2a.client.Client;
-import io.a2a.client.ClientBuilder;
-import io.a2a.client.config.ClientConfig;
-import io.a2a.client.http.A2ACardResolver;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.TransportProtocol;
+import org.a2aproject.sdk.A2A;
+import org.a2aproject.sdk.client.Client;
+import org.a2aproject.sdk.client.config.ClientConfig;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransport;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransportConfigBuilder;
+import org.a2aproject.sdk.spec.AgentCard;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.logging.Logger;
 
+/**
+ * Resolves configured A2A endpoints and turns each remote agent into a QOC tool.
+ */
 public final class A2AToolProvider {
     private static final Logger LOG = Logger.getLogger(A2AToolProvider.class.getName());
 
@@ -28,16 +27,15 @@ public final class A2AToolProvider {
         for (A2AEndpoint endpoint : endpoints) {
             if (endpoint == null || !endpoint.enabled()) continue;
             try {
-                AgentCard card = new A2ACardResolver(endpoint.url()).getAgentCard();
-                ClientConfig config = new ClientConfig.Builder().build();
-                ClientBuilder builder = Client.builder(card).clientConfig(config);
-                String preferred = card.preferredTransport();
-                if (preferred == null || TransportProtocol.JSONRPC.asString().equals(preferred)) {
-                    builder.withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig());
-                } else {
-                    builder.withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig());
-                }
-                Client client = builder.build();
+                AgentCard card = A2A.getAgentCard(endpoint.url());
+                ClientConfig config = new ClientConfig.Builder()
+                        .setStreaming(false)
+                        .setUseClientPreference(true)
+                        .build();
+                Client client = Client.builder(card)
+                        .withTransport(JSONRPCTransport.class, new JSONRPCTransportConfigBuilder())
+                        .clientConfig(config)
+                        .build();
                 String toolName = endpoint.toolName() == null || endpoint.toolName().isBlank()
                         ? "a2a_" + normalize(card.name())
                         : normalize(endpoint.toolName());

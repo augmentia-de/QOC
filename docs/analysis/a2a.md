@@ -106,56 +106,64 @@ QOC hat bereits Subagents. A2A könnte Remote-Subagents ermöglichen (andere Pro
 
 ## 5. Konkreter Implementierungsplan für QOC
 
-### Phase 0: Vorbereitung & Analyse
-- [ ] A2A-Spec 0.3.0 lesen (Task/Message/Part, AgentCard, Transports, Streaming)
-- [ ] A2A-Java-SDK API im Detail prüfen (Packages `io.a2a.*`)
-- [ ] QOC-Tool-Contract & Permission-System verstehen (bereits vorhanden)
-- [ ] Entscheidung: Server/Client/Beides zuerst?
+### Phase 0: Vorbereitung & Analyse (abgeschlossen)
+- [x] A2A-Spec lesen (Task/Message/Part, AgentCard, Transports, Streaming)
+- [x] A2A-Java-SDK API prüfen
+- [x] QOC-Tool-Contract & Permission-System verstehen
+- [x] Entscheidung: Client zuerst, danach Server
 
-### Phase 1: A2A-Client als QOC-Tool (niedrigster Aufwand, hoher Nutzen)
-Am einfachsten: Externe A2A-Agents als aufrufbare Tools integrieren.
+### Phase 1: A2A-Client als QOC-Tool (umgesetzt)
+Externe A2A-Agents werden als QOC-Tools registriert.
 
-**Änderungen:**
-1. **Dependencies** in `qoc/pom.xml` / `quarkus/pom.xml`:
-   ```xml
-   <dependency>
-       <groupId>io.github.a2asdk</groupId>
-       <artifactId>a2a-java-sdk-client</artifactId>
-       <version>0.3.0.Alpha1</version> <!-- oder aktuell -->
-   </dependency>
-   <dependency>
-       <groupId>io.github.a2asdk</groupId>
-       <artifactId>a2a-java-sdk-client-transport-grpc</artifactId>
-       <version>0.3.0.Alpha1</version>
-       <optional>true</optional>
-   </dependency>
-   ```
-2. **Config**: `engine.a2a.client.endpoints[]` mit `{id, url, enabled, auth?}`
-3. **Tool-Provider**: `runtime/tool/a2a/A2AToolProvider` erstellt Tools aus AgentCards
-4. **Tool-Implementierung**: `A2AAgentTool` nutzt `ClientBuilder` + `Client`, mappt Input->Message, ruft Task/Message, mappt Response
-5. **Registry-Integration**: Tools wie andere Builtins registrieren
-6. **Permissions**: Eigene Permission-Action `a2a.call` oder bestehende Regeln
+**Umsetzung:**
+1. **Dependencies**: `org.a2aproject.sdk:a2a-java-sdk-client:1.4.0.Final`
+   (optional `a2a-java-sdk-client-transport-grpc`).
+2. **Config**: `engine.a2a.urls` (kommasepariert) und
+   `engine.a2a.endpoints` (`url=...|id=...|tool=...|enabled=true;`).
+3. **Tool-Provider**: `runtime/tool/a2a/A2AToolProvider` lädt AgentCards und
+   baut je Endpoint ein Tool.
+4. **Tool-Implementierung**: `A2ATool` mappt JSON-Input auf eine A2A-Message,
+   ruft den Agenten blockierend auf und mappt Task/Message-Antworten auf
+   `ToolResult`.
+5. **Registry-Integration**: Die Tools laufen durch dieselbe Registry,
+   Permission- und Hook-Kette wie Builtins.
+6. **Egress**: Host-/IP-Allowlists und TLS-Prüfung gelten auch für A2A-Ziele.
 
-**Mapping-Ideen:**
-- AgentCard-Skills → separate Tools oder ein Tool pro Skill
-- Tool-Input (JSON) → A2A Message mit Parts (TextPart/DataPart)
-- A2A Task/Message Response → QOC Tool-Output (Content + Metadata)
+### Phase 2: A2A-Server (QOC exponiert) (umgesetzt)
+QOC-Agenten werden als A2A-Agent angeboten. Transport ist JSON-RPC.
 
-### Phase 2: A2A-Server (QOC exponiert)
-QOC-Agenten als A2A-Agents anbieten.
+**Umsetzung:**
+1. **Dependencies**: `a2a-java-sdk-reference-jsonrpc` und
+   `a2a-java-sdk-client` in `1.4.0.Final`. Die SDK-eigenen CDI-Beans
+   (`TaskStore`, `QueueManager`, `DefaultRequestHandler`,
+   `MainEventBusProcessor`, `A2AServerRoutes`) werden mitgenutzt.
+2. **AgentCard-Producer**: `A2AAgentCardProducer` erzeugt die Card aus
+   `AgentCatalogue`; jeder sichtbare QOC-Agent wird ein Skill. Die Card
+   deklariert JSON-RPC für Protokollversion 1.0 und 0.3.
+3. **AgentExecutor**: `QocAgentExecutor` übersetzt A2A-Tasks in
+   QOC-Sessions und Prompts und liefert das Ergebnis als Text-Artifact.
+4. **Session-Mapping**: `A2ASessionRegistry` ordnet `contextId` (bzw. `taskId`
+   ohne Context) einer QOC-Session zu, LRU-begrenzt auf 1000 Kontexte.
+5. **Streaming**: Die Card meldet `streaming=true`; die Ausführung ist aktuell
+   blockierend und liefert ein finales Artifact. SSE-Feintuning folgt.
+6. **Auth**: `A2AAuthenticationMechanism` versorgt die Vert.x-Routen mit einer
+   Quarkus-Identität (none/basic/proxy; OIDC überlässt sie dem OIDC-Modul).
+   `A2ATaskAuthorizationProvider` erzwingt Task-Ownership und ist fail-closed.
+7. **Opt-in**: `engine.a2a.server.enabled=false` ist Default; ein Route-Gate
+   beantwortet die A2A-Pfade sonst mit `404`.
+8. **Konfiguration**:
+   - `engine.a2a.server.enabled`
+   - `engine.a2a.server.name`
+   - `engine.a2a.server.description`
+   - `engine.a2a.server.version`
+   - `engine.a2a.server.base-url` (öffentliche URL in der AgentCard)
+   - `engine.a2a.server.agent` (`none` = Primär-Agent)
 
-**Änderungen:**
-1. **Dependencies**: `a2a-java-sdk-reference-jsonrpc`, `a2a-java-sdk-reference-grpc`
-2. **AgentCard-Producer** (`quarkus/.../a2a/AgentCardProducer`): Generiert Card aus QOC-Agenten + Capabilities
-3. **Task-Handler**: A2A-Requests → QOC-Session/Prompt, Responses zurück mappen
-4. **Session-Mapping**: A2A-Task-ID <-> QOC-Session-ID
-5. **Streaming**: QOC-Events an A2A-Client streamen
-6. **Auth**: In QOC-Security integrieren
-
-### Phase 3: Discovery & UI
+### Phase 3: Discovery & UI (offen)
 - `/api/a2a/agents` Endpoint für konfigurierte externe Agents
 - Config-UI/CLI für A2A-Endpoints
 - AgentCard-Caching
+
 
 ## 6. Bewertung nach QOC-Prinzipien
 
@@ -172,31 +180,31 @@ QOC folgt: reines Java-Core, Ports/Adapter, Spec als Quelle der Wahrheit, ArchUn
 
 ## 7. Empfehlungen
 
-**Empfehlung: Start mit A2A-Client als Tool (Phase 1)**
+**Empfehlung: Client-first, Server opt-in (umgesetzt)**
 
 Gründe:
-1. **Minimal invasiv**: Nur Tool-Adapter + Config, keine Änderung an Core-Session-Logik
+1. **Minimal invasiv**: Client ist nur ein Tool-Adapter, keine Änderung an Core-Session-Logik
 2. **Sofortiger Nutzen**: QOC kann andere Agents delegieren
 3. **Nutzt bestehendes Design**: Tool-Registry, Permissions, Execution-Chain
-4. **Testbar**: Gegen A2A-Sample-Agents testbar
-5. **Zukünftig erweiterbar**: Server-Integration kann später folgen
+4. **Testbar**: Gegen den eigenen Server und externe A2A-Agents testbar
+5. **Server bleibt opt-in**: keine ungewollte Exposition
 
 **Nächste konkrete Schritte:**
-1. A2A-Java-SDK 0.3.0 Alpha1 in Dependencies aufnehmen
-2. `docs/analysis/a2a.md` reviewen (dieses Dokument)
-3. Proof-of-Concept: Einfacher A2A-Client-Tool für einen bekannten Agent
-4. Config-Schema erweitern
-5. Tests hinzufügen
+1. Streaming-End-to-End (SSE) für den Server verfeinern
+2. Skill-to-Tool-Mapping für den Client evaluieren
+3. A2A-Tests gegen externe Referenz-Agents erweitern
+4. Discovery-Endpoint (`/api/a2a/agents`) und AgentCard-Caching
 
 ## 8. Offene Fragen
 
-- [ ] SDK-Version finalisieren (`io.github.a2asdk` vs ggf. anderes GroupId)
-- [ ] Wie mappt man QOC-Tool-Schemas auf A2A Message Parts?
-- [ ] Sollen alle Skills eines Agents als separate Tools oder als ein Tool exponiert werden?
-- [ ] Task-Lifecycle: Blocking vs Streaming?
+- [x] SDK-Version finalisieren (`org.a2aproject.sdk:1.4.0.Final`)
+- [ ] Wie mappt man QOC-Tool-Schemas auf A2A Message Parts? (aktuell Text; DataPart/FilePart offen)
+- [ ] Sollen alle Skills eines Agents als separate Tools oder als ein Tool exponiert werden? (aktuell ein Tool pro Agent)
+- [ ] Task-Lifecycle: Blocking implementiert; Streaming/SSE noch nicht vollständig
 - [ ] Auth für externe A2A-Agents (API-Key/OAuth)?
 - [ ] Caching von AgentCards?
-- [ ] Error-Mapping A2A -> QOC Tool-Errors
+- [x] Error-Mapping A2A -> QOC Tool-Errors (typisierte `ToolExecutionError`)
+- [ ] Mandantenfähigkeit (`/{tenant}`-Routen) für den Server?
 
 ## Referenzen
 

@@ -1,32 +1,41 @@
 package de.augmentia.oc.engine.runtime.tool.a2a;
 
 import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
+import de.augmentia.oc.engine.core.contract.tool.ToolOptions;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
+import de.augmentia.oc.engine.core.json.Json;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.json.Schema;
 import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.SessionError;
 import de.augmentia.oc.engine.core.model.ToolContent;
 import de.augmentia.oc.engine.core.model.ToolName;
-import io.a2a.A2A;
-import io.a2a.client.Client;
-import io.a2a.client.ClientEvent;
-import io.a2a.client.MessageEvent;
-import io.a2a.client.TaskEvent;
-import io.a2a.client.TaskUpdateEvent;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
-import io.a2a.spec.TextPart;
+import org.a2aproject.sdk.A2A;
+import org.a2aproject.sdk.client.Client;
+import org.a2aproject.sdk.client.ClientEvent;
+import org.a2aproject.sdk.client.MessageEvent;
+import org.a2aproject.sdk.client.TaskEvent;
+import org.a2aproject.sdk.client.TaskUpdateEvent;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TextPart;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
+/**
+ * Exposes a remote A2A agent as a QOC tool.
+ *
+ * <p>The tool blocks until the remote A2A agent has produced a final
+ * {@link Message} or {@link Task}. The remote text parts are concatenated into
+ * the tool result so the model can consume them like any other tool output.</p>
+ */
 public final class A2ATool {
     private static final Logger LOG = Logger.getLogger(A2ATool.class.getName());
 
@@ -41,56 +50,78 @@ public final class A2ATool {
                 ? "Call A2A agent " + card.name()
                 : card.description();
         Schema schema = Schema.object(Map.of(
-                "message", Schema.object(Map.of("type", Schema.string(), "text", Schema.string()), false),
+                "message", Schema.object(Map.of("text", Schema.string()), false),
                 "text", Schema.string()
         ), false);
         return new ToolDefinition(new ToolName(name), description, schema, Option.none(),
-                (input, context) -> execute(card, client, input), de.augmentia.oc.engine.core.contract.tool.ToolOptions.defaults());
+                (input, context) -> execute(card, client, input), ToolOptions.defaults());
     }
 
     private static ToolOutcome execute(AgentCard card, Client client, JsonValue input) {
         try {
             String text = extractText(input);
             if (text == null || text.isBlank()) {
-                text = de.augmentia.oc.engine.core.json.Json.encode(input);
+                text = Json.encode(input);
             }
             Message message = A2A.toUserMessage(text);
-            CompletableFuture<String> future = new CompletableFuture<>();
-            java.util.List<java.util.function.BiConsumer<io.a2a.client.ClientEvent, io.a2a.spec.AgentCard>> consumers =
-                    new ArrayList<>();
-            consumers.add((event, agentCard) -> {
-                String extracted = extractEventText(event);
-                if (extracted != null && !future.isDone()) {
-                    future.complete(extracted);
-                }
-            });
-            client.sendMessage(message, consumers, (Throwable t) -> {
-                if (t != null && !future.isDone()) {
-                    future.completeExceptionally(t);
-                }
-            }, new io.a2a.client.transport.spi.interceptors.ClientCallContext(java.util.Map.of(), java.util.Map.of()));
-            // Wait for any event
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(300);
-            while (System.nanoTime() < deadline && !future.isDone()) {
-                Thread.sleep(50);
+            List<String> results = new ArrayList<>();
+            Throwable[] error = new Throwable[1];
+            client.sendMessage(message,
+                    List.of((event, agentCard) -> collect(event, results)),
+                    throwable -> error[0] = throwable,
+                    null);
+            if (error[0] != null) {
+                return failure("a2a_error", messageOf(error[0]));
             }
-            if (!future.isDone()) {
-                return failure("timeout", "A2A call timed out for " + card.name());
-            }
-            String result;
-            try {
-                result = future.getNow(null);
-            } catch (Exception e) {
-                result = future.join();
-            }
-            if (result == null || result.isBlank()) {
-                result = "OK";
-            }
+            String result = results.isEmpty() ? "OK" : String.join("\n", results);
             return new ToolOutcome.Ok(new ToolResult(Option.none(),
-                    List.of(new ToolContent.TextItem(result)), Map.of("agent", card.name())));
+                    List.of(new ToolContent.TextItem(result)),
+                    Map.of("agent", card.name())));
         } catch (Exception e) {
             LOG.warning("A2A tool failed: " + e.getMessage());
-            return failure("a2a_error", e.getMessage() == null ? "A2A call failed" : e.getMessage());
+            return failure("a2a_error", messageOf(e));
+        }
+    }
+
+    private static void collect(ClientEvent event, List<String> results) {
+        if (event instanceof MessageEvent messageEvent) {
+            addMessage(messageEvent.getMessage(), results);
+        } else if (event instanceof TaskEvent taskEvent) {
+            addTask(taskEvent.getTask(), results);
+        } else if (event instanceof TaskUpdateEvent updateEvent) {
+            addTask(updateEvent.getTask(), results);
+        }
+    }
+
+    private static void addTask(Task task, List<String> results) {
+        if (task == null) {
+            return;
+        }
+        if (task.status() != null) {
+            addMessage(task.status().message(), results);
+        }
+        if (task.artifacts() != null) {
+            for (Artifact artifact : task.artifacts()) {
+                addParts(artifact.parts(), results);
+            }
+        }
+    }
+
+    private static void addMessage(Message message, List<String> results) {
+        if (message == null) {
+            return;
+        }
+        addParts(message.parts(), results);
+    }
+
+    private static void addParts(List<Part<?>> parts, List<String> results) {
+        if (parts == null) {
+            return;
+        }
+        for (Part<?> part : parts) {
+            if (part instanceof TextPart textPart && textPart.text() != null && !textPart.text().isBlank()) {
+                results.add(textPart.text());
+            }
         }
     }
 
@@ -109,45 +140,11 @@ public final class A2ATool {
         return null;
     }
 
-    private static String extractEventText(ClientEvent event) {
-        if (event instanceof MessageEvent me) {
-            Message msg = me.getMessage();
-            if (msg == null) return null;
-            StringBuilder sb = new StringBuilder();
-            if (msg.getParts() != null) {
-                for (Part<?> part : msg.getParts()) {
-                    if (part instanceof TextPart tp && tp.getText() != null) {
-                        sb.append(tp.getText());
-                    }
-                }
-            }
-            return sb.length() == 0 ? null : sb.toString();
+    private static String messageOf(Throwable throwable) {
+        if (throwable.getMessage() != null && !throwable.getMessage().isBlank()) {
+            return throwable.getMessage();
         }
-        if (event instanceof TaskEvent te) {
-            if (te.getTask() != null && te.getTask().getStatus() != null
-                    && te.getTask().getStatus().message() != null) {
-                return extractText(te.getTask().getStatus().message());
-            }
-            return null;
-        }
-        if (event instanceof TaskUpdateEvent tue) {
-            if (tue.getTask() != null && tue.getTask().getStatus() != null && tue.getTask().getStatus().message() != null) {
-                return extractText(tue.getTask().getStatus().message());
-            }
-            return null;
-        }
-        return null;
-    }
-
-    private static String extractText(Message msg) {
-        if (msg == null || msg.getParts() == null) return null;
-        StringBuilder sb = new StringBuilder();
-        for (Part<?> part : msg.getParts()) {
-            if (part instanceof TextPart tp && tp.getText() != null) {
-                sb.append(tp.getText());
-            }
-        }
-        return sb.length() == 0 ? null : sb.toString();
+        return throwable.getClass().getSimpleName();
     }
 
     private static String normalize(String value) {

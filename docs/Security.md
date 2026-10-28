@@ -199,6 +199,17 @@ When `security.mode = "oidc"`:
 - MCP resources are read-only.
 - MCP tool calls go through the normal tool chain.
 
+#### 4.8a A2A client and server
+
+- **Client egress**: configured A2A endpoints (`engine.a2a.urls`, `engine.a2a.endpoints`) go through the same host/IP allowlists and TLS checks as other outbound HTTP. Remote agent responses are untrusted tool output and pass through the normal guardrail chain.
+- **Server opt-in**: `engine.a2a.server.enabled=false` by default. While disabled, `/.well-known/agent-card.json`, tenant cards and `POST /` return `404`; the agent is not discoverable.
+- **Public URL**: `engine.a2a.server.base-url` must match the externally reachable URL. It is published in the agent card and used by clients for JSON-RPC calls.
+- **Authentication**: the A2A transport uses Vert.x routes, not JAX-RS. `A2AAuthenticationMechanism` supplies a Quarkus identity for these routes: `none` for local mode, HTTP Basic against `engine.auth.password`, or trusted-proxy headers from configured CIDRs. In `oidc` mode the Quarkus OIDC extension performs authentication.
+- **Authorization**: `A2ATaskAuthorizationProvider` is fail-closed. Task reads/writes are restricted to the creating principal; `none` mode is intentionally single-user. Missing or anonymous identities are rejected when authentication is required.
+- **Task isolation**: every A2A context (or task without a context) maps to its own QOC session. The session then runs through the regular permission, guardrail and audit pipeline, so A2A does not bypass QOC controls.
+- **Agent card**: contains only name, description, version, capabilities and skills; no secrets, tokens or internal paths.
+- **Limits**: executor pool, blocking-agent timeout and task store retention come from the A2A SDK configuration (`a2a.*`). Keep them bounded in production.
+
 ### 4.9 Guardrails
 
 - Declarative guardrails in `settings.json`.
