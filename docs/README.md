@@ -39,6 +39,7 @@ Authoritative for the Java implementation:
 | [`ROADMAP.md`](./ROADMAP.md) | M0–M14 and the current hardening phase |
 | [`open-questions.md`](./open-questions.md) | Decision register |
 | [`improve.md`](./improve.md) | Optimization catalog (working state) |
+| [`optimize_prompt.md`](./optimize_prompt.md) | Prompt minimization and context economy |
 | [`STATUS.md`](./STATUS.md) | implemented / partial / spec-only |
 | [`spec/CONVENTIONS.md`](./spec/CONVENTIONS.md) | Writing and structure rules |
 | [`spec/INVARIANTS.md`](./spec/INVARIANTS.md) | Invariant register |

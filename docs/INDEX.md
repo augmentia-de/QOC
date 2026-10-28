@@ -34,6 +34,7 @@
 8. [`spec/tools/README.md`](./spec/tools/README.md) – tool families
 9. [`open-questions.md`](./open-questions.md) – decisions
 10. [`improve.md`](./improve.md) – optimization catalog
+11. [`optimize_prompt.md`](./optimize_prompt.md) – prompt minimization and context economy
 
 ## Spec map
 
