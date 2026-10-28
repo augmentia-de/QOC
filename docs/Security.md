@@ -201,7 +201,7 @@ When `security.mode = "oidc"`:
 
 #### 4.8a A2A client and server
 
-- **Client egress**: configured A2A endpoints (`engine.a2a.urls`, `engine.a2a.endpoints`) go through the same host/IP allowlists and TLS checks as other outbound HTTP. Remote agent responses are untrusted tool output and pass through the normal guardrail chain.
+- **Client auth**: remote A2A agents can be protected. Configure `auth=bearer:<token>`, `auth=basic:<user>:<password>` or `headers=K:V,...` in `engine.a2a.endpoints`. Headers are applied to both card fetch and JSON-RPC calls and are part of the cache key.
 - **Discovery**: `GET /api/a2a/agents` and `POST /api/a2a/agents/refresh` use the same authentication as the rest of `/api` (Basic, trusted proxy or OIDC). They expose only name, description, version, protocol version, skills, tool name and fetch status; no credentials or internal paths. Agent cards are cached (`engine.a2a.cache.ttl-seconds`, default 300, `0` disables). Failures are not cached.
 - **Server opt-in**: `engine.a2a.server.enabled=false` by default. While disabled, `/.well-known/agent-card.json`, tenant cards and `POST /` return `404`; the agent is not discoverable.
 - **Public URL**: `engine.a2a.server.base-url` must match the externally reachable URL. It is published in the agent card and used by clients for JSON-RPC calls.

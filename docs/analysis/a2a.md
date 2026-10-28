@@ -202,17 +202,22 @@ Gründe:
 5. **Server bleibt opt-in**: keine ungewollte Exposition
 
 **Nächste konkrete Schritte:**
-1. Streaming-End-to-End (SSE) für den Server verfeinern
-2. Skill-to-Tool-Mapping für den Client evaluieren
-3. A2A-Tests gegen externe Referenz-Agents erweitern
+1. Token-level Streaming (erfordert Streaming-API in `Engine.prompt`)
+2. Egress-Gating für A2A-Ziele über Custom-HTTP-Client
+3. Push-Notifications an QOC-Events anbinden (optional)
+4. Tenant-Support (`/{tenant}`) — separat geplant
+5. Automatisierte Interop-Suite gegen externe Referenz-Agents
 
 ## 8. Offene Fragen
 
 - [x] SDK-Version finalisieren (`org.a2aproject.sdk:1.4.0.Final`)
-- [ ] Wie mappt man QOC-Tool-Schemas auf A2A Message Parts? (aktuell Text; DataPart/FilePart offen)
-- [ ] Sollen alle Skills eines Agents als separate Tools oder als ein Tool exponiert werden? (aktuell ein Tool pro Agent)
-- [ ] Task-Lifecycle: Blocking implementiert; Streaming/SSE noch nicht vollständig
-- [ ] Auth für externe A2A-Agents (API-Key/OAuth)?
+- [x] Skill-to-Tool-Mapping: ein Tool pro Agent, Description mit Skills angereichert, optionaler `skill`-Parameter
+- [x] Task-Lifecycle: Blocking implementiert; `message/stream` (SSE) funktional; Token-Streaming offen (Engine-API)
+- [x] Auth für externe A2A-Agents: `auth=bearer:...`/`basic:...`/`headers=...` in `engine.a2a.endpoints`
+- [x] Content-Typen: TextPart, DataPart, FilePart werden client- und serverseitig verarbeitet
+- [ ] Wie mappt man QOC-Tool-Schemas auf A2A Message Parts? (DataPart genutzt; FilePart als Referenz)
+- [ ] Tenant-Support (`/{tenant}`) — separat geplant
+- [ ] Egress-Gating für A2A-Ziele — noch nicht implementiert
 - [ ] Caching von AgentCards?
 - [x] Error-Mapping A2A -> QOC Tool-Errors (typisierte `ToolExecutionError`)
 - [ ] Mandantenfähigkeit (`/{tenant}`-Routen) für den Server?
