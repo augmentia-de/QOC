@@ -1,0 +1,63 @@
+services:
+  qoc-agent-a:
+    image: qoc-engine:local
+    container_name: qoc-agent-a
+    environment:
+      - ENGINE_A2A_SERVER_ENABLED=true
+      - ENGINE_A2A_SERVER_NAME=Agent A
+      - ENGINE_A2A_SERVER_BASE_URL=http://qoc-agent-a:8080
+      - ENGINE_A2A_SERVER_AGENT=none
+      - ENGINE_A2A_ENDPOINTS=id=agent-b|url=http://qoc-agent-b:8080|tool=a2a_agent_b|enabled=true
+      - ENGINE_A2A_CACHE_TTL_SECONDS=60
+      - ENGINE_MCP_SERVER_ENABLED=true
+      - ENGINE_MCP_SERVER_OAUTH_ENABLED=false
+      - ENGINE_SECURITY_MODE=basic
+      - OPENCODE_SERVER_PASSWORD=interop-secret
+      - ENGINE_PROVIDER_SCRIPTED=true
+      - ENGINE_DB_KIND=sqlite
+      - ENGINE_DB_PATH=/data/qoc.db
+      - QUARKUS_DATASOURCE_JDBC_URL=jdbc:sqlite:/data/qoc.db
+      - ENGINE_WORKSPACE=/data/workspace
+      - QUARKUS_OTEL_ENABLED=false
+    volumes:
+      - qoc-a-data:/data
+      - ../interop/settings-a.json:/data/workspace/settings.json:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      - qoc-agent-b
+      - mcp-server
+
+  qoc-agent-b:
+    image: qoc-engine:local
+    container_name: qoc-agent-b
+    environment:
+      - ENGINE_A2A_SERVER_ENABLED=true
+      - ENGINE_A2A_SERVER_NAME=Agent B
+      - ENGINE_A2A_SERVER_BASE_URL=http://qoc-agent-b:8080
+      - ENGINE_A2A_SERVER_AGENT=none
+      - ENGINE_A2A_URLS=
+      - ENGINE_MCP_SERVER_ENABLED=false
+      - ENGINE_SECURITY_MODE=basic
+      - OPENCODE_SERVER_PASSWORD=interop-secret
+      - ENGINE_PROVIDER_SCRIPTED=true
+      - ENGINE_DB_KIND=sqlite
+      - ENGINE_DB_PATH=/data/qoc.db
+      - QUARKUS_DATASOURCE_JDBC_URL=jdbc:sqlite:/data/qoc.db
+      - ENGINE_WORKSPACE=/data/workspace
+      - QUARKUS_OTEL_ENABLED=false
+    volumes:
+      - qoc-b-data:/data
+
+  mcp-server:
+    image: python:3.12-alpine
+    container_name: mcp-server
+    command: ["python", "/app/server.py"]
+    volumes:
+      - ../interop/mcp_server.py:/app/server.py:ro
+    ports:
+      - "8090:8090"
+
+volumes:
+  qoc-a-data:
+  qoc-b-data:

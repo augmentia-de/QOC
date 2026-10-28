@@ -1,0 +1,13 @@
+{
+  "mcp": {
+    "echo": {
+      "type": "remote",
+      "url": "http://mcp-server:8090/mcp",
+      "disabled": false,
+      "codemode": true,
+      "startupTimeoutMs": 10000,
+      "catalogTimeoutMs": 10000,
+      "executionTimeoutMs": 30000
+    }
+  }
+}
