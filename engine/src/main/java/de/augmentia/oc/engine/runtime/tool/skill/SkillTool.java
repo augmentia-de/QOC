@@ -26,6 +26,8 @@ import java.util.Map;
 /** {@code skill}: loads text, never executes it (SK-01/SK-08/SK-09). */
 public final class SkillTool {
 
+    private static final java.util.logging.Logger LOG = java.util.logging.Logger.getLogger(SkillTool.class.getName());
+
     private SkillTool() {}
 
     public static ToolDefinition definition(SkillCatalog catalog, List<Rule> rules) {
@@ -112,6 +114,7 @@ public final class SkillTool {
             if (skill.isEmpty()) {
                 return ReadTool.failure("skill", PromptLoader.render("unable-to-load-skill", Map.of("id", id)));
             }
+            LOG.fine("skill loaded: " + id);
             return new ToolOutcome.Ok(new ToolResult(Option.none(),
                     List.of(new ToolContent.TextItem(catalog.content(skill.orElseThrow()))),
                     Map.of("skill", id)));

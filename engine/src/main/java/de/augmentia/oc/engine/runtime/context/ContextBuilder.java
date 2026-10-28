@@ -83,7 +83,10 @@ public final class ContextBuilder {
             system.add(file.text());
         }
         String instruction = skills.instructions(rules);
-        if (!instruction.isBlank()) system.add(instruction);
+        if (!instruction.isBlank()) {
+            LOG.fine("skills attached: " + instruction.lines().count() + " instruction lines");
+            system.add(instruction);
+        }
         // Keep the compaction checkpoint at the end of the stable system
         // blocks instead of rewriting message index 0 on every compaction.
         checkpoint(session.id()).ifPresent(system::add);
