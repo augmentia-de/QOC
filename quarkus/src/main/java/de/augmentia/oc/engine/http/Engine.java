@@ -1395,7 +1395,7 @@ public class Engine {
         if (agentId == null) {
             throw new IllegalArgumentException("unknown subagent: " + agentName);
         }
-        if (agentName.equalsIgnoreCase("build") || agentName.equalsIgnoreCase("plan")) {
+        if (!agentCatalogue.isSubagent(agentName)) {
             throw new IllegalArgumentException("agent cannot run as subagent: " + agentName);
         }
         // Recursion protection

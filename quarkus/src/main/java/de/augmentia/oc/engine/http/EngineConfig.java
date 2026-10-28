@@ -115,11 +115,12 @@ public class EngineConfig {
                     List<String> mcpServers = stringList(agent, "mcpServers", null);
                     int maxSteps = (int) number(agent, "maxSteps", 10);
                     String model = string(agent, "model", null);
+                    String mode = string(agent, "mode", "all");
                     List<Rule> permissions = rules(agent);
                     agents.add(new AgentConfig(string(agent, "name", "build"),
                             string(agent, "system", null),
                             Boolean.TRUE.equals(bool(agent, "hidden")),
-                            model, maxSteps, toolAllow, toolDeny, permissions, mcpServers));
+                            mode, model, maxSteps, toolAllow, toolDeny, permissions, mcpServers));
                 }
             }
         }
@@ -377,7 +378,7 @@ public class EngineConfig {
     /** Baseline build agent with the secure defaults. */
     private static AgentConfig defaultBuildAgent() {
         String planDir = planDirectory();
-        return new AgentConfig("build", null, false, null, 32,
+        return new AgentConfig("build", null, false, "all", null, 32,
                 List.of("*"), List.of(),
                 List.of(
                         new Rule("*", "*", Effect.ALLOW),
@@ -393,7 +394,7 @@ public class EngineConfig {
     private static AgentConfig defaultPlanAgent() {
         String planDir = planDirectory();
         return new AgentConfig("plan", "You are in plan mode. Do not edit files.",
-                false, null, 32, List.of("*"), List.of(),
+                false, "all", null, 32, List.of("*"), List.of(),
                 List.of(
                         new Rule("*", "*", Effect.ALLOW),
                         new Rule("edit", "*", Effect.DENY),
@@ -417,12 +418,13 @@ public class EngineConfig {
         if (!names.contains("plan")) agents.add(defaultPlanAgent());
     }
 
-    public record AgentConfig(String name, String system, boolean hidden,
+    public record AgentConfig(String name, String system, boolean hidden, String mode,
                               String model, int maxSteps,
                               List<String> toolAllow, List<String> toolDeny,
                               List<Rule> permissions, List<String> mcpServers) {
         public AgentConfig {
             if (name == null || name.isBlank()) name = "build";
+            if (mode == null || mode.isBlank()) mode = "all";
             if (maxSteps <= 0) maxSteps = 10;
             toolAllow = toolAllow == null ? List.of("*") : List.copyOf(toolAllow);
             toolDeny = toolDeny == null ? List.of() : List.copyOf(toolDeny);
@@ -431,7 +433,7 @@ public class EngineConfig {
         }
         // backward-compatible constructor with secure defaults
         public AgentConfig(String name, String system, boolean hidden) {
-            this(name, system, hidden, null, 32, List.of("*"), List.of(),
+            this(name, system, hidden, "all", null, 32, List.of("*"), List.of(),
                     List.of(
                             new Rule("*", "*", Effect.ALLOW),
                             new Rule("external_directory", "*", Effect.DENY),
@@ -440,6 +442,13 @@ public class EngineConfig {
                             new Rule("shell", "*", Effect.ASK),
                             new Rule("external_directory", EngineConfig.planDirectory() + "/*", Effect.ALLOW)),
                     List.of("*"));
+        }
+
+        // backward-compatible constructor for callers that do not pass mode
+        public AgentConfig(String name, String system, boolean hidden, String model, int maxSteps,
+                           List<String> toolAllow, List<String> toolDeny,
+                           List<Rule> permissions, List<String> mcpServers) {
+            this(name, system, hidden, "all", model, maxSteps, toolAllow, toolDeny, permissions, mcpServers);
         }
     }
 

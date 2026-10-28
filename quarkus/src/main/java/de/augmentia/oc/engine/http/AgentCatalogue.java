@@ -55,10 +55,17 @@ public class AgentCatalogue {
                 .findFirst().map(Agent::name).orElse("build");
     }
 
-    /** Returns true if the named agent is a subagent (not primary). */
+    /** Returns true if the named agent may be invoked as a subagent. */
     public boolean isSubagent(String name) {
-        // In the baseline, "build" and "plan" are primary; others are subagents.
-        return name != null && !name.equalsIgnoreCase("build") && !name.equalsIgnoreCase("plan");
+        if (name == null) return false;
+        EngineConfig.AgentConfig config = config(name);
+        if (config != null) {
+            String mode = config.mode();
+            if ("primary".equalsIgnoreCase(mode)) return false;
+            if ("subagent".equalsIgnoreCase(mode) || "all".equalsIgnoreCase(mode)) return true;
+        }
+        // Baseline: build and plan are primary agents.
+        return !name.equalsIgnoreCase("build") && !name.equalsIgnoreCase("plan");
     }
 
     public EngineConfig.AgentConfig config(String name) {
