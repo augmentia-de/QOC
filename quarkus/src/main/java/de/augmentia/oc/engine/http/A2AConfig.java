@@ -56,7 +56,7 @@ public class A2AConfig {
                 continue;
             }
             try {
-                A2AAgentCardCache.Resolution resolution = cache.resolve(endpoint.url());
+                A2AAgentCardCache.Resolution resolution = cache.resolve(endpoint.url(), endpoint.headers());
                 result.add(A2AAgentDiscovery.ok(endpoint,
                         A2AToolProvider.toolName(endpoint, resolution.card()),
                         resolution.card(), resolution.fetchedAt(), resolution.cached()));
@@ -96,6 +96,7 @@ public class A2AConfig {
             String id = "a2a" + i;
             String tool = "";
             boolean enabled = true;
+            java.util.Map<String, String> headers = new java.util.LinkedHashMap<>();
             for (String pair : e.split("\\|")) {
                 String[] kv = pair.split("=", 2);
                 if (kv.length != 2) continue;
@@ -105,12 +106,39 @@ public class A2AConfig {
                 else if ("id".equalsIgnoreCase(k)) id = v;
                 else if ("tool".equalsIgnoreCase(k) || "toolName".equalsIgnoreCase(k)) tool = v;
                 else if ("enabled".equalsIgnoreCase(k)) enabled = Boolean.parseBoolean(v);
+                else if ("auth".equalsIgnoreCase(k)) applyAuth(v, headers);
+                else if ("headers".equalsIgnoreCase(k)) {
+                    for (String hp : v.split(",")) {
+                        String[] hkv = hp.split(":", 2);
+                        if (hkv.length == 2) headers.put(hkv[0].trim(), hkv[1].trim());
+                    }
+                }
             }
             if (url != null && !url.isBlank()) {
-                result.add(new A2AEndpoint(id, url, enabled, tool));
+                result.add(new A2AEndpoint(id, url, enabled, tool, headers));
                 i++;
             }
         }
         return result;
+    }
+
+    private static void applyAuth(String spec, java.util.Map<String, String> headers) {
+        if (spec == null || spec.isBlank() || "none".equalsIgnoreCase(spec.trim())) return;
+        String s = spec.trim();
+        if (s.toLowerCase().startsWith("bearer:")) {
+            headers.put("Authorization", "Bearer " + s.substring("bearer:".length()).trim());
+        } else if (s.toLowerCase().startsWith("basic:")) {
+            String rest = s.substring("basic:".length()).trim();
+            String[] parts = rest.split(":", 2);
+            String user = parts.length > 0 ? parts[0] : "";
+            String pass = parts.length > 1 ? parts[1] : "";
+            String encoded = java.util.Base64.getEncoder()
+                    .encodeToString((user + ":" + pass).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            headers.put("Authorization", "Basic " + encoded);
+        } else if (s.toLowerCase().startsWith("header:")) {
+            String rest = s.substring("header:".length()).trim();
+            int idx = rest.indexOf('=');
+            if (idx > 0) headers.put(rest.substring(0, idx).trim(), rest.substring(idx + 1).trim());
+        }
     }
 }

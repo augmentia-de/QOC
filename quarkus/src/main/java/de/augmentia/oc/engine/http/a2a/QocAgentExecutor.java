@@ -10,6 +10,10 @@ import org.a2aproject.sdk.server.agentexecution.RequestContext;
 import org.a2aproject.sdk.server.auth.User;
 import org.a2aproject.sdk.server.tasks.AgentEmitter;
 import org.a2aproject.sdk.spec.A2AError;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
 import org.a2aproject.sdk.spec.TextPart;
 import org.a2aproject.sdk.spec.UnsupportedOperationError;
 
@@ -45,7 +49,7 @@ public class QocAgentExecutor implements AgentExecutor {
         }
         String user = username(context);
         try {
-            String text = context.getUserInput("\n");
+            String text = extractInput(context);
             if (text == null || text.isBlank()) {
                 emitter.fail(emitter.newAgentMessage(
                         List.of(new TextPart("Message must contain text", null)), null));
@@ -100,6 +104,28 @@ public class QocAgentExecutor implements AgentExecutor {
             engine.interrupt(sessionId);
         }
         emitter.cancel();
+    }
+
+    private static String extractInput(RequestContext context) {
+        Message message = context == null ? null : context.getMessage();
+        if (message == null || message.parts() == null || message.parts().isEmpty()) {
+            return context == null ? null : context.getUserInput("\n");
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Part<?> part : message.parts()) {
+            if (part instanceof TextPart tp && tp.text() != null) {
+                if (sb.length() > 0) sb.append('\n');
+                sb.append(tp.text());
+            } else if (part instanceof DataPart dp && dp.data() != null) {
+                if (sb.length() > 0) sb.append('\n');
+                sb.append("[data] ").append(dp.data());
+            } else if (part instanceof FilePart fp && fp.file() != null) {
+                if (sb.length() > 0) sb.append('\n');
+                sb.append("[file] ").append(fp.file().name()).append(" (").append(fp.file().mimeType()).append(')');
+            }
+        }
+        String result = sb.toString().trim();
+        return result.isEmpty() ? context.getUserInput("\n") : result;
     }
 
     private static String refusal(Engine.TurnOutcome.Refused refused) {

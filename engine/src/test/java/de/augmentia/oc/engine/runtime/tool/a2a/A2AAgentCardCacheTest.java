@@ -26,7 +26,7 @@ class A2AAgentCardCacheTest {
         AtomicInteger fetches = new AtomicInteger();
         MutableClock clock = new MutableClock(T0);
         A2AAgentCardCache cache = new A2AAgentCardCache(TTL, clock,
-                url -> card(fetches.incrementAndGet()));
+                 (url, h) -> card(fetches.incrementAndGet()));
 
         A2AAgentCardCache.Resolution first = cache.resolve("http://agent-a");
         A2AAgentCardCache.Resolution second = cache.resolve("http://agent-a");
@@ -44,7 +44,7 @@ class A2AAgentCardCacheTest {
         AtomicInteger fetches = new AtomicInteger();
         MutableClock clock = new MutableClock(T0);
         A2AAgentCardCache cache = new A2AAgentCardCache(TTL, clock,
-                url -> card(fetches.incrementAndGet()));
+                 (url, h) -> card(fetches.incrementAndGet()));
 
         cache.resolve("http://agent-a");
         clock.advance(TTL.plusSeconds(1));
@@ -58,7 +58,7 @@ class A2AAgentCardCacheTest {
     void ttlOfZeroDisablesCaching() {
         AtomicInteger fetches = new AtomicInteger();
         A2AAgentCardCache cache = new A2AAgentCardCache(Duration.ZERO, new MutableClock(T0),
-                url -> card(fetches.incrementAndGet()));
+                 (url, h) -> card(fetches.incrementAndGet()));
 
         cache.resolve("http://agent-a");
         A2AAgentCardCache.Resolution second = cache.resolve("http://agent-a");
@@ -71,7 +71,7 @@ class A2AAgentCardCacheTest {
     void invalidationForcesRefetch() {
         AtomicInteger fetches = new AtomicInteger();
         A2AAgentCardCache cache = new A2AAgentCardCache(TTL, new MutableClock(T0),
-                url -> card(fetches.incrementAndGet()));
+                 (url, h) -> card(fetches.incrementAndGet()));
 
         cache.resolve("http://agent-a");
         cache.resolve("http://agent-b");
@@ -85,7 +85,7 @@ class A2AAgentCardCacheTest {
     @Test
     void invalidateAllDropsEveryEntry() {
         A2AAgentCardCache cache = new A2AAgentCardCache(TTL, new MutableClock(T0),
-                url -> card(1));
+                (url, h) -> card(1));
         cache.resolve("http://agent-a");
         cache.resolve("http://agent-b");
 
@@ -97,7 +97,7 @@ class A2AAgentCardCacheTest {
     @Test
     void failuresAreNotCached() {
         AtomicInteger fetches = new AtomicInteger();
-        A2AAgentCardCache cache = new A2AAgentCardCache(TTL, new MutableClock(T0), url -> {
+        A2AAgentCardCache cache = new A2AAgentCardCache(TTL, new MutableClock(T0), (url, h) -> {
             if (fetches.incrementAndGet() == 1) {
                 throw new IllegalStateException("offline");
             }
@@ -115,7 +115,7 @@ class A2AAgentCardCacheTest {
 
     @Test
     void nullCardIsRejectedAndNotCached() {
-        A2AAgentCardCache cache = new A2AAgentCardCache(TTL, new MutableClock(T0), url -> null);
+        A2AAgentCardCache cache = new A2AAgentCardCache(TTL, new MutableClock(T0), (url, h) -> null);
 
         assertThatThrownBy(() -> cache.resolve("http://agent-a"))
                 .isInstanceOf(IllegalStateException.class);
@@ -124,19 +124,19 @@ class A2AAgentCardCacheTest {
 
     @Test
     void rejectsBlankUrlAndNegativeTtl() {
-        A2AAgentCardCache cache = new A2AAgentCardCache(TTL, new MutableClock(T0), url -> card(1));
+        A2AAgentCardCache cache = new A2AAgentCardCache(TTL, new MutableClock(T0), (url, h) -> card(1));
 
         assertThatThrownBy(() -> cache.resolve(" "))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new A2AAgentCardCache(Duration.ofSeconds(-1),
-                new MutableClock(T0), url -> card(1)))
+                new MutableClock(T0), (url, h) -> card(1)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void reportsFetchedAtOnlyForFreshEntries() {
         MutableClock clock = new MutableClock(T0);
-        A2AAgentCardCache cache = new A2AAgentCardCache(TTL, clock, url -> card(1));
+        A2AAgentCardCache cache = new A2AAgentCardCache(TTL, clock, (url, h) -> card(1));
 
         assertThat(cache.fetchedAt("http://agent-a")).isEmpty();
         cache.resolve("http://agent-a");
