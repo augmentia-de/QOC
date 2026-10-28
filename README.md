@@ -34,6 +34,7 @@ the code.
 - **Operations:** SQLite or PostgreSQL, Docker (JVM/native), systemd,
   OpenTelemetry, rotating LLM trace.
 - **Guardrails:** declarative rules, CDI SPI, [external webhook guardrail](docs/webhook.md) – [provider](webhook-guardrail/README.md).
+- **A2A:** Agent-to-Agent client support – call external A2A agents as tools (`engine.a2a.urls`).
 - **Quality gates:** ArchUnit, JaCoCo ≥ 80 %, `mvn verify`.
 
 ---

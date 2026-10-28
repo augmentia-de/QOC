@@ -198,6 +198,8 @@ public class Engine {
     private Hooks toolHooks = noopHooks();
     @Inject
     ToolAuthorizer toolAuthorizer;
+    @Inject
+    A2AConfig a2aConfig;
     private ModelRef modelRef;
     private FileSystem fileSystem;
     private InstructionStore instructions;
@@ -395,6 +397,16 @@ public class Engine {
         }
         registry.register(McpResourceTools.list(mcp));
         registry.register(McpResourceTools.read(mcp));
+        try {
+            List<de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider.A2AEndpoint> endpoints =
+                    a2aConfig == null ? List.of() : a2aConfig.endpoints();
+            for (de.augmentia.oc.engine.core.contract.tool.ToolDefinition a2aTool :
+                    de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider.load(endpoints)) {
+                registry.register(a2aTool);
+            }
+        } catch (RuntimeException e) {
+            LOG.warnf("A2A tool registration failed: %s", e.getMessage());
+        }
         toolSnapshot = registry.snapshot(allowAll);
         toolRuntime = new ToolRuntime(toolSnapshot, (toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer),
                 permissionGate, toolHooks, toolOutput);
