@@ -400,8 +400,10 @@ public class Engine {
         try {
             List<de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider.A2AEndpoint> endpoints =
                     a2aConfig == null ? List.of() : a2aConfig.endpoints();
+            de.augmentia.oc.engine.runtime.tool.a2a.A2AAgentCardCache cards =
+                    a2aConfig == null ? null : a2aConfig.cards();
             for (de.augmentia.oc.engine.core.contract.tool.ToolDefinition a2aTool :
-                    de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider.load(endpoints)) {
+                    de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider.load(endpoints, cards)) {
                 registry.register(a2aTool);
             }
         } catch (RuntimeException e) {

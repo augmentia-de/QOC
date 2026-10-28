@@ -34,7 +34,7 @@ the code.
 - **Operations:** SQLite or PostgreSQL, Docker (JVM/native), systemd,
   OpenTelemetry, rotating LLM trace.
 - **Guardrails:** declarative rules, CDI SPI, [external webhook guardrail](docs/webhook.md) – [provider](webhook-guardrail/README.md).
-- **A2A:** Agent-to-Agent client (external agents as tools, `engine.a2a.urls`) and an opt-in JSON-RPC server (`engine.a2a.server.enabled`, agent card at `/.well-known/agent-card.json`).
+- **A2A:** Agent-to-Agent client (external agents as tools, `engine.a2a.urls`), discovery/UI at `/api/a2a/agents` with cached agent cards, and an opt-in JSON-RPC server (`engine.a2a.server.enabled`, agent card at `/.well-known/agent-card.json`).
 - **Quality gates:** ArchUnit, JaCoCo ≥ 80 %, `mvn verify`.
 
 ---

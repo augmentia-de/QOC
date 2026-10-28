@@ -13,6 +13,7 @@ import java.util.Map;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasSize;
 
 /**
  * Verifies that the Vert.x-based A2A endpoints honour QOC's Basic auth mode.
@@ -61,6 +62,20 @@ class A2ABasicAuthTest {
     void agentCardIsPublic() {
         given().get("/.well-known/agent-card.json")
                 .then().statusCode(200);
+    }
+
+    @Test
+    void discoveryRequiresAuthentication() {
+        given().get("/api/a2a/agents")
+                .then().statusCode(401);
+    }
+
+    @Test
+    void discoveryWorksWithCredentials() {
+        given().auth().basic("opencode", "test-secret")
+                .get("/api/a2a/agents")
+                .then().statusCode(200)
+                .body("data", hasSize(0));
     }
 
     private static String requestBody() throws Exception {

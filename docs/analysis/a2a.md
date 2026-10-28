@@ -159,10 +159,22 @@ QOC-Agenten werden als A2A-Agent angeboten. Transport ist JSON-RPC.
    - `engine.a2a.server.base-url` (öffentliche URL in der AgentCard)
    - `engine.a2a.server.agent` (`none` = Primär-Agent)
 
-### Phase 3: Discovery & UI (offen)
-- `/api/a2a/agents` Endpoint für konfigurierte externe Agents
-- Config-UI/CLI für A2A-Endpoints
-- AgentCard-Caching
+### Phase 3: Discovery & UI (umgesetzt)
+
+- `GET /api/a2a/agents` listet alle konfigurierten externen Agents mit
+  effektiver Konfiguration, AgentCard-Metadaten (Name, Version, Protokoll,
+  Skills), Tool-Namen und Status (`ok`, `error`, `disabled`).
+- `POST /api/a2a/agents/refresh` (oder `GET ...?refresh=true`) invalidiert den
+  Card-Cache und lädt die Karten neu.
+- **AgentCard-Caching**: gemeinsamer TTL-Cache für Tool-Registrierung und
+  Discovery (`engine.a2a.cache.ttl-seconds`, Default 300, `0` deaktiviert,
+  Maximum 86400). Fehlgeschlagene Fetches werden nicht gecacht; der nächste
+  Aufruf versucht es erneut. Der Cache ist prozesslokal und thread-safe.
+- **UI**: Button „A2A" in der Web-Oberfläche öffnet eine read-only Übersicht
+  der konfigurierten Agents inkl. Status, Skills und Refresh.
+- **Konfiguration** bleibt datei-/umgebungsbasiert (`engine.a2a.urls`,
+  `engine.a2a.endpoints`). Eine Bearbeitung zur Laufzeit ist bewusst nicht
+  enthalten, weil das eine Neuregistrierung der Tool-Snapshots erfordern würde.
 
 
 ## 6. Bewertung nach QOC-Prinzipien
@@ -193,7 +205,6 @@ Gründe:
 1. Streaming-End-to-End (SSE) für den Server verfeinern
 2. Skill-to-Tool-Mapping für den Client evaluieren
 3. A2A-Tests gegen externe Referenz-Agents erweitern
-4. Discovery-Endpoint (`/api/a2a/agents`) und AgentCard-Caching
 
 ## 8. Offene Fragen
 

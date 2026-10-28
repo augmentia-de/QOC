@@ -133,6 +133,7 @@
   <button id="interrupt" class="danger">Interrupt</button>
   <button id="compact">Compact</button>
   <button id="reloadConfig">Reload Config</button>
+  <button id="a2aAgents">A2A</button>
   <button id="revert">Revert</button>
   <button id="fork">Fork</button>
   <label><input type="checkbox" id="showDetails"> Details</label>
@@ -198,6 +199,17 @@
     <textarea id="questionAnswer" rows="3" placeholder="Antwort…" style="width:100%"></textarea>
     <div class="actions">
       <button id="questionSend" class="primary">Senden</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="a2aModal">
+  <div class="box" style="max-width:640px">
+    <h3>A2A-Agents</h3>
+    <div id="a2aList" style="max-height:60vh;overflow:auto;font-size:.85rem">Lade…</div>
+    <div class="actions">
+      <button id="a2aRefresh">Aktualisieren</button>
+      <button id="a2aClose" class="primary">Schließen</button>
     </div>
   </div>
 </div>
@@ -1059,6 +1071,94 @@ async function replyPendingQuestion() {
   document.getElementById('questionModal').classList.remove('open');
   pendingQuestion = null;
 }
+
+async function loadA2AAgents(refresh) {
+  const list = document.getElementById('a2aList');
+  list.textContent = 'Lade…';
+  try {
+    const res = await fetch('/api/a2a/agents' + (refresh ? '?refresh=true' : ''));
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || ('HTTP ' + res.status));
+    }
+    const data = await res.json();
+    list.innerHTML = '';
+    const agents = data.data || [];
+    if (!agents.length) {
+      list.textContent = 'Keine A2A-Agents konfiguriert (engine.a2a.urls / engine.a2a.endpoints).';
+      return;
+    }
+    agents.forEach(a => list.appendChild(renderA2AAgent(a)));
+  } catch (e) {
+    list.textContent = 'Fehler: ' + e.message;
+  }
+}
+
+function renderA2AAgent(a) {
+  const box = document.createElement('div');
+  box.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:.6rem;margin-bottom:.6rem';
+  const head = document.createElement('div');
+  head.style.cssText = 'display:flex;gap:.5rem;align-items:center;flex-wrap:wrap';
+  const title = document.createElement('strong');
+  title.textContent = a.name || a.id || a.url;
+  const badge = document.createElement('span');
+  badge.textContent = a.status;
+  badge.style.cssText = 'font-size:.7rem;padding:.1rem .4rem;border-radius:999px;border:1px solid var(--border);color:' +
+    (a.status === 'ok' ? 'var(--ok)' : a.status === 'error' ? 'var(--err)' : 'var(--muted)');
+  head.appendChild(title);
+  head.appendChild(badge);
+  if (a.cached) {
+    const cached = document.createElement('span');
+    cached.textContent = 'cache';
+    cached.style.cssText = 'font-size:.7rem;color:var(--muted)';
+    head.appendChild(cached);
+  }
+  box.appendChild(head);
+
+  const meta = document.createElement('div');
+  meta.style.cssText = 'font-size:.75rem;color:var(--muted);margin-top:.25rem;word-break:break-all';
+  meta.textContent = [a.url, a.tool ? '→ ' + a.tool : null].filter(Boolean).join(' ');
+  box.appendChild(meta);
+
+  const version = [a.version ? 'v' + a.version : null,
+    a.protocolVersion ? 'protocol ' + a.protocolVersion : null].filter(Boolean).join(' · ');
+  if (version) {
+    const v = document.createElement('div');
+    v.style.cssText = 'font-size:.75rem;color:var(--muted)';
+    v.textContent = version;
+    box.appendChild(v);
+  }
+  if (a.description) {
+    const d = document.createElement('div');
+    d.style.cssText = 'font-size:.8rem;margin-top:.3rem';
+    d.textContent = a.description;
+    box.appendChild(d);
+  }
+  if (a.skills && a.skills.length) {
+    const ul = document.createElement('ul');
+    ul.style.cssText = 'margin:.3rem 0 0;padding-left:1.2rem;font-size:.78rem';
+    a.skills.forEach(s => {
+      const li = document.createElement('li');
+      li.textContent = s.name || s.id || '';
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+  }
+  if (a.error) {
+    const err = document.createElement('div');
+    err.style.cssText = 'font-size:.78rem;color:var(--err);margin-top:.3rem';
+    err.textContent = a.error;
+    box.appendChild(err);
+  }
+  return box;
+}
+
+document.getElementById('a2aAgents').onclick = () => {
+  document.getElementById('a2aModal').classList.add('open');
+  loadA2AAgents(false);
+};
+document.getElementById('a2aRefresh').onclick = () => loadA2AAgents(true);
+document.getElementById('a2aClose').onclick = () => document.getElementById('a2aModal').classList.remove('open');
 
 sessionsSel.addEventListener('change', (e) => switchSession(e.target.value));
 document.getElementById('agent').addEventListener('change', () => switchAgent());
