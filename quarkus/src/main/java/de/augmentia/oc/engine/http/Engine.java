@@ -76,6 +76,8 @@ import de.augmentia.oc.engine.core.port.world.InstructionLoader;
 import de.augmentia.oc.engine.core.port.runtime.SessionWake;
 import de.augmentia.oc.engine.runtime.context.AgentProfile;
 import de.augmentia.oc.engine.runtime.context.ContextBuilder;
+import de.augmentia.oc.engine.runtime.context.ContextSize;
+import de.augmentia.oc.engine.runtime.context.Prepared;
 import de.augmentia.oc.engine.runtime.context.TitleGenerator;
 import de.augmentia.oc.engine.runtime.command.CommandLoader;
 import de.augmentia.oc.engine.runtime.compaction.Compaction;
@@ -717,6 +719,23 @@ public class Engine {
             }
         }
         return result;
+    }
+
+    /**
+     * Estimates the context tokens that the next step would send for this
+     * session. Intended for diagnostics and end-to-end compaction tests.
+     */
+    public int contextTokens(SessionId id) {
+        if (id == null) throw new IllegalArgumentException("session id must not be null");
+        SessionInfo info = sessions.info(id)
+                .orElseThrow(() -> new IllegalArgumentException("unknown session: " + id));
+        String agentName = agentCatalogue.nameOf(info.agent());
+        EngineConfig.AgentConfig agentConfig = agentCatalogue.config(agentName);
+        AgentProfile agent = agentProfile(info.agent(), agentName, agentConfig);
+        ToolSnapshot snapshot = filterToolSnapshot(toolSnapshot, agentConfig);
+        Prepared prepared = contextBuilder.prepare(info, agent, modelInfo(), snapshot,
+                Seq.zero(), 1);
+        return ContextSize.estimate(prepared);
     }
 
     /** Runs one manual compaction pass (keeps the last messages). */
@@ -1832,7 +1851,7 @@ public class Engine {
             }
             if (!allowed(name, allow)) continue;
             if (denied(name, deny)) continue;
-            if (isMcpTool(name) && !mcpAllowed(name, mcpServers)) continue;
+            if (def.options().namespace().isPresent() && !mcpAllowed(name, mcpServers)) continue;
             allowedNames.add(name);
         }
 
@@ -1859,13 +1878,6 @@ public class Engine {
             if ("*".equals(d) || d.equalsIgnoreCase(name)) return true;
         }
         return false;
-    }
-
-    private static boolean isMcpTool(String name) {
-        return name != null && name.contains("_")
-                && !name.equals("read") && !name.equals("write") && !name.equals("edit")
-                && !name.equals("patch") && !name.equals("glob") && !name.equals("grep")
-                && !name.equals("shell") && !name.equals("skill") && !name.equals("subagent");
     }
 
     private static boolean mcpAllowed(String name, List<String> servers) {
