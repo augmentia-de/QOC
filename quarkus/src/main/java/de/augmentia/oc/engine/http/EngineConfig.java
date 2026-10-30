@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Rule;
+import de.augmentia.oc.engine.runtime.skill.SkillFilterOptions;
 import java.util.logging.Logger;
 
 /**
@@ -63,6 +64,8 @@ public class EngineConfig {
     private List<String> skillAllow;
     private List<String> skillDeny;
     private int skillMax;
+    private SkillFilterOptions skillFilter;
+    private Map<String, AgentSkillsConfig> agentSkills;
     private WebhookConfig webhookConfig;
     private final List<ConfigEntry> entries = new ArrayList<>();
     @PostConstruct
@@ -73,6 +76,8 @@ public class EngineConfig {
         skillAllow = new ArrayList<>();
         skillDeny = new ArrayList<>();
         skillMax = 0;
+        skillFilter = SkillFilterOptions.defaults();
+        agentSkills = new LinkedHashMap<>();
         webhookConfig = WebhookConfig.disabled();
         entries.clear();        workspace = workspaceProperty;
         provider = providerProperty;
@@ -86,6 +91,8 @@ public class EngineConfig {
         skillAllow = new ArrayList<>();
         skillDeny = new ArrayList<>();
         skillMax = 0;
+        skillFilter = SkillFilterOptions.defaults();
+        agentSkills = new LinkedHashMap<>();
 
         Map<String, JsonValue> merged = new LinkedHashMap<>();
         merge(merged, read(globalFile()));
@@ -117,10 +124,15 @@ public class EngineConfig {
                     String model = string(agent, "model", null);
                     String mode = string(agent, "mode", "all");
                     List<Rule> permissions = rules(agent);
-                    agents.add(new AgentConfig(string(agent, "name", "build"),
+                    String name = string(agent, "name", "build");
+                    agents.add(new AgentConfig(name,
                             string(agent, "system", null),
                             Boolean.TRUE.equals(bool(agent, "hidden")),
                             mode, model, maxSteps, toolAllow, toolDeny, permissions, mcpServers));
+                    AgentSkillsConfig skills = parseAgentSkills(agent);
+                    if (skills != null) {
+                        agentSkills.put(name.toLowerCase(java.util.Locale.ROOT), skills);
+                    }
                 }
             }
         }
@@ -138,6 +150,15 @@ public class EngineConfig {
             skillAllow = patterns(skillsObject, "allow");
             skillDeny = patterns(skillsObject, "deny");
             skillMax = (int) Math.max(0, number(skillsObject, "max", 0));
+            if (skillsObject.values().get("filter") instanceof JsonValue.Obj filter) {
+                boolean enabled = !Boolean.FALSE.equals(bool(filter, "enabled"));
+                String strategy = string(filter, "strategy", "bm25");
+                int topK = (int) Math.max(1, number(filter, "topK", 12));
+                double minScore = decimal(filter, "minScore", 0.25);
+                int thresholdCount = (int) Math.max(0, number(filter, "thresholdCount", 20));
+                List<String> alwaysInclude = stringList(filter, "alwaysInclude");
+                skillFilter = new SkillFilterOptions(enabled, strategy, topK, minScore, thresholdCount, alwaysInclude);
+            }
             if (skillsObject.values().get("paths") instanceof JsonValue.Arr paths) {
                 for (JsonValue item : paths.values()) {
                     if (item instanceof JsonValue.Str path && !path.value().isBlank()) {
@@ -189,6 +210,13 @@ public class EngineConfig {
     public List<String> skillDeny() { return List.copyOf(skillDeny); }
     /** Caps the number of loaded skills (0 = unlimited). */
     public int skillMax() { return skillMax; }
+    /** Skill filtering options used when building prompts. */
+    public SkillFilterOptions skillFilter() { return skillFilter == null ? SkillFilterOptions.defaults() : skillFilter; }
+    /** Per-agent skill configuration, or {@code null} when the agent has none. */
+    public AgentSkillsConfig agentSkills(String name) {
+        if (name == null || agentSkills == null) return null;
+        return agentSkills.get(name.toLowerCase(java.util.Locale.ROOT));
+    }
     public WebhookConfig webhook() { return webhookConfig == null ? WebhookConfig.disabled() : webhookConfig; }
     public boolean webhookEnabled() { return webhook() != null && webhook().enabled(); }
     public List<ConfigEntry> entries() { return List.copyOf(entries); }
@@ -319,8 +347,38 @@ public class EngineConfig {
         return out;
     }
 
+    /**
+     * Parses {@code agents[].skills}. Returns {@code null} when the block is
+     * absent, so the global behaviour stays unchanged.
+     */
+    private static AgentSkillsConfig parseAgentSkills(JsonValue.Obj agent) {
+        if (!(agent.values().get("skills") instanceof JsonValue.Obj obj)) return null;
+        boolean enabled = !Boolean.FALSE.equals(bool(obj, "enabled"));
+        List<String> allow = patterns(obj, "allow");
+        List<String> deny = patterns(obj, "deny");
+        int max = (int) Math.max(0, number(obj, "max", 0));
+        String prompt = string(obj, "prompt", "top-k");
+        List<String> core = patterns(obj, "core");
+        SkillFilterOptions filter = null;
+        if (obj.values().get("filter") instanceof JsonValue.Obj filterObject) {
+            boolean filterEnabled = !Boolean.FALSE.equals(bool(filterObject, "enabled"));
+            String strategy = string(filterObject, "strategy", "bm25");
+            int topK = (int) Math.max(1, number(filterObject, "topK", 12));
+            double minScore = decimal(filterObject, "minScore", 0.25);
+            int thresholdCount = (int) Math.max(0, number(filterObject, "thresholdCount", 20));
+            List<String> alwaysInclude = patterns(filterObject, "alwaysInclude");
+            filter = new SkillFilterOptions(filterEnabled, strategy, topK, minScore,
+                    thresholdCount, alwaysInclude);
+        }
+        return new AgentSkillsConfig(enabled, allow, deny, max, prompt, core, filter);
+    }
+
     private static long number(JsonValue.Obj object, String key, long fallback) {
         return object.values().get(key) instanceof JsonValue.Num num ? num.value().longValue() : fallback;
+    }
+
+    private static double decimal(JsonValue.Obj object, String key, double fallback) {
+        return object.values().get(key) instanceof JsonValue.Num num ? num.value().doubleValue() : fallback;
     }
 
     /**
@@ -460,6 +518,38 @@ public class EngineConfig {
                            List<String> toolAllow, List<String> toolDeny,
                            List<Rule> permissions, List<String> mcpServers) {
             this(name, system, hidden, "all", model, maxSteps, toolAllow, toolDeny, permissions, mcpServers);
+        }
+    }
+
+    /**
+     * Per-agent skill configuration. Absent for agents without a
+     * {@code skills} block; {@link #enabled()} defaults to {@code true} when
+     * the block exists.
+     */
+    public record AgentSkillsConfig(boolean enabled, List<String> allow, List<String> deny,
+                                    int max, String prompt, List<String> core,
+                                    SkillFilterOptions filter) {
+
+        public AgentSkillsConfig {
+            allow = allow == null ? List.of() : List.copyOf(allow);
+            deny = deny == null ? List.of() : List.copyOf(deny);
+            if (max < 0) max = 0;
+            prompt = normalizePrompt(prompt);
+            core = core == null ? List.of() : List.copyOf(core);
+        }
+
+        public static AgentSkillsConfig disabled() {
+            return new AgentSkillsConfig(false, List.of(), List.of(), 0, "top-k", List.of(), null);
+        }
+
+        private static String normalizePrompt(String value) {
+            if (value == null || value.isBlank()) return "top-k";
+            return switch (value.trim().toLowerCase(java.util.Locale.ROOT)) {
+                case "none", "off" -> "none";
+                case "core" -> "core";
+                case "all" -> "all";
+                default -> "top-k";
+            };
         }
     }
 

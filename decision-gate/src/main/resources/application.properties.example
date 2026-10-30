@@ -1,0 +1,7 @@
+# Example configuration for DecisionModelSettings.fromApplicationProperties(...)
+# Copy to application.properties and set TYPESAFE_API_KEY in the environment.
+qoc.decision.base-url=https://api.typesafe.ai
+qoc.decision.api-key=${TYPESAFE_API_KEY}
+qoc.decision.model=jev-latest
+qoc.decision.timeout=10s
+qoc.decision.max-retries=2

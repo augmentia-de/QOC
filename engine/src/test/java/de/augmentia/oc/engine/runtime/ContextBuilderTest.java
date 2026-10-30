@@ -19,6 +19,8 @@ import de.augmentia.oc.engine.runtime.context.ContextBuilder;
 import de.augmentia.oc.engine.runtime.context.Prepared;
 import de.augmentia.oc.engine.runtime.skill.Skill;
 import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
+import de.augmentia.oc.engine.runtime.skill.SkillFilterOptions;
+import de.augmentia.oc.engine.runtime.skill.SkillSelection;
 import de.augmentia.oc.engine.testing.InMemoryConversation;
 import de.augmentia.oc.engine.testing.InMemoryInstructions;
 
@@ -232,5 +234,49 @@ class ContextBuilderTest {
     private ToolDefinition definition(ToolName name, String description, ToolOptions options) {
         return new ToolDefinition(name, description, Schema.obj(Map.of()), Option.none(),
                 (input, context) -> new ToolOutcome.Ok(ToolResult.of("ok")), options);
+    }
+
+    @Test
+    void queryFiltersSkillsWhenCatalogIsLarge() {
+        java.util.List<Skill> many = new java.util.ArrayList<>();
+        for (int i = 0; i < 21; i++) {
+            many.add(new Skill(SkillId.parse("skill-" + i), "skill-" + i,
+                    i == 7 ? "special deployment helper" : "generic helper " + i,
+                    "body", Path.of("/skills/skill-" + i), List.of(), true));
+        }
+        SkillCatalog largeSkills = SkillCatalog.of(many);
+        ContextBuilder builder = new ContextBuilder(conversation, largeSkills, InstructionLoader.none(),
+                Option.none(), SkillFilterOptions.defaults());
+
+        Prepared prepared = builder.prepare(session, agent(Option.none(), 0), model, tools, Seq.zero(), 0,
+                Option.none(), Option.some("deployment"));
+
+        assertThat(prepared.system()).anyMatch(text -> text.contains("<id>skill-7</id>"));
+        assertThat(prepared.system()).noneMatch(text -> text.contains("<id>skill-0</id>"));
+    }
+
+    @Test
+    void selectionNoneOmitsTheSkillBlock() {
+        Prepared prepared = builder().prepare(session, agent(Option.none(), 0), model, tools, Seq.zero(), 0,
+                Option.none(), Option.some("commit"), SkillSelection.none());
+
+        assertThat(prepared.system()).noneMatch(text -> text.contains("<available_skills>"));
+    }
+
+    @Test
+    void selectionCoreRendersOnlyTheCoreSkills() {
+        SkillCatalog catalog = SkillCatalog.of(List.of(
+                new Skill(SkillId.parse("commit"), "commit", "commit helper", "body",
+                        Path.of("/skills/commit"), List.of(), true),
+                new Skill(SkillId.parse("deploy"), "deploy", "deploy helper", "body",
+                        Path.of("/skills/deploy"), List.of(), true)));
+        ContextBuilder builder = new ContextBuilder(conversation, catalog, InstructionLoader.none(),
+                Option.none(), SkillFilterOptions.defaults());
+
+        Prepared prepared = builder.prepare(session, agent(Option.none(), 0), model, tools, Seq.zero(), 0,
+                Option.none(), Option.some("commit"), SkillSelection.core(List.of("commit"), 0));
+
+        assertThat(prepared.system()).anyMatch(text -> text.contains("<id>commit</id>"));
+        assertThat(prepared.system()).noneMatch(text -> text.contains("<id>deploy</id>"));
     }
 }

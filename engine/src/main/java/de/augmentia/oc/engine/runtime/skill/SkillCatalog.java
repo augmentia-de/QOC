@@ -25,14 +25,16 @@ public final class SkillCatalog {
 
     private final Map<String, Skill> skills;
     private final long epoch;
+    private final SkillRanker ranker;
 
-    private SkillCatalog(Map<String, Skill> skills, long epoch) {
+    private SkillCatalog(Map<String, Skill> skills, long epoch, SkillRanker ranker) {
         this.skills = skills;
         this.epoch = epoch;
+        this.ranker = ranker == null ? new Bm25SkillRanker() : ranker;
     }
 
     public static SkillCatalog of(List<Skill> skills) {
-        return new SkillCatalog(index(skills), 0);
+        return new SkillCatalog(index(skills), 0, new Bm25SkillRanker());
     }
 
     /**
@@ -50,15 +52,23 @@ public final class SkillCatalog {
                 .sorted(Comparator.comparing(skill -> skill.id().value()))
                 .limit(max > 0 ? max : Long.MAX_VALUE)
                 .toList();
-        return new SkillCatalog(index(selected), 0);
+        return new SkillCatalog(index(selected), 0, new Bm25SkillRanker());
     }
 
     public static SkillCatalog empty() {
-        return new SkillCatalog(Map.of(), 0);
+        return new SkillCatalog(Map.of(), 0, new Bm25SkillRanker());
     }
 
     public SkillCatalog reload(List<Skill> newSkills) {
-        return new SkillCatalog(index(newSkills), epoch + 1);
+        return new SkillCatalog(index(newSkills), epoch + 1, ranker);
+    }
+
+    public SkillCatalog withRanker(SkillRanker ranker) {
+        return new SkillCatalog(skills, epoch, ranker);
+    }
+
+    public SkillRanker ranker() {
+        return ranker;
     }
 
     public long epoch() {
@@ -103,7 +113,86 @@ public final class SkillCatalog {
         return renderInstructions(listed(rules));
     }
 
-    private static String renderInstructions(List<Skill> listed) {
+    public String instructions(List<Rule> rules, String query, SkillFilterOptions options) {
+        return renderInstructions(relevant(rules, query, options));
+    }
+
+    /**
+     * The skill block for an explicit selection. {@code null} keeps the
+     * previous behaviour and returns the full listed set.
+     */
+    public String instructions(List<Rule> rules, SkillSelection selection) {
+        if (selection == null) return instructions(rules);
+        if (selection.mode() == SkillSelection.Mode.NONE) return "";
+        return renderInstructions(select(rules, selection));
+    }
+
+    /**
+     * Visible skills for an explicit selection, in ID order.
+     *
+     * <p>Permissions are applied first; the selection only narrows the
+     * remaining set. {@link SkillSelection#max()} caps the result.</p>
+     */
+    public List<Skill> select(List<Rule> rules, SkillSelection selection) {
+        if (selection == null) return listed(rules);
+        List<Skill> selected = switch (selection.mode()) {
+            case NONE -> List.of();
+            case ALL -> listed(rules);
+            case CORE -> core(rules, selection.ids());
+            case TOP_K -> relevant(rules, selection.query(), selection.options());
+        };
+        int max = selection.max();
+        if (max > 0 && selected.size() > max) {
+            selected = List.copyOf(selected.subList(0, max));
+        }
+        return List.copyOf(selected);
+    }
+
+    private List<Skill> core(List<Rule> rules, List<String> patterns) {
+        if (patterns == null || patterns.isEmpty()) return List.of();
+        return listed(rules).stream()
+                .filter(skill -> patterns.stream()
+                        .anyMatch(pattern -> Wildcard.match(skill.id().value(), pattern)))
+                .toList();
+    }
+
+    /** Visible skills selected for the query, with fallback to the full listed set. */
+    public List<Skill> relevant(List<Rule> rules, String query, SkillFilterOptions options) {
+        List<Skill> candidates = listed(rules);
+        SkillFilterOptions safeOptions = options == null ? SkillFilterOptions.defaults() : options;
+        if (!safeOptions.enabled() || query == null || query.isBlank()
+                || candidates.size() <= safeOptions.thresholdCount()) {
+            return candidates;
+        }
+        List<SkillRanker.RankedSkill> ranked = ranker.rank(candidates, query, safeOptions);
+        if (ranked == null || ranked.isEmpty()) return candidates;
+
+        java.util.Set<String> selectedIds = new java.util.LinkedHashSet<>();
+        java.util.List<Skill> selected = new java.util.ArrayList<>();
+        for (SkillRanker.RankedSkill rankedSkill : ranked) {
+            if (selected.size() >= safeOptions.topK()) break;
+            if (rankedSkill.score() < safeOptions.minScore()) continue;
+            if (selectedIds.add(rankedSkill.skill().id().value())) {
+                selected.add(rankedSkill.skill());
+            }
+        }
+        for (String id : safeOptions.alwaysInclude()) {
+            if (selectedIds.contains(id)) continue;
+            for (Skill skill : candidates) {
+                if (skill.id().value().equals(id)) {
+                    selectedIds.add(id);
+                    selected.add(skill);
+                    break;
+                }
+            }
+        }
+
+        if (selected.isEmpty()) return candidates;
+        selected.sort(java.util.Comparator.comparing(skill -> skill.id().value()));
+        return List.copyOf(selected);
+    }
+
+    public static String renderInstructions(List<Skill> listed) {
         if (listed.isEmpty()) return NO_SKILLS;
         StringBuilder text = new StringBuilder();
         text.append(PromptLoader.get("skill-guidance")).append("\n\n")

@@ -228,32 +228,38 @@ Quality rules:
 
 ## Deployment
 
-### Docker (JVM, SQLite)
+### Docker (JVM, PostgreSQL)
 
 ```bash
 cd qoc
 cp deploy/.env.example deploy/.env
+# edit deploy/.env: JDBC URL, username, password
 ./deploy/build-image.sh
 cd deploy && docker compose up -d
 ```
 
-`build-image.sh` builds the fast-jar with **SQLite as a build-time setting**.
-A plain `mvn package` produces a PostgreSQL build; the container would fail
-with `Driver does not support the provided URL: jdbc:sqlite:...`.
+`build-image.sh` builds the fast-jar with **PostgreSQL as a build-time
+setting**. The database is external (for example Neon); the `qoc-data` Docker
+volume holds the workspace, logs, snapshots, and tool output. For a single-node
+SQLite deployment, use `deploy/build-image-sqlite.sh` and the SQLite values
+from `deploy/.env.example`.
 
 - UI/API: <http://127.0.0.1:8333>
-- Persistence: Docker volume `qoc-data`
+- Persistence: external PostgreSQL
 - Plan files: `/data/home/.opencode/plan` (`HOME=/data/home`)
 
 ### Native image
 
 ```bash
-mvn -DskipTests package -Dnative     # requires GraalVM
+ENGINE_DB_KIND=postgresql ENGINE_DB_DRIVER=org.postgresql.Driver \
+  QUARKUS_FLYWAY_LOCATIONS=classpath:db/migration \
+  mvn -DskipTests package -Dnative     # requires GraalVM
 cd deploy && docker compose -f docker-compose.native.yml up -d --build
 ```
 
 The native image intentionally contains **no Git**; worktree tools are not
-available there.
+available there. Native binaries are database-kind specific; rebuild with the
+PostgreSQL settings above when switching from SQLite.
 
 ### systemd
 

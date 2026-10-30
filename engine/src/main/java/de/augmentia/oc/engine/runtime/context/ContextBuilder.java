@@ -17,6 +17,8 @@ import de.augmentia.oc.engine.core.port.store.Conversation;
 import de.augmentia.oc.engine.core.port.store.InstructionStore;
 import de.augmentia.oc.engine.core.port.world.InstructionLoader;
 import de.augmentia.oc.engine.runtime.skill.SkillCatalog;
+import de.augmentia.oc.engine.runtime.skill.SkillSelection;
+import de.augmentia.oc.engine.runtime.skill.SkillFilterOptions;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -39,32 +41,52 @@ public final class ContextBuilder {
     private final SkillCatalog skills;
     private final InstructionLoader instructionLoader;
     private final Option<InstructionStore> instructionStore;
+    private final SkillFilterOptions skillFilter;
 
     public ContextBuilder(Conversation conversation, SkillCatalog skills) {
-        this(conversation, skills, InstructionLoader.none(), Option.none());
+        this(conversation, skills, InstructionLoader.none(), Option.none(), SkillFilterOptions.defaults());
     }
 
     public ContextBuilder(Conversation conversation, SkillCatalog skills, InstructionLoader instructionLoader) {
-        this(conversation, skills, instructionLoader, Option.none());
+        this(conversation, skills, instructionLoader, Option.none(), SkillFilterOptions.defaults());
     }
 
     public ContextBuilder(Conversation conversation, SkillCatalog skills, InstructionLoader instructionLoader,
                          Option<InstructionStore> instructionStore) {
+        this(conversation, skills, instructionLoader, instructionStore, SkillFilterOptions.defaults());
+    }
+
+    public ContextBuilder(Conversation conversation, SkillCatalog skills, InstructionLoader instructionLoader,
+                         Option<InstructionStore> instructionStore, SkillFilterOptions skillFilter) {
         if (conversation == null) throw new IllegalArgumentException("conversation must not be null");
         this.conversation = conversation;
         this.skills = skills == null ? SkillCatalog.empty() : skills;
         this.instructionLoader = instructionLoader == null ? InstructionLoader.none() : instructionLoader;
         this.instructionStore = instructionStore == null ? Option.none() : instructionStore;
+        this.skillFilter = skillFilter == null ? SkillFilterOptions.defaults() : skillFilter;
     }
 
     public Prepared prepare(SessionInfo session, AgentProfile agent, ModelInfo model,
                             ToolSnapshot tools, Seq afterSeq, int step) {
-        return prepare(session, agent, model, tools, afterSeq, step, Option.none());
+        return prepare(session, agent, model, tools, afterSeq, step, Option.none(), Option.none());
     }
 
     public Prepared prepare(SessionInfo session, AgentProfile agent, ModelInfo model,
                             ToolSnapshot tools, Seq afterSeq, int step,
                             Option<Choice> forcedChoice) {
+        return prepare(session, agent, model, tools, afterSeq, step, forcedChoice, Option.none());
+    }
+
+    public Prepared prepare(SessionInfo session, AgentProfile agent, ModelInfo model,
+                            ToolSnapshot tools, Seq afterSeq, int step,
+                            Option<Choice> forcedChoice, Option<String> query) {
+        return prepare(session, agent, model, tools, afterSeq, step, forcedChoice, query, null);
+    }
+
+    public Prepared prepare(SessionInfo session, AgentProfile agent, ModelInfo model,
+                            ToolSnapshot tools, Seq afterSeq, int step,
+                            Option<Choice> forcedChoice, Option<String> query,
+                            SkillSelection selection) {
         if (session == null || agent == null || model == null || tools == null) {
             throw new IllegalArgumentException("context inputs must not be null");
         }
@@ -82,7 +104,11 @@ public final class ContextBuilder {
             }
             system.add(file.text());
         }
-        String instruction = skills.instructions(rules);
+        String instruction = selection != null
+                ? skills.instructions(rules, selection)
+                : query != null && query.isPresent() && !query.orElseThrow().isBlank()
+                        ? skills.instructions(rules, query.orElseThrow(), skillFilter)
+                        : skills.instructions(rules);
         if (!instruction.isBlank()) {
             LOG.fine("skills attached: " + instruction.lines().count() + " instruction lines");
             system.add(instruction);

@@ -25,7 +25,15 @@ configuration is part of `settings.json` (global then project; project wins).
       "model": null,
       "tools": { "allow": ["*"], "deny": [] },
       "permissions": [{ "action": "shell", "resource": "*", "effect": "ask" }],
-      "mcpServers": ["playwright"]
+      "mcpServers": ["playwright"],
+      "skills": {
+        "allow": ["code-review", "tdd"],
+        "deny": ["deploy-*"],
+        "max": 8,
+        "prompt": "top-k",
+        "core": ["code-review"],
+        "filter": { "topK": 5, "minScore": 0.3, "thresholdCount": 10 }
+      }
     }
   ]
 }
@@ -45,6 +53,12 @@ configuration is part of `settings.json` (global then project; project wins).
 | `tools.deny` | string[] | Tool names removed after `allow`. |
 | `permissions` | Rule[] | Agent-specific permission rules. |
 | `mcpServers` | string[] | MCP server names or `*`. Empty means none. |
+| `skills.allow` | string[] | Skill IDs/patterns visible and loadable for this agent. Empty means all permitted. |
+| `skills.deny` | string[] | Skill IDs/patterns hidden and blocked. Deny wins over allow. |
+| `skills.max` | int | Cap for the skill block. `0` means unlimited. |
+| `skills.prompt` | string | `none`, `core`, `top-k` (default) or `all`. |
+| `skills.core` | string[] | Skill patterns used by `prompt: core`. |
+| `skills.filter` | object | Per-agent override of the global `skills.filter` (`topK`, `minScore`, `thresholdCount`, `alwaysInclude`). |
 
 `steps` follows OpenCode: when it is absent, the agent has no step limit.
 The turn is still bounded by the tool-call, token and wall-time budgets of the

@@ -13,7 +13,7 @@ WORKDIR /app
 # Fast-jar layout produced by: mvn -pl quarkus package -DskipTests
 COPY quarkus/target/quarkus-app /app
 
-# Writable data volume: SQLite DB, workspace, logs.
+# Writable data volume: workspace, logs, and HOME.
 VOLUME ["/data"]
 
 # Create data directories and set ownership.
@@ -28,8 +28,8 @@ ENV HOME=/data/home
 ENV JAVA_OPTS="-Xms64m -Xmx384m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m"
 ENV QUARKUS_HTTP_HOST=0.0.0.0
 ENV QUARKUS_HTTP_PORT=8080
-ENV ENGINE_DB_KIND=sqlite
-ENV ENGINE_DB_PATH=/data/qoc.db
+ARG ENGINE_DB_KIND=postgresql
+ENV ENGINE_DB_KIND=${ENGINE_DB_KIND}
 ENV ENGINE_WORKSPACE=/data/workspace
 ENV LOG_DIR=/data/log
 ENV QUARKUS_OTEL_ENABLED=false

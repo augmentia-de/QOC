@@ -65,6 +65,7 @@ QOC-specific implementation guides; the operative spec remains under `spec/`:
 - [`guides/OS-based-security.md`](./guides/OS-based-security.md) – running under a dedicated OS user
 - [`guides/LoadAgentConfig.md`](./guides/LoadAgentConfig.md) – reloading agent configuration
 - [`guides/a2a.md`](./guides/a2a.md) – A2A client and server configuration
+- [`Skill_loading.md`](./Skill_loading.md) – skill discovery, filtering and per-agent configuration
 - [`guides/ideas.md`](./guides/ideas.md) – ideas and sketch catalog
 
 ## reference material

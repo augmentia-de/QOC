@@ -1,6 +1,6 @@
 services:
   qoc-agent-a:
-    image: qoc-engine:local
+    image: qoc-engine:sqlite
     container_name: qoc-agent-a
     environment:
       - ENGINE_A2A_SERVER_ENABLED=true
@@ -29,7 +29,7 @@ services:
       - mcp-server
 
   qoc-agent-b:
-    image: qoc-engine:local
+    image: qoc-engine:sqlite
     container_name: qoc-agent-b
     environment:
       - ENGINE_A2A_SERVER_ENABLED=true

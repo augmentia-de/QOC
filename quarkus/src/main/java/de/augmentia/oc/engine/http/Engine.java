@@ -95,6 +95,9 @@ import de.augmentia.oc.engine.runtime.step.SubmittedResult;
 import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
 import de.augmentia.oc.engine.core.eval.PermissionCheck;
 import de.augmentia.oc.engine.runtime.tool.runtime.ToolAuthorizer;
+import de.augmentia.oc.engine.runtime.tool.skill.SkillAuthorizer;
+import de.augmentia.oc.engine.runtime.skill.SkillFilterOptions;
+import de.augmentia.oc.engine.runtime.skill.SkillSelection;
 import de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime;
 
 import jakarta.annotation.PostConstruct;
@@ -198,6 +201,7 @@ public class Engine {
     private Hooks toolHooks = noopHooks();
     @Inject
     ToolAuthorizer toolAuthorizer;
+    private ToolAuthorizer effectiveAuthorizer;
     @Inject
     A2AConfig a2aConfig;
     private ModelRef modelRef;
@@ -233,7 +237,7 @@ public class Engine {
 
     @PostConstruct
     void wire() {
-        ToolAuthorizer authorizer = toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer;
+        effectiveAuthorizer = new SkillAuthorizer(toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer);
         clock = new SystemClock();
         promptSlots = new java.util.concurrent.Semaphore(Math.max(1, maxConcurrentPrompts));
         boolean sqlite = "sqlite".equalsIgnoreCase(dbKind);
@@ -301,6 +305,7 @@ public class Engine {
                     if (cfg != null && !cfg.permissions().isEmpty()) {
                         agentRules = cfg.permissions();
                     }
+                    agentRules = withSkillRules(agentName, agentRules);
                 } catch (RuntimeException e) {
                     LOG.warnf("cannot resolve agent rules for %s: %s", info.agent(), e.getMessage());
                 }
@@ -410,14 +415,14 @@ public class Engine {
             LOG.warnf("A2A tool registration failed: %s", e.getMessage());
         }
         toolSnapshot = registry.snapshot(allowAll);
-        toolRuntime = new ToolRuntime(toolSnapshot, (toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer),
+        toolRuntime = new ToolRuntime(toolSnapshot, effectiveAuthorizer,
                 permissionGate, toolHooks, toolOutput);
         instructionLoader = instructionsEnabled
                 ? new NioInstructionLoader(Path.of(System.getProperty("user.home", "."),
                         ".config", "opencode"))
                 : InstructionLoader.none();
         contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
-                instructions == null ? Option.none() : Option.some(instructions));
+                instructions == null ? Option.none() : Option.some(instructions), config.skillFilter());
         modelRef = new ModelRef(ProviderId.create(), ModelId.create());
         titleGenerator = new TitleGenerator(provider, modelRef);
         step = new Step(provider, toolRuntime);
@@ -1187,6 +1192,7 @@ public class Engine {
         EngineConfig.AgentConfig agentConfig = agentCatalogue.config(agentName);
         AgentProfile agent = agentOverride != null ? agentOverride
                 : agentProfile(info.agent(), agentName, agentConfig);
+        SkillSelection skillSelection = skillSelection(agentName, text);
 
         // Model override from agent config
         ModelInfo model = modelInfo();
@@ -1205,10 +1211,10 @@ public class Engine {
                 }
             };
             runStep = new Step(provider, new ToolRuntime(agentToolSnapshot,
-                    (toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer), structuredGate, toolHooks, toolOutput));
+                    effectiveAuthorizer, structuredGate, toolHooks, toolOutput));
         } else if (agentToolSnapshot != runSnapshot) {
             runStep = new Step(provider, new ToolRuntime(agentToolSnapshot,
-                    (toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer), permissionGate, toolHooks, toolOutput));
+                    effectiveAuthorizer, permissionGate, toolHooks, toolOutput));
         }
 
         // MODE-PLAN: log synthetic message when entering/leaving plan mode (PR-7).
@@ -1253,7 +1259,7 @@ public class Engine {
                     ? Option.some(new Choice.One(new ToolName(SubmitResult.TOOL_NAME)))
                     : Option.none();
             var prepared = contextBuilder.prepare(info, agent, model, agentToolSnapshot, Seq.zero(),
-                    stepNo, forcedChoice);
+                    stepNo, forcedChoice, Option.some(text), skillSelection);
             if (resultSchema != null) {
                 prepared = prepared.withSystem(SubmitResult.INSTRUCTION);
             }
@@ -1271,7 +1277,7 @@ public class Engine {
                 cspan.end();
                 }
                 prepared = contextBuilder.prepare(info, agent, model, agentToolSnapshot, Seq.zero(),
-                        stepNo, forcedChoice);
+                        stepNo, forcedChoice, Option.some(text), skillSelection);
                 if (resultSchema != null) {
                     prepared = prepared.withSystem(SubmitResult.INSTRUCTION);
                 }
@@ -1389,9 +1395,53 @@ public class Engine {
         List<Rule> rules = (config == null || config.permissions().isEmpty())
                 ? List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK))
                 : config.permissions();
+        rules = withSkillRules(name, rules);
         int maxSteps = config == null ? 0 : config.maxSteps();
         Option<String> system = config == null ? Option.none() : Option.of(config.system());
         return AgentProfile.forAgent(id, system, maxSteps, rules, name);
+    }
+
+    /**
+     * Adds the per-agent skill allow/deny list as permission rules. The rules
+     * only match the {@code skill} action, so tool permissions are untouched.
+     *
+     * <p>The order is intentional: a later matching rule wins, so an allow
+     * list is expressed as {@code deny *} followed by the allowed patterns.</p>
+     */
+    private List<Rule> withSkillRules(String agentName, List<Rule> base) {
+        if (config == null || agentName == null) return base;
+        EngineConfig.AgentSkillsConfig skills = config.agentSkills(agentName);
+        if (skills == null || !skills.enabled()) return base;
+        List<Rule> rules = new ArrayList<>(base);
+        if (!skills.allow().isEmpty()) {
+            rules.add(new Rule("skill", "*", Effect.DENY));
+            for (String pattern : skills.allow()) {
+                rules.add(new Rule("skill", pattern, Effect.ALLOW));
+            }
+        }
+        for (String pattern : skills.deny()) {
+            rules.add(new Rule("skill", pattern, Effect.DENY));
+        }
+        return List.copyOf(rules);
+    }
+
+    /**
+     * Builds the per-agent skill selection for the prompt. Returns
+     * {@code null} when the agent has no {@code skills} block, which keeps the
+     * previous behaviour.
+     */
+    private SkillSelection skillSelection(String agentName, String query) {
+        if (config == null || agentName == null) return null;
+        EngineConfig.AgentSkillsConfig skills = config.agentSkills(agentName);
+        if (skills == null || !skills.enabled()) return null;
+        int max = skills.max();
+        return switch (skills.prompt()) {
+            case "none" -> SkillSelection.none();
+            case "core" -> SkillSelection.core(skills.core(), max);
+            case "all" -> SkillSelection.all(max);
+            default -> SkillSelection.topK(query,
+                    skills.filter() != null ? skills.filter() : config.skillFilter(), max);
+        };
     }
 
     public SubagentRunner.SubagentResult runSubagent(SessionId parent, String agentName, String prompt, int depth) {
@@ -1502,10 +1552,10 @@ public class Engine {
         registry.register(SkillTool.listDefinition(skillCatalog, skillRules));
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
         toolSnapshot = registry.snapshot(allowAll);
-        toolRuntime = new ToolRuntime(toolSnapshot, (toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer),
+        toolRuntime = new ToolRuntime(toolSnapshot, effectiveAuthorizer,
                 permissionGate, toolHooks, toolOutput);
         contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
-                instructions == null ? Option.none() : Option.some(instructions));
+                instructions == null ? Option.none() : Option.some(instructions), config.skillFilter());
         LOG.infof("reloaded config: %d agent(s), %d skill(s)",
                 agentCatalogue.list().size(), skillCatalog.all().size());
     }

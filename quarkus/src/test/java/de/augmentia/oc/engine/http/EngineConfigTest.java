@@ -78,6 +78,51 @@ class EngineConfigTest {
     }
 
     @Test
+    void parsesPerAgentSkillSettings() throws Exception {
+        Files.writeString(workspace.resolve("settings.json"), """
+                {"agents": [{"name": "plan", "skills": {
+                    "allow": ["plan-*"], "deny": ["deploy-*"], "max": 5,
+                    "prompt": "core", "core": ["review"],
+                    "filter": {"topK": 3, "minScore": 0.4, "thresholdCount": 7,
+                               "alwaysInclude": ["review"]}}}]}
+                """);
+
+        EngineConfig config = config();
+        config.load();
+
+        EngineConfig.AgentSkillsConfig skills = config.agentSkills("plan");
+        assertThat(skills).isNotNull();
+        assertThat(skills.enabled()).isTrue();
+        assertThat(skills.allow()).containsExactly("plan-*");
+        assertThat(skills.deny()).containsExactly("deploy-*");
+        assertThat(skills.max()).isEqualTo(5);
+        assertThat(skills.prompt()).isEqualTo("core");
+        assertThat(skills.core()).containsExactly("review");
+        assertThat(skills.filter()).isNotNull();
+        assertThat(skills.filter().topK()).isEqualTo(3);
+        assertThat(skills.filter().minScore()).isEqualTo(0.4);
+        assertThat(skills.filter().thresholdCount()).isEqualTo(7);
+        assertThat(skills.filter().alwaysInclude()).containsExactly("review");
+        assertThat(config.agentSkills("build")).isNull();
+    }
+
+    @Test
+    void agentSkillBlockIsEnabledByDefaultAndPromptFallsBackToTopK() throws Exception {
+        Files.writeString(workspace.resolve("settings.json"), """
+                {"agents": [{"name": "build", "skills": {}}]}
+                """);
+
+        EngineConfig config = config();
+        config.load();
+
+        EngineConfig.AgentSkillsConfig skills = config.agentSkills("build");
+        assertThat(skills).isNotNull();
+        assertThat(skills.enabled()).isTrue();
+        assertThat(skills.prompt()).isEqualTo("top-k");
+        assertThat(skills.filter()).isNull();
+    }
+
+    @Test
     void customAgentsKeepTheBuildAndPlanBaseline() throws Exception {
         Files.writeString(workspace.resolve("settings.json"), """
                 {"agents": [{"name": "custom-role"}]}
@@ -179,5 +224,23 @@ class EngineConfigTest {
                 .filter(agent -> name.equals(agent.name()))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    @Test
+    void parsesSkillFilterSettings() throws Exception {
+        Files.writeString(workspace.resolve("settings.json"), """
+                {"skills": {"filter": {"enabled": false, "strategy": "bm25", "topK": 7,
+                                      "minScore": 0.5, "thresholdCount": 3, "alwaysInclude": ["commit"]}}}
+                """);
+
+        EngineConfig config = config();
+        config.load();
+
+        assertThat(config.skillFilter().enabled()).isFalse();
+        assertThat(config.skillFilter().strategy()).isEqualTo("bm25");
+        assertThat(config.skillFilter().topK()).isEqualTo(7);
+        assertThat(config.skillFilter().minScore()).isEqualTo(0.5);
+        assertThat(config.skillFilter().thresholdCount()).isEqualTo(3);
+        assertThat(config.skillFilter().alwaysInclude()).containsExactly("commit");
     }
 }
