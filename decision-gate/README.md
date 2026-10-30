@@ -2,6 +2,7 @@
 
 > **Status:** Example / prototype · 2026-10-30
 > **Depends on:** `dev.langchain4j:langchain4j-core:1.22.0` (experimental `DecisionModel` API)
+> and `dev.langchain4j:langchain4j-typesafe:1.22.0-beta32` (System One client)
 > **Related:** `docs/context-build.md`, `docs/Understand.md`
 
 ---
@@ -93,6 +94,27 @@ Run the tests:
 cd qoc
 mvn -q -pl decision-gate test
 ```
+
+---
+
+## Typed ticket classifier
+
+`TicketClassifier` is the direct equivalent of the usual enum-returning
+`@Decide` service sketch, but uses the real `DecisionModel` API:
+
+```java
+DecisionModel model = DecisionModels.typeSafeFromEnvironment();
+TicketClassifier classifier = new TicketClassifier(model);
+
+TicketCategory category = classifier.classify("My invoice has the wrong amount");
+TicketClassification detailed = classifier.classifyDetailed("My invoice has the wrong amount");
+```
+
+The request contains one named `ChoiceQuestion` (`support`, `billing`, `sales`,
+`spam`). LangChain4j validates that the answer names one of those options.
+`classifyDetailed(...)` additionally exposes `confidence` and `source`;
+refusals throw an explicit `IllegalStateException` instead of being mapped to a
+random category.
 
 ---
 
