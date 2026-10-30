@@ -29,6 +29,19 @@ class EngineAgentProfileTest {
     }
 
     @Test
+    void zeroStepLimitMeansNoLimit() {
+        Engine engine = new Engine();
+        EngineConfig.AgentConfig config = new EngineConfig.AgentConfig(
+                "researcher", "You are a research agent.", false, null, 0,
+                List.of("read"), List.of(),
+                List.of(new Rule("read", "*", Effect.ALLOW)), List.of("*"));
+
+        AgentProfile profile = engine.agentProfile(AgentId.create(), "researcher", config);
+
+        assertThat(profile.maxSteps()).isZero();
+    }
+
+    @Test
     void buildAgentWithScopedEnvEditDenyIsNotPlanMode() {
         Engine engine = new Engine();
         EngineConfig.AgentConfig build = new EngineConfig.AgentConfig("build", null, false);
@@ -45,7 +58,7 @@ class EngineAgentProfileTest {
         AgentProfile profile = engine.agentProfile(AgentId.create(), "custom", null);
 
         assertThat(profile.system().isEmpty()).isTrue();
-        assertThat(profile.maxSteps()).isEqualTo(10);
+        assertThat(profile.maxSteps()).isZero();
         assertThat(profile.permissions()).containsExactly(
                 new Rule("*", "*", Effect.ALLOW),
                 new Rule("grep", "*", Effect.ASK));

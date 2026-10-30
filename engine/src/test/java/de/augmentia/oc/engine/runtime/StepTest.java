@@ -1,6 +1,7 @@
 package de.augmentia.oc.engine.runtime;
 
 import de.augmentia.oc.engine.core.contract.permission.PermissionDenied;
+import de.augmentia.oc.engine.core.contract.provider.Choice;
 import de.augmentia.oc.engine.core.contract.provider.FailureKind;
 import de.augmentia.oc.engine.core.contract.provider.InvalidRequestClassification;
 import de.augmentia.oc.engine.core.contract.provider.ModelEvent;
@@ -65,6 +66,37 @@ class StepTest {
 
         assertThat(result.toolCalls()).hasSize(1);
         assertThat(result.toolCalls().getFirst().outcome()).isInstanceOf(ToolOutcome.Ok.class);
+    }
+
+    @Test
+    void requestedToolIsNotExecutedWhenToolsAreDisabled() {
+        CallId call = CallId.create();
+        Step step = new Step(provider(List.of(
+                new ModelEvent.ToolCallRequested(call, ECHO, JsonValue.of(Map.of())),
+                new ModelEvent.Finished(FinishReason.NORMAL, TokenCount.zero(), JsonValue.ofNull()))),
+                runtime(ToolAuthorizer.defaultAuthorizer()));
+
+        StepResult.Finished result = (StepResult.Finished) step.run(
+                prepared(Option.some(new Choice.None())), context());
+
+        assertThat(result.toolCalls()).hasSize(1);
+        assertThat(result.toolCalls().getFirst().outcome()).isInstanceOf(ToolOutcome.Failed.class);
+        ToolOutcome.Failed failed = (ToolOutcome.Failed) result.toolCalls().getFirst().outcome();
+        assertThat(failed.error().type()).isEqualTo("tools_disabled");
+        assertThat(failed.error().message()).isEqualTo("Tools are disabled for this step");
+    }
+
+    @Test
+    void toolCallMarkupInTextIsInvalidOutput() {
+        Step step = new Step(provider(List.of(
+                new ModelEvent.TextEnded("b", "<|DSML| calls>\n<|DSML| invoke name=\"read\">"),
+                new ModelEvent.Finished(FinishReason.NORMAL, TokenCount.zero(), JsonValue.ofNull()))),
+                runtime(ToolAuthorizer.defaultAuthorizer()));
+
+        StepResult result = step.run(prepared(Option.some(new Choice.None())), context());
+
+        assertThat(result).isInstanceOf(StepResult.Failed.class);
+        assertThat(((StepResult.Failed) result).kind()).isInstanceOf(FailureKind.InvalidOutput.class);
     }
 
     @Test
@@ -176,8 +208,12 @@ class StepTest {
     }
 
     private static Prepared emptyPrepared() {
+        return prepared(Option.none());
+    }
+
+    private static Prepared prepared(Option<Choice> choice) {
         return new Prepared(ModelRef.of(ProviderId.create(), ModelId.create()),
-                List.of("system"), List.of(), List.of(), Option.none(), null, Map.of(),
+                List.of("system"), List.of(), List.of(), choice, null, Map.of(),
                 Option.none(), Map.of());
     }
 

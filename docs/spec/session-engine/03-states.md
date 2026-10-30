@@ -117,9 +117,11 @@ stateDiagram-v2
   There is no tool loop in memory.
 * **S-03** At most **one** terminal event per step (`StepEnded` or
   `StepFailed`).
-* **S-04** In the last permitted step tools are switched off
+* **S-04** When a positive `steps` limit is configured, in the last permitted step tools are switched off
   (`toolChoice = none`), but the definitions stay in the request so the
-  provider cache stays valid.
+  provider cache stays valid. The engine enforces the switch locally: a tool
+  call returned anyway is not executed and becomes a failed tool result.
+  Native tool-call markup in the text channel is invalid output.
 * **S-05** An interruption ends the step; parked inputs remain.
 
 ---

@@ -75,7 +75,7 @@ Each subagent receives:
 - Its own system prompt (from the agent definition).
 - Its own rights (from the agent definition or defaults).
 - Its own tool snapshot (`registry.snapshot(agentPermissions)`).
-- Its own step budget (`steps`).
+- Its own optional step budget (`steps`); absent means no step limit.
 - Its own model (or parent model as fallback).
 
 ## 5. Agent definition (extended)

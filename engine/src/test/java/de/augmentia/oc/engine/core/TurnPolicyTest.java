@@ -26,6 +26,13 @@ class TurnPolicyTest {
     }
 
     @Test
+    void unlimitedStepsStillRespectOtherBudgets() {
+        TurnPolicy policy = new TurnPolicy(Integer.MAX_VALUE, 10, 1000, Duration.ofMinutes(5));
+        assertThat(policy.decide(100_000, 10, TokenCount.of(100, 100), Duration.ofSeconds(1)))
+                .isEqualTo(TurnPolicy.Decision.FAIL_TURN);
+    }
+
+    @Test
     void failsTheTurnWhenAHardBudgetIsExceeded() {
         TurnPolicy policy = new TurnPolicy(10, 10, 1000, Duration.ofMinutes(5));
         assertThat(policy.decide(10, 10, TokenCount.of(100, 100), Duration.ofSeconds(1)))

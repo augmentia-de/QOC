@@ -1,7 +1,6 @@
 ---
 description: Read-only research agent. Explains code, architecture, and data flow with evidence.
 mode: primary
-steps: 8
 hidden: false
 permissions:
   - { action: "read", resource: "*", effect: allow }

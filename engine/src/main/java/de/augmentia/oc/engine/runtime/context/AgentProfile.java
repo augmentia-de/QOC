@@ -7,14 +7,19 @@ import de.augmentia.oc.engine.core.model.Rule;
 
 import java.util.List;
 
-/** Minimal agent view needed to build a model request. */
+/**
+ * Minimal agent view needed to build a model request.
+ *
+ * <p>{@code maxSteps == 0} means no step limit. A positive value is the
+ * maximum number of model rounds for one prompt.</p>
+ */
 public record AgentProfile(AgentId id, Option<String> system, int maxSteps, List<Rule> permissions,
                            boolean planMode) {
     public AgentProfile {
         if (id == null) throw new IllegalArgumentException("id must not be null");
         if (system == null) system = Option.none();
         permissions = permissions == null ? List.of() : List.copyOf(permissions);
-        if (maxSteps < 0) throw new IllegalArgumentException("maxSteps must not be negative");
+        if (maxSteps < 0) throw new IllegalArgumentException("maxSteps must not be negative; 0 means no limit");
     }
 
     public AgentProfile(AgentId id, Option<String> system, int maxSteps, List<Rule> permissions) {

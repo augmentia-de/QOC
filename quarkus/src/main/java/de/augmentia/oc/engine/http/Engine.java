@@ -1229,9 +1229,13 @@ public class Engine {
         String finalText = "";
         Option<JsonValue> structured = Option.none();
         boolean submitForced = false;
+        // maxSteps == 0 means no step limit; tool-call, token and wall-time
+        // budgets still bound the turn.
+        int stepBudget = agent.maxSteps() <= 0 || agent.maxSteps() == Integer.MAX_VALUE
+                ? Integer.MAX_VALUE : agent.maxSteps() + 1;
         de.augmentia.oc.engine.core.eval.TurnPolicy turnPolicy =
                 new de.augmentia.oc.engine.core.eval.TurnPolicy(
-                        Math.max(1, agent.maxSteps()) + 1,
+                        stepBudget,
                         Math.max(1, maxTurnToolCalls), 200_000,
                         java.time.Duration.ofMinutes(Math.max(1, maxTurnWallMinutes)));
         int totalToolCalls = 0;
@@ -1385,7 +1389,7 @@ public class Engine {
         List<Rule> rules = (config == null || config.permissions().isEmpty())
                 ? List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK))
                 : config.permissions();
-        int maxSteps = config == null ? 10 : config.maxSteps();
+        int maxSteps = config == null ? 0 : config.maxSteps();
         Option<String> system = config == null ? Option.none() : Option.of(config.system());
         return AgentProfile.forAgent(id, system, maxSteps, rules, name);
     }

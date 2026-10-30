@@ -1,7 +1,6 @@
 ---
 description: Read-only code reviewer. Finds risks, bugs, and maintainability issues without changing files.
 mode: primary
-steps: 8
 hidden: false
 permissions:
   - { action: "read", resource: "*", effect: allow }

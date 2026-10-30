@@ -60,7 +60,7 @@ decides whether the model reads a summary as an *instruction* or as
 | `CTX-SUMMARY-UPDATE` | continue compaction | compaction with predecessor | – | `session/compaction.ts:149-177` |
 | `CTX-NUDGE` | follow-up on format violation | response without template | – | `session/compaction.ts:178-180` |
 | `CTX-CHECKPOINT` | wrapper of compacted history | every compaction message | `summary`, `recent` | `runner/to-llm-message.ts:300-312` |
-| `CTX-MAX-STEPS` | step limit reached | last permitted step | – | `runner/max-steps.ts:1-18`, inserted in `runner/llm.ts:235` |
+| `CTX-MAX-STEPS` | positive step limit reached | last permitted step | – | `runner/max-steps.ts:1-18`, inserted in `runner/llm.ts:235` |
 | `TTL-MESSAGE` | title from first message | new session | `text` | `session/title.ts:40-41` |
 | `TTL-CONVERSATION` | title from history | regeneration | `text` | `session/title.ts:42-43` |
 | `TOOL-*` | 15 tool descriptions | tool in snapshot | schema | `tool/plugin/*.ts`, `tool/patch.txt`, `tool/todowrite.txt` |
@@ -410,6 +410,12 @@ Any attempt to use tools is a critical violation. Respond with text ONLY.
 strongest form: the model reads the limit as its own statement, not as a
 foreign instruction.
 
+**Trigger and enforcement:** The prompt is used only when the agent has a
+positive `steps` limit; without a limit it is not appended. The engine also
+enforces `toolChoice = none` locally. If the provider still emits structured
+tool calls, they become failed tool results instead of being executed. Native
+tool-call markup in the text channel is invalid output, not a final answer.
+
 ### 6.11 Not reproduced verbatim
 
 | Group | Why not | Rule |
@@ -430,7 +436,7 @@ foreign instruction.
 | **Reminder** | exactly once, before the last user message, logged | PR-7 |
 | **Compaction** | follow-up uses update text; newer history wins | PR-8 |
 | **Title limits** | 8,000/2,000 chars in, 100 chars out | PR-9 |
-| **Step limit** | assistant role, tools locked, text only | PR-13 |
+| **Step limit** | only when configured; assistant role, tools locked, text only | PR-13 |
 | **Secrets** | rendered prompt contains no key and no session ID | PR-11 |
 
 The golden hash is the most important test: it turns a prompt change into a

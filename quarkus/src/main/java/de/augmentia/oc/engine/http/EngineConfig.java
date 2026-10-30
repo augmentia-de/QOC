@@ -113,7 +113,7 @@ public class EngineConfig {
                     List<String> toolAllow = stringList(agent, "tools", "allow");
                     List<String> toolDeny = stringList(agent, "tools", "deny");
                     List<String> mcpServers = stringList(agent, "mcpServers", null);
-                    int maxSteps = (int) number(agent, "maxSteps", 10);
+                    int maxSteps = stepLimit(agent);
                     String model = string(agent, "model", null);
                     String mode = string(agent, "mode", "all");
                     List<Rule> permissions = rules(agent);
@@ -323,6 +323,17 @@ public class EngineConfig {
         return object.values().get(key) instanceof JsonValue.Num num ? num.value().longValue() : fallback;
     }
 
+    /**
+     * OpenCode calls the optional limit {@code steps}; {@code maxSteps} is the
+     * deprecated alias. An absent limit means no step limit.
+     */
+    private static int stepLimit(JsonValue.Obj agent) {
+        long steps = number(agent, "steps", -1);
+        long legacy = number(agent, "maxSteps", -1);
+        long configured = steps > 0 ? steps : legacy > 0 ? legacy : 0;
+        return configured > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) configured;
+    }
+
     private Path globalFile() {
         String home = System.getProperty("user.home", ".");
         return Path.of(home, ".config", "opencode", "settings.json");
@@ -378,7 +389,7 @@ public class EngineConfig {
     /** Baseline build agent with the secure defaults. */
     private static AgentConfig defaultBuildAgent() {
         String planDir = planDirectory();
-        return new AgentConfig("build", null, false, "all", null, 32,
+        return new AgentConfig("build", null, false, "all", null, 0,
                 List.of("*"), List.of(),
                 List.of(
                         new Rule("*", "*", Effect.ALLOW),
@@ -394,7 +405,7 @@ public class EngineConfig {
     private static AgentConfig defaultPlanAgent() {
         String planDir = planDirectory();
         return new AgentConfig("plan", "You are in plan mode. Do not edit files.",
-                false, "all", null, 32, List.of("*"), List.of(),
+                false, "all", null, 0, List.of("*"), List.of(),
                 List.of(
                         new Rule("*", "*", Effect.ALLOW),
                         new Rule("edit", "*", Effect.DENY),
@@ -425,7 +436,7 @@ public class EngineConfig {
         public AgentConfig {
             if (name == null || name.isBlank()) name = "build";
             if (mode == null || mode.isBlank()) mode = "all";
-            if (maxSteps <= 0) maxSteps = 10;
+            if (maxSteps < 0) maxSteps = 0;
             toolAllow = toolAllow == null ? List.of("*") : List.copyOf(toolAllow);
             toolDeny = toolDeny == null ? List.of() : List.copyOf(toolDeny);
             permissions = permissions == null ? List.of() : List.copyOf(permissions);
@@ -433,7 +444,7 @@ public class EngineConfig {
         }
         // backward-compatible constructor with secure defaults
         public AgentConfig(String name, String system, boolean hidden) {
-            this(name, system, hidden, "all", null, 32, List.of("*"), List.of(),
+            this(name, system, hidden, "all", null, 0, List.of("*"), List.of(),
                     List.of(
                             new Rule("*", "*", Effect.ALLOW),
                             new Rule("external_directory", "*", Effect.DENY),

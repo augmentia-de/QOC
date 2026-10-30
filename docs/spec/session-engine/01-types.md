@@ -282,7 +282,7 @@ type AgentInfo =
   , description: Option<Text>
   , mode: Primary | Subagent | All
   , hidden: Bool                # visibility, not security
-  , steps: Option<Int>          # maximum model steps
+  , steps: Option<Int>          # optional maximum model steps; absent = no limit
   , permissions: List<Rule>
   , color: Option<Hex> }
 

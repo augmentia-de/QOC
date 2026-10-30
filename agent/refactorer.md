@@ -1,7 +1,6 @@
 ---
 description: Read-only refactoring advisor. Proposes minimal safe refactors as text or patch, without applying them.
 mode: primary
-steps: 8
 hidden: false
 permissions:
   - { action: "read", resource: "*", effect: allow }

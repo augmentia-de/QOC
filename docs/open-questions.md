@@ -75,7 +75,7 @@ prerequisite for `L-1` and for any existing installation.
 ### L-1 · Agent catalog
 
 **Today.** The baseline environment knows **exactly one** agent: `build`, with
-fixed rights and `steps = 32`
+fixed rights and an optional `steps` limit (absent by default)
 ([`betrieb/README.md`](./spec/betrieb/README.md) §3).
 That suffices for the first run, but not to replace an existing installation.
 
@@ -143,7 +143,7 @@ load_agents(project, global):
   return catalog
 
 build_agent(frontmatter, text):
-  base = { mode: "primary", hidden: false, steps: 32,
+  base = { mode: "primary", hidden: false, steps: none,
            permissions: default_permissions(), model: none }
   return base + frontmatter + { system: text }
 ```
@@ -220,10 +220,13 @@ Only the fields of the baseline environment:
   "instructions": ["AGENTS.md"],
   "shell": "/bin/bash",
   "agents": {
-    "build": { "steps": 32 }
+    "build": {}
   }
 }
 ```
+
+The `build` entry has no `steps` value, so no step limit applies. The turn
+policy still bounds tool calls, tokens and wall time.
 
 Rules:
 

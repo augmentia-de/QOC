@@ -12,7 +12,9 @@ class PromptLoaderTest {
     @Test
     void loadsKnownPrompt() {
         String text = PromptLoader.get("step-limit");
-        assertThat(text).isEqualTo("The step limit is reached. Summarize what was done and what remains.");
+        assertThat(text).startsWith("CRITICAL - MAXIMUM STEPS REACHED");
+        assertThat(text).contains("Tools are disabled until next user input");
+        assertThat(text).contains("Respond with text ONLY");
     }
 
     @Test

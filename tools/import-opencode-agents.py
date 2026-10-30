@@ -90,7 +90,7 @@ def convert(path):
     name = path.stem
     mode = data.get("mode", "all")
     hidden = mode == "subagent"
-    steps = int(data.get("steps", "32"))
+    steps = data.get("steps", data.get("maxSteps"))
     permissions = [to_rule(p) for p in data.get("permissions", [])]
 
     # OpenCode treats unlisted read-only actions as allowed. QOC's rule chain
@@ -110,12 +110,11 @@ def convert(path):
     # (permissions). Keep the catalog broad and let the permission rules enforce
     # least privilege. OpenCode's permission list is an execution policy, not a
     # catalog filter.
-    return {
+    result = {
         "name": name,
         "system": body,
         "hidden": hidden,
         "mode": mode,
-        "maxSteps": steps,
         "tools": {
             "allow": ["*"],
             "deny": []
@@ -123,6 +122,9 @@ def convert(path):
         "permissions": permissions,
         "mcpServers": ["*"],
     }
+    if steps is not None:
+        result["steps"] = int(steps)
+    return result
 
 
 def main():

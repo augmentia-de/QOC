@@ -1,5 +1,6 @@
 package de.augmentia.oc.engine.runtime.step;
 
+import de.augmentia.oc.engine.core.contract.provider.Choice;
 import de.augmentia.oc.engine.core.contract.provider.FailureKind;
 import de.augmentia.oc.engine.core.contract.provider.ModelEvent;
 import de.augmentia.oc.engine.core.contract.provider.ProviderAdapter;
@@ -8,7 +9,9 @@ import de.augmentia.oc.engine.core.contract.tool.ToolContext;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.eval.OverflowCompaction;
 import de.augmentia.oc.engine.core.eval.ProviderClassifier;
+import de.augmentia.oc.engine.core.eval.ToolCallLeak;
 import de.augmentia.oc.engine.core.model.FinishReason;
+import de.augmentia.oc.engine.core.model.SessionError;
 import de.augmentia.oc.engine.core.model.TokenCount;
 import de.augmentia.oc.engine.runtime.context.Prepared;
 import de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime;
@@ -94,6 +97,27 @@ public final class Step {
                     "stream ended without a finish event");
         }
 
+        // Some providers leak native tool-call markup into the text channel when
+        // tools are disabled. It is not a final answer, even with a normal finish.
+        if (toolCalls.isEmpty() && toolsDisabled(prepared) && ToolCallLeak.contains(text(events))) {
+            return new StepResult.Failed(new FailureKind.InvalidOutput(
+                    de.augmentia.oc.engine.core.contract.provider.InvalidOutputClassification.UNKNOWN),
+                    "provider returned tool-call markup as text");
+        }
+
+        // Tool locking is an engine invariant, not only a provider hint. Never
+        // execute a call when the prepared step explicitly disabled tools.
+        if (!toolCalls.isEmpty() && toolsDisabled(prepared)) {
+            List<StepResult.ToolCallOutcome> blocked = new ArrayList<>(toolCalls.size());
+            for (ModelEvent.ToolCallRequested call : toolCalls) {
+                blocked.add(new StepResult.ToolCallOutcome(
+                        new ToolCall(call.callId(), call.name(), call.input()),
+                        new ToolOutcome.Failed(new SessionError.ToolExecutionError(
+                                "tools_disabled", "Tools are disabled for this step"))));
+            }
+            return new StepResult.Finished(finish, usage, events, blocked);
+        }
+
         // Execute tool calls in parallel (G-05), keep outcomes in call order.
         List<StepResult.ToolCallOutcome> outcomes = new ArrayList<>(toolCalls.size());
         for (int i = 0; i < toolCalls.size(); i++) outcomes.add(null);
@@ -145,6 +169,27 @@ public final class Step {
 
         LOG.fine("step run finish tools=" + outcomes.size());
         return new StepResult.Finished(finish, usage, events, outcomes);
+    }
+
+    private static boolean toolsDisabled(Prepared prepared) {
+        return prepared.toolChoice().orElse(null) instanceof Choice.None;
+    }
+
+    private static String text(List<ModelEvent> events) {
+        StringBuilder text = new StringBuilder();
+        for (ModelEvent event : events) {
+            if (event instanceof ModelEvent.TextEnded ended) {
+                text.append(ended.text());
+            }
+        }
+        if (text.isEmpty()) {
+            for (ModelEvent event : events) {
+                if (event instanceof ModelEvent.TextDelta delta) {
+                    text.append(delta.text());
+                }
+            }
+        }
+        return text.toString();
     }
 
     private void publish(ModelEvent event, Consumer<ModelEvent> sink) {

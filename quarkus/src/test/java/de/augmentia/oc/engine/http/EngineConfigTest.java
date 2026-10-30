@@ -55,6 +55,7 @@ class EngineConfigTest {
         assertThat(config.model()).isEqualTo("gpt-4o-mini");
         assertThat(config.agents()).extracting(EngineConfig.AgentConfig::name)
                 .containsExactly("build", "plan");
+        assertThat(config.agents()).allMatch(agent -> agent.maxSteps() == 0);
         assertThat(config.skillsEnabled()).isTrue();
         assertThat(config.skillPaths()).isEmpty();
     }
@@ -87,6 +88,28 @@ class EngineConfigTest {
 
         assertThat(config.agents()).extracting(EngineConfig.AgentConfig::name)
                 .containsExactly("custom-role", "build", "plan");
+    }
+
+    @Test
+    void stepLimitIsOptionalAndStepsWinsOverTheLegacyName() throws Exception {
+        Files.writeString(workspace.resolve("settings.json"), """
+                {"agents": [
+                  {"name": "limited", "steps": 5},
+                  {"name": "legacy", "maxSteps": 7},
+                  {"name": "both", "steps": 5, "maxSteps": 7},
+                  {"name": "unlimited"},
+                  {"name": "zero", "steps": 0}
+                ]}
+                """);
+
+        EngineConfig config = config();
+        config.load();
+
+        assertThat(agent(config, "limited").maxSteps()).isEqualTo(5);
+        assertThat(agent(config, "legacy").maxSteps()).isEqualTo(7);
+        assertThat(agent(config, "both").maxSteps()).isEqualTo(5);
+        assertThat(agent(config, "unlimited").maxSteps()).isZero();
+        assertThat(agent(config, "zero").maxSteps()).isZero();
     }
 
     @Test
@@ -149,5 +172,12 @@ class EngineConfigTest {
         config.urlProperty = "https://api.openai.com/v1/chat/completions";
         config.passwordProperty = Optional.empty();
         return config;
+    }
+
+    private static EngineConfig.AgentConfig agent(EngineConfig config, String name) {
+        return config.agents().stream()
+                .filter(agent -> name.equals(agent.name()))
+                .findFirst()
+                .orElseThrow();
     }
 }

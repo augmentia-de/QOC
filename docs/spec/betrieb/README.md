@@ -56,10 +56,13 @@ The base environment needs **one** agent. It is not a catalog but a constant:
 |---|---|---|
 | `id` | `build` | a stable name for client and session |
 | `mode` | `primary` | no selection by a subagent |
-| `steps` | 32 | limits one input; enough for reading, changing, checking |
+| `steps` | absent (no step limit) | no fixed round budget; the turn policy still bounds tool calls, tokens and wall time |
 | `system` | empty | the base prompt applies (see [`13-internal-prompts.md`](../session-engine/13-internal-prompts.md)) |
 | `permissions` | `shell`, `write`, `edit` → `ask`, everything else `allow` | effect immediately visible, permissions answerable |
 | `hidden` | `false` | the client lists it |
+
+`steps` is optional. The base agent leaves it absent, so there is no fixed
+step limit; the turn policy still bounds tool calls, tokens and wall time.
 
 > **Decision:** The base environment defines **no** agent catalog. It sets
 > exactly one agent. The full catalog (L-1) is **decided** (2026-10-22):

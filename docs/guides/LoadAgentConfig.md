@@ -379,7 +379,7 @@ gRPC, and Kafka are only adapters.
     "name": "researcher",
     "system": "...",
     "model": "deepseek-v4.1-flash",
-    "maxSteps": 20,
+    "steps": 20,
     "tools": { "allow": ["read", "websearch", "subagent"], "deny": [] },
     "permissions": [{ "action": "*", "resource": "*", "effect": "allow" }],
     "mcpServers": ["*"]
@@ -468,7 +468,7 @@ If `agentConfig` is set, `runPrompt` uses this definition for:
 
 - system prompt
 - model override
-- `maxSteps`
+- optional `steps` (absent means no step limit)
 - permissions
 - tool snapshot filter
 - MCP scoping
@@ -636,7 +636,7 @@ Kafka is at-least-once. Therefore the gateway must be idempotent:
 - Validate inline agent definitions:
   - allowed tools
   - allowed MCP servers
-  - maximum `maxSteps`
+  - maximum `steps` (if set)
   - no unchecked system prompts for unauthorized clients
 
 ## Risks
@@ -715,7 +715,7 @@ The `definition` corresponds to the known agent definition:
   "name": "researcher",
   "system": "...",
   "model": "deepseek-v4.1-flash",
-  "maxSteps": 20,
+  "steps": 20,
   "tools": { "allow": ["read", "websearch", "subagent"], "deny": [] },
   "permissions": [{ "action": "*", "resource": "*", "effect": "allow" }],
   "mcpServers": ["*"]
