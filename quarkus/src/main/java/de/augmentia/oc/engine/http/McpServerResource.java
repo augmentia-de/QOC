@@ -120,6 +120,10 @@ public class McpServerResource {
         properties.put("structuredOutput", Map.of("type", "object", "description",
                 "Optional JSON schema for structured output"));
         properties.put("maxSteps", Map.of("type", "integer", "description", "Optional step limit"));
+        properties.put("mode", Map.of("type", "string", "enum", List.of("workspace", "ephemeral"),
+                "description", "Execution mode: workspace (persistent) or ephemeral (one-shot, cleaned up)"));
+        properties.put("retain", Map.of("type", "boolean",
+                "description", "Keep an ephemeral session after completion for inspection"));
         schema.put("properties", properties);
         schema.put("required", List.of("prompt"));
 
@@ -174,12 +178,15 @@ public class McpServerResource {
         String sessionMode = stringArg(arguments, "sessionMode", "new");
         Object structuredSchema = arguments.get("structuredOutput");
         Integer maxSteps = intArg(arguments, "maxSteps");
+        String mode = stringArg(arguments, "mode", "workspace");
+        boolean retain = boolArg(arguments, "retain", false);
+        String workspaceSubdir = stringArg(arguments, "workspace", null);
 
         SessionId session;
         if ("reuse".equalsIgnoreCase(sessionMode) && sessionId != null && !sessionId.isBlank()) {
             session = SessionId.parse(sessionId);
         } else {
-            session = engine.createSession(agent, user);
+            session = engine.createSession(agent, user, mode, retain);
         }
 
         Option<Schema> responseSchema = Option.none();
@@ -232,5 +239,12 @@ public class McpServerResource {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private static boolean boolArg(Map<String, Object> args, String key, boolean defaultValue) {
+        Object value = args.get(key);
+        if (value == null) return defaultValue;
+        if (value instanceof Boolean b) return b;
+        return Boolean.parseBoolean(String.valueOf(value));
     }
 }

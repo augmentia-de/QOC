@@ -37,4 +37,12 @@ public sealed interface ToolOutcome {
             return new SessionError.ToolExecutionError("tool_failure", failure.getMessage());
         }
     }
+
+    /** Tool execution paused pending human approval; session is suspended. */
+    record Paused(String approvalId, String approvalUrl) implements ToolOutcome {
+        public Paused {
+            if (approvalId == null || approvalId.isBlank()) throw new IllegalArgumentException("approvalId must not be blank");
+            if (approvalUrl == null) approvalUrl = "";
+        }
+    }
 }

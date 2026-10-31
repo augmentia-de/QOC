@@ -7,20 +7,44 @@ services:
     container_name: qoc-engine
     restart: unless-stopped
     user: "${UID:-1000}:${GID:-1000}"
+    # Reach the host-published PostgreSQL/pgvector port from inside the container.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${QOC_PORT:-8333}:8080"
     volumes:
       - /home/torsten/dev/my-projects/2oc/dws:/data/workspace
       - /home/torsten/dev/my-projects/2oc/qoc/data:/data
+      # Host-visible application log: <repo>/log/qoc.log
+      - ../log:/data/log
       # JVM-specific agent instructions, visible only inside this container.
       - ./AGENTS.jvm.md:/data/workspace/AGENTS.md:ro
       # Reused skill library (read-only, no copies, no drift).
       - /home/torsten/dev/my-projects/AISDLC/.opencode/skills:/data/skills/aisdlc:ro
     env_file:
       - .env
+    networks:
+      - default
+      - keycloak-local
     environment:
+      # Debug logging: console -> docker logs, file -> ../log/qoc.log
+      - QUARKUS_LOG_FILE_ENABLED=true
+      - QUARKUS_LOG_LEVEL=DEBUG
+      - QUARKUS_LOG_CONSOLE_LEVEL=DEBUG
+      - QUARKUS_LOG_FILE_LEVEL=DEBUG
+      - QUARKUS_LOG_FILE_PATH=/data/log/qoc.log
+      # Revert snapshots are disabled: every prompt used to snapshot the whole
+      # workspace into the remote Neon database before the model call.
+      - ENGINE_REVERT_SNAPSHOT=false
+      # 0 = no cumulative token limit for a turn
+      - ENGINE_TURN_MAX_TOKENS=${ENGINE_TURN_MAX_TOKENS:-0}
       # HOME must be writable by the runtime user and should persist.
       # Keeps ~/.opencode/plan (Plan mode) inside the /data volume instead of
       # falling back to the container root or the workspace.
       - HOME=/data/home
+
+networks:
+  keycloak-local:
+    external: true
+    name: keycloak-local_default
 

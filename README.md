@@ -4,6 +4,7 @@
 ![Quarkus](https://img.shields.io/badge/Quarkus-3.40.1.1-blue)
 ![Maven](https://img.shields.io/badge/Build-Maven-red)
 ![Status](https://img.shields.io/badge/Status-M0--M14%20implemented-brightgreen)
+![License](https://img.shields.io/badge/License-MIT-blue)
 
 QOC is a **Java runtime for AI coding agents**. It accepts prompts, assembles
 context, calls models, executes tools, streams results, persists sessions, and
@@ -15,6 +16,16 @@ HTTP/SSE) and runs as a JVM application, a native image, or a container.
 
 The authoritative source of truth is [`docs/spec/`](./docs/spec/README.md), not
 the code.
+
+## Why QOC?
+
+Most agent frameworks stop at the model call. QOC focuses on the operating
+model around it: durable sessions, explicit permissions, idempotent tool calls,
+human approvals, auditability, and a clean separation between the pure Java
+core and its infrastructure adapters.
+
+The goal is simple: make an agent runnable in production, not just impressive
+in a demo.
 
 ---
 
@@ -365,7 +376,13 @@ logs, and plan files.
 
 ---
 
+## Security
+
+Please report vulnerabilities privately. See [`SECURITY.md`](./SECURITY.md)
+for the responsible disclosure process and the security model.
+
 ## License
 
-There is currently **no license file**. A license must be chosen and added as
-`LICENSE` before redistribution or publication.
+MIT License. See [`LICENSE`](./LICENSE).
+
+Copyright (c) 2026 Torsten Schippel.

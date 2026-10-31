@@ -11,13 +11,13 @@ import java.time.Duration;
 public record TurnPolicy(int maxSteps, int maxToolCalls, long maxTokens,
                          Duration maxWallTime) {
 
-    public static final TurnPolicy DEFAULT = new TurnPolicy(10, 64, 200_000,
+    public static final TurnPolicy DEFAULT = new TurnPolicy(10, 64, 0,
             Duration.ofMinutes(30));
 
     public TurnPolicy {
         if (maxSteps < 1) throw new IllegalArgumentException("maxSteps must be >= 1");
         if (maxToolCalls < 1) throw new IllegalArgumentException("maxToolCalls must be >= 1");
-        if (maxTokens < 1) throw new IllegalArgumentException("maxTokens must be >= 1");
+        if (maxTokens < 0) throw new IllegalArgumentException("maxTokens must be >= 0");
         if (maxWallTime == null || maxWallTime.isNegative() || maxWallTime.isZero()) {
             throw new IllegalArgumentException("maxWallTime must be positive");
         }
@@ -27,7 +27,7 @@ public record TurnPolicy(int maxSteps, int maxToolCalls, long maxTokens,
 
     public Decision decide(int steps, int toolCalls, TokenCount tokens, Duration elapsed) {
         if (steps >= maxSteps || toolCalls >= maxToolCalls
-                || (tokens != null && tokens.total() >= maxTokens)
+                || (maxTokens > 0 && tokens != null && tokens.total() >= maxTokens)
                 || (elapsed != null && elapsed.compareTo(maxWallTime) >= 0)) {
             return Decision.FAIL_TURN;
         }

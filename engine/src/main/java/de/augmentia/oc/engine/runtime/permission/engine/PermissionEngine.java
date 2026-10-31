@@ -57,6 +57,42 @@ public final class PermissionEngine {
     }
 
     /**
+     * Asynchronous variant: on {@code ask}, persists the approval, notifies the
+     * human and throws {@link de.augmentia.oc.engine.core.error.PausedException}
+     * instead of blocking. Deny is always decided before an approval is
+     * requested.
+     */
+    public void assertAllowedAsync(PermissionCheck check) {
+        PermissionDecision decision = decide(check);
+        switch (decision) {
+            case PermissionDecision.Allowed allowed -> {
+                LOG.fine("permission allowed: " + check.request().action());
+            }
+            case PermissionDecision.Denied denied -> {
+                LOG.fine("permission denied: " + check.request().action() + " reason=" + denied.reason());
+                throw new PermissionDenied(check.request(), denied.reason());
+            }
+            case PermissionDecision.Ask ignored -> {
+                PermissionRequest request = check.request();
+                if (approvalSource.isEmpty()) {
+                    throw new Defect("no approval source configured for an ask decision");
+                }
+                LOG.fine("permission ask (async): " + request.action());
+                ApprovalResult answer = approvalSource.orElseThrow()
+                        .requestAsync(request.id(), request.sessionId(), request.action(),
+                                context(check), null);
+                if (answer instanceof ApprovalResult.Paused paused) {
+                    throw new de.augmentia.oc.engine.core.error.PausedException(
+                            paused.approvalId(), paused.approvalUrl());
+                }
+                if (answer instanceof ApprovalResult.Denied denied) {
+                    throw rejection(request, denied.feedback());
+                }
+            }
+        }
+    }
+
+    /**
      * Checks and, on {@code ask}, consults the human approval source. Deny is
      * always decided before an approval is requested.
      */
@@ -84,6 +120,8 @@ public final class PermissionEngine {
                     case ApprovalResult.Approved approved -> {
                     }
                     case ApprovalResult.Denied denied -> throw rejection(request, denied.feedback());
+                    case ApprovalResult.Paused paused -> throw new de.augmentia.oc.engine.core.error.PausedException(
+                            paused.approvalId(), paused.approvalUrl());
                 }
             }
         }
@@ -157,6 +195,7 @@ public final class PermissionEngine {
     }
 
     private static String context(PermissionCheck check) {
-        return check.request().action() + ": " + String.join(", ", check.request().resources());
+        String raw = check.request().action() + ": " + String.join(", ", check.request().resources());
+        return raw.length() > 750 ? raw.substring(0, 750) + "…" : raw;
     }
 }

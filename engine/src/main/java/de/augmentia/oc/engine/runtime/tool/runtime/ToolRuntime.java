@@ -18,6 +18,7 @@ import de.augmentia.oc.engine.core.json.Result;
 import de.augmentia.oc.engine.core.model.SessionError;
 import de.augmentia.oc.engine.core.model.ToolContent;
 import de.augmentia.oc.engine.core.port.store.ToolOutputStore;
+import de.augmentia.oc.engine.core.port.store.ToolResultCache;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -36,9 +37,15 @@ public final class ToolRuntime {
     private final PermissionGate permission;
     private final Hooks hooks;
     private final ToolOutputStore outputStore;
+    private final ToolResultCache resultCache;
 
     public ToolRuntime(ToolSnapshot snapshot, ToolAuthorizer authorizer, PermissionGate permission,
                        Hooks hooks, ToolOutputStore outputStore) {
+        this(snapshot, authorizer, permission, hooks, outputStore, null);
+    }
+
+    public ToolRuntime(ToolSnapshot snapshot, ToolAuthorizer authorizer, PermissionGate permission,
+                       Hooks hooks, ToolOutputStore outputStore, ToolResultCache resultCache) {
         if (snapshot == null || authorizer == null || permission == null || hooks == null
                 || outputStore == null) {
             throw new IllegalArgumentException("runtime dependencies must not be null");
@@ -48,6 +55,7 @@ public final class ToolRuntime {
         this.permission = permission;
         this.hooks = hooks;
         this.outputStore = outputStore;
+        this.resultCache = resultCache;
     }
 
     public ToolOutcome execute(ToolCall rawCall, ToolContext context) {
@@ -61,6 +69,18 @@ public final class ToolRuntime {
             LOG.fine("tool execute: " + call.name());
             ToolDefinition definition = snapshot.require(call.name());
             JsonValue decodedInput = decode(call.input(), definition.inputSchema(), "input");
+
+            // Idempotency: return cached result if present.
+            if (resultCache != null && context.idempotencyKey() != null) {
+                java.util.Optional<JsonValue> cached = resultCache.find(context.idempotencyKey());
+                if (cached.isPresent()) {
+                    ToolOutcome decoded = ToolOutcomeJson.decode(cached.get());
+                    if (decoded != null) {
+                        LOG.fine("tool cache hit: " + call.name());
+                        return decoded;
+                    }
+                }
+            }
 
             PermissionRequest request = authorizer.request(context, definition, call);
             permission.assertAllowed(request);
@@ -88,13 +108,30 @@ public final class ToolRuntime {
                 hooked = result;
             }
             ToolResult normalized = normalize(hooked);
-            return new ToolOutcome.Ok(bound(normalized, call, context));
+            ToolOutcome.Ok finalOutcome = new ToolOutcome.Ok(bound(normalized, call, context));
+            if (resultCache != null && context.idempotencyKey() != null) {
+                try { resultCache.store(context.idempotencyKey(), context.sessionId().value(),
+                        call.name().value(), ToolOutcomeJson.encode(finalOutcome)); } catch (RuntimeException ignored) {}
+            }
+            return finalOutcome;
         } catch (PermissionDenied denied) {
-            return keyed(new ToolOutcome.Failed(new SessionError.ToolExecutionError("permission_denied",
+            ToolOutcome.Failed fo = keyed(new ToolOutcome.Failed(new SessionError.ToolExecutionError("permission_denied",
                     denied.getMessage())), context);
+            if (resultCache != null && context.idempotencyKey() != null) {
+                try { resultCache.store(context.idempotencyKey(), context.sessionId().value(),
+                        rawCall.name().value(), ToolOutcomeJson.encode(fo)); } catch (RuntimeException ignored) {}
+            }
+            return fo;
+        } catch (de.augmentia.oc.engine.core.error.PausedException paused) {
+            return new ToolOutcome.Paused(paused.approvalId(), paused.approvalUrl());
         } catch (ToolFailure failure) {
-            return keyed(new ToolOutcome.Failed(new SessionError.ToolExecutionError("tool_failure",
+            ToolOutcome.Failed fo = keyed(new ToolOutcome.Failed(new SessionError.ToolExecutionError("tool_failure",
                     failure.getMessage())), context);
+            if (resultCache != null && context.idempotencyKey() != null) {
+                try { resultCache.store(context.idempotencyKey(), context.sessionId().value(),
+                        rawCall.name().value(), ToolOutcomeJson.encode(fo)); } catch (RuntimeException ignored) {}
+            }
+            return fo;
         }
     }
 

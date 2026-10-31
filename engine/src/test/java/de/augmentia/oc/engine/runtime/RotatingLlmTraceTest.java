@@ -1,6 +1,6 @@
 package de.augmentia.oc.engine.runtime;
 
-import de.augmentia.oc.engine.adapter.log.RotatingLlmTrace;
+import de.augmentia.oc.engine.adapter.logging.RotatingLlmTrace;
 import de.augmentia.oc.engine.core.contract.provider.ModelEvent;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.model.CallId;

@@ -26,8 +26,18 @@ import java.util.Map;
 @Produces(MediaType.APPLICATION_JSON)
 public class HttpApi {
 
+    private static final int MAX_FILE_VIEW_CHARS = 20_000;
+    private static final int MAX_EDIT_CHARS = 10_000;
+    private static final java.util.Set<String> TEXT_EDIT_EXTENSIONS = java.util.Set.of(
+            "txt", "md", "json", "yaml", "yml", "xml", "html", "css", "js", "ts",
+            "java", "py", "sh", "bash", "properties", "conf", "cfg", "ini", "toml",
+            "csv", "log", "sql", "kt", "go", "rs", "c", "cpp", "h", "hpp");
+
     @Inject
     Engine engine;
+
+    @Inject
+    DurableApprovalSource durableApprovalSource;
 
     @Inject
     EventBus eventBus;
@@ -85,7 +95,10 @@ public class HttpApi {
                 principalUser = principal.id();
             }
         }
-        SessionId id = engine.createSession(request == null ? null : request.agent(), principalUser);
+        String mode = request == null ? null : request.mode();
+        boolean retain = request != null && Boolean.TRUE.equals(request.retain());
+        SessionId id = engine.createSession(request == null ? null : request.agent(), principalUser,
+                mode == null ? "workspace" : mode, retain);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("id", id.value());
         engine.session(id).ifPresent(info -> body.put("data", dto(info)));
@@ -158,6 +171,54 @@ public class HttpApi {
             return Response.ok(dto(info.orElseThrow())).build();
         } catch (IllegalArgumentException e) {
             return badRequest("invalid session id");
+        }
+    }
+
+    @POST
+    @Path("/run")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response run(RunRequest request,
+                        @HeaderParam("X-QOC-User") String user) {
+        if (request == null || request.prompt() == null || request.prompt().isBlank()) {
+            return badRequest("prompt must not be blank");
+        }
+        String mode = request.mode() == null || request.mode().isBlank() ? "ephemeral" : request.mode();
+        boolean retain = Boolean.TRUE.equals(request.retain());
+        SessionId id = engine.createSession(request.agent(), user == null ? "anonymous" : user, mode, retain);
+        try {
+            Engine.PromptResult result = engine.prompt(id, request.prompt(), Option.none());
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("sessionId", id.value());
+            body.put("text", result.text());
+            body.put("finish", result.finish());
+            body.put("inputTokens", result.inputTokens());
+            body.put("outputTokens", result.outputTokens());
+            return Response.ok(body).build();
+        } catch (RuntimeException e) {
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(Map.of("_tag", "RunFailed", "message", e.getMessage())).build();
+        }
+    }
+
+    @POST
+    @Path("/session/{id}/resume")
+    public Response resume(@PathParam("id") String id) {
+        try {
+            Engine.PromptResult result = engine.resume(SessionId.parse(id));
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("text", result.text());
+            body.put("finish", result.finish());
+            body.put("inputTokens", result.inputTokens());
+            body.put("outputTokens", result.outputTokens());
+            return Response.ok(body).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        } catch (IllegalStateException e) {
+            return Response.status(Response.Status.CONFLICT)
+                    .entity(Map.of("_tag", "Conflict", "message", e.getMessage())).build();
+        } catch (RuntimeException e) {
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(Map.of("_tag", "ResumeFailed", "message", e.getMessage())).build();
         }
     }
 
@@ -507,8 +568,14 @@ public class HttpApi {
     @Path("/file")
     public Response file(@QueryParam("path") String path) {
         try {
-            String content = engine.readFile(path);
-            return Response.ok(Map.of("data", Map.of("path", path, "content", content))).build();
+            String full = engine.readFile(path);
+            boolean truncated = full.length() > MAX_FILE_VIEW_CHARS;
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("path", path);
+            data.put("content", truncated ? full.substring(0, MAX_FILE_VIEW_CHARS) : full);
+            data.put("truncated", truncated);
+            data.put("totalChars", full.length());
+            return Response.ok(Map.of("data", data)).build();
         } catch (RuntimeException e) {
             return badRequest(e.getMessage());
         }
@@ -654,6 +721,49 @@ public class HttpApi {
     }
 
     @GET
+    @Path("/approval/{token}")
+    public Response getApproval(@PathParam("token") String token) {
+        if (token == null || token.isBlank()) return badRequest("token required");
+        String requestId = durableApprovalSource == null ? null : durableApprovalSource.findRequestIdByToken(
+                DurableApprovalSource.sha256(token));
+        if (requestId == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(Map.of("_tag", "NotFound", "message", "approval not found or expired")).build();
+        }
+        return Response.ok(Map.of("requestId", requestId, "token", token)).build();
+    }
+
+    @POST
+    @Path("/approval/{token}/reply")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response replyApproval(@PathParam("token") String token, ApprovalReplyRequest request) {
+        if (token == null || token.isBlank()) return badRequest("token required");
+        String decision = request == null || request.decision() == null ? "deny" : request.decision();
+        String feedback = request == null ? null : request.feedback();
+        boolean ok = durableApprovalSource != null
+                && durableApprovalSource.resolve(token, decision, feedback);
+        if (!ok) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(Map.of("_tag", "NotFound", "message", "approval not found or already decided")).build();
+        }
+        // If approved, wake the paused session (best-effort, async).
+        if ("approve".equalsIgnoreCase(decision) && durableApprovalSource != null) {
+            String sessionId = durableApprovalSource.sessionIdForToken(token);
+            if (sessionId != null && !sessionId.isBlank()) {
+                try {
+                    SessionId sid = SessionId.parse(sessionId);
+                    new Thread(() -> {
+                        try { engine.resume(sid); } catch (RuntimeException e) {
+                            // logged
+                        }
+                    }, "resume-" + sessionId).start();
+                } catch (IllegalArgumentException ignored) {}
+            }
+        }
+        return Response.ok(Map.of("status", "decided", "decision", decision)).build();
+    }
+
+    @GET
     @Path("/health")
     public Response health() {
         return Response.ok(engine.health()).build();
@@ -666,8 +776,21 @@ public class HttpApi {
         if (body == null || body.get("path") == null || body.get("path").isBlank()) {
             return badRequest("path must not be blank");
         }
+        String path = body.get("path");
+        String content = body.get("content") == null ? "" : body.get("content");
+        if (content.length() > MAX_EDIT_CHARS) {
+            return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
+                    .entity(Map.of("_tag", "TooLarge",
+                            "message", "content exceeds " + MAX_EDIT_CHARS + " characters")).build();
+        }
+        String lower = path.toLowerCase();
+        int dot = lower.lastIndexOf('.');
+        String ext = dot >= 0 ? lower.substring(dot + 1) : "";
+        if (!ext.isBlank() && !TEXT_EDIT_EXTENSIONS.contains(ext)) {
+            return badRequest("file type not editable: " + ext);
+        }
         try {
-            engine.createFile(body.get("path"), body.get("content"));
+            engine.createFile(path, content);
             return Response.ok(Map.of("ok", true)).build();
         } catch (IllegalArgumentException e) {
             return badRequest(e.getMessage());
@@ -787,6 +910,7 @@ public class HttpApi {
             case Engine.TurnOutcome.Failed ignored -> "FAILED";
             case Engine.TurnOutcome.Terminated ignored -> "TERMINATED";
             case Engine.TurnOutcome.Cancelled ignored -> "CANCELLED";
+            case Engine.TurnOutcome.Paused ignored -> "PAUSED";
         };
     }
 
@@ -843,7 +967,9 @@ public class HttpApi {
         }
     }
 
-    public record CreateSessionRequest(String agent) {}
+    public record CreateSessionRequest(String agent, String mode, Boolean retain) {}
+    public record RunRequest(String agent, String prompt, String mode, Boolean retain) {}
+    public record ApprovalReplyRequest(String decision, String feedback) {}
 
     public record SwitchAgentRequest(String agent) {}
 

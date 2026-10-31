@@ -1,5 +1,6 @@
 package de.augmentia.oc.engine.adapter.sql;
 
+import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.model.*;
 import de.augmentia.oc.engine.core.port.store.CredentialStore;
 import de.augmentia.oc.engine.core.port.world.FileSystem;
@@ -259,6 +260,66 @@ class SqlAdaptersTest {
         assertThat(snapshots.diff(before, after))
                 .extracting(FileDiff::kind)
                 .contains(FileDiff.Kind.DELETED);
+    }
+
+
+    @Test
+    void snapshotsCaptureMultipleFilesInOneBatch() {
+        FakeFileSystem fileSystem = new FakeFileSystem();
+        SqlSnapshots snapshots = new SqlSnapshots(dataSource, fileSystem);
+        java.util.List<Path> files = new java.util.ArrayList<>();
+        for (int i = 0; i < 25; i++) {
+            Path file = Path.of("/work/batch-" + i + ".txt");
+            fileSystem.putText(file, "one-" + i);
+            files.add(file);
+        }
+
+        SnapshotId before = snapshots.capture(files);
+        for (Path file : files) fileSystem.putText(file, "two");
+        SnapshotId after = snapshots.capture(files);
+
+        assertThat(snapshots.diff(before, after)).hasSize(25);
+        snapshots.restore(before, files);
+        for (int i = 0; i < files.size(); i++) {
+            assertThat(fileSystem.readText(files.get(i))).isEqualTo("one-" + i);
+        }
+    }
+
+    @Test
+    void toolResultCacheRoundTripsAndDeletes() {
+        SqlToolResultCache cache = new SqlToolResultCache(dataSource);
+        IdempotencyKey key = new IdempotencyKey("idem_sql_test");
+        JsonValue value = JsonValue.of(Map.of(
+                "type", JsonValue.of("ok"),
+                "texts", JsonValue.of(List.of(JsonValue.of("hello")))));
+
+        cache.store(key, "ses_1", "email_send", value);
+        assertThat(cache.find(key)).isPresent();
+        cache.deleteBySession("ses_1");
+        assertThat(cache.find(key)).isEmpty();
+    }
+
+    @Test
+    void sessionWorkspaceStoreRoundTrips() {
+        SqlSessions sessions = new SqlSessions(dataSource);
+        SessionInfo info = sessionInfo();
+        sessions.put(info);
+
+        sessions.put(info.id(), "ephemeral", "active", "/tmp/session", "inst-1", false);
+        assertThat(sessions.executionMode(info.id())).isEqualTo("ephemeral");
+        assertThat(sessions.state(info.id())).isEqualTo("active");
+        assertThat(sessions.workspaceRoot(info.id())).isEqualTo("/tmp/session");
+        assertThat(sessions.instanceId(info.id())).isEqualTo("inst-1");
+        assertThat(sessions.retain(info.id())).isFalse();
+
+        assertThat(sessions.ephemeralOrphans("other")).contains(info.id());
+        sessions.setPausedPrompt(info.id(), "hello");
+        assertThat(sessions.pausedPrompt(info.id())).isEqualTo("hello");
+        sessions.updateState(info.id(), "suspended");
+        assertThat(sessions.state(info.id())).isEqualTo("suspended");
+
+        sessions.put(info.id(), "ephemeral", "active", "/tmp/session", "inst-1", true);
+        assertThat(sessions.retain(info.id())).isTrue();
     }
 
     private static SessionInfo sessionInfo() {

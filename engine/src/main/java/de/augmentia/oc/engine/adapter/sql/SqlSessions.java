@@ -12,11 +12,12 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
 /** PostgreSQL session read model and inbox. */
-public final class SqlSessions implements SessionStore {
+public final class SqlSessions implements SessionStore, de.augmentia.oc.engine.core.port.store.SessionWorkspaceStore {
 
     private final DataSource dataSource;
 
@@ -92,6 +93,114 @@ public final class SqlSessions implements SessionStore {
             return null;
         });
         return true;
+    }
+
+    @Override
+    public void put(SessionId id, String executionMode, String state, String workspaceRoot, String instanceId, boolean retain) {
+        Sql.transaction(dataSource, connection -> {
+            Sql.execute(connection,
+                    "update session set execution_mode = ?, state = ?, workspace_root = ?, " +
+                            "instance_id = ?, retain = ? where id = ?",
+                    executionMode == null ? "workspace" : executionMode,
+                    state == null ? "active" : state, workspaceRoot, instanceId, retain, id.value());
+            return null;
+        });
+    }
+
+    @Override
+    public boolean retain(SessionId id) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "select retain from session where id = ?")) {
+            statement.setString(1, id.value());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) return false;
+                return resultSet.getBoolean(1);
+            }
+        } catch (SQLException e) {
+            throw new StoreFailure("cannot read retain", e);
+        }
+    }
+
+    @Override
+    public String executionMode(SessionId id) {
+        return scalar(id, "execution_mode", "workspace");
+    }
+
+    @Override
+    public String state(SessionId id) {
+        return scalar(id, "state", "active");
+    }
+
+    @Override
+    public String workspaceRoot(SessionId id) {
+        return scalar(id, "workspace_root", null);
+    }
+
+    @Override
+    public void setPausedPrompt(SessionId id, String prompt) {
+        Sql.transaction(dataSource, connection -> {
+            Sql.execute(connection, "update session set paused_prompt = ? where id = ?", prompt, id.value());
+            return null;
+        });
+    }
+
+    @Override
+    public String pausedPrompt(SessionId id) {
+        return scalar(id, "paused_prompt", null);
+    }
+
+    @Override
+    public String instanceId(SessionId id) {
+        return scalar(id, "instance_id", null);
+    }
+
+    @Override
+    public void updateState(SessionId id, String state) {
+        Sql.transaction(dataSource, connection -> {
+            Sql.execute(connection, "update session set state = ? where id = ?",
+                    state == null ? "active" : state, id.value());
+            return null;
+        });
+    }
+
+    @Override
+    public java.util.List<SessionId> ephemeralOrphans(String instanceId) {
+        java.util.List<SessionId> result = new java.util.ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "select id from session where execution_mode = 'ephemeral' " +
+                             "and state in ('active','cleanup_pending') " +
+                             "and (instance_id is null or instance_id <> ?)")) {
+            statement.setString(1, instanceId == null ? "" : instanceId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) result.add(SessionId.parse(resultSet.getString("id")));
+            }
+        } catch (SQLException e) {
+            throw new StoreFailure("cannot list ephemeral sessions", e);
+        }
+        return java.util.List.copyOf(result);
+    }
+
+    @Override
+    public void deleteWorkspace(SessionId id) {
+        // The SessionStore.delete already removes the session row; this is a
+        // no-op hook for the SessionWorkspaceStore contract.
+    }
+
+    private String scalar(SessionId id, String column, String fallback) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "select " + column + " from session where id = ?")) {
+            statement.setString(1, id.value());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) return fallback;
+                String v = resultSet.getString(1);
+                return v == null ? fallback : v;
+            }
+        } catch (SQLException e) {
+            throw new StoreFailure("cannot read " + column, e);
+        }
     }
 
     public List<SessionInfo> list() {

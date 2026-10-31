@@ -24,7 +24,9 @@
 
 ## Top documents
 
-1. [`README.md`](./README.md) – entry point and documentation roles
+1. [`OC-plus.md`](./OC-plus.md) – Erweiterungen gegenüber OpenCode
+2. [`Enterprise.md`](./Enterprise.md) – Enterprise-Readiness (vier Säulen)
+3. [`README.md`](./README.md) – entry point and documentation roles
 2. [`STATUS.md`](./STATUS.md) – implemented / partial / spec-only
 3. [`ROADMAP.md`](./ROADMAP.md) – M0–M14
 4. [`spec/README.md`](./spec/README.md) – language-neutral specs

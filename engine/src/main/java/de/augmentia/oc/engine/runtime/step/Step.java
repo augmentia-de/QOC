@@ -150,6 +150,9 @@ public final class Step {
                         if (cause instanceof de.augmentia.oc.engine.core.error.Aborted ab) {
                             throw ab;
                         }
+                        if (cause instanceof de.augmentia.oc.engine.core.error.PausedException pe) {
+                            throw pe;
+                        }
                         ModelEvent.ToolCallRequested call = toolCalls.get(i);
                         outcomes.set(i, new StepResult.ToolCallOutcome(
                                 new ToolCall(call.callId(), call.name(), call.input()),
@@ -162,11 +165,20 @@ public final class Step {
                 return new StepResult.Failed(new FailureKind.InvalidOutput(
                         de.augmentia.oc.engine.core.contract.provider.InvalidOutputClassification.INCOMPLETE_STREAM),
                         "tool execution interrupted");
+            } catch (de.augmentia.oc.engine.core.error.PausedException pe) {
+                executor.shutdown();
+                return new StepResult.Paused(pe.approvalId(), pe.approvalUrl());
             } finally {
                 executor.shutdown();
             }
         }
 
+        // Paused (async approval): stop the turn and surface the pending approval.
+        for (StepResult.ToolCallOutcome outcome : outcomes) {
+            if (outcome != null && outcome.outcome() instanceof ToolOutcome.Paused paused) {
+                return new StepResult.Paused(paused.approvalId(), paused.approvalUrl());
+            }
+        }
         LOG.fine("step run finish tools=" + outcomes.size());
         return new StepResult.Finished(finish, usage, events, outcomes);
     }

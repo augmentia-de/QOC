@@ -9,6 +9,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Host-visible, writable log directory for the compose mount.
+mkdir -p "$ROOT/log"
+
 ENGINE_DB_KIND=postgresql ENGINE_DB_DRIVER=org.postgresql.Driver \
     mvn -q -pl quarkus -am package -DskipTests -Djacoco.skip=true
 

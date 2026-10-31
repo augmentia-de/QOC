@@ -216,6 +216,7 @@ class EngineConfigTest {
         config.modelProperty = "gpt-4o-mini";
         config.urlProperty = "https://api.openai.com/v1/chat/completions";
         config.passwordProperty = Optional.empty();
+        config.workspaceSettingsEnabledProperty = true;
         return config;
     }
 

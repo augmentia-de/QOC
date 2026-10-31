@@ -33,6 +33,22 @@ class TurnPolicyTest {
     }
 
     @Test
+    void zeroTokenBudgetMeansUnlimited() {
+        TurnPolicy policy = new TurnPolicy(10, 10, 0, Duration.ofMinutes(5));
+
+        assertThat(policy.decide(1, 1, TokenCount.of(500_000, 500_000), Duration.ofSeconds(1)))
+                .isEqualTo(TurnPolicy.Decision.CONTINUE);
+        assertThat(TurnPolicy.DEFAULT.maxTokens()).isZero();
+    }
+
+    @Test
+    void rejectsNegativeTokenBudget() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> new TurnPolicy(10, 10, -1, Duration.ofMinutes(5)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void failsTheTurnWhenAHardBudgetIsExceeded() {
         TurnPolicy policy = new TurnPolicy(10, 10, 1000, Duration.ofMinutes(5));
         assertThat(policy.decide(10, 10, TokenCount.of(100, 100), Duration.ofSeconds(1)))

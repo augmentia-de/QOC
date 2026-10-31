@@ -36,6 +36,18 @@ public class EngineConfig {
     String workspaceProperty;
 
     @Inject
+    @ConfigProperty(name = "engine.settings.global")
+    java.util.Optional<String> globalSettingsFileProperty;
+
+    @Inject
+    @ConfigProperty(name = "engine.session.temp-dir", defaultValue = "sessions")
+    String sessionTempDirProperty;
+
+    @Inject
+    @ConfigProperty(name = "engine.settings.workspace-enabled", defaultValue = "true")
+    boolean workspaceSettingsEnabledProperty;
+
+    @Inject
     @ConfigProperty(name = "engine.model.provider", defaultValue = "openai")
     String providerProperty;
 
@@ -55,6 +67,8 @@ public class EngineConfig {
     private String provider;
     private String model;
     private String workspace;
+    private String sessionTempDir;
+    private boolean workspaceSettingsEnabled = true;
     private String url;
     private String password;
     private List<AgentConfig> agents;
@@ -80,6 +94,8 @@ public class EngineConfig {
         agentSkills = new LinkedHashMap<>();
         webhookConfig = WebhookConfig.disabled();
         entries.clear();        workspace = workspaceProperty;
+        sessionTempDir = sessionTempDirProperty;
+        workspaceSettingsEnabled = workspaceSettingsEnabledProperty;
         provider = providerProperty;
         model = modelProperty;
         url = urlProperty;
@@ -95,11 +111,27 @@ public class EngineConfig {
         agentSkills = new LinkedHashMap<>();
 
         Map<String, JsonValue> merged = new LinkedHashMap<>();
+        // Security: agents and permissions come ONLY from the global (user-level)
+        // settings.json, never from the project/workspace settings.json. This
+        // prevents a workspace owner from defining arbitrary agents or rights.
         merge(merged, read(globalFile()));
         if (merged.get("workspace") instanceof JsonValue.Str globalWorkspace) {
             workspace = globalWorkspace.value();
         }
-        merge(merged, read(projectFile()));
+        // Project/workspace settings are optional and can be disabled entirely
+        // via engine.settings.workspace-enabled=false, so that only the
+        // user-level (global) settings.json defines agents and permissions.
+        if (workspaceSettingsEnabled) {
+            // Project/workspace settings override non-security keys (workspace,
+            // skills, mcp, guardrails, model, provider, ...) field by field.
+            // Agents and permissions are still allowed from the project file for
+            // backward compatibility; set engine.settings.workspace-enabled=false
+            // to disable project-level settings entirely (agents/permissions then
+            // come only from the global settings.json).
+            merge(merged, read(projectFile()));
+        } else {
+            LOG.info("workspace settings disabled: settings/agents/permissions come only from the global settings.json");
+        }
         merged.keySet().stream().filter(key -> !KNOWN.contains(key))
                 .forEach(key -> LOG.warning("unknown settings.json key: " + key));
 
@@ -194,6 +226,8 @@ public class EngineConfig {
     public String provider() { return provider; }
     public String model() { return model; }
     public String workspace() { return workspace; }
+    public String sessionTempDir() { return sessionTempDir == null || sessionTempDir.isBlank() ? "sessions" : sessionTempDir; }
+    public boolean workspaceSettingsEnabled() { return workspaceSettingsEnabled; }
     public String url() { return url; }
     public String password() { return password == null ? "" : password; }
     public List<AgentConfig> agents() { return List.copyOf(agents); }
@@ -393,6 +427,10 @@ public class EngineConfig {
     }
 
     private Path globalFile() {
+        if (globalSettingsFileProperty != null && globalSettingsFileProperty.isPresent()
+                && !globalSettingsFileProperty.get().isBlank()) {
+            return Path.of(globalSettingsFileProperty.get());
+        }
         String home = System.getProperty("user.home", ".");
         return Path.of(home, ".config", "opencode", "settings.json");
     }

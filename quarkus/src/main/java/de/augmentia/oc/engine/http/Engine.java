@@ -57,7 +57,10 @@ import de.augmentia.oc.engine.runtime.tool.subagent.SubagentTool;
 import de.augmentia.oc.engine.runtime.tool.subagent.TaskTool;
 import de.augmentia.oc.engine.runtime.tool.web.FirecrawlTool;
 import de.augmentia.oc.engine.runtime.tool.web.WebFetchTool;
+import de.augmentia.oc.engine.runtime.tool.email.EmailTool;
+import de.augmentia.oc.engine.runtime.tool.email.EmailLimits;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
+import de.augmentia.oc.engine.runtime.tool.agent.AgentCreateTool;
 import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
 import de.augmentia.oc.engine.runtime.permission.engine.PermissionEngine;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpInstructions;
@@ -164,6 +167,90 @@ public class Engine {
     String firecrawlEndpoint;
 
     @Inject
+    @ConfigProperty(name = "engine.email.enabled", defaultValue = "true")
+    boolean emailEnabled;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.read-enabled", defaultValue = "true")
+    boolean emailReadEnabled;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.attachments-enabled", defaultValue = "false")
+    boolean emailAttachmentsEnabled;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.allowed-recipients")
+    java.util.Optional<String> emailAllowedRecipients;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.max-recipients", defaultValue = "10")
+    int emailMaxRecipients;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.max-attachments", defaultValue = "5")
+    int emailMaxAttachments;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.max-attachment-bytes", defaultValue = "10485760")
+    long emailMaxAttachmentBytes;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.max-body-chars", defaultValue = "50000")
+    int emailMaxBodyChars;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.max-subject-chars", defaultValue = "200")
+    int emailMaxSubjectChars;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.max-per-hour", defaultValue = "20")
+    int emailMaxPerHour;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.imap-host", defaultValue = "")
+    java.util.Optional<String> emailImapHost;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.imap-port", defaultValue = "993")
+    int emailImapPort;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.imap-ssl", defaultValue = "true")
+    boolean emailImapSsl;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.imap-starttls", defaultValue = "true")
+    boolean emailImapStarttls;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.imap-user", defaultValue = "")
+    java.util.Optional<String> emailImapUser;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.imap-password", defaultValue = "")
+    java.util.Optional<String> emailImapPassword;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.smtp-host", defaultValue = "")
+    java.util.Optional<String> emailSmtpHost;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.smtp-port", defaultValue = "587")
+    int emailSmtpPort;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.smtp-starttls", defaultValue = "true")
+    boolean emailSmtpStarttls;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.smtp-user", defaultValue = "")
+    java.util.Optional<String> emailSmtpUser;
+
+    @Inject
+    @ConfigProperty(name = "engine.email.smtp-password", defaultValue = "")
+    java.util.Optional<String> emailSmtpPassword;
+
+    @Inject
     @ConfigProperty(name = "engine.session.retention-days", defaultValue = "14")
     long sessionRetentionDays;
 
@@ -177,6 +264,13 @@ public class Engine {
 
     @Inject
     WebApprovalSource approvalSource;
+
+    @Inject
+    DurableApprovalSource durableApprovalSource;
+
+    @Inject
+    @ConfigProperty(name = "engine.approval.async-enabled", defaultValue = "false")
+    boolean asyncApprovalEnabled;
 
     @Inject
     WebQuestionSource questionSource;
@@ -199,6 +293,10 @@ public class Engine {
     private PermissionGate permissionGate;
     private ToolOutputStore toolOutput;
     private ToolRuntime toolRuntime;
+    private de.augmentia.oc.engine.core.port.store.SessionWorkspaceStore sessionWorkspaces;
+    private de.augmentia.oc.engine.core.port.store.ToolResultCache toolResultCache;
+    private String instanceId;
+    private final java.util.Map<SessionId, String> pausedPrompts = new java.util.concurrent.ConcurrentHashMap<>();
     @Inject
     private Hooks toolHooks = noopHooks();
     @Inject
@@ -234,6 +332,10 @@ public class Engine {
     @ConfigProperty(name = "engine.turn.max.tool-calls", defaultValue = "64")
     int maxTurnToolCalls;
 
+    /** Cumulative turn token budget; 0 disables the limit. */
+    @ConfigProperty(name = "engine.turn.max.tokens", defaultValue = "0")
+    long maxTurnTokens;
+
     @ConfigProperty(name = "engine.turn.max.wall-minutes", defaultValue = "30")
     long maxTurnWallMinutes;
 
@@ -247,6 +349,11 @@ public class Engine {
         journal = sqlite ? new SqliteJournal(dataSource, clock) : new SqlJournal(dataSource, clock);
         conversation = sqlite ? new SqliteConversation(dataSource) : new SqlConversation(dataSource);
         sessions = sqlite ? new SqliteSessions(dataSource) : new SqlSessions(dataSource);
+        sessionWorkspaces = sessions instanceof de.augmentia.oc.engine.core.port.store.SessionWorkspaceStore
+                ? (de.augmentia.oc.engine.core.port.store.SessionWorkspaceStore) sessions : null;
+        toolResultCache = sqlite ? new de.augmentia.oc.engine.adapter.sqlite.SqliteToolResultCache(dataSource)
+                : new de.augmentia.oc.engine.adapter.sql.SqlToolResultCache(dataSource);
+        instanceId = java.util.UUID.randomUUID().toString();
         ClaimStore claims = sqlite ? new SqliteClaims(dataSource) : new SqlClaims(dataSource);
         ApprovalStore approvals = sqlite ? new SqliteApprovals(dataSource) : new SqlApprovals(dataSource);
         instructions = sqlite ? new SqliteInstructions(dataSource) : new SqlInstructions(dataSource);
@@ -277,8 +384,11 @@ public class Engine {
         sessionRetention = new SessionRetention(sessions, journal, clock, sessionRetentionDays);
         ApprovalStore permissionApprovals = sqlite ? new SqliteApprovals(dataSource) : new SqlApprovals(dataSource);
         CredentialStore credentialStore = sqlite ? new SqliteCredentials(dataSource) : new SqlCredentials(dataSource);
+        de.augmentia.oc.engine.core.port.human.ApprovalSource effectiveApproval =
+                asyncApprovalEnabled && durableApprovalSource != null
+                        ? durableApprovalSource : approvalSource;
         permissionEngine = new PermissionEngine(Option.some(permissionApprovals),
-                Option.some(approvalSource), Option.some((PolicySource) () -> List.of()), Option.none());
+                Option.some(effectiveApproval), Option.some((PolicySource) () -> List.of()), Option.none());
         if (approvalSource != null) {
             int orphaned = approvalSource.recoverOrphans();
             if (orphaned > 0) {
@@ -318,7 +428,12 @@ public class Engine {
                     .setAttribute("action", request.action())
                     .startSpan();
             try (Scope pscope = pspan.makeCurrent()) {
-            permissionEngine.assertAllowed(new PermissionCheck(request, agent, agentRules, sessionRules, List.of(), List.of()));
+            PermissionCheck check = new PermissionCheck(request, agent, agentRules, sessionRules, List.of(), List.of());
+            if (asyncApprovalEnabled) {
+                permissionEngine.assertAllowedAsync(check);
+            } else {
+                permissionEngine.assertAllowed(check);
+            }
             pspan.setAttribute("result", "checked");
             pspan.end();
             }
@@ -327,6 +442,7 @@ public class Engine {
         registry.register(ReadTool.definition(fs, access, permissionGate, toolOutput));
         registry.register(WriteTool.definition(fs, access, permissionGate));
         registry.register(EditTool.definition(fs, access, permissionGate));
+        registry.register(AgentCreateTool.definition(agentCatalogue, permissionGate));
         registry.register(PatchTool.definition(fs, access, permissionGate));
         registry.register(GlobTool.definition(fs, access, permissionGate));
         registry.register(GrepTool.definition(fs, access, permissionGate, toolOutput));
@@ -342,6 +458,33 @@ public class Engine {
         registry.register(FirecrawlTool.definition(
                 new FirecrawlTool(new JdkHttpTransport(), firecrawlKey, firecrawlEndpoint)));
         registry.register(WebFetchTool.definition(new WebFetchTool(new JdkHttpTransport())));
+
+        // Email tools (IMAP/SMTP) – only when configured and enabled.
+        String imapHost = emailImapHost == null ? "" : emailImapHost.orElse("");
+        String smtpHost = emailSmtpHost == null ? "" : emailSmtpHost.orElse("");
+        if (emailEnabled && (!imapHost.isBlank() || !smtpHost.isBlank())) {
+            JdkEmailClient emailClient = new JdkEmailClient(
+                    imapHost.isBlank() ? smtpHost : imapHost,
+                    emailImapPort, emailImapSsl, emailImapStarttls,
+                    emailImapUser == null ? "" : emailImapUser.orElse(""),
+                    emailImapPassword == null ? "" : emailImapPassword.orElse(""),
+                    smtpHost.isBlank() ? imapHost : smtpHost,
+                    emailSmtpPort, emailSmtpStarttls,
+                    emailSmtpUser == null ? "" : emailSmtpUser.orElse(""),
+                    emailSmtpPassword == null ? "" : emailSmtpPassword.orElse(""));
+            EmailLimits emailLimits = new EmailLimits(
+                    emailMaxRecipients, emailMaxAttachments, emailMaxAttachmentBytes,
+                    emailMaxBodyChars, emailMaxSubjectChars,
+                    splitCsv(emailAllowedRecipients == null ? null : emailAllowedRecipients.orElse("")),
+                    List.of(), emailMaxPerHour, emailAttachmentsEnabled);
+            if (emailReadEnabled && !imapHost.isBlank()) {
+                registry.register(EmailTool.fetchDefinition(emailClient));
+                registry.register(EmailTool.readDefinition(emailClient, emailLimits));
+            }
+            if (!smtpHost.isBlank()) {
+                registry.register(EmailTool.sendDefinition(emailClient, emailLimits, workspacePath));
+            }
+        }
         todoTool = new TodoTool();
         registry.register(TodoTool.definition(todoTool));
         SessionTools.SessionControl sessionControl = new SessionTools.SessionControl() {
@@ -418,7 +561,7 @@ public class Engine {
         }
         toolSnapshot = registry.snapshot(allowAll);
         toolRuntime = new ToolRuntime(toolSnapshot, effectiveAuthorizer,
-                permissionGate, toolHooks, toolOutput);
+                permissionGate, toolHooks, toolOutput, toolResultCache);
         instructionLoader = instructionsEnabled
                 ? new NioInstructionLoader(Path.of(System.getProperty("user.home", "."),
                         ".config", "opencode"))
@@ -445,6 +588,45 @@ public class Engine {
             return thread;
         });
         retentionExecutor.scheduleWithFixedDelay(this::purgeExpiredSessions, 0, 1, TimeUnit.HOURS);
+        // Ephemeral one-shot cleanup on startup + hourly.
+        retentionExecutor.scheduleWithFixedDelay(this::sweepEphemeralOrphans, 0, 1, TimeUnit.HOURS);
+        // Paused-session sweeper: expire stale paused sessions.
+        retentionExecutor.scheduleWithFixedDelay(this::sweepPausedSessions, 0, 1, TimeUnit.HOURS);
+    }
+
+    private void sweepEphemeralOrphans() {
+        if (sessionWorkspaces == null) return;
+        try {
+            for (SessionId id : sessionWorkspaces.ephemeralOrphans(instanceId)) {
+                try { sessionRetention.delete(id); } catch (RuntimeException ignored) {}
+                String root = sessionWorkspaces.workspaceRoot(id);
+                if (root != null && !root.isBlank()) {
+                    try { deleteDirectoryRecursively(Path.of(root)); } catch (RuntimeException ignored) {}
+                }
+                try { sessionWorkspaces.deleteWorkspace(id); } catch (RuntimeException ignored) {}
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("ephemeral orphan sweep failed: " + e.getMessage());
+        }
+    }
+
+    private void sweepPausedSessions() {
+        if (sessionWorkspaces == null) return;
+        try {
+            // Expire paused sessions older than retentionDays.
+            for (SessionInfo info : sessions.list()) {
+                if (!"suspended".equals(sessionWorkspaces.state(info.id()))) continue;
+                if (info.updated().isBefore(clock.now().minus(java.time.Duration.ofDays(
+                        Math.max(1, sessionRetentionDays))))) {
+                    sessionWorkspaces.updateState(info.id(), "expired");
+                    pausedPrompts.remove(info.id());
+                    sessionWorkspaces.setPausedPrompt(info.id(), null);
+                    LOG.infof("expired paused session %s", info.id().value());
+                }
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("paused session sweep failed: " + e.getMessage());
+        }
     }
 
     private void purgeExpiredSessions() {
@@ -470,6 +652,9 @@ public class Engine {
         }
         if (processRegistry != null) processRegistry.closeSession(id);
         if (subagentTool != null) subagentTool.closeSession(id);
+        if (toolResultCache != null) {
+            try { toolResultCache.deleteBySession(id.value()); } catch (RuntimeException ignored) {}
+        }
         return sessionRetention.delete(id);
     }
 
@@ -478,11 +663,20 @@ public class Engine {
     }
 
     public SessionId createSession(String agentName) {
-        return createSession(agentName, null);
+        return createSession(agentName, null, "workspace");
     }
 
     public SessionId createSession(String agentName, String user) {
+        return createSession(agentName, user, "workspace");
+    }
+
+    public SessionId createSession(String agentName, String user, String mode) {
+        return createSession(agentName, user, mode, false);
+    }
+
+    public SessionId createSession(String agentName, String user, String mode, boolean retain) {
         String normalizedUser = (user == null || user.isBlank()) ? "anonymous" : user.trim();
+        String normalizedMode = (mode == null || mode.isBlank()) ? "workspace" : mode.trim().toLowerCase();
         Path base = Path.of(config.workspace()).toAbsolutePath().normalize();
         Path directory = base;
         if (!"opencode".equalsIgnoreCase(normalizedUser) && !"anonymous".equalsIgnoreCase(normalizedUser)) {
@@ -503,6 +697,25 @@ public class Engine {
         sessions.put(new SessionInfo(id, location.projectId(), location, "New session", agent,
                 Option.none(), List.of(), Money.zero(), TokenCount.zero(), now, now,
                 Option.none(), Option.none(), 0, Option.none()));
+        if (sessionWorkspaces != null) {
+            String root = directory.toString();
+            if ("ephemeral".equals(normalizedMode)) {
+                Path tempRoot = Path.of(config.sessionTempDir());
+                if (!tempRoot.isAbsolute()) tempRoot = base.resolve(tempRoot);
+                Path sessionDir = tempRoot.toAbsolutePath().normalize()
+                        .resolve(instanceId == null ? "default" : instanceId)
+                        .resolve(id.value());
+                try {
+                    java.nio.file.Files.createDirectories(sessionDir);
+                } catch (java.io.IOException e) {
+                    throw new IllegalStateException("cannot create ephemeral session directory: " + sessionDir, e);
+                }
+                root = sessionDir.toString();
+                sessionWorkspaces.put(id, "ephemeral", "active", root, instanceId, retain);
+            } else {
+                sessionWorkspaces.put(id, "workspace", "active", root, instanceId, retain);
+            }
+        }
         return id;
     }
 
@@ -1133,6 +1346,7 @@ public class Engine {
                     case TurnOutcome.Failed ignored -> metrics.promptFailed();
                     case TurnOutcome.Terminated ignored -> metrics.promptCancelled();
                     case TurnOutcome.Cancelled ignored -> metrics.promptCancelled();
+                    case TurnOutcome.Paused ignored -> metrics.promptCompleted();
                 }
                 LOG.infof("prompt finish session=%s outcome=%s finish=%s in=%d out=%d", id.value(),
                         r.outcome().getClass().getSimpleName(), r.finish(), r.inputTokens(), r.outputTokens());
@@ -1171,6 +1385,43 @@ public class Engine {
         return runPrompt(id, text, null, Option.none());
     }
 
+    /** Resumes a paused session after an approval was granted. */
+    public PromptResult resume(SessionId id) {
+        if (id == null) throw new IllegalArgumentException("session id must not be null");
+        // Instance affinity / claim-based takeover.
+        if (sessionWorkspaces != null) {
+            String owner = sessionWorkspaces.instanceId(id);
+            if (owner != null && !owner.isBlank() && !owner.equals(instanceId)) {
+                // Allow takeover if the owning instance hasn't updated the session
+                // recently (lease expired).
+                SessionInfo cur = sessions.info(id).orElse(null);
+                boolean leaseExpired = cur == null || cur.updated().isBefore(
+                        clock.now().minus(java.time.Duration.ofMinutes(5)));
+                if (!leaseExpired) {
+                    throw new IllegalStateException("session belongs to another instance: " + owner);
+                }
+                LOG.infof("taking over paused session %s from instance %s", id.value(), owner);
+                sessionWorkspaces.put(id, sessionWorkspaces.executionMode(id),
+                        sessionWorkspaces.state(id), sessionWorkspaces.workspaceRoot(id),
+                        instanceId, sessionWorkspaces.retain(id));
+            }
+        }
+        String text = pausedPrompts.get(id);
+        if (text == null || text.isBlank()) {
+            if (sessionWorkspaces != null) text = sessionWorkspaces.pausedPrompt(id);
+        }
+        if (text == null || text.isBlank()) {
+            throw new IllegalStateException("session is not paused: " + id.value());
+        }
+        PromptResult result = runPrompt(id, text);
+        pausedPrompts.remove(id);
+        if (sessionWorkspaces != null) {
+            try { sessionWorkspaces.setPausedPrompt(id, null); } catch (RuntimeException ignored) {}
+            try { sessionWorkspaces.updateState(id, "active"); } catch (RuntimeException ignored) {}
+        }
+        return result;
+    }
+
     public PromptResult runPrompt(SessionId id, String text, AgentProfile agentOverride) {
         return runPrompt(id, text, agentOverride, Option.none());
     }
@@ -1184,8 +1435,17 @@ public class Engine {
         // rejected schema request does not leave a queued item behind.
         ToolSnapshot runSnapshot = toolSnapshot;
         Step runStep = step;
+        Path ephemeralRoot = null;
+        if (sessionWorkspaces != null && "ephemeral".equals(sessionWorkspaces.executionMode(id))) {
+            String root = sessionWorkspaces.workspaceRoot(id);
+            if (root != null && !root.isBlank()) ephemeralRoot = Path.of(root);
+        }
         if (resultSchema != null) {
-            runSnapshot = SubmitResult.withTool(toolSnapshot, resultSchema);
+            ToolSnapshot base = ephemeralRoot == null ? toolSnapshot
+                    : buildEphemeralBaseSnapshot(ephemeralRoot);
+            runSnapshot = SubmitResult.withTool(base, resultSchema);
+        } else if (ephemeralRoot != null) {
+            runSnapshot = buildEphemeralBaseSnapshot(ephemeralRoot);
         }
 
         InboxId inboxId = InboxId.create();
@@ -1230,10 +1490,10 @@ public class Engine {
                 }
             };
             runStep = new Step(provider, new ToolRuntime(agentToolSnapshot,
-                    effectiveAuthorizer, structuredGate, toolHooks, toolOutput));
+                    effectiveAuthorizer, structuredGate, toolHooks, toolOutput, toolResultCache));
         } else if (agentToolSnapshot != runSnapshot) {
             runStep = new Step(provider, new ToolRuntime(agentToolSnapshot,
-                    effectiveAuthorizer, permissionGate, toolHooks, toolOutput));
+                    effectiveAuthorizer, permissionGate, toolHooks, toolOutput, toolResultCache));
         }
 
         // MODE-PLAN: log synthetic message when entering/leaving plan mode (PR-7).
@@ -1254,14 +1514,14 @@ public class Engine {
         String finalText = "";
         Option<JsonValue> structured = Option.none();
         boolean submitForced = false;
-        // maxSteps == 0 means no step limit; tool-call, token and wall-time
-        // budgets still bound the turn.
+        // maxSteps == 0 means no step limit; tool-call and wall-time budgets
+        // still apply. A token budget of 0 disables the token limit.
         int stepBudget = agent.maxSteps() <= 0 || agent.maxSteps() == Integer.MAX_VALUE
                 ? Integer.MAX_VALUE : agent.maxSteps() + 1;
         de.augmentia.oc.engine.core.eval.TurnPolicy turnPolicy =
                 new de.augmentia.oc.engine.core.eval.TurnPolicy(
                         stepBudget,
-                        Math.max(1, maxTurnToolCalls), 200_000,
+                        Math.max(1, maxTurnToolCalls), Math.max(0, maxTurnTokens),
                         java.time.Duration.ofMinutes(Math.max(1, maxTurnWallMinutes)));
         int totalToolCalls = 0;
         long totalTokens = 0;
@@ -1304,6 +1564,21 @@ public class Engine {
             }
             if (result instanceof StepResult.Failed failed) {
                 throw new IllegalStateException("model call failed: " + failed.message());
+            }
+            if (result instanceof StepResult.Paused paused) {
+                // Suspend the session and return a paused result.
+                pausedPrompts.put(id, text);
+                if (sessionWorkspaces != null) {
+                    try { sessionWorkspaces.setPausedPrompt(id, text); } catch (RuntimeException ignored) {}
+                    try { sessionWorkspaces.updateState(id, "suspended"); } catch (RuntimeException ignored) {}
+                }
+                // Mark session suspended in SessionInfo
+                SessionInfo cur = sessions.info(id).orElse(info);
+                sessions.put(new SessionInfo(cur.id(), cur.projectId(), cur.location(), cur.title(), cur.agent(),
+                        cur.model(), cur.permissions(), cur.cost(), cur.tokens(), cur.created(), clock.now(),
+                        cur.idle(), Option.some(clock.now()), cur.resumeAttempts(), cur.archived()));
+                return new PromptResult(new TurnOutcome.Paused(paused.approvalId(), paused.approvalUrl(),
+                        "approval pending"), "paused", 0, 0, "", Option.none());
             }
             if (!(result instanceof StepResult.Finished done)) {
                 throw new IllegalStateException("context overflow: compaction required");
@@ -1402,12 +1677,41 @@ public class Engine {
         if (info.title().equals("New session") || info.title().isBlank()) {
             generateTitle(id);
         }
+
+        // Ephemeral one-shot cleanup.
+        if (sessionWorkspaces != null && "ephemeral".equals(sessionWorkspaces.executionMode(id))) {
+            if (!sessionWorkspaces.retain(id)) {
+                try { sessionWorkspaces.updateState(id, "completed"); } catch (RuntimeException ignored) {}
+                if (processRegistry != null) {
+                    try { processRegistry.closeSession(id); } catch (RuntimeException ignored) {}
+                }
+                if (toolResultCache != null) {
+                    try { toolResultCache.deleteBySession(id.value()); } catch (RuntimeException ignored) {}
+                }
+                try { sessionRetention.delete(id); } catch (RuntimeException e) {
+                    LOG.warn("ephemeral session delete failed: " + e.getMessage());
+                    try { sessionWorkspaces.updateState(id, "cleanup_pending"); } catch (RuntimeException ignored) {}
+                }
+                String root = sessionWorkspaces.workspaceRoot(id);
+                if (root != null && !root.isBlank()) {
+                    try { deleteDirectoryRecursively(Path.of(root)); } catch (RuntimeException e) {
+                        LOG.warn("ephemeral dir delete failed: " + e.getMessage());
+                    }
+                }
+                try { sessionWorkspaces.deleteWorkspace(id); } catch (RuntimeException ignored) {}
+            } else {
+                try { sessionWorkspaces.updateState(id, "completed"); } catch (RuntimeException ignored) {}
+            }
+        }
         return promptResult;
     }
 
     private final java.util.Map<SessionId, Integer> subagentDepths = new java.util.concurrent.ConcurrentHashMap<>();
 
     private static final int MAX_CONCURRENT_SUBAGENTS = 4;
+    private static final java.util.Set<String> WORKSPACE_TOOL_NAMES = java.util.Set.of(
+            "read", "write", "edit", "patch", "glob", "grep", "shell",
+            "worktree_create", "worktree_list", "worktree_remove");
     private final java.util.concurrent.Semaphore subagentSemaphore = new java.util.concurrent.Semaphore(MAX_CONCURRENT_SUBAGENTS);
 
     AgentProfile agentProfile(AgentId id, String name, EngineConfig.AgentConfig config) {
@@ -1428,8 +1732,10 @@ public class Engine {
      * list is expressed as {@code deny *} followed by the allowed patterns.</p>
      */
     private List<Rule> withSkillRules(String agentName, List<Rule> base) {
-        if (config == null || agentName == null) return base;
-        EngineConfig.AgentSkillsConfig skills = config.agentSkills(agentName);
+        if (agentName == null) return base;
+        EngineConfig.AgentSkillsConfig skills = agentCatalogue == null
+                ? (config == null ? null : config.agentSkills(agentName))
+                : agentCatalogue.agentSkills(agentName);
         if (skills == null || !skills.enabled()) return base;
         List<Rule> rules = new ArrayList<>(base);
         if (!skills.allow().isEmpty()) {
@@ -1450,8 +1756,10 @@ public class Engine {
      * previous behaviour.
      */
     private SkillSelection skillSelection(String agentName, String query) {
-        if (config == null || agentName == null) return null;
-        EngineConfig.AgentSkillsConfig skills = config.agentSkills(agentName);
+        if (agentName == null) return null;
+        EngineConfig.AgentSkillsConfig skills = agentCatalogue == null
+                ? (config == null ? null : config.agentSkills(agentName))
+                : agentCatalogue.agentSkills(agentName);
         if (skills == null || !skills.enabled()) return null;
         int max = skills.max();
         return switch (skills.prompt()) {
@@ -1572,7 +1880,7 @@ public class Engine {
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
         toolSnapshot = registry.snapshot(allowAll);
         toolRuntime = new ToolRuntime(toolSnapshot, effectiveAuthorizer,
-                permissionGate, toolHooks, toolOutput);
+                permissionGate, toolHooks, toolOutput, toolResultCache);
         contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
                 instructions == null ? Option.none() : Option.some(instructions), config.skillFilter());
         LOG.infof("reloaded config: %d agent(s), %d skill(s)",
@@ -1835,6 +2143,78 @@ public class Engine {
     }
 
 
+    private ToolSnapshot buildEphemeralBaseSnapshot(Path root) {
+        ToolRegistry r = new ToolRegistry();
+        for (ToolDefinition d : registry.list()) {
+            if (!WORKSPACE_TOOL_NAMES.contains(d.effectiveName())) {
+                r.register(d);
+            }
+        }
+        for (ToolDefinition d : workspaceToolDefinitions(root, false)) {
+            r.register(d);
+        }
+        return r.snapshot(allowAll);
+    }
+
+    private java.util.List<ToolDefinition> workspaceToolDefinitions(Path root, boolean includeWorktree) {
+        java.util.List<ToolDefinition> defs = new java.util.ArrayList<>();
+        NioFileSystem nio = new NioFileSystem(root);
+        de.augmentia.oc.engine.adapter.fs.CachedFileSystem fs =
+                new de.augmentia.oc.engine.adapter.fs.CachedFileSystem(nio);
+        FileAccess access = new FileAccess(fs, root, root);
+        defs.add(ReadTool.definition(fs, access, permissionGate, toolOutput));
+        defs.add(WriteTool.definition(fs, access, permissionGate));
+        defs.add(EditTool.definition(fs, access, permissionGate));
+        defs.add(PatchTool.definition(fs, access, permissionGate));
+        defs.add(GlobTool.definition(fs, access, permissionGate));
+        defs.add(GrepTool.definition(fs, access, permissionGate, toolOutput));
+        JdkProcessRunner processRunner = new JdkProcessRunner();
+        defs.add(ShellTool.definition(processRunner, root, root, null,
+                permissionGate, processRegistry));
+        if (includeWorktree && WorktreeTool.available(processRunner, root)) {
+            WorktreeTool worktrees = new WorktreeTool(processRunner, root);
+            defs.add(WorktreeTool.create(worktrees));
+            defs.add(WorktreeTool.list(worktrees));
+            defs.add(WorktreeTool.remove(worktrees));
+        }
+        return defs;
+    }
+
+    private static java.util.List<String> splitCsv(String value) {
+        if (value == null || value.isBlank()) return java.util.List.of();
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String part : value.split(",")) {
+            String trimmed = part.trim();
+            if (!trimmed.isBlank()) out.add(trimmed);
+        }
+        return java.util.List.copyOf(out);
+    }
+
+    private static void deleteDirectoryRecursively(Path root) {
+        if (root == null || !java.nio.file.Files.exists(root)) return;
+        try {
+            java.nio.file.Files.walkFileTree(root,
+                    new java.nio.file.SimpleFileVisitor<>() {
+                        @Override
+                        public java.nio.file.FileVisitResult visitFile(Path file,
+                                java.nio.file.attribute.BasicFileAttributes attrs) throws java.io.IOException {
+                            java.nio.file.Files.deleteIfExists(file);
+                            return java.nio.file.FileVisitResult.CONTINUE;
+                        }
+
+                        @Override
+                        public java.nio.file.FileVisitResult postVisitDirectory(Path dir, java.io.IOException exc) throws java.io.IOException {
+                            if (exc != null) throw exc;
+                            if (!dir.equals(root)) java.nio.file.Files.deleteIfExists(dir);
+                            return java.nio.file.FileVisitResult.CONTINUE;
+                        }
+                    });
+            java.nio.file.Files.deleteIfExists(root);
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("cannot delete directory: " + root, e);
+        }
+    }
+
     private ToolSnapshot filterToolSnapshot(ToolSnapshot global, EngineConfig.AgentConfig agentConfig) {
         if (global == null) return ToolSnapshot.empty();
         if (agentConfig == null) return global;
@@ -1910,7 +2290,8 @@ public class Engine {
      * without parsing a finish string.
      */
     public sealed interface TurnOutcome permits TurnOutcome.Completed, TurnOutcome.Busy,
-            TurnOutcome.Refused, TurnOutcome.Failed, TurnOutcome.Terminated, TurnOutcome.Cancelled {
+            TurnOutcome.Refused, TurnOutcome.Failed, TurnOutcome.Terminated, TurnOutcome.Cancelled,
+            TurnOutcome.Paused {
 
         record Completed(String finish, long inputTokens, long outputTokens, String text,
                          Option<JsonValue> structured) implements TurnOutcome {}
@@ -1924,6 +2305,14 @@ public class Engine {
         record Terminated(InterruptReason reason) implements TurnOutcome {}
 
         record Cancelled() implements TurnOutcome {}
+
+        record Paused(String approvalId, String approvalUrl, String message) implements TurnOutcome {
+            public Paused {
+                if (approvalId == null || approvalId.isBlank()) throw new IllegalArgumentException("approvalId must not be blank");
+                if (approvalUrl == null) approvalUrl = "";
+                if (message == null) message = "approval pending";
+            }
+        }
     }
 
     public record PromptResult(TurnOutcome outcome, String finish, long inputTokens,

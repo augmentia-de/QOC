@@ -1,6 +1,6 @@
 # Documentation Status
 
-> **Status:** 2026-10-25  
+> **Status:** 2026-10-31  
 > **Reference:** QOC Java engine under `qoc/`.  
 > **Purpose:** Quick overview of which documents are specification, implementation
 > or working material. The status is a documentation statement, not a substitute
@@ -32,6 +32,17 @@
 | Agents | [`spec/agents/`](./spec/agents/README.md) | `implemented` | Catalog, tool restrictions, MCP scoping |
 | Optimization | [`improve.md`](./improve.md) | `working` | Working catalog, no obligation |
 | Diagrams | [`diagrams/`](./diagrams/README.md) | `reference` | Architecture and data flow diagrams |
+
+## Extensions (over OpenCode)
+
+| Feature | Document | Status | Note |
+|---|---|---|---|
+| OC-plus overview | [`OC-plus.md`](./OC-plus.md) | `reference` | Erweiterungen gegenüber OpenCode |
+| Enterprise readiness | [`Enterprise.md`](./Enterprise.md) | `working` | Vier Säulen + Umsetzungsplan |
+| Async approvals | [`plans/async-approval.md`](./plans/async-approval.md) | `partial` | Phase 1+2+3 umgesetzt; suspend/resume + Tool-Result-Cache live |
+| Skills | [`Skill_loading.md`](./Skill_loading.md) | `implemented` | BM25, per-agent allow/deny/prompt |
+| A2A | [`guides/a2a.md`](./guides/a2a.md) | `implemented` | Client + opt-in Server |
+| Webhook Guardrail | [`webhook.md`](./webhook.md) | `partial` | Spezifikation + Service |
 
 ## Cross-cutting
 

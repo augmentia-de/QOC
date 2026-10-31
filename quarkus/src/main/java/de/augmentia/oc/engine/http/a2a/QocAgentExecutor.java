@@ -113,6 +113,8 @@ public class QocAgentExecutor implements AgentExecutor {
                         emitter.fail(emitter.newAgentMessage(
                                 List.of(new TextPart(failure(failed), null)), null));
                 case Engine.TurnOutcome.Cancelled ignored -> emitter.cancel();
+                case Engine.TurnOutcome.Paused paused -> emitter.fail(emitter.newAgentMessage(
+                        List.of(new TextPart("Approval pending: " + paused.approvalUrl(), null)), null));
                 case Engine.TurnOutcome.Terminated terminated -> emitter.cancel(
                         emitter.newAgentMessage(List.of(new TextPart(
                                 "Turn terminated: " + terminated.reason().name(), null)), null));

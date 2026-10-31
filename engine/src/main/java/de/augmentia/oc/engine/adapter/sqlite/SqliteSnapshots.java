@@ -36,11 +36,17 @@ public final class SqliteSnapshots implements SnapshotStore {
         SnapshotId id = SnapshotId.create();
         Sqlite.transaction(dataSource, connection -> {
             Sqlite.execute(connection, "insert into snapshot (id, created_at) values (?, datetime('now'))", id.value());
-            for (Path path : paths == null ? List.<Path>of() : paths) {
-                byte[] content = readOrNull(path);
-                Sqlite.execute(connection,
-                        "insert into snapshot_file (snapshot_id, path, content) values (?, ?, ?)",
-                        id.value(), path.toString(), content);
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "insert into snapshot_file (snapshot_id, path, content) values (?, ?, ?)")) {
+                for (Path path : paths == null ? List.<Path>of() : paths) {
+                    statement.setString(1, id.value());
+                    statement.setString(2, path.toString());
+                    statement.setBytes(3, readOrNull(path));
+                    statement.addBatch();
+                }
+                statement.executeBatch();
+            } catch (java.sql.SQLException e) {
+                throw new StoreFailure("cannot capture snapshot files", e);
             }
             return null;
         });

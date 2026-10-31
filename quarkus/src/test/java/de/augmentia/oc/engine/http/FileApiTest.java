@@ -87,4 +87,21 @@ class FileApiTest {
         given().delete("/api/file?path=.")
                 .then().statusCode(400);
     }
+
+    @Test
+    void fileViewIsCappedAtTwentyThousandCharacters() {
+        String content = "x".repeat(20_005);
+        given().contentType("application/octet-stream")
+                .body(content.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                .post("/api/file/upload?path=" + relative + "/large.txt")
+                .then().statusCode(200);
+
+        String truncated = given().get("/api/file?path=" + relative + "/large.txt")
+                .then().statusCode(200)
+                .body("data.truncated", equalTo(true))
+                .body("data.totalChars", equalTo(20_005))
+                .extract().path("data.content");
+
+        assertThat(truncated).hasSize(20_000);
+    }
 }

@@ -14,19 +14,45 @@ docker compose up -d
 `build-image.sh` builds the fast-jar with the PostgreSQL database kind and
 driver (both are build-time settings in Quarkus), then builds the image.
 `deploy/.env.example` shows the required JDBC URL and credentials. The default
-local setup uses an external PostgreSQL database such as Neon; the database is
-not stored in the container volume.
+local setup targets the host-published PostgreSQL/pgvector container:
+
+```properties
+QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://host.docker.internal:20000/qoc?sslmode=disable
+QUARKUS_DATASOURCE_USERNAME=postgres
+QUARKUS_DATASOURCE_PASSWORD=postgres
+```
+
+The compose file adds `host.docker.internal:host-gateway`, so the QOC container
+can reach a database published on the host at port `20000`. For Neon or another
+external database, replace the URL and credentials in `deploy/.env`.
 
 Tests also leave a test-profile build in `quarkus/target/quarkus-app`, so run
 `build-image.sh` after `mvn verify` before recreating the container.
 
 Open: http://127.0.0.1:${QOC_PORT:-8333}/
 
-The `qoc-data` Docker volume stores the workspace, logs, snapshots, and
-tool output. Plan mode files are written to `HOME` (`/data/home`), i.e.
+The `qoc-data` Docker volume stores the workspace, snapshots, and tool output.
+Plan mode files are written to `HOME` (`/data/home`), i.e.
 `/data/home/.opencode/plan` inside the volume. The compose file sets `HOME`
 explicitly because the container user has no `/etc/passwd` entry, which would
 otherwise make Java fall back to `/` and break plan writes.
+
+The JVM compose file mounts `../log` at `/data/log`. The application writes
+rotated DEBUG logs to `<repo>/log/qoc.log` on the host and also emits DEBUG
+messages to `docker logs qoc-engine`. The logging settings are:
+
+```properties
+quarkus.log.level=DEBUG
+quarkus.log.console.level=DEBUG
+quarkus.log.file.enabled=true
+quarkus.log.file.level=DEBUG
+quarkus.log.file.path=/data/log/qoc.log
+```
+
+The JVM compose setup disables pre-turn revert snapshots with
+`ENGINE_REVERT_SNAPSHOT=false`. Snapshot capture wrote every workspace file to
+the remote database before each model call, which added several seconds of
+latency. Set it to `true` only when file-level `revert` is required.
 
 ### SQLite alternative
 

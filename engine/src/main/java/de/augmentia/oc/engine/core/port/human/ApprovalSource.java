@@ -8,4 +8,9 @@ import de.augmentia.oc.engine.core.model.SessionId;
 public interface ApprovalSource {
 
     ApprovalResult request(PermissionRequestId requestId, SessionId sessionId, String action, String context);
+
+    default ApprovalResult requestAsync(PermissionRequestId requestId, SessionId sessionId, String action,
+                                       String context, String approvalUrl) {
+        return request(requestId, sessionId, action, context);
+    }
 }

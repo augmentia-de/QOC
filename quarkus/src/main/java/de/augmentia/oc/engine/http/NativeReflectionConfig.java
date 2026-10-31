@@ -495,7 +495,8 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
             "de.augmentia.oc.engine.runtime.tool.subagent.SubagentRunner",
             "de.augmentia.oc.engine.runtime.tool.subagent.SubagentRunner$SubagentResult",
             "de.augmentia.oc.engine.runtime.tool.subagent.SubagentTool",
-            "de.augmentia.oc.engine.runtime.tool.subagent.TaskTool"
+            "de.augmentia.oc.engine.runtime.tool.subagent.TaskTool",
+            "org.a2aproject.sdk.server.apps.quarkus.QuarkusJSONRPCTransportMetadata"
 })
 public final class NativeReflectionConfig {
     private NativeReflectionConfig() {}

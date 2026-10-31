@@ -1,6 +1,6 @@
 package de.augmentia.oc.engine.http;
 
-import de.augmentia.oc.engine.adapter.log.RotatingLlmTrace;
+import de.augmentia.oc.engine.adapter.logging.RotatingLlmTrace;
 import de.augmentia.oc.engine.adapter.net.JdkHttpTransport;
 import de.augmentia.oc.engine.core.contract.provider.*;
 import de.augmentia.oc.engine.core.json.JsonValue;

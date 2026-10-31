@@ -22,7 +22,7 @@
   .chat { flex:1 1 auto; min-width:240px; display:flex; flex-direction:column; border-right:1px solid var(--border); }
   .side-resizer { flex:0 0 6px; width:6px; cursor:col-resize; background:var(--border); }
   .side-resizer:hover { background:var(--accent); }
-  .side { flex:0 0 380px; min-width:220px; max-width:60vw; display:flex; flex-direction:column; overflow:hidden; position:relative; transition:transform .2s ease; background:var(--panel); border-left:1px solid var(--border); }
+  .side { flex:0 0 380px; min-width:220px; max-width:60vw; height:90%; max-height:90vh; align-self:flex-start; display:flex; flex-direction:column; overflow:hidden; position:relative; transition:transform .2s ease; background:var(--panel); border-left:1px solid var(--border); }
   .backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:55; backdrop-filter:blur(2px); }
   .backdrop.open { display:block; }
   .chat { display:flex; flex-direction:column; border-right:1px solid var(--border); }
@@ -106,7 +106,7 @@
     .messages { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
     .inputbar { flex: 0 0 auto; }
     .side-resizer { display:none; }
-    .side { position:fixed; top:0; right:0; height:100vh; width:86vw; max-width:360px; transform:translateX(100%); z-index:60; box-shadow:-2px 0 12px rgba(0,0,0,.5); background: var(--panel); }
+    .side { position:fixed; top:0; right:0; height:90vh; width:86vw; max-width:360px; transform:translateX(100%); z-index:60; box-shadow:-2px 0 12px rgba(0,0,0,.5); background: var(--panel); }
     .side.open { transform:translateX(0); }
     .side .close-side { display:block; }
     .toggle-side { display:block !important; z-index: 70; }
@@ -132,6 +132,8 @@
   <button id="deleteSession" class="danger">Löschen</button>
   <button id="interrupt" class="danger">Interrupt</button>
   <button id="compact">Compact</button>
+  <button id="loginBtn">Login</button>
+  <span id="authStatus" style="color:var(--muted);font-size:.8rem"></span>
   <button id="reloadConfig">Reload Config</button>
   <button id="a2aAgents">A2A</button>
   <button id="revert">Revert</button>
@@ -166,8 +168,18 @@
     </section>
     <div class="resizer" data-i="0"></div>
     <section class="section panel" id="panelViewer">
-      <h2>Datei <span id="currentFileName" style="color:var(--muted);font-weight:normal;text-transform:none;letter-spacing:0"></span></h2>
+      <h2>Datei <span id="currentFileName" style="color:var(--muted);font-weight:normal;text-transform:none;letter-spacing:0"></span>
+        <span class="file-actions">
+          <button id="editFileBtn" title="Datei bearbeiten (max. 10000 Zeichen)" style="display:none">✎</button>
+        </span>
+      </h2>
       <pre class="viewer" id="viewer">Datei auswählen…</pre>
+      <textarea id="fileEditor" style="display:none;width:100%;min-height:200px;font-family:monospace;font-size:.85rem;background:#0b0d12;color:var(--fg);border:1px solid #2a3140;border-radius:6px;padding:.5rem;resize:vertical"></textarea>
+      <div id="editorActions" style="display:none;gap:.5rem;margin-top:.5rem">
+        <button id="saveFileBtn" class="primary">Speichern</button>
+        <button id="cancelEditBtn">Abbrechen</button>
+        <span id="editorStatus" style="color:var(--muted);font-size:.8rem"></span>
+      </div>
     </section>
     <div class="resizer" data-i="1"></div>
     <section class="section panel" id="panelLogs">
@@ -225,10 +237,75 @@ const viewer = document.getElementById('viewer');
 const currentFileName = document.getElementById('currentFileName');
 const logs = document.getElementById('logs');
 
+// --- OIDC token handling (browser login against Keycloak) ---
+const AUTH = {
+  tokenUrl: localStorage.getItem('qoc.tokenUrl') || 'http://localhost:8180/realms/qoc/protocol/openid-connect/token',
+  clientId: localStorage.getItem('qoc.clientId') || 'qoc-ui',
+  token: localStorage.getItem('qoc.accessToken') || '',
+  refresh: localStorage.getItem('qoc.refreshToken') || ''
+};
+function authHeaders(headers) {
+  const h = new Headers(headers || {});
+  if (AUTH.token) h.set('Authorization', 'Bearer ' + AUTH.token);
+  return h;
+}
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init) => {
+  const opts = Object.assign({}, init || {});
+  const url = typeof input === 'string' ? input : (input && input.url) || '';
+  if (url.startsWith('/api/') || url.startsWith(location.origin + '/api/')) {
+    opts.headers = authHeaders(opts.headers);
+  }
+  return nativeFetch(input, opts).then(res => {
+    if (res.status === 401 && AUTH.token) {
+      AUTH.token = ''; AUTH.refresh = '';
+      localStorage.removeItem('qoc.accessToken');
+      localStorage.removeItem('qoc.refreshToken');
+      updateAuthStatus();
+    }
+    return res;
+  });
+};
+function updateAuthStatus() {
+  const el = document.getElementById('authStatus');
+  if (!el) return;
+  el.textContent = AUTH.token ? 'angemeldet' : 'nicht angemeldet';
+  el.style.color = AUTH.token ? '#6ee7b7' : 'var(--muted)';
+}
+async function login() {
+  const username = prompt('Benutzername (Keycloak):');
+  if (!username) return;
+  const password = prompt('Passwort:');
+  if (!password) return;
+  try {
+    const body = new URLSearchParams({
+      grant_type: 'password', client_id: AUTH.clientId, username, password
+    });
+    const res = await nativeFetch(AUTH.tokenUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error_description || data.error || ('HTTP ' + res.status));
+    AUTH.token = data.access_token || '';
+    AUTH.refresh = data.refresh_token || '';
+    localStorage.setItem('qoc.accessToken', AUTH.token);
+    localStorage.setItem('qoc.refreshToken', AUTH.refresh);
+    updateAuthStatus();
+    if (typeof loadSelectors === 'function') await loadSelectors();
+    if (typeof loadSessions === 'function') await loadSessions();
+    if (typeof loadFiles === 'function') await loadFiles(currentDir);
+  } catch (e) {
+    alert('Login fehlgeschlagen: ' + e.message);
+  }
+}
+
 let sessionId = null;
 let es = null;
 let currentAssistant = null;
 let currentFile = null;
+let currentFileContent = '';
 let currentDir = '.';
 let pendingPermission = null;
 let resizersBound = false;
@@ -239,11 +316,14 @@ const showDetails = document.getElementById('showDetails');
 let permPoll = null;
 let questionPoll = null;
 let pendingQuestion = null;
+const MAX_EVENTS = 100;
+const MAX_FILE_CHARS = 20000;
 
 function logEvent(text) {
   const d = document.createElement('div');
   d.textContent = text;
   logs.appendChild(d);
+  while (logs.childElementCount > MAX_EVENTS) logs.removeChild(logs.firstElementChild);
   logs.scrollTop = logs.scrollHeight;
 }
 
@@ -302,7 +382,9 @@ function initResizers() {
     return;
   }
   const total = side.clientHeight || 600;
-  const init = [Math.round(total*0.4), Math.round(total*0.35), total - Math.round(total*0.4) - Math.round(total*0.35)];
+  const resizerTotal = Array.from(resizers).reduce((sum, r) => sum + r.offsetHeight, 0);
+  const usable = Math.max(180, total - resizerTotal);
+  const init = [Math.round(usable*0.4), Math.round(usable*0.35), usable - Math.round(usable*0.4) - Math.round(usable*0.35)];
   panels.forEach((p,i) => { p.style.flex = '0 0 auto'; p.style.height = init[i] + 'px'; });
   resizers.forEach(r => { r.style.display = ''; });
   if (resizersBound) return;
@@ -428,6 +510,10 @@ async function init() {
     initMobileSide();
     window.addEventListener('resize', () => {
       const nowMobile = window.innerWidth <= 768;
+      if (nowMobile === isMobileLayout && !nowMobile) {
+        initResizers();
+        return;
+      }
       if (nowMobile === isMobileLayout) return;
       isMobileLayout = nowMobile;
       initResizers();
@@ -837,9 +923,20 @@ async function viewFile(path) {
     const res = await fetch('/api/file?path=' + encodeURIComponent(path));
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || data.error || ('HTTP ' + res.status));
-    viewer.textContent = data.data ? data.data.content : JSON.stringify(data);
+    const fullContent = data.data ? String(data.data.content || '') : JSON.stringify(data);
+    let content = fullContent;
+    if (content.length > MAX_FILE_CHARS) content = content.slice(0, MAX_FILE_CHARS);
+    if (data.data && data.data.truncated) {
+      const total = Number(data.data.totalChars || 0).toLocaleString('de-DE');
+      content += '\n\n… Anzeige auf ' + MAX_FILE_CHARS.toLocaleString('de-DE')
+              + ' Zeichen gekürzt (Datei: ' + total + ' Zeichen).';
+    }
+    viewer.textContent = content;
     currentFile = path;
+    currentFileContent = fullContent;
     currentFileName.textContent = fileName(path);
+    const editBtn = document.getElementById('editFileBtn');
+    editBtn.style.display = isEditable(path, fullContent) ? 'inline-block' : 'none';
     Array.from(filetree.querySelectorAll('.entry')).forEach(row => {
       row.classList.toggle('selected', row.dataset.path === path);
     });
@@ -847,6 +944,48 @@ async function viewFile(path) {
     viewer.textContent = 'Fehler: ' + e.message;
     currentFile = null;
     currentFileName.textContent = '';
+    document.getElementById('editFileBtn').style.display = 'none';
+  }
+}
+
+const EDITABLE_EXT = new Set(['txt','md','json','yaml','yml','xml','html','css','js','ts','java','py','sh','bash','properties','conf','cfg','ini','toml','csv','log','sql','kt','go','rs','c','cpp','h','hpp']);
+let editingFile = false;
+function isEditable(path, content) {
+  if (!path || content.length > 10000) return false;
+  const lower = path.toLowerCase();
+  const dot = lower.lastIndexOf('.');
+  const ext = dot >= 0 ? lower.substring(dot + 1) : '';
+  if (!ext) return true; // files without extension editable
+  return EDITABLE_EXT.has(ext);
+}
+function enterEditMode(content) {
+  editingFile = true;
+  viewer.style.display = 'none';
+  const ed = document.getElementById('fileEditor');
+  ed.value = content;
+  ed.style.display = 'block';
+  document.getElementById('editorActions').style.display = 'flex';
+  document.getElementById('editorStatus').textContent = '';
+}
+function exitEditMode() {
+  editingFile = false;
+  document.getElementById('fileEditor').style.display = 'none';
+  document.getElementById('editorActions').style.display = 'none';
+  viewer.style.display = 'block';
+}
+async function saveFile() {
+  if (!currentFile) return;
+  const content = document.getElementById('fileEditor').value;
+  if (content.length > 10000) { alert('Zu groß (max. 10000 Zeichen)'); return; }
+  try {
+    const res = await fetch('/api/file', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path: currentFile, content})});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || ('HTTP ' + res.status));
+    document.getElementById('editorStatus').textContent = 'Gespeichert.';
+    await viewFile(currentFile);
+    exitEditMode();
+  } catch (e) {
+    document.getElementById('editorStatus').textContent = 'Fehler: ' + e.message;
   }
 }
 
@@ -935,6 +1074,12 @@ async function uploadFiles(files) {
 }
 
 document.getElementById('newFile').onclick = createFile;
+document.getElementById('editFileBtn').onclick = () => {
+  if (!currentFile || !currentFileContent) return;
+  enterEditMode(currentFileContent);
+};
+document.getElementById('saveFileBtn').onclick = saveFile;
+document.getElementById('cancelEditBtn').onclick = exitEditMode;
 document.getElementById('refreshFiles').onclick = () => loadFiles(currentDir);
 const uploadFileInput = document.getElementById('uploadFileInput');
 const uploadDirInput = document.getElementById('uploadDirInput');
@@ -957,6 +1102,8 @@ document.getElementById('interrupt').onclick = () => {
   if (sessionId) fetch('/api/session/' + sessionId + '/interrupt', {method:'POST'});
 };
 document.getElementById('compact').onclick = () => compactNow();
+document.getElementById('loginBtn').onclick = login;
+updateAuthStatus();
 document.getElementById('reloadConfig').onclick = async () => {
   try {
     const r = await fetch('/api/config/reload', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
@@ -994,8 +1141,11 @@ async function checkPermissions() {
     const list = data.data || [];
     if (list.length && !pendingPermission) {
       pendingPermission = list[0];
+      const permMsg = (pendingPermission.message && pendingPermission.message.trim())
+        ? pendingPermission.message
+        : (pendingPermission.action + ' — ' + (pendingPermission.resources||[]).join(', '));
       document.getElementById('permContext').textContent =
-        pendingPermission.action + ' — ' + (pendingPermission.resources||[]).join(', ');
+        permMsg.length > 750 ? permMsg.substring(0, 750) + '…' : permMsg;
       document.getElementById('permModal').classList.add('open');
     }
   } catch (e) { /* ignore */ }

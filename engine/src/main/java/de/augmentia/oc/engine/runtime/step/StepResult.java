@@ -33,6 +33,14 @@ public sealed interface StepResult {
     /** Context overflow and the per-step compaction budget is still open. */
     record NeedsCompaction() implements StepResult {}
 
+    /** A tool call is paused pending human approval; the session is suspended. */
+    record Paused(String approvalId, String approvalUrl) implements StepResult {
+        public Paused {
+            if (approvalId == null || approvalId.isBlank()) throw new IllegalArgumentException("approvalId must not be blank");
+            if (approvalUrl == null) approvalUrl = "";
+        }
+    }
+
     record ToolCallOutcome(ToolCall call, ToolOutcome outcome) {
         public ToolCallOutcome {
             if (call == null || outcome == null) {
