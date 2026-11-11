@@ -110,7 +110,7 @@ public final class SubagentTool {
 
             String taskId = tasksRegistry == null ? null : tasksRegistry.create(context.sessionId(), agent);
             try {
-                SubagentRunner.SubagentResult result = runner.run(context.sessionId(), agent, prompt, 0);
+                SubagentRunner.SubagentResult result = runner.run(context.sessionId(), agent, prompt, 0, context.principal());
                 if (tasksRegistry != null && taskId != null) tasksRegistry.succeed(taskId, result);
                 String text = result.text().isBlank() ? "Subagent completed with no text output." : result.text();
                 ToolOutcome outcome = new ToolOutcome.Ok(new ToolResult(Option.none(),
@@ -189,7 +189,7 @@ public final class SubagentTool {
             String taskId = backgroundTasks.create(context.sessionId(), agent, prompt);
             Thread thread = Thread.ofVirtual().name("subagent-" + taskId).unstarted(() -> {
                 try {
-                    SubagentRunner.SubagentResult result = runner.run(context.sessionId(), agent, prompt, 0);
+                    SubagentRunner.SubagentResult result = runner.run(context.sessionId(), agent, prompt, 0, context.principal());
                     if (result == null) {
                         backgroundTasks.fail(taskId, new IllegalStateException("subagent returned no result"));
                     } else {

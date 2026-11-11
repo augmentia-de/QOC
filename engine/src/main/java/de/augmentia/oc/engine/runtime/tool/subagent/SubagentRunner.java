@@ -1,5 +1,6 @@
 package de.augmentia.oc.engine.runtime.tool.subagent;
 
+import de.augmentia.oc.engine.core.model.Principal;
 import de.augmentia.oc.engine.core.model.SessionId;
 
 /**
@@ -18,7 +19,13 @@ public interface SubagentRunner {
      * @return the subagent's final text response
      * @throws RuntimeException on failure (propagates as ToolFailure)
      */
-    SubagentResult run(SessionId parent, String agentName, String prompt, int depth);
+    /** Variant carrying the caller's principal for downstream propagation. */
+    SubagentResult run(SessionId parent, String agentName, String prompt, int depth, Principal principal);
+
+    /** Backward-compatible overload; delegates with an anonymous principal. */
+    default SubagentResult run(SessionId parent, String agentName, String prompt, int depth) {
+        return run(parent, agentName, prompt, depth, Principal.anonymous());
+    }
 
     /** Result of a subagent run, including usage for cost tracking. */
     record SubagentResult(String text, de.augmentia.oc.engine.core.model.TokenCount usage,

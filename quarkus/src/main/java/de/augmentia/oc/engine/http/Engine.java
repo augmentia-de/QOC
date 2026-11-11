@@ -859,8 +859,8 @@ commandLoader = new CommandLoader(workspacePath,
         titleGenerator = new TitleGenerator(provider, modelRef);
         step = new Step(provider, toolRuntime);
         if (subagentTool != null) {
-            subagentTool.setRunner((parent, agentName, prompt, depth) ->
-                    runSubagent(parent, agentName, prompt, depth));
+            subagentTool.setRunner((parent, agentName, prompt, depth, principal) ->
+                    runSubagent(parent, agentName, prompt, depth, principal));
         }
         compaction = new CompactionService(journal, conversation, instructions,
                 new Compaction(journal, provider), clock, 8, provider);
@@ -1734,7 +1734,22 @@ commandLoader = new CommandLoader(workspacePath,
 
     public PromptResult runPrompt(SessionId id, String text, AgentProfile agentOverride,
                                   Option<Schema> responseSchema) {
+        return runPrompt(id, text, agentOverride, responseSchema, null);
+    }
+
+    public PromptResult runPrompt(SessionId id, String text, AgentProfile agentOverride,
+                                  Option<Schema> responseSchema, de.augmentia.oc.engine.core.model.Principal principal) {
         if (responseSchema == null) responseSchema = Option.none();
+        if (principal == null) {
+            de.augmentia.oc.engine.http.security.PrincipalContext pc = principalContext;
+            if (pc != null && pc.get() != null) {
+                de.augmentia.oc.engine.http.security.Principal pp = pc.get();
+                principal = new de.augmentia.oc.engine.core.model.Principal(
+                        pp.id(), pp.name(), pp.roles(), pp.groups(), pp.claims(), pp.accessToken());
+            } else {
+                principal = de.augmentia.oc.engine.core.model.Principal.anonymous();
+            }
+        }
         Schema resultSchema = responseSchema.orElse(null);
 
         // Validate the reserved result-tool name before touching the inbox so a
@@ -1896,15 +1911,6 @@ commandLoader = new CommandLoader(workspacePath,
                     java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), false);
         }
 
-        de.augmentia.oc.engine.core.model.Principal principal =
-                principalContext == null ? de.augmentia.oc.engine.core.model.Principal.anonymous()
-                        : new de.augmentia.oc.engine.core.model.Principal(
-                                principalContext.get().id(),
-                                principalContext.get().name(),
-                                principalContext.get().roles(),
-                                principalContext.get().groups(),
-                                principalContext.get().claims(),
-                                principalContext.get().accessToken());
         de.augmentia.oc.engine.core.model.EngineResult qocResult =
                 qocEngine.runPrompt(id, agentName == null ? "build" : agentName, text, qocConfig, false, null, null, principal);
 
@@ -2096,7 +2102,9 @@ commandLoader = new CommandLoader(workspacePath,
         };
     }
 
-    public SubagentRunner.SubagentResult runSubagent(SessionId parent, String agentName, String prompt, int depth) {
+    public SubagentRunner.SubagentResult runSubagent(SessionId parent, String agentName, String prompt, int depth,
+                                                    de.augmentia.oc.engine.core.model.Principal principal) {
+        if (principal == null) principal = de.augmentia.oc.engine.core.model.Principal.anonymous();
         AgentId agentId = agentCatalogue.resolve(agentName);
         if (agentId == null) {
             throw new IllegalArgumentException("unknown subagent: " + agentName);
@@ -2160,7 +2168,7 @@ commandLoader = new CommandLoader(workspacePath,
             try {
                 String subagentPrompt = "You are a subagent. Do not ask the user questions; "
                         + "make reasonable assumptions and report your result back.\n\n" + prompt;
-                result = runPrompt(child, subagentPrompt, agent);
+                result = runPrompt(child, subagentPrompt, agent, de.augmentia.oc.engine.core.model.Option.none(), principal);
 
                 // Token accumulation: add subagent usage to parent session
                 SessionInfo parentInfo = sessions.info(parent).orElse(null);

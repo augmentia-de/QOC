@@ -21,7 +21,7 @@ class SubagentToolTest {
 
     @Test
     void delegatesToRunner() {
-        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) ->
+        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth, principal) ->
                 new SubagentRunner.SubagentResult("done: " + prompt, de.augmentia.oc.engine.core.model.TokenCount.zero()), request -> { });
         ToolContext context = new ToolContext(SessionId.create(), AgentId.create(), MessageId.create(), CallId.create());
 
@@ -34,7 +34,7 @@ class SubagentToolTest {
 
     @Test
     void executesATypedTaskBatchInOrder() {
-        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) ->
+        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth, principal) ->
                 new SubagentRunner.SubagentResult(agent + ":" + prompt, TokenCount.zero()),
                 request -> { });
         ToolContext context = context();
@@ -56,7 +56,7 @@ class SubagentToolTest {
 
     @Test
     void launchesInBackground() {
-        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) ->
+        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth, principal) ->
                 new SubagentRunner.SubagentResult("done", de.augmentia.oc.engine.core.model.TokenCount.zero()), request -> { });
         ToolContext context = new ToolContext(SessionId.create(), AgentId.create(), MessageId.create(), CallId.create());
 
@@ -72,7 +72,7 @@ class SubagentToolTest {
 
     @Test
     void backgroundSuccessIsObservableFromTheParent() {
-        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) ->
+        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth, principal) ->
                 new SubagentRunner.SubagentResult("done", TokenCount.zero()), request -> { });
         ToolContext context = context();
         String taskId = launch(tool, context);
@@ -89,7 +89,7 @@ class SubagentToolTest {
 
     @Test
     void backgroundFailureIsRecordedInsteadOfSwallowed() {
-        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) -> {
+        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth, principal) -> {
             throw new IllegalStateException("runner exploded");
         }, request -> { });
         ToolContext context = context();
@@ -106,7 +106,7 @@ class SubagentToolTest {
 
     @Test
     void backgroundTasksAreScopedToTheirParentAndCleanedUp() {
-        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) -> {
+        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth, principal) -> {
             try {
                 Thread.sleep(5_000);
             } catch (InterruptedException e) {
@@ -127,7 +127,7 @@ class SubagentToolTest {
 
     @Test
     void taskToolListsAndWaitsForACompletedTask() {
-        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) ->
+        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth, principal) ->
                 new SubagentRunner.SubagentResult("done", TokenCount.zero()), request -> { });
         ToolContext context = context();
         String taskId = launch(tool, context);
@@ -149,7 +149,7 @@ class SubagentToolTest {
 
     @Test
     void taskToolCancelsARunningTask() {
-        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth) -> {
+        SubagentTool tool = new SubagentTool((parent, agent, prompt, depth, principal) -> {
             try {
                 Thread.sleep(5_000);
             } catch (InterruptedException e) {
