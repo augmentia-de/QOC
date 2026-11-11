@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { WorkflowApi } from '../services/api';
+import { WorkflowApi, AgentApi } from '../services/api';
 import type { WorkflowDefinition } from '../types/workflow';
 import GraphEditor from './GraphEditor';
 
 export default function WorkflowDetail() {
   const { id } = useParams<{ id: string }>();
   const [workflow, setWorkflow] = useState<WorkflowDefinition | null>(null);
+  const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -21,6 +22,13 @@ export default function WorkflowDetail() {
       const res = await WorkflowApi.get(id);
       setWorkflow(res.data);
       setJsonText(JSON.stringify(res.data, null, 2));
+      // Load agents from store (Option B: agents persisted separately)
+      try {
+        const agentRes = await AgentApi.list();
+        setAgents(agentRes.data.agents || []);
+      } catch {
+        setAgents(res.data.agents || []);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -138,19 +146,10 @@ export default function WorkflowDetail() {
           <GraphEditor
             nodesJson={workflow.nodes}
             workflowId={workflow.id}
-            agents={workflow.agents || []}
+            agents={agents}
             onGraphChange={(data: { nodes: any[]; edges: any[] }) => {
-              // Ensure referenced agents exist in agents[]
-              const agentRefs = new Set(data.nodes.map((n: any) => n.data?.agentRef).filter(Boolean));
-              const existingIds = new Set((workflow.agents || []).map((a: any) => a.id));
-              const agents = [...(workflow.agents || [])];
-              for (const ref of agentRefs) {
-                if (!existingIds.has(ref) && ref === 'build') {
-                  agents.push({ id: 'build', name: 'Build Agent', version: '1.0.0', category: 'core', model: 'deepseek-v4.1-flash', temperature: 0.3, maxTokens: 4096, topP: 1.0, tools: [], guardrailsInput: [], guardrailsOutput: [], hooks: [], jsonOutput: false, active: true, systemPrompt: 'You are a helpful build agent.' });
-                  existingIds.add(ref);
-                }
-              }
-              const updated = { ...workflow, nodes: data.nodes, edges: data.edges, agents };
+              // Option B: agents are in the store, not inline in workflow
+              const updated = { ...workflow, nodes: data.nodes, edges: data.edges };
               setWorkflow(updated as any);
               setJsonText(JSON.stringify(updated, null, 2));
             }}

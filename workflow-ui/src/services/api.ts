@@ -30,4 +30,12 @@ export const HealthApi = {
   check: () => api.get<{ status: string }>('/health'),
 };
 
+export const AgentApi = {
+  list: () => api.get<{ agents: import('../types/workflow').Agent[] }>('/agents'),
+  get: (id: string) => api.get<import('../types/workflow').Agent>(`/agents/${id}`),
+  create: (agent: Partial<import('../types/workflow').Agent>) => api.post<import('../types/workflow').Agent>('/agents', agent),
+  save: (id: string, agent: import('../types/workflow').Agent) => api.put<import('../types/workflow').Agent>(`/agents/${id}`, agent),
+  delete: (id: string) => api.delete<{ deleted: boolean }>(`/agents/${id}`),
+};
+
 export default api;

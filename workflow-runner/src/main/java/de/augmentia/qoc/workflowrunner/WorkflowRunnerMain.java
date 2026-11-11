@@ -14,6 +14,7 @@ import de.augmentia.oc.engine.runtime.QocEngine;
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition;
 import de.augmentia.qoc.workflowrunner.runner.WorkflowExecutor;
 import de.augmentia.qoc.workflowrunner.store.CheckpointStore;
+import de.augmentia.qoc.workflowrunner.store.AgentStore;
 import de.augmentia.qoc.workflowrunner.store.WorkflowStore;
 import de.augmentia.qoc.workflowrunner.validation.GraphCompiler;
 
@@ -62,6 +63,7 @@ public final class WorkflowRunnerMain {
         QocEngine engine = QocEngine.create(stores, config, new SystemClock(), false);
 
         WorkflowStore store = new WorkflowStore(storageDir);
+        AgentStore agentStore = new AgentStore(Paths.get(storageDir));
         CheckpointStore checkpoints = new CheckpointStore(Paths.get(storageDir));
 
         HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
@@ -69,6 +71,43 @@ public final class WorkflowRunnerMain {
         // Health
         server.createContext("/health", ex -> {
             sendJson(ex, 200, Map.of("status", "ok"));
+        });
+
+        // Agents
+        server.createContext("/agents", ex -> {
+            String method = ex.getRequestMethod();
+            String path = ex.getRequestURI().getPath();
+
+            if ("GET".equals(method) && "/agents".equals(path)) {
+                sendJson(ex, 200, Map.of("agents", agentStore.listAll()));
+            } else if ("POST".equals(method) && "/agents".equals(path)) {
+                String body = readBody(ex);
+                WorkflowDefinition.Agent agent = MAPPER.readValue(body, WorkflowDefinition.Agent.class);
+                String id = agent.id();
+                if (id == null || id.isBlank()) id = agent.name().toLowerCase().replaceAll("[^a-z0-9-]", "-");
+                if (id.isBlank()) id = "agent-" + System.currentTimeMillis();
+                agentStore.save(id, agent);
+                sendJson(ex, 201, agentStore.get(id));
+            } else if (path.startsWith("/agents/")) {
+                String id = path.substring("/agents/".length()).split("/")[0];
+                if ("GET".equals(method)) {
+                    WorkflowDefinition.Agent a = agentStore.get(id);
+                    if (a == null) sendJson(ex, 404, Map.of("error", "not found"));
+                    else sendJson(ex, 200, a);
+                } else if ("PUT".equals(method)) {
+                    String body = readBody(ex);
+                    WorkflowDefinition.Agent agent = MAPPER.readValue(body, WorkflowDefinition.Agent.class);
+                    agentStore.save(id, agent);
+                    sendJson(ex, 200, agentStore.get(id));
+                } else if ("DELETE".equals(method)) {
+                    boolean deleted = agentStore.delete(id);
+                    sendJson(ex, deleted ? 200 : 404, Map.of("deleted", deleted));
+                } else {
+                    sendJson(ex, 405, Map.of("error", "method not allowed"));
+                }
+            } else {
+                sendJson(ex, 404, Map.of("error", "not found"));
+            }
         });
 
         // List workflows
