@@ -69,6 +69,14 @@ public final class InMemoryJournal implements Journal {
         events.remove(aggregateId);
     }
 
+    @Override
+    public synchronized void deleteOlderThan(java.time.Instant cutoff) {
+        if (cutoff == null) return;
+        for (List<StoredEvent> aggregate : events.values()) {
+            aggregate.removeIf(e -> e.time().isBefore(cutoff));
+        }
+    }
+
     public synchronized int count(String aggregateId) {
         return events.getOrDefault(aggregateId, List.of()).size();
     }

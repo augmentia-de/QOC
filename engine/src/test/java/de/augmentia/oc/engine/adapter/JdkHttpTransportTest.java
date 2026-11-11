@@ -79,4 +79,20 @@ class JdkHttpTransportTest {
         assertThatThrownBy(() -> transport.openChannel(null, Map.of()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void getReturnsResponse() throws Exception {
+        server.createContext("/get", exchange -> {
+            exchange.getResponseHeaders().add("x-test", "yes");
+            byte[] body = "hello".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            try (var out = exchange.getResponseBody()) { out.write(body); }
+        });
+        HttpTransport.ResponseStream response = transport.get(base.resolve("/get"), Map.of("x-client", "test"),
+                Duration.ofSeconds(2));
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(response.headers()).containsKey("x-test");
+        assertThat(new String(response.body().readAllBytes(), StandardCharsets.UTF_8)).isEqualTo("hello");
+        response.close();
+    }
 }

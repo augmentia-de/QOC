@@ -7,7 +7,18 @@ public record SessionInfo(SessionId id, ProjectId projectId, Location location, 
                           AgentId agent, Option<ModelRef> model, List<Rule> permissions,
                           Money cost, TokenCount tokens, Instant created, Instant updated,
                           Option<Instant> idle, Option<Instant> suspended, int resumeAttempts,
-                          Option<Instant> archived) {
+                          Option<Instant> archived, String ownerId) {
+
+    /** Backwards-compatible constructor for sessions without a recorded owner. */
+    public SessionInfo(SessionId id, ProjectId projectId, Location location, String title,
+                       AgentId agent, Option<ModelRef> model, List<Rule> permissions,
+                       Money cost, TokenCount tokens, Instant created, Instant updated,
+                       Option<Instant> idle, Option<Instant> suspended, int resumeAttempts,
+                       Option<Instant> archived) {
+        this(id, projectId, location, title, agent, model, permissions, cost, tokens,
+                created, updated, idle, suspended, resumeAttempts, archived, "");
+    }
+
     public SessionInfo {
         if (id == null || projectId == null || location == null || agent == null) {
             throw new IllegalArgumentException("session identity must not be null");
@@ -22,6 +33,7 @@ public record SessionInfo(SessionId id, ProjectId projectId, Location location, 
         if (idle == null) idle = Option.none();
         if (suspended == null) suspended = Option.none();
         if (archived == null) archived = Option.none();
+        if (ownerId == null) ownerId = "";
         if (resumeAttempts < 0) throw new IllegalArgumentException("resumeAttempts must not be negative");
     }
 }

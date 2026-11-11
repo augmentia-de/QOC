@@ -3,6 +3,7 @@ package de.augmentia.oc.engine.core.port.store;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.model.IdempotencyKey;
 
+import java.time.Instant;
 import java.util.Optional;
 
 /**
@@ -21,4 +22,7 @@ public interface ToolResultCache {
     void delete(IdempotencyKey key);
 
     void deleteBySession(String sessionId);
+
+    /** Deletes cache entries created before the given cutoff. */
+    int deleteCreatedBefore(Instant cutoff);
 }

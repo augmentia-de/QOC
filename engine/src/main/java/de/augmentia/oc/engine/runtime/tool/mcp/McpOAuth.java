@@ -56,8 +56,8 @@ public final class McpOAuth {
                 + (base.getPort() > 0 ? ":" + base.getPort() : "")
                 + "/.well-known/oauth-authorization-server";
         try {
-            HttpTransport.ResponseStream response = transport.postJson(
-                    URI.create(metadataUrl), Map.of(), "", Duration.ofSeconds(10));
+            HttpTransport.ResponseStream response = transport.get(
+                    URI.create(metadataUrl), Map.of(), Duration.ofSeconds(10));
             String text;
             try { text = new String(response.body().readAllBytes(), StandardCharsets.UTF_8); }
             catch (java.io.IOException e) { throw new McpFailure("cannot read response", e); }

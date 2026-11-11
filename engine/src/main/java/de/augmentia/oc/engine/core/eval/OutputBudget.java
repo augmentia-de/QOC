@@ -15,7 +15,7 @@ import de.augmentia.oc.engine.core.model.Option;
 public final class OutputBudget {
 
     public static final int FALLBACK_OUTPUT = 32_000;
-    public static final int OUTPUT_CEILING = 256_000;
+    public static final int OUTPUT_CEILING = 512_000;
     public static final int COMPACTION_OUTPUT = 32_000;
     public static final int MIN_OUTPUT = 1_024;
     public static final double ESTIMATE_MARGIN = 1.15;

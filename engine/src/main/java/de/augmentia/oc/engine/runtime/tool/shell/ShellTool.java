@@ -18,6 +18,7 @@ import de.augmentia.oc.engine.core.shell.scan.PortableScanner;
 import de.augmentia.oc.engine.core.shell.scan.ScanResult;
 import de.augmentia.oc.engine.core.shell.scan.Scanner;
 import de.augmentia.oc.engine.runtime.tool.JsonArgs;
+import de.augmentia.oc.engine.runtime.tool.fs.FileAccess;
 import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
 
 import java.nio.file.Path;
@@ -82,13 +83,21 @@ public final class ShellTool {
                 return ReadTool.failure("shell", "command cannot be analyzed");
             }
 
-            // External-directory check: any scanned directory outside the
-            // location/project root requires an explicit permission decision.
+            // External-directory check: the working directory and any scanned
+            // directory outside the location/project root require an explicit
+            // permission decision.
             if (permissionGate != null) {
-                for (Path dir : scan.directories()) {
-                    Path normalized = dir.toAbsolutePath().normalize();
-                    boolean internal = normalized.startsWith(location.toAbsolutePath().normalize())
-                            || normalized.startsWith(projectRoot.toAbsolutePath().normalize());
+                java.util.List<Path> checked = new java.util.ArrayList<>(scan.directories());
+                checked.add(cwd);
+                for (Path dir : checked) {
+                    Path normalized = dir.isAbsolute()
+                            ? dir.toAbsolutePath().normalize()
+                            : location.resolve(dir).normalize();
+                    // Resolve symlinks before the allow-list check so a link cannot
+                    // escape the configured workspace roots.
+                    normalized = FileAccess.realPath(normalized);
+                    boolean internal = FileAccess.isUnder(location, normalized)
+                            || FileAccess.isUnder(projectRoot, normalized);
                     if (!internal) {
                         PermissionRequest request = new PermissionRequest(
                                 PermissionRequestId.create(),

@@ -75,17 +75,22 @@ public final class SubagentTool {
                     if (background) {
                         return tool.executeBackground(r, value, context);
                     }
-                    return execute(r, tool.permissionGate, value, context);
+                    return execute(r, tool.permissionGate, tool.backgroundTasks, value, context);
                 },
                 null);
     }
 
     static ToolOutcome execute(SubagentRunner runner, PermissionGate permissionGate, JsonValue value,
                                de.augmentia.oc.engine.core.contract.tool.ToolContext context) {
+        return execute(runner, permissionGate, null, value, context);
+    }
+
+    static ToolOutcome execute(SubagentRunner runner, PermissionGate permissionGate, BackgroundTasks tasksRegistry,
+                               JsonValue value, de.augmentia.oc.engine.core.contract.tool.ToolContext context) {
         try {
             JsonValue tasks = JsonArgs.field(value, "tasks");
             if (tasks instanceof JsonValue.Arr arr && !arr.values().isEmpty()) {
-                return executeBatch(runner, permissionGate, arr, context);
+                return executeBatch(runner, permissionGate, tasksRegistry, arr, context);
             }
             String agent = JsonArgs.requiredString(value, "agent");
             String prompt = JsonArgs.requiredString(value, "prompt");
@@ -103,10 +108,24 @@ public final class SubagentTool {
                 permissionGate.assertAllowed(req);
             }
 
-            SubagentRunner.SubagentResult result = runner.run(context.sessionId(), agent, prompt, 0);
-            String text = result.text().isBlank() ? "Subagent completed with no text output." : result.text();
-            return new ToolOutcome.Ok(new ToolResult(Option.none(),
-                    List.of(new ToolContent.TextItem(text)), Map.of("agent", agent, "tokens", result.usage().total())));
+            String taskId = tasksRegistry == null ? null : tasksRegistry.create(context.sessionId(), agent);
+            try {
+                SubagentRunner.SubagentResult result = runner.run(context.sessionId(), agent, prompt, 0);
+                if (tasksRegistry != null && taskId != null) tasksRegistry.succeed(taskId, result);
+                String text = result.text().isBlank() ? "Subagent completed with no text output." : result.text();
+                ToolOutcome outcome = new ToolOutcome.Ok(new ToolResult(Option.none(),
+                        List.of(new ToolContent.TextItem(text)), Map.of("agent", agent, "tokens", result.usage().total())));
+                if (tasksRegistry != null && taskId != null) {
+                    // keep task id visible in tool result metadata
+                    if (outcome instanceof ToolOutcome.Ok ok) {
+                        // no-op: task already tracked in registry
+                    }
+                }
+                return outcome;
+            } catch (RuntimeException e) {
+                if (tasksRegistry != null && taskId != null) tasksRegistry.fail(taskId, e);
+                throw e;
+            }
         } catch (IllegalArgumentException e) {
             return ReadTool.failure("subagent", e.getMessage());
         } catch (RuntimeException e) {
@@ -115,7 +134,7 @@ public final class SubagentTool {
     }
 
     private static ToolOutcome executeBatch(SubagentRunner runner, PermissionGate permissionGate,
-                                            JsonValue.Arr tasks,
+                                            BackgroundTasks tasksRegistry, JsonValue.Arr tasks,
                                             de.augmentia.oc.engine.core.contract.tool.ToolContext context) {
         StringBuilder output = new StringBuilder();
         int index = 0;
@@ -124,7 +143,7 @@ public final class SubagentTool {
             String agent = JsonArgs.requiredString(task, "agent");
             String prompt = JsonArgs.requiredString(task, "prompt");
             String name = JsonArgs.string(task, "name");
-            ToolOutcome outcome = execute(runner, permissionGate,
+            ToolOutcome outcome = execute(runner, permissionGate, tasksRegistry,
                     JsonValue.of(Map.of("agent", JsonValue.of(agent),
                             "prompt", JsonValue.of(prompt))), context);
             if (outcome instanceof ToolOutcome.Failed failed) {
@@ -160,7 +179,14 @@ public final class SubagentTool {
                 permissionGate.assertAllowed(req);
             }
 
-            String taskId = backgroundTasks.create(context.sessionId(), agent);
+            String existing = backgroundTasks.findRunning(context.sessionId(), agent, prompt);
+            if (existing != null) {
+                return new ToolOutcome.Ok(new ToolResult(Option.none(),
+                        List.of(new ToolContent.TextItem("Subagent already running as task " + existing)),
+                        Map.of("taskId", existing, "deduplicated", true)));
+            }
+
+            String taskId = backgroundTasks.create(context.sessionId(), agent, prompt);
             Thread thread = Thread.ofVirtual().name("subagent-" + taskId).unstarted(() -> {
                 try {
                     SubagentRunner.SubagentResult result = runner.run(context.sessionId(), agent, prompt, 0);

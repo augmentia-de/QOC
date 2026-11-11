@@ -81,7 +81,7 @@ class ToolDescriptionGoldenTest {
     @Test
     void taskDescription() {
         assertThat(TaskTool.definition(new SubagentTool(null, request -> { })).description())
-                .isEqualTo("Inspect or control a background subagent task");
+                .isEqualTo("Inspect or control a background subagent task. For 'wait', prefer timeout >= 30000 (max 300000) to avoid excessive polling.");
     }
 
     @Test

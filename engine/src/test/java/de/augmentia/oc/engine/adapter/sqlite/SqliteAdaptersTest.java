@@ -350,6 +350,51 @@ class SqliteAdaptersTest {
         assertThat(sessions.retain(info.id())).isTrue();
     }
 
+    @Test
+    void pendingApprovalSqlPersistsAndResolves() throws Exception {
+        String id = "req-" + java.util.UUID.randomUUID();
+        String tokenHash = "hash-" + java.util.UUID.randomUUID();
+        Instant now = Instant.now();
+        de.augmentia.oc.engine.adapter.sql.PendingApprovalSql.persistPending(
+                dataSource, id, "s1", "shell", "ctx", now, now.plusSeconds(60), tokenHash, "email");
+        assertThat(de.augmentia.oc.engine.adapter.sql.PendingApprovalSql.sessionIdForToken(dataSource, tokenHash))
+                .isEqualTo("s1");
+        assertThat(de.augmentia.oc.engine.adapter.sql.PendingApprovalSql.requestIdForToken(dataSource, tokenHash))
+                .isEqualTo(id);
+        assertThat(de.augmentia.oc.engine.adapter.sql.PendingApprovalSql.decision(dataSource, id)).isNull();
+        assertThat(de.augmentia.oc.engine.adapter.sql.PendingApprovalSql.updateDecision(dataSource, id, "ONCE", "ok"))
+                .isTrue();
+        assertThat(de.augmentia.oc.engine.adapter.sql.PendingApprovalSql.decision(dataSource, id)).isEqualTo("ONCE");
+        de.augmentia.oc.engine.adapter.sql.PendingApprovalSql.markState(dataSource, id, "EXPIRED");
+        assertThat(de.augmentia.oc.engine.adapter.sql.PendingApprovalSql.deleteDecidedBefore(
+                dataSource, now.plusSeconds(120))).isZero();
+    }
+
+    @Test
+    void questionSqlPersistsAndAnswers() throws Exception {
+        String id = "q-" + java.util.UUID.randomUUID();
+        String tokenHash = "qhash-" + java.util.UUID.randomUUID();
+        Instant now = Instant.now();
+        de.augmentia.oc.engine.adapter.sql.QuestionSql.persistPending(
+                dataSource, id, "s1", "[]", now, now.plusSeconds(60), tokenHash);
+        assertThat(de.augmentia.oc.engine.adapter.sql.QuestionSql.pollAnswer(dataSource, id)).isNull();
+        de.augmentia.oc.engine.adapter.sql.QuestionSql.updateAnswer(dataSource, id, "a", "text");
+        String[] answer = de.augmentia.oc.engine.adapter.sql.QuestionSql.pollAnswer(dataSource, id);
+        assertThat(answer).containsExactly("a", "text");
+        assertThat(de.augmentia.oc.engine.adapter.sql.QuestionSql.sessionIdForQuestion(dataSource, id)).isEqualTo("s1");
+    }
+
+    @Test
+    void toolResultCacheDeletesOldEntries() {
+        SqliteToolResultCache cache = new SqliteToolResultCache(dataSource);
+        IdempotencyKey key = IdempotencyKey.of(SessionId.create(), CallId.create());
+        cache.store(key, SessionId.create().value(), "tool", JsonValue.of("result"));
+        assertThat(cache.find(key)).isPresent();
+        int deleted = cache.deleteCreatedBefore(Instant.now().plusSeconds(60));
+        assertThat(deleted).isGreaterThanOrEqualTo(1);
+        assertThat(cache.find(key)).isEmpty();
+    }
+
     private static SessionInfo sessionInfo() {
         return new SessionInfo(SessionId.create(), ProjectId.create(),
                 new Location(Path.of("/work"), ProjectId.create(), Option.none()), "title",

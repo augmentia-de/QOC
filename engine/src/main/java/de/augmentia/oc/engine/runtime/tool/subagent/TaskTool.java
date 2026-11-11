@@ -36,7 +36,7 @@ public final class TaskTool {
                 "id", Schema.opt(Schema.str()),
                 "timeout", Schema.opt(Schema.lng())));
         return new ToolDefinition(new ToolName("task"),
-                "Inspect or control a background subagent task",
+                "Inspect or control a background subagent task. For 'wait', prefer timeout >= 30000 (max 300000) to avoid excessive polling.",
                 input, Option.none(),
                 (value, context) -> execute(subagent.backgroundTasks(), value, context.sessionId()), null);
     }

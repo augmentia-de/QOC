@@ -42,19 +42,32 @@ public final class HttpProviderAdapter implements ProviderAdapter {
     private final ProviderErrorClassifier classifier;
     private final Duration timeout;
     private final LlmTrace trace;
+    private final int firstRequestMax;
+    private final int subsequentRequestMax;
+    private final int responseMax;
+
 
     public HttpProviderAdapter(HttpTransport transport, URI endpoint, Map<String, String> headers,
                                Function<ModelRequest, String> encoder, SseReader sseReader,
                                Supplier<EventTranslator> translatorFactory, ProviderErrorClassifier classifier,
                                Duration timeout) {
         this(transport, endpoint, headers, encoder, sseReader, translatorFactory, classifier, timeout,
-                LlmTrace.noop());
+                LlmTrace.noop(), 4000, 800, 800);
     }
 
     public HttpProviderAdapter(HttpTransport transport, URI endpoint, Map<String, String> headers,
                                Function<ModelRequest, String> encoder, SseReader sseReader,
                                Supplier<EventTranslator> translatorFactory, ProviderErrorClassifier classifier,
                                Duration timeout, LlmTrace trace) {
+        this(transport, endpoint, headers, encoder, sseReader, translatorFactory, classifier, timeout,
+                trace, 4000, 800, 800);
+    }
+
+    public HttpProviderAdapter(HttpTransport transport, URI endpoint, Map<String, String> headers,
+                               Function<ModelRequest, String> encoder, SseReader sseReader,
+                               Supplier<EventTranslator> translatorFactory, ProviderErrorClassifier classifier,
+                               Duration timeout, LlmTrace trace, int firstRequestMax, int subsequentRequestMax,
+                               int responseMax) {
         if (transport == null || endpoint == null || encoder == null || sseReader == null
                 || translatorFactory == null || classifier == null || timeout == null) {
             throw new IllegalArgumentException("adapter dependencies must not be null");
@@ -68,13 +81,32 @@ public final class HttpProviderAdapter implements ProviderAdapter {
         this.classifier = classifier;
         this.timeout = timeout;
         this.trace = trace == null ? LlmTrace.noop() : trace;
+        this.firstRequestMax = firstRequestMax <= 0 ? 4000 : firstRequestMax;
+        this.subsequentRequestMax = subsequentRequestMax <= 0 ? 800 : subsequentRequestMax;
+        this.responseMax = responseMax <= 0 ? 800 : responseMax;
     }
 
     @Override
     public Stream<ModelEvent> stream(ModelRequest request) {
+        return stream(request, null, 0, null);
+    }
+
+    @Override
+    public Stream<ModelEvent> stream(ModelRequest request, java.util.function.Consumer<ModelEvent> sink, int callIndex,
+                                     java.util.concurrent.atomic.AtomicReference<String> summary) {
         if (request == null) throw new IllegalArgumentException("request must not be null");
         String body = encoder.apply(request);
         trace.request(endpoint.toString(), body);
+
+        java.util.function.Consumer<ModelEvent> effectiveSink = sink;
+        int effectiveCallIndex = callIndex;
+        if (effectiveSink != null) {
+            String requestDisplay = (effectiveCallIndex == 0)
+                    ? (body.length() > firstRequestMax ? body.substring(0, firstRequestMax) + "…" : body)
+                    : (body.length() > subsequentRequestMax ? body.substring(body.length() - subsequentRequestMax) : body);
+            effectiveSink.accept(new ModelEvent.LlmRequest(endpoint.toString(), requestDisplay));
+        }
+
         HttpTransport.ResponseStream response = null;
         try {
             response = transport.postJson(endpoint, mergeHeaders(request), body, timeout);
@@ -83,6 +115,11 @@ public final class HttpProviderAdapter implements ProviderAdapter {
                 trace.error(response.status(), errorBody);
                 ModelEvent failure = providerFailure(response.status(), errorBody, retryAfter(response));
                 trace.response(response.status(), List.of(failure));
+                String resp = "HTTP " + response.status() + ": " + (errorBody.length() > responseMax ? errorBody.substring(0, responseMax) + "…" : errorBody);
+                if (summary != null) summary.set(resp);
+                if (effectiveSink != null) {
+                    effectiveSink.accept(new ModelEvent.LlmResponse(resp));
+                }
                 return Stream.of(failure);
             }
 
@@ -95,9 +132,26 @@ public final class HttpProviderAdapter implements ProviderAdapter {
             StreamValidator validator = new StreamValidator();
             List<ModelEvent> validated = validator.finish(validator.validate(events)).stream().toList();
             trace.response(response.status(), validated);
+            StringBuilder sb = new StringBuilder();
+            for (ModelEvent ev : validated) {
+                if (ev instanceof ModelEvent.ReasoningDelta rd) sb.append("[reasoning] ").append(rd.text()).append('\n');
+                else if (ev instanceof ModelEvent.TextDelta td) sb.append("[text] ").append(td.text()).append('\n');
+                else if (ev instanceof ModelEvent.ToolCallRequested tc) sb.append("[tool] ").append(tc.name().value()).append(' ').append(tc.input()).append('\n');
+                else if (ev instanceof ModelEvent.ToolFailed tf) sb.append("[tool failed] ").append(tf.message()).append('\n');
+                else if (ev instanceof ModelEvent.Finished f) sb.append("[finish] ").append(f.reason()).append(" in=").append(f.usage().input()).append(" out=").append(f.usage().output()).append('\n');
+                else if (ev instanceof ModelEvent.ProviderFailed pf) sb.append("[failure] ").append(pf.kind()).append(' ').append(pf.message()).append('\n');
+            }
+            String resp = sb.toString();
+            if (resp.length() > responseMax) resp = resp.substring(0, responseMax) + "…";
+            if (summary != null) summary.set(resp);
             return validated.stream();
         } catch (UncheckedIOException e) {
             trace.transportFailure(e.getMessage());
+            String tmsg = "Transport failure: " + (e.getMessage() == null ? "" : e.getMessage());
+            if (summary != null) summary.set(tmsg);
+            if (effectiveSink != null) {
+                effectiveSink.accept(new ModelEvent.LlmResponse(tmsg));
+            }
             return Stream.of(new ModelEvent.ProviderFailed(
                     new FailureKind.Transport(TransportDelivery.UNSENT, TransportOperation.SEND, "io"),
                     "transport failure", Option.none(), Option.none()));

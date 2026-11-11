@@ -37,11 +37,65 @@ public final class ContextBuilder {
 
     public static final String STEP_LIMIT_PROMPT = PromptLoader.get("step-limit");
 
+    /**
+     * Default least-privilege permission rules: deny everything, then explicitly
+     * allow the implied permissions (edit implies read, write implies read, etc.).
+     * Can be used as the {@code defaultPermissions} constructor argument.
+     */
+    public static List<Rule> leastPrivilegeDefaults() {
+        List<Rule> rules = new ArrayList<>();
+        // 1. Default: deny everything
+        rules.add(new Rule("*", "*", Effect.DENY));
+        // 2. Read: allow (read is needed for edit/write/patch to find old text)
+        rules.add(new Rule("read", "*", Effect.ALLOW));
+        // 3. External directory: deny (no access outside workspace)
+        rules.add(new Rule("external_directory", "*", Effect.DENY));
+        // 4. Edit/Write/Patch: deny (nothing changes)
+        rules.add(new Rule("edit", "*", Effect.DENY));
+        rules.add(new Rule("write", "*", Effect.DENY));
+        rules.add(new Rule("patch", "*", Effect.DENY));
+        // 5. Shell: destructive/unknown commands ask; read-only commands below
+        //    are auto-allowed and therefore must come after this rule.
+        rules.add(new Rule("shell", "*", Effect.ASK));
+        rules.add(new Rule("shell", "*git log*", Effect.ALLOW));
+        rules.add(new Rule("shell", "*git status*", Effect.ALLOW));
+        rules.add(new Rule("shell", "*git diff*", Effect.ALLOW));
+        rules.add(new Rule("shell", "*ls*", Effect.ALLOW));
+        rules.add(new Rule("shell", "*cat*", Effect.ALLOW));
+        // 6. Secrets: ask (override read for .env)
+        rules.add(new Rule("read", "*.env", Effect.ASK));
+        rules.add(new Rule("read", "*.env.*", Effect.ASK));
+        rules.add(new Rule("read", "*.env.example", Effect.ALLOW));
+        return List.copyOf(rules);
+    }
+
+    /**
+     * Allow-all defaults: everything allowed, with secret protection.
+     * OpenCode-compatible (allow-by-default).
+     */
+    public static List<Rule> allowAllDefaults() {
+        List<Rule> rules = new ArrayList<>();
+        rules.add(new Rule("*", "*", Effect.ALLOW));
+        rules.add(new Rule("read", "*.env", Effect.ASK));
+        rules.add(new Rule("read", "*.env.*", Effect.ASK));
+        rules.add(new Rule("read", "*.env.example", Effect.ALLOW));
+        return List.copyOf(rules);
+    }
+
+    /**
+     * Returns defaults based on mode: "allow-all" or "least-privilege" (default).
+     */
+    public static List<Rule> defaults(String mode) {
+        if ("allow-all".equalsIgnoreCase(mode)) return allowAllDefaults();
+        return leastPrivilegeDefaults();
+    }
+
     private final Conversation conversation;
     private final SkillCatalog skills;
     private final InstructionLoader instructionLoader;
     private final Option<InstructionStore> instructionStore;
     private final SkillFilterOptions skillFilter;
+    private final List<Rule> defaultPermissions;
 
     public ContextBuilder(Conversation conversation, SkillCatalog skills) {
         this(conversation, skills, InstructionLoader.none(), Option.none(), SkillFilterOptions.defaults());
@@ -58,12 +112,19 @@ public final class ContextBuilder {
 
     public ContextBuilder(Conversation conversation, SkillCatalog skills, InstructionLoader instructionLoader,
                          Option<InstructionStore> instructionStore, SkillFilterOptions skillFilter) {
+        this(conversation, skills, instructionLoader, instructionStore, skillFilter, List.of());
+    }
+
+    public ContextBuilder(Conversation conversation, SkillCatalog skills, InstructionLoader instructionLoader,
+                         Option<InstructionStore> instructionStore, SkillFilterOptions skillFilter,
+                         List<Rule> defaultPermissions) {
         if (conversation == null) throw new IllegalArgumentException("conversation must not be null");
         this.conversation = conversation;
         this.skills = skills == null ? SkillCatalog.empty() : skills;
         this.instructionLoader = instructionLoader == null ? InstructionLoader.none() : instructionLoader;
         this.instructionStore = instructionStore == null ? Option.none() : instructionStore;
         this.skillFilter = skillFilter == null ? SkillFilterOptions.defaults() : skillFilter;
+        this.defaultPermissions = defaultPermissions == null ? List.of() : List.copyOf(defaultPermissions);
     }
 
     public Prepared prepare(SessionInfo session, AgentProfile agent, ModelInfo model,
@@ -91,7 +152,10 @@ public final class ContextBuilder {
             throw new IllegalArgumentException("context inputs must not be null");
         }
         Seq from = afterSeq == null ? Seq.zero() : afterSeq;
-        List<Rule> rules = Stream.concat(agent.permissions().stream(), session.permissions().stream()).toList();
+        List<Rule> rules = new ArrayList<>();
+        rules.addAll(defaultPermissions);
+        rules.addAll(agent.permissions());
+        rules.addAll(session.permissions());
 
         List<String> system = new ArrayList<>();
         String base = agent.system().orElse(basePrompt(tools));

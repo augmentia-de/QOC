@@ -33,6 +33,10 @@ public sealed interface ModelEvent {
 
     record ToolResultProvided(CallId callId, OutcomePayload outcome, boolean providerExecuted) implements ModelEvent {}
 
+    record LlmRequest(String endpoint, String body) implements ModelEvent {}
+
+    record LlmResponse(String body) implements ModelEvent {}
+
     record ToolFailed(CallId callId, String message) implements ModelEvent {}
 
     record Finished(FinishReason reason, TokenCount usage, JsonValue raw) implements ModelEvent {
@@ -40,6 +44,15 @@ public sealed interface ModelEvent {
             if (reason == null) reason = FinishReason.UNKNOWN;
             if (usage == null) usage = TokenCount.zero();
             if (raw == null) raw = JsonValue.ofNull();
+        }
+    }
+
+    record RetryScheduled(int attempt, Duration delay, FailureKind kind) implements ModelEvent {
+        public RetryScheduled {
+            if (delay == null) delay = Duration.ZERO;
+            if (kind == null) kind = new FailureKind.Transport(
+                    de.augmentia.oc.engine.core.contract.provider.TransportDelivery.UNSENT,
+                    de.augmentia.oc.engine.core.contract.provider.TransportOperation.SEND, "retry");
         }
     }
 

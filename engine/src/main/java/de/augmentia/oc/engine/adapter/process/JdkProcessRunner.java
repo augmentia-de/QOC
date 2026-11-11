@@ -83,6 +83,18 @@ public final class JdkProcessRunner implements ProcessRunner {
         spec.cwd().ifPresent(path -> builder.directory(path.toFile()));
         builder.redirectErrorStream(false);
         Map<String, String> environment = builder.environment();
+        // Do not leak the engine process environment (which may contain
+        // secrets such as API keys or DB credentials) into child processes.
+        // Only an explicit allow-list is carried over; tool-supplied vars win.
+        java.util.Set<String> allowed = java.util.Set.of(
+                "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TERM");
+        java.util.Map<String, String> inherited = new java.util.LinkedHashMap<>(environment);
+        environment.clear();
+        for (String key : allowed) {
+            String value = inherited.get(key);
+            if (value == null) value = System.getenv(key);
+            if (value != null) environment.put(key, value);
+        }
         environment.putAll(spec.env());
         try {
             return builder.start();
@@ -96,7 +108,7 @@ public final class JdkProcessRunner implements ProcessRunner {
      * requests PTY semantics (single command); a persistent PTY across calls is
      * not modelled here. Without {@code script} the command runs normally.
      */
-    private static List<String> ptyCommand(List<String> command) {
+    static List<String> ptyCommand(List<String> command) {
         String script = scriptBinary();
         if (script == null) return command;
         StringBuilder line = new StringBuilder();
@@ -107,7 +119,7 @@ public final class JdkProcessRunner implements ProcessRunner {
         return List.of(script, "-qefc", line.toString(), "/dev/null");
     }
 
-    private static String scriptBinary() {
+    static String scriptBinary() {
         String path = System.getenv("PATH");
         if (path == null) return null;
         for (String directory : path.split(java.io.File.pathSeparator)) {

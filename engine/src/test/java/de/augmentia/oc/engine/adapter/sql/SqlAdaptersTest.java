@@ -322,6 +322,17 @@ class SqlAdaptersTest {
         assertThat(sessions.retain(info.id())).isTrue();
     }
 
+    @Test
+    void toolResultCacheDeletesOldEntries() {
+        SqlToolResultCache cache = new SqlToolResultCache(dataSource);
+        IdempotencyKey key = IdempotencyKey.of(SessionId.create(), CallId.create());
+        cache.store(key, SessionId.create().value(), "tool", JsonValue.of("result"));
+        assertThat(cache.find(key)).isPresent();
+        int deleted = cache.deleteCreatedBefore(Instant.now().plusSeconds(60));
+        assertThat(deleted).isGreaterThanOrEqualTo(1);
+        assertThat(cache.find(key)).isEmpty();
+    }
+
     private static SessionInfo sessionInfo() {
         return new SessionInfo(SessionId.create(), ProjectId.create(),
                 new Location(Path.of("/work"), ProjectId.create(), Option.none()), "title",

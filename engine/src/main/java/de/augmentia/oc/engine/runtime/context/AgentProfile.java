@@ -14,30 +14,41 @@ import java.util.List;
  * maximum number of model rounds for one prompt.</p>
  */
 public record AgentProfile(AgentId id, Option<String> system, int maxSteps, List<Rule> permissions,
-                           boolean planMode) {
+                           boolean planMode, de.augmentia.oc.engine.core.contract.permission.AskMode askMode) {
     public AgentProfile {
         if (id == null) throw new IllegalArgumentException("id must not be null");
         if (system == null) system = Option.none();
         permissions = permissions == null ? List.of() : List.copyOf(permissions);
+        if (askMode == null) askMode = de.augmentia.oc.engine.core.contract.permission.AskMode.INTERACTIVE;
         if (maxSteps < 0) throw new IllegalArgumentException("maxSteps must not be negative; 0 means no limit");
     }
 
     public AgentProfile(AgentId id, Option<String> system, int maxSteps, List<Rule> permissions) {
-        this(id, system, maxSteps, permissions, false);
+        this(id, system, maxSteps, permissions, false, null);
     }
 
     /** Plan mode is detected from the agent name. */
     public static AgentProfile forAgent(AgentId id, Option<String> system, int maxSteps,
                                         List<Rule> permissions, String name) {
+        return forAgent(id, system, maxSteps, permissions, name, null);
+    }
+
+    public static AgentProfile forAgent(AgentId id, Option<String> system, int maxSteps,
+                                        List<Rule> permissions, String name,
+                                        de.augmentia.oc.engine.core.contract.permission.AskMode askMode) {
         boolean plan = "plan".equalsIgnoreCase(name);
-        // Auto-detect plan mode only when edit is denied globally. Scoped rules
-        // such as "edit: *.env = deny" must not turn a build agent into plan mode.
+        // Auto-detect plan mode only for agents that deny edits entirely. An
+        // agent with a global edit deny followed by scoped edit allows (for
+        // example "edit * deny, edit docs/** allow") is not in plan mode.
         if (!plan && permissions != null) {
-            plan = permissions.stream().anyMatch(r ->
+            boolean hasEditAllow = permissions.stream().anyMatch(r ->
+                    "edit".equalsIgnoreCase(r.action()) && r.effect() == Effect.ALLOW);
+            boolean hasGlobalEditDeny = permissions.stream().anyMatch(r ->
                     "edit".equalsIgnoreCase(r.action())
                             && ("*".equals(r.resource()) || "**".equals(r.resource()))
                             && r.effect() == Effect.DENY);
+            plan = !hasEditAllow && hasGlobalEditDeny;
         }
-        return new AgentProfile(id, system, maxSteps, permissions, plan);
+        return new AgentProfile(id, system, maxSteps, permissions, plan, askMode);
     }
 }

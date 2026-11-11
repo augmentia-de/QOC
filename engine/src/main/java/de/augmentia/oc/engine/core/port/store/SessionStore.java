@@ -13,6 +13,9 @@ public interface SessionStore extends SessionReader {
 
     void put(SessionInfo info);
 
+    /** Sets the idle outcome (completed/cancelled/paused/failed) for a session. */
+    void setIdleOutcome(SessionId id, String outcome);
+
     void putInbox(InboxEntry entry);
 
     void removeInbox(SessionId session, InboxId id);

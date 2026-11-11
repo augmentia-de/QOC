@@ -51,10 +51,27 @@ public final class BackgroundTasks {
     private final ConcurrentHashMap<String, Entry> entries = new ConcurrentHashMap<>();
 
     public String create(SessionId parent, String agent) {
+        return create(parent, agent, null);
+    }
+
+    public String create(SessionId parent, String agent, String prompt) {
         if (parent == null) throw new IllegalArgumentException("parent must not be null");
         String id = "task_" + UUID.randomUUID();
-        entries.put(id, new Entry(id, parent, agent == null ? "" : agent));
+        entries.put(id, new Entry(id, parent, agent == null ? "" : agent, prompt));
         return id;
+    }
+
+    /** Returns the id of a still-running task with the same agent and prompt, if any. */
+    public String findRunning(SessionId parent, String agent, String prompt) {
+        if (parent == null) return null;
+        for (Entry entry : entries.values()) {
+            if (!entry.parent.equals(parent)) continue;
+            if (entry.state.get() != State.RUNNING) continue;
+            if (!java.util.Objects.equals(entry.agent, agent == null ? "" : agent)) continue;
+            if (!java.util.Objects.equals(entry.prompt, prompt)) continue;
+            return entry.id;
+        }
+        return null;
     }
 
     public void attach(String id, Thread thread) {
@@ -170,6 +187,7 @@ public final class BackgroundTasks {
         private final String id;
         private final SessionId parent;
         private final String agent;
+        private final String prompt;
         private final Instant created = Instant.now();
         private final AtomicReference<State> state = new AtomicReference<>(State.RUNNING);
         private final CountDownLatch done = new CountDownLatch(1);
@@ -180,10 +198,11 @@ public final class BackgroundTasks {
         private volatile TokenCount usage = TokenCount.zero();
         private volatile Instant finished;
 
-        private Entry(String id, SessionId parent, String agent) {
+        private Entry(String id, SessionId parent, String agent, String prompt) {
             this.id = id;
             this.parent = parent;
             this.agent = agent;
+            this.prompt = prompt;
         }
 
         private boolean running() {

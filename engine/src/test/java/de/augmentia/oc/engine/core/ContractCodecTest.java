@@ -91,6 +91,19 @@ class ContractCodecTest {
     }
 
     @Test
+    void retryScheduledDefaultsNullsAndRoundTrips() {
+        ModelEvent.RetryScheduled event = new ModelEvent.RetryScheduled(2, null, null);
+
+        assertThat(event.delay()).isEqualTo(java.time.Duration.ZERO);
+        assertThat(event.kind()).isNotNull();
+
+        ModelEvent decoded = ContractCodec.decode(
+                ContractCodec.encode(event, ModelEvent.class), ModelEvent.class);
+
+        assertThat(decoded).isEqualTo(event);
+    }
+
+    @Test
     void unknownSubtypeFails() {
         JsonValue encoded = JsonValue.of(Map.of("_type", JsonValue.of("NoSuchVariant")));
         assertThatThrownBy(() -> ContractCodec.decode(encoded, ModelEvent.class))

@@ -100,6 +100,11 @@ class SessionRetentionTest {
         }
 
         @Override
+        public void setIdleOutcome(SessionId id, String outcome) {
+            // no-op for fake
+        }
+
+        @Override
         public void putInbox(InboxEntry entry) {
         }
 

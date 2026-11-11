@@ -11,6 +11,7 @@ import de.augmentia.oc.engine.core.contract.permission.PermissionDenied;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
 import de.augmentia.oc.engine.core.contract.tool.ToolSnapshot;
+import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
 import de.augmentia.oc.engine.core.eval.OutputBounding;
 import de.augmentia.oc.engine.core.json.Json;
 import de.augmentia.oc.engine.core.json.JsonValue;
@@ -31,6 +32,8 @@ import java.util.logging.Logger;
  */
 public final class ToolRuntime {
     private static final Logger LOG = Logger.getLogger(ToolRuntime.class.getName());
+    private static final java.util.concurrent.ExecutorService TIMEOUT_EXECUTOR =
+            java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
 
     private final ToolSnapshot snapshot;
     private final ToolAuthorizer authorizer;
@@ -38,6 +41,7 @@ public final class ToolRuntime {
     private final Hooks hooks;
     private final ToolOutputStore outputStore;
     private final ToolResultCache resultCache;
+    private final long stepTimeoutSeconds;
 
     public ToolRuntime(ToolSnapshot snapshot, ToolAuthorizer authorizer, PermissionGate permission,
                        Hooks hooks, ToolOutputStore outputStore) {
@@ -46,6 +50,12 @@ public final class ToolRuntime {
 
     public ToolRuntime(ToolSnapshot snapshot, ToolAuthorizer authorizer, PermissionGate permission,
                        Hooks hooks, ToolOutputStore outputStore, ToolResultCache resultCache) {
+        this(snapshot, authorizer, permission, hooks, outputStore, resultCache, 30);
+    }
+
+    public ToolRuntime(ToolSnapshot snapshot, ToolAuthorizer authorizer, PermissionGate permission,
+                       Hooks hooks, ToolOutputStore outputStore, ToolResultCache resultCache,
+                       long stepTimeoutSeconds) {
         if (snapshot == null || authorizer == null || permission == null || hooks == null
                 || outputStore == null) {
             throw new IllegalArgumentException("runtime dependencies must not be null");
@@ -56,6 +66,7 @@ public final class ToolRuntime {
         this.hooks = hooks;
         this.outputStore = outputStore;
         this.resultCache = resultCache;
+        this.stepTimeoutSeconds = stepTimeoutSeconds > 0 ? stepTimeoutSeconds : 30;
     }
 
     public ToolOutcome execute(ToolCall rawCall, ToolContext context) {
@@ -85,7 +96,35 @@ public final class ToolRuntime {
             PermissionRequest request = authorizer.request(context, definition, call);
             permission.assertAllowed(request);
 
-            ToolOutcome outcome = definition.execute().execute(decodedInput, context);
+            ToolOutcome outcome;
+            boolean longRunning = call.name().value().equals("subagent") || call.name().value().equals("task");
+            if (stepTimeoutSeconds > 0 && !longRunning) {
+                java.util.concurrent.Future<ToolOutcome> future = TIMEOUT_EXECUTOR.submit(() ->
+                        definition.execute().execute(decodedInput, context));
+                try {
+                    outcome = future.get(stepTimeoutSeconds, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (java.util.concurrent.TimeoutException te) {
+                    future.cancel(true);
+                    outcome = ReadTool.failure(call.name().value(), "step timeout after " + stepTimeoutSeconds + "s");
+                } catch (java.util.concurrent.ExecutionException e) {
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    if (cause instanceof de.augmentia.oc.engine.core.error.Defect) {
+                        throw (de.augmentia.oc.engine.core.error.Defect) cause;
+                    }
+                    if (cause instanceof de.augmentia.oc.engine.core.contract.tool.ToolFailure tf) {
+                        outcome = ReadTool.failure(call.name().value(), tf.getMessage());
+                    } else {
+                        outcome = ReadTool.failure(call.name().value(), "tool error: " + cause.getMessage());
+                    }
+                } catch (Exception e) {
+                    if (e instanceof de.augmentia.oc.engine.core.error.Defect) {
+                        throw (de.augmentia.oc.engine.core.error.Defect) e;
+                    }
+                    outcome = ReadTool.failure(call.name().value(), "tool error: " + e.getMessage());
+                }
+            } else {
+                outcome = definition.execute().execute(decodedInput, context);
+            }
             LOG.fine("tool outcome: " + call.name() + " -> " + outcome.getClass().getSimpleName());
             if (outcome instanceof ToolOutcome.Failed failed) {
                 return keyed(failed, context);

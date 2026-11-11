@@ -2,6 +2,7 @@ package de.augmentia.oc.engine.runtime.permission.engine;
 
 import de.augmentia.oc.engine.core.contract.permission.PermissionDenied;
 import de.augmentia.oc.engine.core.contract.permission.PermissionHook;
+import de.augmentia.oc.engine.core.contract.permission.AskMode;
 import de.augmentia.oc.engine.core.contract.permission.PermissionRequest;
 import de.augmentia.oc.engine.core.error.Aborted;
 import de.augmentia.oc.engine.core.error.Defect;
@@ -14,6 +15,7 @@ import de.augmentia.oc.engine.core.model.PermissionRequestId;
 import de.augmentia.oc.engine.core.model.ProjectId;
 import de.augmentia.oc.engine.core.contract.permission.Reply;
 import de.augmentia.oc.engine.core.model.SessionId;
+import de.augmentia.oc.engine.core.model.AgentId;
 import de.augmentia.oc.engine.core.port.human.ApprovalSource;
 import de.augmentia.oc.engine.core.port.human.PolicySource;
 import de.augmentia.oc.engine.core.port.store.ApprovalStore;
@@ -21,6 +23,8 @@ import de.augmentia.oc.engine.core.port.store.ApprovalStore;
 import java.util.ArrayList;
 import java.util.logging.Logger;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * Permission engine: deny-before-approval and strict channel separation.
@@ -38,14 +42,31 @@ public final class PermissionEngine {
     private final Option<ApprovalSource> approvalSource;
     private final Option<PolicySource> policySource;
     private final Option<PermissionHook> hook;
+    private final AskMode askMode;
+    private final Map<AgentId, AskMode> agentAskModes = new HashMap<>();
     private final PendingApprovals pending = new PendingApprovals();
 
     public PermissionEngine(Option<ApprovalStore> approvals, Option<ApprovalSource> approvalSource,
                             Option<PolicySource> policySource, Option<PermissionHook> hook) {
+        this(approvals, approvalSource, policySource, hook, AskMode.INTERACTIVE);
+    }
+
+    public PermissionEngine(Option<ApprovalStore> approvals, Option<ApprovalSource> approvalSource,
+                            Option<PolicySource> policySource, Option<PermissionHook> hook, AskMode askMode) {
         this.approvals = approvals == null ? Option.none() : approvals;
         this.approvalSource = approvalSource == null ? Option.none() : approvalSource;
         this.policySource = policySource == null ? Option.none() : policySource;
         this.hook = hook == null ? Option.none() : hook;
+        this.askMode = askMode == null ? AskMode.INTERACTIVE : askMode;
+    }
+
+    /**
+     * Registers an agent-specific ask mode override. Subagents typically use
+     * {@link AskMode#DENY} so they never block on user input.
+     */
+    public void registerAgentAskMode(AgentId agentId, AskMode mode) {
+        if (agentId == null || mode == null) return;
+        agentAskModes.put(agentId, mode);
     }
 
     public PendingApprovals pending() {
@@ -74,6 +95,15 @@ public final class PermissionEngine {
             }
             case PermissionDecision.Ask ignored -> {
                 PermissionRequest request = check.request();
+                AskMode effective = resolveAskMode(check);
+                if (effective == AskMode.ALLOW) {
+                    LOG.fine("permission ask auto-allowed (no-questions mode): " + request.action());
+                    return;
+                }
+                if (effective == AskMode.DENY) {
+                    LOG.fine("permission ask auto-denied (no-questions mode): " + request.action());
+                    throw new PermissionDenied(request, "auto-denied (no-questions mode: deny)");
+                }
                 if (approvalSource.isEmpty()) {
                     throw new Defect("no approval source configured for an ask decision");
                 }
@@ -108,6 +138,15 @@ public final class PermissionEngine {
             }
             case PermissionDecision.Ask ignored -> {
                 PermissionRequest request = check.request();
+                AskMode effective = resolveAskMode(check);
+                if (effective == AskMode.ALLOW) {
+                    LOG.fine("permission ask auto-allowed (no-questions mode): " + request.action());
+                    return;
+                }
+                if (effective == AskMode.DENY) {
+                    LOG.fine("permission ask auto-denied (no-questions mode): " + request.action());
+                    throw new PermissionDenied(request, "auto-denied (no-questions mode: deny)");
+                }
                 pending.add(check);
                 if (approvalSource.isEmpty()) {
                     throw new Defect("no approval source configured for an ask decision");
@@ -198,4 +237,15 @@ public final class PermissionEngine {
         String raw = check.request().action() + ": " + String.join(", ", check.request().resources());
         return raw.length() > 750 ? raw.substring(0, 750) + "…" : raw;
     }
+    private AskMode resolveAskMode(PermissionCheck check) {
+        // Agent-level override from registered map
+        if (check.agent().isPresent()) {
+            AskMode agentMode = agentAskModes.get(check.agent().orElseThrow());
+            if (agentMode != null && agentMode != AskMode.INTERACTIVE) {
+                return agentMode;
+            }
+        }
+        return askMode;
+    }
+
 }

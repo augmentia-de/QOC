@@ -23,10 +23,18 @@ import java.util.Map;
 public final class QuestionTool {
 
     private final QuestionSource source;
+    private final int maxRetries;
+    private final long timeoutSeconds;
 
     public QuestionTool(QuestionSource source) {
+        this(source, 0, 300);
+    }
+
+    public QuestionTool(QuestionSource source, int maxRetries, long timeoutSeconds) {
         if (source == null) throw new IllegalArgumentException("source must not be null");
         this.source = source;
+        this.maxRetries = Math.max(0, maxRetries);
+        this.timeoutSeconds = Math.max(30, timeoutSeconds);
     }
 
     public static ToolDefinition definition(QuestionTool tool) {
@@ -43,8 +51,19 @@ public final class QuestionTool {
         return new ToolDefinition(new ToolName("question"),
                 "Ask the user questions when a decision or missing information blocks progress",
                 input, Option.none(),
-                (value, context) -> tool.execute(context.sessionId(), value),
+                (value, context) -> tool.executeWithRetry(context.sessionId(), value),
                 new ToolOptions(Option.none(), Option.of("question"), true, false));
+    }
+
+    ToolOutcome executeWithRetry(de.augmentia.oc.engine.core.model.SessionId session, JsonValue value) {
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            ToolOutcome result = execute(session, value);
+            if (result instanceof ToolOutcome.Ok) return result;
+            if (attempt < maxRetries) {
+                try { Thread.sleep(1000L * (attempt + 1)); } catch (InterruptedException ignored) { }
+            }
+        }
+        return ReadTool.failure("question", "question was not answered after " + (maxRetries + 1) + " attempts");
     }
 
     private ToolOutcome execute(de.augmentia.oc.engine.core.model.SessionId session, JsonValue value) {

@@ -33,6 +33,7 @@ import java.util.logging.Logger;
 public final class Step {
     private static final Logger LOG = Logger.getLogger(Step.class.getName());
     private static final int MAX_PARALLEL_TOOLS = 8;
+    private static final ExecutorService PARALLEL_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
     private final ProviderAdapter provider;
     private final ToolRuntime tools;
@@ -53,17 +54,26 @@ public final class Step {
     }
 
     public StepResult run(Prepared prepared, ToolContext context) {
-        return run(prepared, context, null);
+        return run(prepared, context, null, 0, null);
     }
 
     public StepResult run(Prepared prepared, ToolContext context, Consumer<ModelEvent> liveSink) {
+        return run(prepared, context, liveSink, 0, null);
+    }
+
+    public StepResult run(Prepared prepared, ToolContext context, Consumer<ModelEvent> liveSink, int callIndex) {
+        return run(prepared, context, liveSink, callIndex, null);
+    }
+
+    public StepResult run(Prepared prepared, ToolContext context, Consumer<ModelEvent> liveSink, int callIndex,
+                          java.util.concurrent.atomic.AtomicReference<String> summary) {
         if (prepared == null || context == null) {
             throw new IllegalArgumentException("prepared and context must not be null");
         }
 
         Consumer<ModelEvent> sink = liveSink == null ? this.liveSink : liveSink;
         LOG.fine("step run start");
-        List<ModelEvent> events = provider.stream(prepared.toRequest()).toList();
+        List<ModelEvent> events = provider.stream(prepared.toRequest(), sink, callIndex, summary).toList();
         LOG.fine("provider stream events=" + events.size());
 
         // Collect tool calls in stream order; publish non-tool events live.
@@ -118,27 +128,37 @@ public final class Step {
             return new StepResult.Finished(finish, usage, events, blocked);
         }
 
-        // Execute tool calls in parallel (G-05), keep outcomes in call order.
+        // Execute tool calls. The `question` tool blocks until the user answers
+        // (or times out); running it in parallel with other tools would let those
+        // finish while the question is still open, which is confusing. When a
+        // question is present we therefore run every call sequentially.
         List<StepResult.ToolCallOutcome> outcomes = new ArrayList<>(toolCalls.size());
         for (int i = 0; i < toolCalls.size(); i++) outcomes.add(null);
 
-        if (!toolCalls.isEmpty()) {
-            ExecutorService executor = Executors.newFixedThreadPool(
-                    Math.min(MAX_PARALLEL_TOOLS, toolCalls.size()));
+        boolean hasQuestion = toolCalls.stream()
+                .anyMatch(c -> "question".equalsIgnoreCase(c.name().value()));
+
+        if (!toolCalls.isEmpty() && !hasQuestion) {
+            java.util.concurrent.Semaphore slots = new java.util.concurrent.Semaphore(MAX_PARALLEL_TOOLS);
             try {
                 List<Callable<StepResult.ToolCallOutcome>> tasks = new ArrayList<>();
                 for (ModelEvent.ToolCallRequested call : toolCalls) {
                     tasks.add(() -> {
-                        LOG.fine("tool call requested: " + call.name());
-                        ToolContext callContext = new ToolContext(context.sessionId(),
-                                context.agentId(), context.messageId(), call.callId());
-                        ToolOutcome outcome = tools.execute(
-                                new ToolCall(call.callId(), call.name(), call.input()), callContext);
-                        return new StepResult.ToolCallOutcome(
-                                new ToolCall(call.callId(), call.name(), call.input()), outcome);
+                        slots.acquire();
+                        try {
+                            LOG.fine("tool call requested: " + call.name());
+                            ToolContext callContext = new ToolContext(context.sessionId(),
+                                    context.agentId(), context.messageId(), call.callId());
+                            ToolOutcome outcome = tools.execute(
+                                    new ToolCall(call.callId(), call.name(), call.input()), callContext);
+                            return new StepResult.ToolCallOutcome(
+                                    new ToolCall(call.callId(), call.name(), call.input()), outcome);
+                        } finally {
+                            slots.release();
+                        }
                     });
                 }
-                List<Future<StepResult.ToolCallOutcome>> futures = executor.invokeAll(tasks);
+                List<Future<StepResult.ToolCallOutcome>> futures = PARALLEL_EXECUTOR.invokeAll(tasks);
                 for (int i = 0; i < futures.size(); i++) {
                     try {
                         outcomes.set(i, futures.get(i).get());
@@ -166,10 +186,32 @@ public final class Step {
                         de.augmentia.oc.engine.core.contract.provider.InvalidOutputClassification.INCOMPLETE_STREAM),
                         "tool execution interrupted");
             } catch (de.augmentia.oc.engine.core.error.PausedException pe) {
-                executor.shutdown();
                 return new StepResult.Paused(pe.approvalId(), pe.approvalUrl());
-            } finally {
-                executor.shutdown();
+            }
+        } else if (!toolCalls.isEmpty()) {
+            // Sequential execution when a question tool is present.
+            for (int i = 0; i < toolCalls.size(); i++) {
+                ModelEvent.ToolCallRequested call = toolCalls.get(i);
+                try {
+                    LOG.fine("tool call requested: " + call.name());
+                    ToolContext callContext = new ToolContext(context.sessionId(),
+                            context.agentId(), context.messageId(), call.callId());
+                    ToolOutcome outcome = tools.execute(
+                            new ToolCall(call.callId(), call.name(), call.input()), callContext);
+                    outcomes.set(i, new StepResult.ToolCallOutcome(
+                            new ToolCall(call.callId(), call.name(), call.input()), outcome));
+                } catch (de.augmentia.oc.engine.core.contract.permission.PermissionDenied pd) {
+                    throw pd;
+                } catch (de.augmentia.oc.engine.core.error.Aborted ab) {
+                    throw ab;
+                } catch (de.augmentia.oc.engine.core.error.PausedException pe) {
+                    return new StepResult.Paused(pe.approvalId(), pe.approvalUrl());
+                } catch (RuntimeException re) {
+                    outcomes.set(i, new StepResult.ToolCallOutcome(
+                            new ToolCall(call.callId(), call.name(), call.input()),
+                            new ToolOutcome.Failed(new de.augmentia.oc.engine.core.model.SessionError.ToolExecutionError(
+                                    "tool_failure", re.getMessage()))));
+                }
             }
         }
 

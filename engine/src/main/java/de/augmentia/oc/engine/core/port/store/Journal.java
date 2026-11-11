@@ -23,4 +23,7 @@ public interface Journal {
 
     /** Removes all events and the sequence row of one aggregate. */
     void deleteAggregate(String aggregateId);
+
+    /** Removes events older than the given cutoff (audit log retention). */
+    void deleteOlderThan(java.time.Instant cutoff);
 }

@@ -38,6 +38,14 @@ public final class ScriptedHttp implements HttpTransport {
     }
 
     @Override
+    public synchronized ResponseStream get(URI url, Map<String, String> headers, Duration timeout) {
+        requests.add(new Request(url, headers, null, timeout));
+        Response response = responses.pollFirst();
+        if (response == null) throw new IllegalStateException("ScriptedHttp has no response left");
+        return new Stream(response);
+    }
+
+    @Override
     public synchronized Channel openChannel(URI url, Map<String, String> headers) {
         ScriptedChannel channel = new ScriptedChannel(url, headers);
         channels.add(channel);

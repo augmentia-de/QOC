@@ -17,4 +17,13 @@ public interface NotificationChannel {
      */
     void send(PermissionRequestId requestId, SessionId sessionId, String action,
               String context, String approvalUrl);
+
+    /**
+     * Sends a question notification to the human. Default implementation
+     * delegates to {@link #send} with action "question".
+     */
+    default void sendQuestion(String questionId, SessionId sessionId, String questionText,
+                              String questionUrl) {
+        send(null, sessionId, "question", questionText, questionUrl);
+    }
 }
