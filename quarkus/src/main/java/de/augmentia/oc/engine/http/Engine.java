@@ -158,6 +158,9 @@ public class Engine {
     @Inject
     AgentCatalogue agentCatalogue;
 
+    @Inject
+    de.augmentia.oc.engine.http.security.PrincipalContext principalContext;
+
     private static final Logger LOG = Logger.getLogger(Engine.class);
 
     /** Per-session LLM call counter. */
@@ -1882,8 +1885,17 @@ commandLoader = new CommandLoader(workspacePath,
                     java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), false);
         }
 
+        de.augmentia.oc.engine.core.model.Principal principal =
+                principalContext == null ? de.augmentia.oc.engine.core.model.Principal.anonymous()
+                        : new de.augmentia.oc.engine.core.model.Principal(
+                                principalContext.get().id(),
+                                principalContext.get().name(),
+                                principalContext.get().roles(),
+                                principalContext.get().groups(),
+                                principalContext.get().claims(),
+                                principalContext.get().accessToken());
         de.augmentia.oc.engine.core.model.EngineResult qocResult =
-                qocEngine.runPrompt(id, agentName == null ? "build" : agentName, text, qocConfig, false, null, null);
+                qocEngine.runPrompt(id, agentName == null ? "build" : agentName, text, qocConfig, false, null, null, principal);
 
         // Map EngineResult to Quarkus types
         String qocFinalText = qocResult.text();

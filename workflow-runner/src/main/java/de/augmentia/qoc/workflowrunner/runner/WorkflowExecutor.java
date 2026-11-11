@@ -54,7 +54,7 @@ public class WorkflowExecutor {
                 null, "workflow:" + def.id(), context,
                 new QocEngine.AgentConfig("workflow:" + def.id(), null, 0.3, 4096, 1.0, null,
                         List.of(), List.of(), List.of(), List.of(), false),
-                true, provider, ctx);
+                true, provider, ctx, de.augmentia.oc.engine.core.model.Principal.anonymous());
 
         LOG.debug("Workflow completed: {}", result.text());
         return result.text();

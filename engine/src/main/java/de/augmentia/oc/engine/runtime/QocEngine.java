@@ -468,7 +468,7 @@ public static record EngineConfig(
                 try {
                     this.runPrompt(sessionId, "build",
                             de.augmentia.oc.engine.core.eval.PromptLoader.get("server-restarted"),
-                            null, false, null, null);
+                            null, false, null, null, de.augmentia.oc.engine.core.model.Principal.anonymous());
                 } catch (RuntimeException e) {
                     log.warning("recovery run failed for " + sessionId.value() + ": " + e.getMessage());
                 }
@@ -527,7 +527,7 @@ public static record EngineConfig(
      * The config is stored in the registry by name (if not already present).
      */
     public de.augmentia.oc.engine.core.model.EngineResult runPrompt(String agentName, String prompt, AgentConfig config) {
-        return runPrompt(null, agentName, prompt, config, true, null, null);
+        return runPrompt(null, agentName, prompt, config, true, null, null, de.augmentia.oc.engine.core.model.Principal.anonymous());
 
     }
 
@@ -541,8 +541,10 @@ public static record EngineConfig(
             String agentName, String prompt, AgentConfig config,
             boolean storePrompt,
             de.augmentia.oc.engine.runtime.workflow.WorkflowStepProvider workflowStepProvider,
-            Object workflowContext) {
+            Object workflowContext,
+            de.augmentia.oc.engine.core.model.Principal principal) {
         String name = (agentName == null || agentName.isBlank()) ? "build" : agentName;
+        if (principal == null) principal = de.augmentia.oc.engine.core.model.Principal.anonymous();
         AgentConfig resolved = resolveAgentConfig(name, config);
 
         String normalizedPrompt = prompt == null ? "" : prompt;
@@ -652,7 +654,8 @@ public static record EngineConfig(
                             new de.augmentia.oc.engine.core.contract.tool.ToolContext(
                                     session, info.agent(),
                                     de.augmentia.oc.engine.core.model.MessageId.create(),
-                                    de.augmentia.oc.engine.core.model.CallId.create());
+                                    de.augmentia.oc.engine.core.model.CallId.create(),
+                                    null, principal);
 
                     result = step.run(prepared, toolContext);
                 }
@@ -675,7 +678,8 @@ public static record EngineConfig(
                             new de.augmentia.oc.engine.core.contract.tool.ToolContext(
                                     session, info.agent(),
                                     de.augmentia.oc.engine.core.model.MessageId.create(),
-                                    de.augmentia.oc.engine.core.model.CallId.create());
+                                    de.augmentia.oc.engine.core.model.CallId.create(),
+                                    null, principal);
                     result = step.run(prepared, toolContext);
                 }
 
