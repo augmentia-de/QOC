@@ -27,16 +27,20 @@ public interface ToolAuthorizer {
                 message = action + ": " + (resources.isEmpty() ? "" : resources.get(0));
             }
             if (message.length() > 750) message = message.substring(0, 750) + "…";
+            java.util.Map<String, Object> meta = new java.util.LinkedHashMap<>();
+            meta.put("tool", definition.effectiveName());
+            meta.put("idempotencyKey", context.idempotencyKey().value());
+            meta.put("approvalTier", de.augmentia.oc.engine.core.model.ApprovalTier
+                    .forTool(definition.effectiveName()).name());
+            meta.put("principalId", context.principal().id());
+            meta.put("principalRoles", context.principal().roles());
             return new PermissionRequest(
                     de.augmentia.oc.engine.core.model.PermissionRequestId.create(),
                     context.sessionId(),
                     action,
                     resources.isEmpty() ? java.util.List.of(call.input().toString()) : resources,
                     java.util.List.of(),
-                    java.util.Map.of("tool", definition.effectiveName(),
-                            "idempotencyKey", context.idempotencyKey().value(),
-                            "approvalTier", de.augmentia.oc.engine.core.model.ApprovalTier
-                                    .forTool(definition.effectiveName()).name()),
+                    meta,
                     null,
                     message);
         };
