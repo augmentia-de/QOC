@@ -64,6 +64,7 @@ import de.augmentia.oc.engine.runtime.tool.subagent.SubagentTool;
 import de.augmentia.oc.engine.runtime.tool.subagent.TaskTool;
 import de.augmentia.oc.engine.runtime.tool.web.FirecrawlTool;
 import de.augmentia.oc.engine.runtime.tool.web.WebFetchTool;
+import de.augmentia.oc.engine.runtime.tool.web.SecureRestTool;
 import de.augmentia.oc.engine.runtime.tool.email.EmailTool;
 import de.augmentia.oc.engine.runtime.tool.email.EmailLimits;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
@@ -182,7 +183,7 @@ public class Engine {
     boolean toolTokenEnabled;
 
     @Inject
-    @ConfigProperty(name = "engine.security.tool-token.signing-key", defaultValue = "")
+    @ConfigProperty(name = "engine.security.tool-token.signing-key", defaultValue = "disabled")
     String toolTokenSigningKey;
 
     @Inject
@@ -688,6 +689,7 @@ commandLoader = new CommandLoader(workspacePath,
         registry.register(FirecrawlTool.definition(
                 new FirecrawlTool(new JdkHttpTransport(), firecrawlKey, firecrawlEndpoint)));
         registry.register(WebFetchTool.definition(new WebFetchTool(new JdkHttpTransport())));
+        registry.register(SecureRestTool.definition(new SecureRestTool(new JdkHttpTransport())));
 
         // Email tools (IMAP/SMTP) – only when configured and enabled.
         String imapHost = emailImapHost == null ? "" : emailImapHost.orElse("");
@@ -827,7 +829,8 @@ commandLoader = new CommandLoader(workspacePath,
                     }
                 },
                 de.augmentia.oc.engine.adapter.ToolFactory.create(java.nio.file.Path.of(".")));
-        if (toolTokenEnabled && toolTokenSigningKey != null && !toolTokenSigningKey.isBlank()) {
+        if (toolTokenEnabled && toolTokenSigningKey != null && !toolTokenSigningKey.isBlank()
+                && !"disabled".equalsIgnoreCase(toolTokenSigningKey)) {
             qocEngine.toolTokenService = new de.augmentia.oc.engine.adapter.security.HmacToolTokenService(toolTokenSigningKey);
         }
         // Crash recovery: resume sessions that were interrupted by a previous process stop.
@@ -1744,8 +1747,14 @@ commandLoader = new CommandLoader(workspacePath,
             de.augmentia.oc.engine.http.security.PrincipalContext pc = principalContext;
             if (pc != null && pc.get() != null) {
                 de.augmentia.oc.engine.http.security.Principal pp = pc.get();
+                java.util.Map<String, Object> safeClaims = new java.util.LinkedHashMap<>();
+                if (pp.claims() != null) {
+                    for (var e : pp.claims().entrySet()) {
+                        if (e.getKey() != null && e.getValue() != null) safeClaims.put(e.getKey(), e.getValue());
+                    }
+                }
                 principal = new de.augmentia.oc.engine.core.model.Principal(
-                        pp.id(), pp.name(), pp.roles(), pp.groups(), pp.claims(), pp.accessToken());
+                        pp.id(), pp.name(), pp.roles(), pp.groups(), safeClaims, pp.accessToken());
             } else {
                 principal = de.augmentia.oc.engine.core.model.Principal.anonymous();
             }

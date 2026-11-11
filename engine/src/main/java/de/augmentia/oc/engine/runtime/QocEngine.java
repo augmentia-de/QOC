@@ -306,6 +306,8 @@ public static record EngineConfig(
             de.augmentia.oc.engine.core.port.world.HttpTransport httpTransport = toolDeps.httpTransport();
             registry.register(de.augmentia.oc.engine.runtime.tool.web.WebFetchTool.definition(
                     new de.augmentia.oc.engine.runtime.tool.web.WebFetchTool(httpTransport)));
+            registry.register(de.augmentia.oc.engine.runtime.tool.web.SecureRestTool.definition(
+                    new de.augmentia.oc.engine.runtime.tool.web.SecureRestTool(httpTransport)));
             registry.register(de.augmentia.oc.engine.runtime.tool.web.FirecrawlTool.definition(
                     new de.augmentia.oc.engine.runtime.tool.web.FirecrawlTool(httpTransport, "", "https://mcp.firecrawl.dev/v2/mcp")));
         }

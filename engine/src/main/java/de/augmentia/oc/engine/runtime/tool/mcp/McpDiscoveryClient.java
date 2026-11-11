@@ -44,13 +44,22 @@ public final class McpDiscoveryClient implements McpClient {
 
     @Override
     public JsonValue call(String toolName, JsonValue arguments) {
+        return call(toolName, arguments, null);
+    }
+
+    @Override
+    public JsonValue call(String toolName, JsonValue arguments, String bearerToken) {
         if (toolName == null || toolName.isBlank()) throw new IllegalArgumentException("toolName must not be blank");
         if (arguments == null) arguments = JsonValue.of(Map.of());
         String body = McpJsonRpc.request(2, "tools/call", JsonValue.of(Map.of(
                 "name", JsonValue.of(toolName),
                 "arguments", arguments)));
+        Map<String, String> hdrs = new java.util.LinkedHashMap<>(headers());
+        if (bearerToken != null && !bearerToken.isBlank()) {
+            hdrs.put("Authorization", "Bearer " + bearerToken);
+        }
         HttpTransport.ResponseStream response = transport.postJson(
-                URI.create(config.url()), headers(), body,
+                URI.create(config.url()), hdrs, body,
                 Duration.ofMillis(config.executionTimeoutMs()));
         if (response.status() == 401) {
             response.close();
