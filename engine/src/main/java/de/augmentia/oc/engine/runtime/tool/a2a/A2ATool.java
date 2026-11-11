@@ -84,11 +84,12 @@ public final class A2ATool {
         ), false);
         Map<String, String> finalHeaders = h;
         return new ToolDefinition(new ToolName(name), description, schema, Option.none(),
-                (input, context) -> execute(card, client, input, finalHeaders, hosts, ips, tlsRequired), ToolOptions.defaults());
+                (input, context) -> execute(card, client, input, finalHeaders, hosts, ips, tlsRequired, context), ToolOptions.defaults());
     }
 
     private static ToolOutcome execute(AgentCard card, Client client, JsonValue input, Map<String, String> headers,
-                                      List<String> allowedHosts, List<String> allowedIps, boolean tlsRequired) {
+                                      List<String> allowedHosts, List<String> allowedIps, boolean tlsRequired,
+                                      de.augmentia.oc.engine.core.contract.tool.ToolContext context) {
         try {
             String targetUrl = card.url();
             if (targetUrl == null || targetUrl.isBlank()) {
@@ -109,13 +110,25 @@ public final class A2ATool {
             Message message = A2A.toUserMessage(text);
             List<Object> results = new ArrayList<>();
             Throwable[] error = new Throwable[1];
-            ClientCallContext context = headers == null || headers.isEmpty()
+            Map<String, String> effectiveHeaders = new java.util.LinkedHashMap<>(headers == null ? Map.of() : headers);
+            if (context != null && context.toolTokenService() != null && context.toolTokenService().isEnabled()
+                    && context.principal() != null && !"anonymous".equals(context.principal().id())) {
+                String bearer = context.toolTokenService().issue(context.principal(), "a2a",
+                        context.sessionId().value(), java.util.List.of(), 60);
+                if (bearer != null && !bearer.isBlank()) {
+                    effectiveHeaders.put("Authorization", "Bearer " + bearer);
+                }
+            } else if (context != null && context.principal() != null
+                    && context.principal().accessToken() != null && !context.principal().accessToken().isBlank()) {
+                effectiveHeaders.put("Authorization", "Bearer " + context.principal().accessToken());
+            }
+            ClientCallContext callContext = effectiveHeaders.isEmpty()
                     ? null
-                    : new ClientCallContext(Map.of(), headers);
+                    : new ClientCallContext(Map.of(), effectiveHeaders);
             client.sendMessage(message,
                     List.of((java.util.function.BiConsumer<ClientEvent, AgentCard>) (event, agentCard) -> collect(event, results)),
                     throwable -> error[0] = throwable,
-                    context);
+                    callContext);
             if (error[0] != null) {
                 return failure("a2a_error", messageOf(error[0]));
             }
