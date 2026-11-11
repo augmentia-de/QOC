@@ -178,6 +178,14 @@ public class Engine {
     String storageKind;
 
     @Inject
+    @ConfigProperty(name = "engine.security.tool-token.enabled", defaultValue = "false")
+    boolean toolTokenEnabled;
+
+    @Inject
+    @ConfigProperty(name = "engine.security.tool-token.signing-key", defaultValue = "")
+    String toolTokenSigningKey;
+
+    @Inject
     @ConfigProperty(name = "engine.db.kind", defaultValue = "postgresql")
     String dbKind;
 
@@ -819,6 +827,9 @@ commandLoader = new CommandLoader(workspacePath,
                     }
                 },
                 de.augmentia.oc.engine.adapter.ToolFactory.create(java.nio.file.Path.of(".")));
+        if (toolTokenEnabled && toolTokenSigningKey != null && !toolTokenSigningKey.isBlank()) {
+            qocEngine.toolTokenService = new de.augmentia.oc.engine.adapter.security.HmacToolTokenService(toolTokenSigningKey);
+        }
         // Crash recovery: resume sessions that were interrupted by a previous process stop.
         if (!memoryMode && recoveryEnabled) {
             try {

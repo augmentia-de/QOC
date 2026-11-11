@@ -83,7 +83,7 @@ public final class HmacToolTokenService implements ToolTokenService {
             mac.init(new SecretKeySpec(key, "HmacSHA256"));
             return b64url(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
-            throw new RuntimeException("signing failed", e);
+            throw new de.augmentia.oc.engine.core.error.StoreFailure("signing failed", e);
         }
     }
 

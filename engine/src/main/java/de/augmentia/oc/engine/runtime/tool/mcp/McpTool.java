@@ -31,12 +31,18 @@ public final class McpTool {
         ToolOptions options = new ToolOptions(Option.some(server), Option.some(effectiveName), true, false);
         return new ToolDefinition(new ToolName(tool), description == null ? "" : description,
                 inputSchema, Option.none(),
-                (value, context) -> execute(client, tool, value), options);
+                (value, context) -> execute(client, tool, value, context), options);
     }
 
-    static ToolOutcome execute(McpClient client, String tool, JsonValue arguments) {
+    static ToolOutcome execute(McpClient client, String tool, JsonValue arguments, de.augmentia.oc.engine.core.contract.tool.ToolContext context) {
         try {
-            JsonValue result = client.call(tool, arguments);
+            String bearer = null;
+            if (context != null && context.toolTokenService() != null && context.toolTokenService().isEnabled()
+                    && context.principal() != null && !"anonymous".equals(context.principal().id())) {
+                bearer = context.toolTokenService().issue(context.principal(), tool,
+                        context.sessionId().value(), java.util.List.of(), 60);
+            }
+            JsonValue result = client.call(tool, arguments, bearer);
             McpContentMapper mapper = new McpContentMapper();
             List<ToolContent> content = mapper.map(result);
             if (mapper.isError(result)) {

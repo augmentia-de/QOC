@@ -8,6 +8,10 @@ public interface McpClient {
 
     JsonValue call(String toolName, JsonValue arguments);
 
+    default JsonValue call(String toolName, JsonValue arguments, String bearerToken) {
+        return call(toolName, arguments);
+    }
+
     default List<McpRegistrar.McpToolSpec> listTools() {
         return List.of();
     }
