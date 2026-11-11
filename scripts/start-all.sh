@@ -29,7 +29,7 @@ mkdir -p "$QOC_DIR/wf-data"
 
 cd "$QOC_DIR"
 export $(grep -v '^#' .env | xargs) 2>/dev/null || true
-nohup java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -jar workflow-runner/target/workflow-runner-1.0.0-SNAPSHOT.jar "$QOC_DIR/wf-data" > /tmp/wr.log 2>&1 &
+nohup java -Djava.util.logging.config.file="$QOC_DIR/engine/src/main/resources/logging.properties" -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -jar workflow-runner/target/workflow-runner-1.0.0-SNAPSHOT.jar "$QOC_DIR/wf-data" > /tmp/wr.log 2>&1 &
 WR_PID=$!
 echo $WR_PID > /tmp/wr.pid
 
