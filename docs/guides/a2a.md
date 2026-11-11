@@ -6,7 +6,7 @@
 > **Status:** 2026-10-28 · Implementation guide (QOC-specific)
 >
 > **See also:** [`docs/analysis/a2a.md`](../analysis/a2a.md) (analysis and
-> phases), [`docs/Security.md`](../Security.md) §4.8a (security model),
+> phases), [`docs/security.md`](../security.md) §4.8a (security model),
 > [`docs/spec/tools/04-mcp.md`](../spec/tools/04-mcp.md) (MCP, the
 > complementary protocol).
 

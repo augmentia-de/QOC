@@ -1,11 +1,25 @@
 # learnings.md – Gemeinsame Learnings für QOC
 
 > **Status:** Synthese · 2026-10-26 · Entscheidungen D-01–D-14 dokumentiert
+
+
+## Learnings nach Quelle
+
+| Quelle | Datei | Beschreibung |
+|---|---|---|
+| Gemeinsame Synthese | `learnings.md` (diese Datei) | Entscheidungen D-01–D-14 |
+| Nessy | `learnings/nessy.md` | What QOC can learn from Nessy |
+| OpenCode (oc) | `learnings/oc-open.md` | What QOC can learn from OpenCode |
+| oh-my-pi | `learnings/oh-my-pi.md` | What QOC can learn from oh-my-pi |
+| pi coding agent | `learnings/pi.md` | What QOC can learn from pi |
+| deepseek-harness | `learnings/deepseek-harness.md` | Learnings aus deepseek-harness |
+
+
 > **Quellen:**
-> [`oc-open.md`](./oc-open.md) ·
-> [`pi-learnings.md`](./pi-learnings.md) ·
-> [`oh-learnings.md`](./oh-learnings.md) ·
-> [`nessy-learnings.md`](./nessy-learnings.md)
+> [`learnings/oc-open.md`](./learnings/oc-open.md) ·
+> [`learnings/pi.md`](./learnings/pi.md) ·
+> [`learnings/oh-my-pi.md`](./learnings/oh-my-pi.md) ·
+> [`learnings/nessy.md`](./learnings/nessy.md)
 >
 > **Ziel:** Aus den vier Analysen eine **gemeinsame, umsetzbare Backlog-Liste**
 > ableiten, die QOC besser, stabiler, schneller und production-ready macht.
@@ -89,10 +103,10 @@ Die größten aktuellen Lücken:
 
 | Quelle | Stärke | Wichtigste Lehre für QOC | Risiko beim blinden Kopieren |
 |---|---|---|---|
-| **OpenCode (`oc-open.md`)** | Breite Agent-Ergonomie: Kontextdateien, Commands, Skills, Session-Tree, Queue, Settings | Instruktionen und Sessions müssen benutzbar und wiederaufnehmbar sein | Plugin-/TS-Denken passt nicht in die Java-Engine; zuerst Mechanik, nicht Oberfläche |
-| **pi (`pi-learnings.md`)** | Minimaler Kern, klare Compaction- und Prompt-Template-Mechanik | Token-Budget, Turn-Grenzen, Commands, Settings, Export | pi ist absichtlich minimal; QOC darf seine strikten Grenzen nicht aufweichen |
-| **oh-my-pi (`oh-learnings.md`)** | Tool-Ergonomie und Kontext-Ökonomie: Hashline, Scan-Cache, LSP, Task-Batches, Approval-Tiers, Artefakte | Präzise Edits, ignorierte Trees, wiederverwendbare Tool-Ausgaben und typisierte Subagents | Sehr breite Produktoberfläche; nicht alles ist Kern der Engine |
-| **Nessy (`nessy-learnings.md`)** | Durable Effects, Outcome-Algebra, Turn-Policy, Kapitel-Compaction, dauerhafte Approvals, Idempotency | Produktionskorrektheit: Arbeit ist eine dauerhafte Verpflichtung, nicht nur ein Step-Result | Agent-zentrisches Effect-Modell darf QOCs Tool-Snapshot und Rule-Chain nicht ersetzen |
+| **OpenCode (`learnings/oc-open.md`)** | Breite Agent-Ergonomie: Kontextdateien, Commands, Skills, Session-Tree, Queue, Settings | Instruktionen und Sessions müssen benutzbar und wiederaufnehmbar sein | Plugin-/TS-Denken passt nicht in die Java-Engine; zuerst Mechanik, nicht Oberfläche |
+| **pi (`learnings/pi.md`)** | Minimaler Kern, klare Compaction- und Prompt-Template-Mechanik | Token-Budget, Turn-Grenzen, Commands, Settings, Export | pi ist absichtlich minimal; QOC darf seine strikten Grenzen nicht aufweichen |
+| **oh-my-pi (`learnings/oh-my-pi.md`)** | Tool-Ergonomie und Kontext-Ökonomie: Hashline, Scan-Cache, LSP, Task-Batches, Approval-Tiers, Artefakte | Präzise Edits, ignorierte Trees, wiederverwendbare Tool-Ausgaben und typisierte Subagents | Sehr breite Produktoberfläche; nicht alles ist Kern der Engine |
+| **Nessy (`learnings/nessy.md`)** | Durable Effects, Outcome-Algebra, Turn-Policy, Kapitel-Compaction, dauerhafte Approvals, Idempotency | Produktionskorrektheit: Arbeit ist eine dauerhafte Verpflichtung, nicht nur ein Step-Result | Agent-zentrisches Effect-Modell darf QOCs Tool-Snapshot und Rule-Chain nicht ersetzen |
 
 ### 1.2 Themenmatrix
 
@@ -194,8 +208,8 @@ Zusätzlich vorhanden und zu erhalten:
   Checkboxen offen, obwohl die Übersicht `DONE` sagt. Maßgeblich ist der
   Code-Stand; die Checkboxen sollten nachgezogen werden.
 - **QOC-009/011/012/013:** Diese vier sind die klaren offenen Produktionslücken.
-- **Referenzstände:** `oh-learnings.md` vergleicht oh-my-pi `0b5c27a` mit QOC
-  `24f0273`; `nessy-learnings.md` vergleicht Nessy `0c26499`. QOC ist seitdem
+- **Referenzstände:** `learnings/oh-my-pi.md` vergleicht oh-my-pi `0b5c27a` mit QOC
+  `24f0273`; `learnings/nessy.md` vergleicht Nessy `0c26499`. QOC ist seitdem
   weitergelaufen. Aussagen sind als Muster zu lesen, nicht als exakte
   Dateiinventur.
 - **`qoc-findings.md`:** Enthält uncommittete Änderungen. Diese Datei nicht
@@ -1480,5 +1494,5 @@ Definition of Done verankert, nicht als Feature-Backlog.
 
 ---
 
-*Erstellt: 2026-10-26 · Synthese aus `oc-open.md`, `pi-learnings.md`,
-`oh-learnings.md`, `nessy-learnings.md` und dem aktuellen QOC-Findings-Register.*
+*Erstellt: 2026-10-26 · Synthese aus `learnings/oc-open.md`, `learnings/pi.md`,
+`learnings/oh-my-pi.md`, `learnings/nessy.md` und dem aktuellen QOC-Findings-Register.*

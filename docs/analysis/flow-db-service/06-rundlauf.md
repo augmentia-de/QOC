@@ -1,5 +1,9 @@
 # 06 – The round trip: Session → LLM → permissions → tool → Session
 
+> **Invariant:** One step = one `llm.stream`. No in-memory tool loop — durable (DB-backed) step loop.
+> For the LLM the message list is identical; for the engine persistence is mandatory.
+> See `overview.md` §4.4.
+
 > **Depth:** exact. Every step with `path:line`, every transaction boundary
 > marked, every DB row named.
 > **Purpose:** the path a prompt takes until the tool result lands back in the

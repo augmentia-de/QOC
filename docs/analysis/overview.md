@@ -354,8 +354,26 @@ failed before further model work begins (`session.md:68`, `:78`, `:114-116`).
   materialise tools. Usually **one** physical attempt; retry, continuation
   rejection, incomplete stream or overflow compaction can produce another attempt
   – **without** re-admission (`session.md:70-72`).
-* **No in-memory tool loop**: after a local outcome the execution reloads the
-  projected history and starts a **new** step (`session.md:80`).
+* **Durable step loop (DB-backed)**: after a local outcome the execution
+  persists the result, reloads the projected history from the DB, and starts a
+  **new** step (`session.md:80`).
+
+  > **Engine vs. Model:** For the LLM the message list is identical whether
+  > loaded from memory or DB. For the engine, persistence is mandatory: crash
+  > recovery, retries, compaction, permission checks and clean step boundaries
+  > all depend on it. There is no in-memory tool loop — but there is a
+  > DB-backed step loop.
+
+  **Glossar:**
+  - **Step**: one full pass — reload → prepare → `llm.stream` → tool execution → persist → (optional) new step.
+  - **Attempt**: one try within a step (retry, compaction, incomplete stream) — without new admission.
+  - **Tool Call**: a single tool invocation within a step.
+  - **Durable Step**: a step whose state is persisted in the DB (crash-recovery, idempotency).
+
+  **Diagramm (Engine-Sicht):**
+  Step N (DB) → LLM sees message list → Tool Call → Persist → New Step N+1 (DB)
+                                        ↑___________________________↓
+                                      (no in-memory loop; durable boundary)
 * Every completed local tool call is **durable before** side effects begin;
   terminal outcome publication stays serialised (`session.md:74`).
 * Tool calls belong to the assistant message; `callID` is unique only **within**

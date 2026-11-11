@@ -2,7 +2,7 @@
 
 > **Status:** Working issue register · 2026-10-26
 > **Scope:** only current defects and concrete gaps in QOC
-> **Source:** [`../analysis/oh-learnings.md`](../analysis/oh-learnings.md)
+> **Source:** [`../analysis/learnings/oh-my-pi.md`](../analysis/learnings/oh-my-pi.md)
 > **Target:** `de.augmentia.oc.engine` (Java 21 / Quarkus)
 
 This file is deliberately narrow. It contains **only current QOC problems**
@@ -11,12 +11,12 @@ that can be shown in the present implementation.
 It does **not** contain adoptable oh-my-pi features. Hashline edits, read
 selectors, LSP, approval tiers, typed task batches, `RULES.md`, imports, prompt
 blocks, pruning, shell streaming, hooks, memory, advisor and model roles remain
-in [`oh-learnings.md`](../analysis/oh-learnings.md). Those are proposals, not
+in [`analysis/learnings/oh-my-pi.md`](../analysis/learnings/oh-my-pi.md). Those are proposals, not
 current bugs.
 
 The distinction is intentional:
 
-- `oh-learnings.md` answers: *what can QOC learn from oh-my-pi?*
+- `analysis/learnings/oh-my-pi.md` answers: *what can QOC learn from oh-my-pi?*
 - this file answers: *what is concretely broken or incomplete in QOC today?*
 
 ---
@@ -48,7 +48,7 @@ instruction coverage.
 
 **Rule for this file:** do not turn a missing feature into a bug. If the
 problem is a proposal rather than a current defect, write it in
-`oh-learnings.md` and link it from here only when implementation starts.
+`analysis/learnings/oh-my-pi.md` and link it from here only when implementation starts.
 
 ---
 
@@ -113,7 +113,7 @@ problem is a proposal rather than a current defect, write it in
 
 - **Status:** `DONE`
 - **Priority:** `P0`
-- **Source:** [oh-learnings 2.10](../analysis/oh-learnings.md#210-bash-runtime-and-managed-jobs)
+- **Source:** [oh-learnings 2.10](../analysis/learnings/oh-my-pi.md#210-bash-runtime-and-managed-jobs)
 - **Finding:**
   - `ShellTool` truncates stdout to 50 KiB **before** `ToolRuntime` sees the
     result.
@@ -170,7 +170,7 @@ problem is a proposal rather than a current defect, write it in
 
 - **Status:** `DONE`
 - **Priority:** `P0`
-- **Source:** [oh-learnings 2.7](../analysis/oh-learnings.md#27-compaction-branch-summaries-and-handoff)
+- **Source:** [oh-learnings 2.7](../analysis/learnings/oh-my-pi.md#27-compaction-branch-summaries-and-handoff)
 - **Finding:**
   - The summary blob key is
     `Integer.toHexString(summary.hashCode())`. This is a 32-bit Java hash, not
@@ -222,7 +222,7 @@ problem is a proposal rather than a current defect, write it in
 
 - **Status:** `DONE`
 - **Priority:** `P0`
-- **Source:** [oh-learnings 2.5](../analysis/oh-learnings.md#25-task-batches-async-subagents-and-isolation)
+- **Source:** [oh-learnings 2.5](../analysis/learnings/oh-my-pi.md#25-task-batches-async-subagents-and-isolation)
 - **Finding:**
   - `SubagentTool.executeBackground` catches every `RuntimeException` and
     discards it.
@@ -271,7 +271,7 @@ problem is a proposal rather than a current defect, write it in
 
 - **Status:** `DONE`
 - **Priority:** `P1`
-- **Source:** [oh-learnings 2.3](../analysis/oh-learnings.md#23-read-grep-glob-and-the-scan-cache)
+- **Source:** [oh-learnings 2.3](../analysis/learnings/oh-my-pi.md#23-read-grep-glob-and-the-scan-cache)
 - **Finding:**
   - `NioFileSystem.search` walks every path, reads every line of every regular
     file with `Files.readAllLines`, and catches `IOException` by silently
@@ -331,7 +331,7 @@ problem is a proposal rather than a current defect, write it in
 
 - **Status:** `DONE`
 - **Priority:** `P1`
-- **Source:** [oh-learnings 2.9](../analysis/oh-learnings.md#29-internal-urls-blobs-and-artifacts)
+- **Source:** [oh-learnings 2.9](../analysis/learnings/oh-my-pi.md#29-internal-urls-blobs-and-artifacts)
 - **Finding:**
   - `ToolOutputStore.save` returns a `Path`.
   - `SqliteToolOutput` stores the path string and content in the
@@ -390,7 +390,7 @@ problem is a proposal rather than a current defect, write it in
 
 - **Status:** `DONE`
 - **Priority:** `P1`
-- **Source:** [oh-learnings 2.8](../analysis/oh-learnings.md#28-session-tree-fork-export-and-checkpoint)
+- **Source:** [oh-learnings 2.8](../analysis/learnings/oh-my-pi.md#28-session-tree-fork-export-and-checkpoint)
 - **Finding:**
   - `SessionEvent` defines `SessionForked` and `ForkBoundary`, but nothing
     constructs or appends `SessionForked`.
@@ -670,7 +670,7 @@ roadmap.
 ## 6. Deliberately not in this file
 
 The following are **not** current QOC problems. They are proposals in
-[`oh-learnings.md`](../analysis/oh-learnings.md) and must not be turned into
+[`analysis/learnings/oh-my-pi.md`](../analysis/learnings/oh-my-pi.md) and must not be turned into
 issues here unless a decision explicitly starts implementation:
 
 - hashline edit mode, read selectors and content tags
@@ -694,4 +694,4 @@ what is verifiably wrong or incomplete in the current QOC implementation.
 ---
 
 *Created: 2026-10-26 · Current-problem register derived from
-`docs/analysis/oh-learnings.md`.*
+`docs/analysis/analysis/learnings/oh-my-pi.md`.*

@@ -17,7 +17,7 @@ flowchart TB
   Perm["PermissionEngine<br/>Rules · Ask · Deny"]:::det
   Tools["ToolRuntime"]:::det
   McpClient["MCP Client<br/>remote servers"]:::mixed
-  McpServer["QOC MCP Server<br/>/mcp · qoc_run_agent"]:::mixed
+  McpServer["QOC MCP Server<br/>/mcp · qoc_run_agent<br/>+ qoc_run_agent_with_config"]:::mixed
   TokenStore["Credential / Token Store<br/>per integration today"]:::store
   Guardrails["Guardrails<br/>rules · SPI · webhook"]:::det
   Os["OS Hardening<br/>qoc user · systemd · ACLs"]:::ext
@@ -47,14 +47,16 @@ flowchart TB
 
 | Area | Current state |
 |---|---|
-| HTTP auth | Basic Auth with one shared password |
-| User identity | `X-QOC-User` is spoofable |
+| HTTP auth | Basic, OIDC (Keycloak/Auth0), Trusted Proxy, MCP-OAuth, NONE |
+| User identity | `Principal` with roles/groups (BasicAuthFilter, OidcPrincipalProducer, TrustedProxyFilter) |
+| Role-based authorization | `requireRole("admin")` at 10 admin-only endpoints; `@RolesAllowed` via custom filter |
+| Session ownership | `isOwner` check on session access; admin sees all sessions |
 | MCP client OAuth | Partial: discovery, code exchange, refresh helper |
-| MCP server OAuth | Not implemented (`501`) |
+| MCP server | `qoc_run_agent` + `qoc_run_agent_with_config` (stateless subagent) |
+| MCP server OAuth | Prepared but inactive by default (503) |
 | Token storage | Plaintext, per integration, not per user |
-| Session ownership | Not implemented |
-| Guardrails | `Hooks` exists, but is mostly noop |
-| OS security | Documented and deployed |
+| Guardrails | `GuardrailRegistry` + `GuardrailHooks` + webhook service |
+| OS security | Documented and deployed (Docker hardening, bwrap, non-root) |
 
 ## Planned state
 
@@ -86,5 +88,5 @@ flowchart TB
 - `engine/src/main/java/de/augmentia/oc/engine/runtime/tool/mcp/McpDiscoveryClient.java`
 - `engine/src/main/java/de/augmentia/oc/engine/runtime/tool/mcp/McpOAuth.java`
 - `docs/guides/OS-based-security.md`
-- `docs/Security.md`
+- `docs/security.md`
 - `docs/webhook.md`

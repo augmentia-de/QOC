@@ -4,7 +4,7 @@
 > Protokolle (A2A, MCP) in drei Containern mit unterschiedlichen Agents.
 >
 > **Basis:** `docs/analysis/a2a.md` (Phase 1–3), `docs/spec/tools/04-mcp.md`,
-> `docs/spec/tools/09-mcp-server.md`, `docs/Security.md` §4.8a, `deploy/Dockerfile`.
+> `docs/spec/tools/09-mcp-server.md`, `docs/security.md` §4.8a, `deploy/Dockerfile`.
 >
 > **Status:** 2026-10-28 · Spec-Dokument (keine Implementierung).
 
@@ -38,7 +38,7 @@ Performance/Last, echte LLM-Antworten.
 │  │  MCP cli+srv  │          │              │          │            │ │
 │  └──────┬───────┘          └──────────────┘          └────────────┘ │
 │         │                                                            │
-│         └── published: 127.0.0.1:8080 (nur A)                      │
+│         └── published: 127.0.0.1:8078 (nur A)                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -146,7 +146,7 @@ services:
       - ENGINE_PROVIDER_SCRIPTED=true
     volumes:
       - ./interop/settings-a.json:/data/workspace/settings.json:ro
-    ports: ["8080:8080"]
+    ports: ["8078:8080"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/q/health/ready"]
       interval: 10s
@@ -174,13 +174,19 @@ services:
     command: ["python", "/app/server.py"]
     volumes:
       - ./interop/mcp_server.py:/app/server.py:ro
-    ports: ["8090:8090"]
+    ports: ["8079:8090"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8090/health"]
       interval: 10s
       timeout: 5s
       retries: 20
 ```
+
+> **Umsetzung:** Der Stack liegt als Profil `a2a` in
+> `deploy/docker-compose.yml` (`qoc-agent-a`, `qoc-agent-b`, `mcp-server`).
+> Das Image ist `qoc-engine:sqlite` aus `deploy/build-image-sqlite.sh`; Start
+> mit `cd deploy && docker compose --profile a2a up -d`. Host-Ports: 8078
+> (Agent A), 8079 (MCP).
 
 ## 6. Protokoll-Flüsse
 

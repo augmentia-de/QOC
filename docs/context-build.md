@@ -2,7 +2,7 @@
 
 > **Status:** Design draft · 2026-10-29  
 > **Target:** `de.augmentia.oc.engine` (Java 21 / Quarkus)  
-> **Related:** `docs/optimize_prompt.md`, `docs/analysis/a2a.md`, `docs/Security.md`  
+> **Related:** `docs/optimization.md`, `docs/analysis/a2a.md`, `docs/security.md`  
 > **Scope:** Context construction, skill filtering, skill injection, and skill permission comparison with OpenCode (`oc/`).
 
 ---
@@ -484,8 +484,8 @@ by version. Lower priority; only if needed.
 
 ## 6. References
 
-- `qoc/docs/optimize_prompt.md` – prompt minimization and context economy
-- `qoc/docs/Security.md` – security model including A2A
+- `qoc/docs/optimization.md` – prompt minimization and context economy
+- `qoc/docs/security.md` – security model including A2A
 - `qoc/docs/spec/permissions/02-evaluation.md` – permission evaluation
 - `qoc/docs/spec/permissions/03-effect-matrix.md` – effect matrix
 - `qoc/docs/spec/betrieb/02-skills.md` – skill specification

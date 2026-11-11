@@ -2,7 +2,7 @@
 
 > **Status:** 2026-10-25 · QOC Java engine (`qoc/`)  
 > **Role:** operative specification for the Java implementation. The
-> reference analyses live one level above in [`../`](../README.md).
+> reference analyses live one level above in [`../`](../meta/README.md).
 >
 > Four core specifications describe the agent runtime; persistence, operations
 > and quality assurance are added. Each is **independent** of any programming
@@ -22,7 +22,7 @@
 **Spec-only:** [`tools/08-remote-shell.md`](./tools/08-remote-shell.md)
 describes SSH execution and recursive copy (`download`/`upload`), but the
 implementation is not started yet. The status is tracked in
-[`../STATUS.md`](../STATUS.md).
+[`../STATUS.md`](../meta/STATUS.md).
 
 **Cross-cutting:** [`module-plan.md`](./module-plan.md) sorts all modules
 topologically by dependencies, defines the interfaces between them and describes
@@ -33,12 +33,12 @@ individually testable. The physical implementation in Java packages under
 which boundary breaks the build is in
 [`qualitaet/`](./qualitaet/README.md). The questions this specification
 **deliberately leaves open** are collected in
-[`../open-questions.md`](../open-questions.md) – with meaning, simple
+[`../open-questions.md`](../meta/open-questions.md) – with meaning, simple
 implementation and acceptance test.
 
 **Registers:** [`CONVENTIONS.md`](./CONVENTIONS.md) defines file names, section
 order and link rules. [`INVARIANTS.md`](./INVARIANTS.md) indexes all invariant
-prefixes and points back to the source spec. [`../STATUS.md`](../STATUS.md)
+prefixes and points back to the source spec. [`../STATUS.md`](../meta/STATUS.md)
 records what is implemented, partial or spec-only.
 
 ## Dependencies
@@ -89,7 +89,7 @@ betrieb        ← uses the engine and describes its external contracts
 | want to **start something** | `betrieb/README.md` → `betrieb/01-http-streaming.md` |
 | want to **implement** | `module-plan.md` → the stage you are at |
 | want Java code | the respective `*-java.md` |
-| want the current status | [`../STATUS.md`](../STATUS.md) |
+| want the current status | [`../STATUS.md`](../meta/STATUS.md) |
 
 ## Audit reports
 
@@ -97,5 +97,6 @@ betrieb        ← uses the engine and describes its external contracts
 |---|---|
 | `session-engine/09-invariants-audit.md` | All 111 invariants checked against the reference code: 102 confirmed, 4 refined, 2 corrected, 2 notes, 1 convention |
 | `session-engine/11-java-portability.md` | Whether and how the spec is independently implementable in Java 21: 6 corrections, 5 domain gaps |
-| [`../STATUS.md`](../STATUS.md) | implemented / partial / spec-only per area |
+| [`../STATUS.md`](../meta/STATUS.md) | implemented / partial / spec-only per area |
+| [`learnings.md`](./learnings.md) | Gemeinsame Learnings und Entscheidungen (D-01–D-14) |
 | [`../tools/check-docs.mjs`](../tools/check-docs.mjs) | link, table, marker and index checks |

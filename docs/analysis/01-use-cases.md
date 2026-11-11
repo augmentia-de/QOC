@@ -545,7 +545,7 @@ Reference: `specs/v2/event-stream-architecture.md:47-64, 157-166`
 | BR-S-07 | WHEN an item is parked (`queue`) and the session becomes idle, THEN steers still have priority; otherwise exactly one queue item is delivered, then re-evaluated | `specs/v2/session.md:19` |
 | BR-S-08 | WHEN new user input is promoted, THEN the selected agent's step allowance is reset; a batch of steers resets it **once** | `specs/v2/session.md:21` |
 | BR-S-09 | WHEN a step begins, THEN the runner reloads history, resolves agent/model, prepares instructions and materialises tools | `specs/v2/session.md:70-72` |
-| BR-S-10 | WHEN a local tool call completes, THEN a **new** step begins; there is **no** in-memory tool loop | `specs/v2/session.md:80` |
+| BR-S-10 | WHEN a local tool call completes, THEN the result is persisted and a **new** step begins (durable, DB-backed). There is no in-memory tool loop — but there is a DB-backed step loop. See `overview.md` §4.4. | `specs/v2/session.md:80` |
 | BR-S-11 | WHEN a local tool call starts, THEN it is **durable** before the side effect begins | `specs/v2/session.md:74` |
 | BR-S-12 | WHEN a tool call is published durably, THEN it additionally carries `assistantMessageID`, because `callID` is only unique **within** a step | `specs/v2/session.md:76` |
 | BR-S-13 | WHEN orphaned tool calls are still projected as streaming/running at drain start, THEN they are failed before further model work starts | `specs/v2/session.md:78` |
@@ -690,7 +690,7 @@ functional requirements**.
 
 | ID | Requirement | Reference |
 |---|---|---|
-| NFR-01 | One step = exactly one `llm.stream`; no in-memory tool loop | `AGENTS.md`, `specs/v2/session.md:80` |
+| NFR-01 | One step = exactly one `llm.stream`; durable (DB-backed) step loop, no in-memory tool loop. See `overview.md` §4.4. | `AGENTS.md`, `specs/v2/session.md:80` |
 | NFR-02 | Execution is process-local; clustering is not implemented (deliberate boundary) | `specs/v2/session.md:53-55, 118` |
 | NFR-03 | Schema → Core/Protocol → Server; client never Core/Server | Root `AGENTS.md` |
 | NFR-04 | The transcript remains fully durable, even after compaction | `specs/v2/session.md:102` |

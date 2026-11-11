@@ -3,8 +3,8 @@
 > **Status:** Specification draft · 2026-10-26
 > **Scope:** Optional webhook-based guardrail service for QOC
 > **Target:** `de.augmentia.oc.engine` (Java 21 / Quarkus)
-> **Related:** `docs/analysis/pi-learnings.md`,
-> `docs/analysis/nessy-learnings.md`,
+> **Related:** `docs/analysis/analysis/learnings/pi.md`,
+> `docs/analysis/analysis/learnings/nessy.md`,
 > `docs/issues/qoc-findings.md`
 
 ---

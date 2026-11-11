@@ -64,6 +64,59 @@ flowchart LR
 
 ---
 
+## Serverless Agent Sync (planned)
+
+In Serverless-Modus (AWS Lambda / GCP Cloud Run) werden Agenten dynamisch
+vom Server (GCP VM) geladen. Der MCP-Tool `qoc_run_agent_with_config`
+erlaubt einen stateless Subagent-Run mit inline Agent-Konfiguration.
+
+```mermaid
+sequenceDiagram
+  actor Client as MCP Client
+  participant Lambda as Serverless (Lambda/Cloud Run)
+  participant Server as Server (GCP VM)
+  participant Engine as Engine
+  participant Agent as Transient Agent
+
+  Client->>Lambda: MCP tools/call qoc_run_agent_with_config
+  Lambda->>Engine: validate agentConfig
+  Engine->>Agent: defineTransientAgent(name, config)
+  Engine->>Engine: createSession(agent, user, ephemeral, false)
+  Engine->>Engine: prompt(session, prompt)
+  Engine-->>Client: result (text, tokens, finish)
+  Engine->>Agent: removeTransientAgent(name)
+```
+
+### Alternative: Server-fetch (qoc_run_agent)
+
+```mermaid
+sequenceDiagram
+  actor Client as MCP Client
+  participant Lambda as Serverless
+  participant Server as Server (GCP VM)
+
+  Client->>Lambda: MCP tools/call qoc_run_agent (agent="reviewer")
+  Lambda->>Lambda: hasAgent("reviewer")?
+  alt not cached
+    Lambda->>Server: GET /api/agent/reviewer (OIDC)
+    Server-->>Lambda: agent definition + hash
+    Lambda->>Lambda: defineTransientAgent("reviewer", config)
+  end
+  Lambda->>Lambda: createSession + prompt
+  Lambda-->>Client: result
+  Lambda->>Lambda: removeTransientAgent("reviewer")
+```
+
+### Regeln
+
+- Transiente Agenten werden nach der Ausführung gelöscht.
+- `retain=true` behält die Session, aber nicht den Agenten.
+- Serverless-Modus deaktiviert Agent-Authoring (`ENGINE_AGENT_AUTHORING_ENABLED=false`).
+- Agent-Cache ist flüchtig (ohne EFS/Volume).
+- Sync-Intervall konfigurierbar (`ENGINE_AGENT_SYNC_INTERVAL_SECONDS`).
+
+---
+
 ## Target design: deterministic orchestrator with LLM fallback
 
 The orchestrator is **not a free LLM agent**. It is a state machine
@@ -243,4 +296,4 @@ The existing building blocks this can build on:
 - `engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/SubagentRunner.java`
 - `engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java`
 - `docs/guides/LoadAgentConfig.md`
-- `docs/guides/ideas.md`
+- `docs/optimization.md`

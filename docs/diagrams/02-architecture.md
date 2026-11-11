@@ -38,7 +38,7 @@ flowchart TB
       Step["step + compaction"]:::mixed
       Context["context"]:::det
       ToolReg["tool.registry + tool.runtime"]:::det
-      Tools["tool.fs / shell / mcp / web / subagent"]:::mixed
+      Tools["tool.fs / shell / mcp / web / subagent / a2a / email / skill / structured / remote"]:::mixed
       Perm["permission.engine"]:::det
       ProviderClient["provider.client"]:::mixed
       Execution["execution<br/>Coordinator · Recovery"]:::det
@@ -123,10 +123,10 @@ flowchart LR
    wiring layer.
 5. **`core` is pure Java**: no Quarkus, Jackson, CDI or
    HTTP dependencies.
-6. **ArchUnit rules are documented** and intended for
-   `engine/src/test/java/de/augmentia/oc/engine/arch/ArchitectureTest.java`,
-   but are not implemented yet; enforcement currently comes from module
-   boundaries and review.
+6. **ArchUnit rules are implemented** in
+   `engine/src/test/java/de/augmentia/oc/engine/arch/ArchitectureTest.java`
+   (13 rules) and `quarkus/src/test/java/de/augmentia/oc/engine/http/arch/ArchitectureTest.java`
+   (2 rules). Enforcement runs in `mvn test`.
 
 ## Current state vs. spec
 

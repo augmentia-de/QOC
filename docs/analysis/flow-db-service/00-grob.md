@@ -170,7 +170,7 @@ Every durable event also writes a row in `event` and increments
 
 ## What this level deliberately omits
 
-* **No in-memory tool loop** – after every tool result a new step.
+* **Durable step loop** – after every tool result: persist → reload → new step. See `overview.md` §4.4 (Engine vs. Model).
 * **No model rotation "on failure"** – fallbacks apply only to title and
   helper models (`packages/core/src/session/context.ts:94-124`).
 * **No instruction registry** – instructions are value deltas.

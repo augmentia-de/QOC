@@ -370,6 +370,10 @@ const runStep = (first, step) => {
 * **`needsContinuation`** (`step.ts:281`): true when a tool call is still
   unanswered – then a **new** step runs.
 
+> **Step vs. Attempt:** `runStep` may produce multiple attempts (retry, compaction,
+> incomplete stream) within one step — but admission happens once. A new step is
+> started only after durable persistence. See `overview.md` §4.4 (Glossar).
+
 ## 7. What happens between two steps
 
 ```

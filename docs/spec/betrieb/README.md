@@ -171,3 +171,6 @@ verifiable without recourse to the reference code:
 8. The three skills from [`02-skills.md`](./02-skills.md) §6 are available again after a restart.
 9. No event and no log entry contains a key in plain text.
 10. All rules `U-01…U-10`, `HS-01…HS-12`, `SK-01…SK-12`, `CR-01…CR-12` have evidence in [`../qualitaet/01-tests.md`](../qualitaet/01-tests.md).
+## 9. Erweiterungen (spec-only)
+
+- [`04-oidc-auth0.md`](./04-oidc-auth0.md) – Auth0/OIDC als Provider (spec-only, geplant)

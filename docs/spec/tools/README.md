@@ -22,10 +22,10 @@
 | [`06-java.md`](./06-java.md) | Java 21 implementation: `sealed`/`record`, registry, scanner, MCP client |
 | [`07-subagent.md`](./07-subagent.md) | Subagent delegation, child sessions, recursion limit, cost attribution |
 | [`08-remote-shell.md`](./08-remote-shell.md) | SSH `exec`/`read`/`write`/`list`/`stat` and recursive copy (`download`/`upload`) – **spec-only** |
-| [`09-mcp-server.md`](./09-mcp-server.md) | MCP server exposing only `qoc_run_agent`, optional structured output, OAuth prepared |
+| [`09-mcp-server.md`](./09-mcp-server.md) | MCP server exposing `qoc_run_agent` (+ planned `qoc_run_agent_with_config` in serverless mode), optional structured output, OAuth prepared |
 
 The current status of `08-remote-shell.md` is tracked in
-[`../../STATUS.md`](../../STATUS.md).
+[`../../STATUS.md`](../../meta/STATUS.md).
 
 ## The tool families at a glance
 

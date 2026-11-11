@@ -263,7 +263,8 @@ and the `AGENTS.md` files, formulated as **IF/THEN**.
 | Releases | **no** `.changeset` files | Root `AGENTS.md` |
 | Branches | Base `origin/dev`, PR target `dev`, branch name ≤ 3 words, no slashes/prefixes | Root `AGENTS.md` |
 | Commits | Conventional Commits `type(scope): summary`; types: feat, fix, docs, chore, refactor, test | Root `AGENTS.md` |
-| Session core | one step = one `llm.stream`; **no** in-memory tool loop; execution process-local | Root `AGENTS.md` |
+| Session core | one step = one `llm.stream`; **durable** step loop (DB-backed, no in-memory loop); execution process-local | Root `AGENTS.md` |
+| | *Engine vs. Model: the LLM sees the same message list either way. Persistence is an engine concern (crash recovery, retries, compaction, permissions).* | |
 | Session core | prompt admission ≠ execution; inbox items stay outside model history until delivery | Root `AGENTS.md` |
 | Session core | Session-ID reuse is adopted; item ID idempotent; cross-session/type fails | Root `AGENTS.md` |
 | Session core | Delivery vocabulary: `steer` (default) vs. `queue`; control items are boundaries | Root `AGENTS.md` |

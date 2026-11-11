@@ -96,7 +96,7 @@ When changing any spec:
 
 1. Check affected README indices.
 2. Update [`INVARIANTS.md`](./INVARIANTS.md) when new IDs arise.
-3. Update [`../STATUS.md`](../STATUS.md) when the implementation status
+3. Update [`../STATUS.md`](../meta/STATUS.md) when the implementation status
    changes.
 4. Run `node docs/tools/check-docs.mjs`.
 5. For code references, additionally run `mvn test` in `qoc/`.

@@ -80,9 +80,10 @@ flowchart LR
 | `portsAreInterfaces` | top-level types in `core.port` are interfaces |
 
 
-> **Current state:** The dependency rules are documented and reviewed, but there
-> is currently **no ArchUnit test** in the repository. Enforcement today comes
-> from Maven module boundaries, package conventions and code review.
+> **Current state:** ArchUnit rules are implemented in
+> `engine/src/test/java/de/augmentia/oc/engine/arch/ArchitectureTest.java`
+> (13 rules) and `quarkus/src/test/java/de/augmentia/oc/engine/http/arch/ArchitectureTest.java`
+> (2 rules). Enforcement runs in `mvn test`.
 
 ## Why this direction?
 

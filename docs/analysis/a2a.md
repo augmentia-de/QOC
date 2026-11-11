@@ -232,7 +232,7 @@ Gründe:
 - **Aufwand:** mittel-hoch. **Priorität:** mittel (Sicherheit).
 
 ### 9.3 Automatisierte Interop-Suite
-- **Was:** Docker-Konzept (`docs/spec/qualitaet/04-docker-a2a-mcp-e2e.md`) und Compose-Stack (`deploy/docker-compose.a2a-mcp-e2e.yml`) existieren und wurden manuell getestet. Keine automatisierte Test-Suite.
+- **Was:** Docker-Konzept (`docs/spec/qualitaet/04-docker-a2a-mcp-e2e.md`) und Compose-Stack (Profil `a2a` in `deploy/docker-compose.yml`) existieren und wurden manuell getestet. Keine automatisierte Test-Suite.
 - **Warum noch nicht:** Erfordert Runner-Container mit SDK-Client und Szenarien A2A-01…10 / MCP-01…06.
 - **Aufwand:** mittel. **Priorität:** mittel (Qualitätssicherung).
 
@@ -250,5 +250,5 @@ Gründe:
 - [A2A Java SDK](https://github.com/a2aproject/a2a-java)
 - [A2A Samples](https://github.com/a2aproject/a2a-samples)
 - [Quarkus Blog Post](https://quarkus.io/blog/quarkus-a2a-java-0-3-0-alpha-release/)
-- [QOC README](../README.md)
+- [QOC README](../meta/README.md)
 - [QOC HttpApi](../../quarkus/src/main/java/de/augmentia/oc/engine/http/HttpApi.java)

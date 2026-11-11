@@ -7,7 +7,7 @@
 > **Companion:** `spec/tools/03-bash-hitl.md` (shell tool, scanner, HITL),
 > `spec/permissions/03-effect-matrix.md` (`external_directory`),
 > `spec/betrieb/03-credentials.md`, `spec/betrieb/README.md`,
-> `l4j-use.md`.
+> `langchain4j.md`.
 >
 > **Status:** 2026-10-22.
 
@@ -35,7 +35,7 @@ chmod 750 /var/lib/qoc
 - Home = engine data directory (SQLite DB, snapshots, tool output).
 - All files under the data directory are owned by `qoc:qoc`.
 - `HOME` must be set explicitly (systemd, Docker, or `-Duser.home`) so
-  `~/.opencode/plan` resolves into the writable data directory and not into
+  `<workspace>/plans` resolves into the writable data directory and not into
   the container root or the workspace.
 
 ## 3. Directory model (dynamically configured)
@@ -47,11 +47,11 @@ chmod 750 /var/lib/qoc
 │   ├── project-a/         # allowed work area (read + write)
 │   └── project-b/
 ├── log/                   # log files (append-only for qoc)
-└── .opencode/plan/        # Plan mode files (~/.opencode/plan)
+└── .opencode/plan/        # Plan mode files (<workspace>/plans)
 ```
 
 `HOME` points at `/var/lib/qoc`, so the Plan directory from the agent
-instruction (`~/.opencode/plan/<name>.md`) lives in the data directory.
+instruction (`<workspace>/plans/<name>.md`) lives in the data directory.
 Never let `user.home` fall back to `/` or to the workspace: the plan files
 would then be created outside the persistent, writable area.
 
@@ -64,6 +64,9 @@ Allowed directories are set **dynamically** via configuration (L-2):
   (project or global level).
 
 ## 4. systemd unit
+
+> Quellen: `deploy/gcp-vm/qoc.service` (JVM) und
+> `deploy/gcp-vm/qoc-native.service` (native Binary).
 
 ```ini
 # /etc/systemd/system/qoc.service
@@ -94,6 +97,8 @@ WantedBy=multi-user.target
 ```
 
 ## 5. Preparation script (`qoc-prepare.sh`)
+
+> Quelle: `deploy/gcp-vm/qoc-prepare.sh`.
 
 ```bash
 #!/bin/bash

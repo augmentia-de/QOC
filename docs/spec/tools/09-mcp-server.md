@@ -101,3 +101,48 @@ handling can be implemented without changing the tool contract.
 | M-03 | Structured output is validated before it is returned. |
 | M-04 | OAuth remains inactive unless explicitly enabled. |
 | M-05 | The server delegates execution to the existing QOC engine. |
+
+---
+
+## 9. Geplante Erweiterung: Serverless-Modus (spec-only)
+
+Im Serverless-Modus (AWS Lambda) soll ein zweites Tool verfügbar sein:
+
+### `qoc_run_agent_with_config`
+
+- Lädt vor der Ausführung eine Agentenkonfiguration
+- Führt einen kompletten Subagent-Run stateless aus
+- Löscht den Agenten nach der Ausführung wieder
+
+Input:
+
+```json
+{
+  "agentConfig": "---\nname: temp-agent\nmode: primary\n---\nYou are a reviewer.",
+  "prompt": "Explain OrderService.totalFor",
+  "workspace": "java-sample",
+  "timeoutSeconds": 300,
+  "structuredOutput": null,
+  "maxSteps": 8,
+  "mode": "ephemeral",
+  "retain": false
+}
+```
+
+Ablauf:
+1. Agentenkonfiguration validieren
+2. Temporären Agenten anlegen
+3. `reloadConfig()` ausführen
+4. Subagent-Run starten
+5. Ergebnis erfassen
+6. Temporären Agenten löschen
+7. `reloadConfig()` ausführen
+8. Ergebnis zurückgeben
+
+Zusätzliche `_meta`-Felder:
+- `agentCreated`
+- `agentDeleted`
+
+Diese Erweiterung ist spec-only und wird in `guides/deployment-modes.md`
+beschrieben. Invariante M-01 gilt für den Standard-Modus; im Serverless-Modus
+wird M-01 zu "mindestens `qoc_run_agent`, optional `qoc_run_agent_with_config`".
