@@ -1,0 +1,16 @@
+# Overlay to run qoc-dev-native with OIDC (Keycloak) enabled.
+#
+#   cd deploy
+#   docker compose -f docker-compose.yml -f docker-compose.dev-native-oidc.yml --profile dev-native up -d qoc-dev-native
+services:
+  qoc-dev-native:
+    env_file:
+      - .env
+      - .env.oidc
+    environment:
+      DEV_NATIVE_OIDC: "true"
+      DEV_NATIVE_REBUILD: "auto"
+      ENGINE_UI_OIDC_ENABLED: "true"
+      ENGINE_UI_OIDC_ISSUER: http://localhost:8180/realms/qoc
+      ENGINE_UI_OIDC_CLIENT_ID: qoc-ui
+      ENGINE_UI_OIDC_AUDIENCE: qoc-engine

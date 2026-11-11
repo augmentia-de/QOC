@@ -1,0 +1,17 @@
+{
+  "name": "QOC Dev",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "qoc-dev",
+  "workspaceFolder": "/app",
+  "forwardPorts": [8070, 5006, 5432, 6379, 8180],
+  "postCreateCommand": "mvn -q -o dependency:go-offline",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "redhat.java",
+        "vscjava.vscode-maven",
+        "vscjava.vscode-java-debug"
+      ]
+    }
+  }
+}

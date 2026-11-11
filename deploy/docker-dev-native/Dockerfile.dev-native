@@ -1,0 +1,58 @@
+# Native development container for QOC.
+#
+# Builds and runs the Quarkus native binary inside the container. Unlike the
+# JVM dev container (deploy/docker-dev), there is no hot reload: the entrypoint
+# rebuilds the native image when the source is newer than the runner or when
+# DEV_NATIVE_REBUILD=always is set.
+#
+# Mandrel 25 is required by Quarkus 3.40.1.1; the JDK 21 Mandrel image fails the
+# GraalVM version check during the native build.
+FROM maven:3.9-eclipse-temurin-21 AS maven
+
+FROM quay.io/quarkus/ubi-quarkus-mandrel-builder-image:jdk-25
+
+USER root
+
+# git: AISDLC / worktree workflows. python3/wget/procps: debugging and scripts.
+# bubblewrap is not available in the UBI repositories; the shell sandbox stays
+# disabled (see docker-compose base environment).
+RUN microdnf install -y \
+        git \
+        python3 \
+        wget \
+        procps \
+        tar \
+        gzip \
+        unzip \
+    && microdnf clean all
+
+# Use Maven 3.9 from the official image; the UBI module ships Maven 3.5,
+# which is too old for the Quarkus 3.40 build.
+COPY --from=maven /usr/share/maven /opt/maven
+ENV MAVEN_HOME=/opt/maven
+ENV PATH="/opt/maven/bin:${PATH}"
+
+# Writable home for arbitrary host UIDs (compose runs as UID:GID). Maven uses
+# /home/qoc; the QOC runtime keeps HOME=/data/home from the compose base env.
+RUN mkdir -p /home/qoc /app && chmod 0777 /home/qoc
+ENV MAVEN_CONFIG=/home/qoc/.m2
+ENV MAVEN_OPTS="-Duser.home=/home/qoc"
+
+WORKDIR /app
+
+# Build context is the repository root (see deploy/docker-compose.yml).
+# The source is bind-mounted at /app at runtime; this copy only makes the image
+# usable standalone and pre-populates the local Maven repository.
+COPY . /app
+RUN mvn -q -pl engine -am install -DskipTests -Djacoco.skip=true
+
+COPY deploy/docker-dev-native/entrypoint-dev-native.sh /usr/local/bin/entrypoint-dev-native.sh
+RUN chmod +x /usr/local/bin/entrypoint-dev-native.sh \
+    && chown -R quarkus:quarkus /app /home/qoc
+
+EXPOSE 8080
+
+# compose overrides this with the host UID/GID; standalone runs as quarkus.
+USER quarkus
+
+ENTRYPOINT ["/usr/local/bin/entrypoint-dev-native.sh"]

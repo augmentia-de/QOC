@@ -1,18 +1,48 @@
-FROM debian:bookworm-slim
-WORKDIR /work/
-COPY quarkus/target/quarkus-1.0.0-SNAPSHOT-runner /work/application
-COPY deploy/AGENTS.native.md /opt/qoc/AGENTS.md
+# Native runtime image for the QOC engine.
+# Multi-stage build: first builds the native image, then creates the runtime image.
 
-RUN chmod 755 /work/application && mkdir -p /data/workspace /data/log /data/home/.opencode/plan \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends util-linux \
-    && rm -rf /var/lib/apt/lists/*
-EXPOSE 8080
+# Build stage
+FROM quay.io/quarkus/ubi9-quarkus-mandrel-builder-image:jdk-21 AS build
+WORKDIR /app
+COPY . /app
+RUN mvn -pl quarkus -am quarkus:build -Dquarkus.package.type=native -Dquarkus.native.container-build=false -DskipTests -Dquarkus.arc.exclude-types=org.a2aproject.sdk.** 2>&1 | tail -5
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates git util-linux bubblewrap && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r qoc && useradd -r -g qoc -d /data/home -s /sbin/nologin qoc
+
+WORKDIR /app
+COPY --from=build /app/quarkus/target/*-runner /app/qoc-runner
+RUN chmod +x /app/qoc-runner
+
+VOLUME ["/data"]
+
+RUN mkdir -p /data/workspace /data/log /data/home/.opencode/plan && \
+    chown -R qoc:qoc /data && \
+    chmod 750 /data /data/workspace /data/log && \
+    chmod 700 /data/home
+
 ENV HOME=/data/home
 ENV QUARKUS_HTTP_HOST=0.0.0.0
 ENV QUARKUS_HTTP_PORT=8080
-ENV ENGINE_DB_KIND=postgresql
+ARG ENGINE_DB_KIND=postgresql
+ENV ENGINE_DB_KIND=${ENGINE_DB_KIND}
 ENV ENGINE_WORKSPACE=/data/workspace
 ENV LOG_DIR=/data/log
 ENV QUARKUS_OTEL_ENABLED=false
-ENTRYPOINT ["/bin/sh", "-c", "mkdir -p /data/workspace /data/log /data/home/.opencode/plan && exec /work/application"]
+ENV QUARKUS_LOG_FILE_ENABLED=true
+ENV QUARKUS_LOG_LEVEL=INFO
+ENV QUARKUS_LOG_CONSOLE_LEVEL=INFO
+ENV QUARKUS_LOG_FILE_LEVEL=INFO
+ENV QUARKUS_LOG_FILE_PATH=/data/log/qoc.log
+
+EXPOSE 8080
+
+USER qoc
+
+ENTRYPOINT ["sh", "-c", "mkdir -p \"$HOME/.opencode/plan\" && exec /app/qoc-runner"]

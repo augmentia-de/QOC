@@ -13,7 +13,8 @@ cd "$ROOT"
 mkdir -p "$ROOT/log"
 
 ENGINE_DB_KIND=postgresql ENGINE_DB_DRIVER=org.postgresql.Driver \
+    QUARKUS_OIDC_ENABLED=true \
     mvn -q -pl quarkus -am package -DskipTests -Djacoco.skip=true
 
-cd deploy
-exec docker compose build qoc
+cd "$ROOT/deploy"
+exec docker compose build qoc-local

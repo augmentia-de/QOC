@@ -1,0 +1,19 @@
+# JVM-basiertes Image für schnelle lokale Iteration und AWS ECS Fargate (AMD64)
+FROM eclipse-temurin:21-jre-jammy
+
+WORKDIR /app
+
+# Quarkus-JAR (aus mvn package, fast-jar)
+COPY quarkus/target/quarkus-app/lib/ /app/lib/
+COPY quarkus/target/quarkus-app/*.jar /app/
+COPY quarkus/target/quarkus-app/app/ /app/app/
+COPY quarkus/target/quarkus-app/quarkus/ /app/quarkus/
+
+# Native Image ist nicht erforderlich; JVM-Modus für Dev/Test
+ENV JAVA_OPTS="-Xms256m -Xmx512m"
+
+EXPOSE 8080
+
+USER 1000:1000
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/quarkus-run.jar"]

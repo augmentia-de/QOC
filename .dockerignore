@@ -1,0 +1,17 @@
+# Build context for the dev image (repo root).
+.git
+.gitignore
+**/log/
+**/sessions/
+**/*.log
+**/.env
+**/.idea/
+**/.vscode/
+**/node_modules/
+deploy/docker-dev/data/
+deploy/docker-dev/workspace/
+deploy/docker-dev-native/data/
+deploy/docker-dev-native/workspace/
+
+# Keep quarkus/target for production builds (needed for Dockerfile COPY)
+!quarkus/target/quarkus-app

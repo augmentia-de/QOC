@@ -1,0 +1,21 @@
+# Lambda container image for QOC (native).
+# Base: AWS Lambda provided runtime (Amazon Linux 2023).
+FROM public.ecr.aws/lambda/provided:al2023
+
+# Install minimal dependencies
+RUN dnf install -y ca-certificates && dnf clean all
+
+# Copy native binary as Lambda bootstrap
+COPY quarkus/target/quarkus-1.0.0-SNAPSHOT-runner /var/runtime/bootstrap
+RUN chmod +x /var/runtime/bootstrap
+
+# Lambda environment
+ENV HOME=/tmp/home
+ENV QUARKUS_HTTP_HOST=0.0.0.0
+ENV QUARKUS_HTTP_PORT=8080
+ENV ENGINE_DB_KIND=postgresql
+ENV ENGINE_WORKSPACE=/tmp/workspace
+ENV QUARKUS_OTEL_ENABLED=false
+ENV QUARKUS_LOG_CONSOLE_LEVEL=INFO
+
+# Lambda entrypoint is /var/runtime/bootstrap (handled by base image)

@@ -1,0 +1,35 @@
+[Unit]
+Description=QOC Engine (native)
+After=network.target
+
+[Service]
+Type=simple
+User=qoc
+Group=qoc
+WorkingDirectory=/opt/qoc
+EnvironmentFile=/etc/qoc/env
+Environment=HOME=/data/home
+ExecStartPre=/usr/local/bin/qoc-prepare.sh
+ExecStart=/opt/qoc/qoc-runner
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/data
+PrivateTmp=true
+ProtectHome=true
+PrivateDevices=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Shell sandbox (bwrap) requires unprivileged user namespaces on Debian.
+# If bwrap fails to create a user namespace, the runner falls back to direct
+# execution (sandbox disabled). To enable bwrap on Debian 12, install
+# bubblewrap: apt-get install -y bubblewrap
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=qoc-engine
+
+[Install]
+WantedBy=multi-user.target

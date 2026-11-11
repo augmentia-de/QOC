@@ -1,0 +1,28 @@
+# Dev-Container mit JDK 21, Maven, Git, bwrap und Quarkus-CLI
+FROM maven:3.9-eclipse-temurin-21
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git bubblewrap acl curl wget unzip python3 python3-pip docker.io && \
+    rm -rf /var/lib/apt/lists/*
+
+# Maven-Repository wird im Compose als Host-Volume gemountet
+# (siehe docker-compose.yml: ${HOME}/.m2:/root/.m2).
+
+WORKDIR /app
+
+# Copy source (build context = repo root)
+COPY . /app
+
+# Pre-build engine into local repo so Quarkus dev mode can resolve it
+RUN mvn -q -pl engine -am install -DskipTests -Djacoco.skip=true
+
+COPY deploy/docker-dev/entrypoint-dev.sh /usr/local/bin/entrypoint-dev.sh
+RUN chmod +x /usr/local/bin/entrypoint-dev.sh
+
+# Debug-Port (nur im JVM-Mode; Quarkus Dev Mode setzt jdwp selbst)
+# ENV JAVA_TOOL_OPTIONS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5006"
+
+# Quarkus Dev Mode als Default
+CMD ["/usr/local/bin/entrypoint-dev.sh"]
+
+EXPOSE 8080 5006

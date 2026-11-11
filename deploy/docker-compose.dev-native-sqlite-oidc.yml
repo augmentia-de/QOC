@@ -1,0 +1,14 @@
+# Overlay to build a SQLite + OIDC native binary in docker-dev-native.
+services:
+  qoc-dev-native:
+    env_file:
+      - .env
+      - .env.oidc
+    environment:
+      DEV_NATIVE_OIDC: "true"
+      DEV_NATIVE_REBUILD: "always"
+      ENGINE_DB_KIND: "sqlite"
+      ENGINE_DB_DRIVER: "org.sqlite.JDBC"
+      ENGINE_FLYWAY_LOCATIONS: "classpath:db/migration-sqlite"
+      QUARKUS_DATASOURCE_JDBC_URL: "jdbc:sqlite:/data/qoc.db"
+      QUARKUS_FLYWAY_LOCATIONS: "classpath:db/migration-sqlite"

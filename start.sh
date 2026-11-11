@@ -87,4 +87,9 @@ fi
 export ENGINE_DB_DRIVER ENGINE_DB_PATH ENGINE_FLYWAY_LOCATIONS
 export QUARKUS_FLYWAY_LOCATIONS="$ENGINE_FLYWAY_LOCATIONS"
 echo "Starte Quarkus-Dev-Modus ..."
-exec mvn -pl quarkus quarkus:dev -Ddebug="${DEBUG_PORT}" "$@"
+# Default HTTP port (überschreibbar via QUARKUS_HTTP_PORT / PORT).
+: "${QUARKUS_HTTP_PORT:=8007}"
+export QUARKUS_HTTP_PORT
+echo "HTTP port: ${QUARKUS_HTTP_PORT}"
+
+exec mvn -pl quarkus quarkus:dev -Ddebug="${DEBUG_PORT}" -Dquarkus.http.port="${QUARKUS_HTTP_PORT}" "$@"

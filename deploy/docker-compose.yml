@@ -1,50 +1,501 @@
+# Konsolidierte Deployment-Definitionen für QOC.
+#
+# Eine Datei, ein Basis-Service-Satz, keine Kopien in Unterordnern.
+# Jede Variante ist ein eigener Service mit eigenem Profil und eigenem Port
+# im Bereich 8070+:
+#
+#   qoc-dev          8070  Hot-Reload-Entwicklung (Quarkus Dev Mode)
+#   qoc-local        8071  lokaler Server-Stack (Postgres, optional OIDC)
+#   qoc-minimal      8072  serverless-Rolle (ephemerer Workspace, Registry-Quelle)
+#   qoc-server       8073  E2E: Server-Rolle (GCP-VM-Äquivalent)
+#   qoc-registry     8074  E2E: Agent-Registry (nur Katalog/Authoring)
+#   qoc-secure       8075  gehärtet, Least-Privilege, nur Workspace+Home
+#   qoc-secure-shell 8076  gehärtet, Shell sieht ausschließlich /data/home
+#   qoc-native       8077  Native-Image (Override, siehe Dockerfile.native)
+#   qoc-agent-a      8078  E2E: A2A-Agent A (SQLite, Interop)
+#   mcp-server       8079  E2E: MCP-Testserver
+#
+# Start einer Variante (Profil wird automatisch aktiviert):
+#   cd deploy
+#   docker compose up -d qoc-local
+#   docker compose up -d qoc-secure-shell
+#
+# Ohne Dienstnamen startet Compose nichts, weil alle Services Profile haben.
+
+name: qoc
+
+# ---------------------------------------------------------------------------
+# Gemeinsame Bausteine
+# ---------------------------------------------------------------------------
+
+x-image: &image
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  image: qoc-engine:local
+
+x-common: &common
+  <<: *image
+  restart: unless-stopped
+  env_file:
+    - .env
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+# Härtung für alle produktionsnahen Varianten: read-only Root, keine
+# Capabilities, kein Privilegien-Eskalieren, begrenzte Prozesszahl.
+x-hardened: &hardened
+  user: "${UID:-1000}:${GID:-1000}"
+  read_only: true
+  tmpfs:
+    - /data:uid=1000,gid=1000,mode=755
+    - /tmp:uid=1000,gid=1000,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 256
+
+x-base-env: &base-env
+  QUARKUS_HTTP_HOST: 0.0.0.0
+  QUARKUS_HTTP_PORT: "8080"
+  QUARKUS_OTEL_ENABLED: "false"
+  QUARKUS_DEVSERVICES_ENABLED: "false"
+  QUARKUS_DATASOURCE_DEVSERVICES_ENABLED: "false"
+  QUARKUS_OBSERVABILITY_DEVSERVICES_ENABLED: "false"
+  QUARKUS_ANALYTICS_DISABLED: "true"
+  HOME: /data/home
+  LOG_DIR: /data/log
+  QUARKUS_LOG_FILE_PATH: /data/log/qoc.log
+  ENGINE_WORKSPACE: /data/workspace
+  ENGINE_REVERT_SNAPSHOT: "false"
+  ENGINE_TURN_MAX_TOKENS: "0"
+  ENGINE_MAX_CONCURRENT_PROMPTS: "4"
+  ENGINE_TURN_MAX_WALL_MINUTES: "180"
+  ENGINE_QUESTION_MAX_RETRIES: "1"
+  ENGINE_SETTINGS_WORKSPACE_ENABLED: "true"
+  # bwrap kann in dieser Container-Runtime keine Namespaces erzeugen
+  # (/proc/sys/kernel/apparmor_restrict_unprivileged_userns=1). Die
+  # Dateisystemgrenze kommt deshalb von den Mounts, nicht vom Sandbox-Runner.
+  ENGINE_SHELL_SANDBOX_ENABLED: "false"
+  # Das gemeinsame Image ist mit QUARKUS_OIDC_ENABLED=true gebaut. Die
+  # OIDC-Extension verlangt deshalb auch in Varianten ohne Login eine
+  # auth-server-url. Discovery ist aus, damit beim Start keine Verbindung
+  # zu Keycloak nötig ist; *oidc-env überschreibt die Werte für die
+  # OIDC-Varianten.
+  QUARKUS_OIDC_ENABLED: "false"
+  QUARKUS_OIDC_AUTH_SERVER_URL: http://host.docker.internal:8180/realms/qoc
+  QUARKUS_OIDC_CLIENT_ID: qoc-engine
+  QUARKUS_OIDC_APPLICATION_TYPE: service
+  QUARKUS_OIDC_DISCOVERY_ENABLED: "false"
+  QUARKUS_OIDC_JWKS_PATH: /protocol/openid-connect/certs
+  QUARKUS_OIDC_TOKEN_PATH: /protocol/openid-connect/token
+  QUARKUS_OIDC_AUTHORIZATION_PATH: /protocol/openid-connect/auth
+
+# OIDC gegen das lokale Keycloak (deploy/keycloak). Der Container erreicht
+# Keycloak über host.docker.internal, der Browser über localhost:8180.
+x-oidc-env: &oidc-env
+  ENGINE_SECURITY_MODE: oidc
+  QUARKUS_OIDC_ENABLED: "true"
+  QUARKUS_OIDC_AUTH_SERVER_URL: http://host.docker.internal:8180/realms/qoc
+  QUARKUS_OIDC_TOKEN_ISSUER: http://localhost:8180/realms/qoc
+  QUARKUS_OIDC_TOKEN_AUDIENCE: qoc-engine
+  QUARKUS_OIDC_JWKS_PATH: /protocol/openid-connect/certs
+  QUARKUS_HTTP_AUTH_PERMISSION_AUTHENTICATED_PATHS: /api/*,/mcp/*,/mcp
+  QUARKUS_HTTP_AUTH_PERMISSION_AUTHENTICATED_POLICY: authenticated
+  ENGINE_UI_OIDC_ENABLED: "true"
+  ENGINE_UI_OIDC_ISSUER: http://localhost:8180/realms/qoc
+  ENGINE_UI_OIDC_CLIENT_ID: qoc-ui
+  ENGINE_UI_OIDC_AUDIENCE: qoc-engine
+  ENGINE_UI_OIDC_API_SCOPE: ""
+
 services:
-  qoc:
+
+  # -------------------------------------------------------------------------
+  # Entwicklung mit Hot-Reload (eigenes Dev-Image, Quellcode-Mount)
+  # -------------------------------------------------------------------------
+  qoc-dev:
+    profiles: [dev]
     build:
       context: ..
-      dockerfile: deploy/Dockerfile
-    image: qoc-engine:local
-    container_name: qoc-engine
+      dockerfile: deploy/docker-dev/Dockerfile.dev
+    image: qoc-engine:dev
+    container_name: qoc-dev
+    working_dir: /app
+    command: ["/usr/local/bin/entrypoint-dev.sh"]
     restart: unless-stopped
-    user: "${UID:-1000}:${GID:-1000}"
-    # Reach the host-published PostgreSQL/pgvector port from inside the container.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "${QOC_PORT:-8333}:8080"
-    volumes:
-      - /home/torsten/dev/my-projects/2oc/dws:/data/workspace
-      - /home/torsten/dev/my-projects/2oc/qoc/data:/data
-      # Host-visible application log: <repo>/log/qoc.log
-      - ../log:/data/log
-      # JVM-specific agent instructions, visible only inside this container.
-      - ./AGENTS.jvm.md:/data/workspace/AGENTS.md:ro
-      # Reused skill library (read-only, no copies, no drift).
-      - /home/torsten/dev/my-projects/AISDLC/.opencode/skills:/data/skills/aisdlc:ro
     env_file:
       - .env
-    networks:
-      - default
-      - keycloak-local
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      # Debug logging: console -> docker logs, file -> ../log/qoc.log
-      - QUARKUS_LOG_FILE_ENABLED=true
-      - QUARKUS_LOG_LEVEL=DEBUG
-      - QUARKUS_LOG_CONSOLE_LEVEL=DEBUG
-      - QUARKUS_LOG_FILE_LEVEL=DEBUG
-      - QUARKUS_LOG_FILE_PATH=/data/log/qoc.log
-      # Revert snapshots are disabled: every prompt used to snapshot the whole
-      # workspace into the remote Neon database before the model call.
-      - ENGINE_REVERT_SNAPSHOT=false
-      # 0 = no cumulative token limit for a turn
-      - ENGINE_TURN_MAX_TOKENS=${ENGINE_TURN_MAX_TOKENS:-0}
-      # HOME must be writable by the runtime user and should persist.
-      # Keeps ~/.opencode/plan (Plan mode) inside the /data volume instead of
-      # falling back to the container root or the workspace.
-      - HOME=/data/home
+      <<: *base-env
+      QUARKUS_TEST_CONTINUOUS_TESTING: disabled
+      ENGINE_MODEL_ID: glm-5.3-flash
+      ENGINE_PERMISSION_DEFAULT: allow-all
+      ENGINE_PERMISSION_ASK_MODE: interactive
+      MAVEN_CONFIG: /home/ubuntu/.m2
+      MAVEN_OPTS: -Duser.home=/home/ubuntu
+      MAVEN_REPO: /home/ubuntu/.m2
+    volumes:
+      - ..:/app
+      - ${HOME}/.m2:/home/ubuntu/.m2
+      - ./docker-dev/data/home:/data/home
+      - ../data/workspace:/data/workspace
+      - ./docker-dev/log:/data/log
+      - ./docker-dev/entrypoint-dev.sh:/usr/local/bin/entrypoint-dev.sh:ro
+    ports:
+      - "8070:8080"
+      - "5006:5006"
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    group_add:
+      - "${DOCKER_GID:-983}"
 
-networks:
-  keycloak-local:
-    external: true
-    name: keycloak-local_default
+  # -------------------------------------------------------------------------
+  # Native-Entwicklung: Mandrel 25, Native-Build beim Start, kein Hot-Reload
+  # -------------------------------------------------------------------------
+  qoc-dev-native:
+    profiles: [dev-native]
+    build:
+      context: ..
+      dockerfile: deploy/docker-dev-native/Dockerfile.dev-native
+    image: qoc-engine:dev-native
+    container_name: qoc-dev-native
+    working_dir: /app
+    command: ["/usr/local/bin/entrypoint-dev-native.sh"]
+    restart: unless-stopped
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      <<: *base-env
+      QUARKUS_TEST_CONTINUOUS_TESTING: disabled
+      ENGINE_MODEL_ID: glm-5.3-flash
+      ENGINE_PERMISSION_DEFAULT: allow-all
+      ENGINE_PERMISSION_ASK_MODE: interactive
+      MAVEN_CONFIG: /home/qoc/.m2
+      MAVEN_OPTS: -Duser.home=/home/qoc
+      MAVEN_REPO: /home/qoc/.m2
+      DEV_NATIVE_REBUILD: "${DEV_NATIVE_REBUILD:-auto}"
+      DEV_NATIVE_OIDC: "${DEV_NATIVE_OIDC:-false}"
+    volumes:
+      - ..:/app
+      - ${HOME}/.m2:/home/qoc/.m2
+      - ./docker-dev-native/data/home:/data/home
+      - ../data/workspace:/data/workspace
+      - ./docker-dev-native/log:/data/log
+      - ./docker-dev-native/entrypoint-dev-native.sh:/usr/local/bin/entrypoint-dev-native.sh:ro
+    ports:
+      - "8081:8080"
+    user: "${UID:-1000}:${GID:-1000}"
+    group_add:
+      - "${DOCKER_GID:-983}"
 
+  # -------------------------------------------------------------------------
+  # Lokaler Server-Stack
+  # -------------------------------------------------------------------------
+  qoc-local:
+    profiles: [local]
+    <<: [*common, *hardened]
+    container_name: qoc-local
+    environment:
+      <<: *base-env
+      ENGINE_PERMISSION_DEFAULT: least-privilege
+      ENGINE_PERMISSION_ASK_MODE: deny
+    volumes:
+      - ${QOC_WORKSPACE_HOST:-../data/workspace}:/data/workspace
+      - ../data/home:/data/home
+      - ../data/qoc.db:/data/qoc.db
+      - ../log:/data/log
+      - ./AGENTS.jvm.md:/data/workspace/AGENTS.jvm.md:ro
+      - ${QOC_SKILLS_HOST:-../data/skills/aisdlc}:/data/skills/aisdlc:ro
+    ports:
+      - "8071:8080"
+
+  # -------------------------------------------------------------------------
+  # In-Memory: alle Storage-Ports im Heap, keine Datenbank
+  # -------------------------------------------------------------------------
+  qoc-memory:
+    profiles: [memory]
+    <<: [*common, *hardened]
+    container_name: qoc-memory
+    environment:
+      <<: *base-env
+      ENGINE_STORAGE: memory
+      ENGINE_RECOVERY_ENABLED: "false"
+      ENGINE_REVERT_SNAPSHOT: "true"
+      ENGINE_MEMORY_MAX_BYTES: "1073741824"
+      ENGINE_SECURITY_MODE: none
+      ENGINE_APPROVAL_BASE_URL: http://localhost:8082
+      # .env kann auf PostgreSQL zeigen; die leere URL hält die DataSource
+      # inaktiv, damit der Memory-Modus wirklich ohne DB startet.
+      QUARKUS_DATASOURCE_JDBC_URL: ""
+      QUARKUS_FLYWAY_ENABLED: "false"
+    tmpfs:
+      - /data:uid=1000,gid=1000,mode=755
+      - /data/home:uid=1000,gid=1000,mode=755
+      - /data/workspace:uid=1000,gid=1000,mode=755
+      - /data/log:uid=1000,gid=1000,mode=755
+      - /tmp:uid=1000,gid=1000,mode=1777
+    ports:
+      - "8082:8080"
+
+  # -------------------------------------------------------------------------
+  # Serverless-Rolle: ephemerer Workspace, Agenten kommen aus der Registry
+  # -------------------------------------------------------------------------
+  qoc-minimal:
+    profiles: [minimal]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.native
+    image: qoc-engine:native
+    container_name: qoc-minimal
+    restart: unless-stopped
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      <<: [*base-env, *oidc-env]
+      ENGINE_MODE: serverless
+      ENGINE_AGENT_AUTHORING_ENABLED: "false"
+      ENGINE_AGENT_SOURCE_URL: http://host.docker.internal:8074
+      ENGINE_MAX_CONCURRENT_PROMPTS: "1"
+      ENGINE_TURN_MAX_WALL_MINUTES: "10"
+      QUARKUS_LOG_FILE_ENABLE: "false"
+    tmpfs:
+      - /data:uid=1000,gid=1000,mode=755
+      - /data/home:uid=1000,gid=1000,mode=755
+      - /data/workspace:uid=1000,gid=1000,mode=755
+      - /tmp:uid=1000,gid=1000,mode=1777
+    ports:
+      - "8072:8080"
+
+  # -------------------------------------------------------------------------
+  # E2E: Server-Rolle (wie GCP-VM, Authoring aktiv)
+  # -------------------------------------------------------------------------
+  qoc-server:
+    profiles: [e2e]
+    <<: [*common, *hardened]
+    container_name: qoc-server
+    environment:
+      <<: [*base-env, *oidc-env]
+      ENGINE_MODE: server
+      ENGINE_AGENT_AUTHORING_ENABLED: "true"
+    volumes:
+      - ${QOC_WORKSPACE_HOST:-../data/workspace}:/data/workspace
+      - ../data/home:/data/home
+      - ../log:/data/log
+    ports:
+      - "8073:8080"
+
+  # -------------------------------------------------------------------------
+  # E2E: Agent-Registry (nur Katalog/Authoring, keine Ausführung)
+  # -------------------------------------------------------------------------
+  qoc-registry:
+    profiles: [e2e]
+    <<: [*common, *hardened]
+    container_name: qoc-registry
+    environment:
+      <<: [*base-env, *oidc-env]
+      ENGINE_MODE: server
+      ENGINE_ROLE: registry
+      ENGINE_AGENT_AUTHORING_ENABLED: "true"
+    volumes:
+      - ${QOC_WORKSPACE_HOST:-../data/workspace}:/data/workspace
+      - ../data/home:/data/home
+      - ../log:/data/log
+    ports:
+      - "8074:8080"
+
+  # -------------------------------------------------------------------------
+  # Gehärtet: Least-Privilege, kein Quellcode-/Socket-Mount
+  # -------------------------------------------------------------------------
+  qoc-secure:
+    profiles: [secure]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.native
+    image: qoc-engine:native
+    container_name: qoc-secure
+    restart: unless-stopped
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      <<: *base-env
+      ENGINE_PERMISSION_DEFAULT: least-privilege
+      ENGINE_PERMISSION_ASK_MODE: deny
+      ENGINE_AGENT_AUTHORING_ENABLED: "false"
+      ENGINE_SETTINGS_WORKSPACE_ENABLED: "false"
+      ENGINE_EMAIL_ENABLED: "false"
+      ENGINE_EMAIL_READ_ENABLED: "false"
+      QUARKUS_LOG_FILE_ENABLE: "false"
+      ENGINE_LLM_LOG_ENABLED: "false"
+    volumes:
+      - ./docker-secure/workspace:/data/workspace
+      - ./docker-secure/home:/data/home
+    ports:
+      - "8075:8080"
+
+  # -------------------------------------------------------------------------
+  # Gehärtet + Shell nur innerhalb von /data/home.
+  #
+  # Es wird ausschließlich ./docker-secure-shell/home nach /data/home
+  # gemountet. /data/workspace, /data/qoc.db, ../log und das Quell-Repository
+  # existieren im Container nicht. Ein Shell-Aufruf (auch über Skripte,
+  # `cd ..` oder Variablen) kann diese Pfade deshalb nicht erreichen: sie sind
+  # nicht Teil des Mount-Namespace. HOME selbst ist read-only; nur der
+  # Agent-Workspace /data/home/work ist beschreibbar.
+  #
+  # Zusätzliche Grenzen:
+  #  - keine Capabilities, read-only Root, no-new-privileges
+  #  - least-privilege + ask-mode=deny (externe Pfade werden zusätzlich vom
+  #    Pfad-Scanner abgelehnt)
+  #  - Seccomp-Deny-Liste gegen ptrace/process_vm_*: kein Debuggen oder
+  #    Cross-Process-Reads aus einem Shell-Skript
+  # -------------------------------------------------------------------------
+  qoc-secure-shell:
+    profiles: [secure-shell]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.native
+    image: qoc-engine:native
+    container_name: qoc-secure-shell
+    restart: unless-stopped
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./seccomp-qoc-shell.json
+    environment:
+      <<: *base-env
+      ENGINE_WORKSPACE: /data/home/work
+      ENGINE_PERMISSION_DEFAULT: least-privilege
+      ENGINE_PERMISSION_ASK_MODE: deny
+      ENGINE_AGENT_AUTHORING_ENABLED: "false"
+      ENGINE_SETTINGS_WORKSPACE_ENABLED: "false"
+      ENGINE_EMAIL_ENABLED: "false"
+      ENGINE_EMAIL_READ_ENABLED: "false"
+      QUARKUS_LOG_FILE_ENABLE: "false"
+      ENGINE_LLM_LOG_ENABLED: "false"
+    volumes:
+      # HOME ist schreibgeschützt; nur der Agent-Workspace ist beschreibbar.
+      - ./docker-secure-shell/home:/data/home:ro
+      - ./docker-secure-shell/home/work:/data/home/work
+    ports:
+      - "8076:8080"
+
+  # -------------------------------------------------------------------------
+  # Native-Image (separater Build, siehe deploy/README.md)
+  # -------------------------------------------------------------------------
+  qoc-native:
+    profiles: [native]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.native
+    image: qoc-engine:native
+    container_name: qoc-native
+    restart: unless-stopped
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    user: "${UID:-1000}:${GID:-1000}"
+    read_only: true
+    tmpfs:
+      - /data:uid=1000,gid=1000,mode=755
+      - /tmp:uid=1000,gid=1000,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    environment:
+      <<: *base-env
+      ENGINE_PERMISSION_DEFAULT: least-privilege
+      ENGINE_PERMISSION_ASK_MODE: deny
+    volumes:
+      - ${QOC_WORKSPACE_HOST:-../data/workspace}:/data/workspace
+      - ../data/home:/data/home
+      - ../data/qoc.db:/data/qoc.db
+      - ../log:/data/log
+      - ./AGENTS.native.md:/data/workspace/AGENTS.md:ro
+    ports:
+      - "8077:8080"
+
+  # -------------------------------------------------------------------------
+  # E2E: A2A/MCP-Interop (eigenständiges SQLite-Image, keine echte LLM)
+  # -------------------------------------------------------------------------
+  qoc-agent-a:
+    profiles: [a2a]
+    image: qoc-engine:sqlite
+    container_name: qoc-agent-a
+    restart: unless-stopped
+    environment:
+      ENGINE_A2A_SERVER_ENABLED: "true"
+      ENGINE_A2A_SERVER_NAME: Agent A
+      ENGINE_A2A_SERVER_BASE_URL: http://qoc-agent-a:8080
+      ENGINE_A2A_SERVER_AGENT: none
+      ENGINE_A2A_ENDPOINTS: id=agent-b|url=http://qoc-agent-b:8080|tool=a2a_agent_b|enabled=true
+      ENGINE_A2A_CACHE_TTL_SECONDS: "60"
+      ENGINE_MCP_SERVER_ENABLED: "true"
+      ENGINE_MCP_SERVER_OAUTH_ENABLED: "false"
+      ENGINE_SECURITY_MODE: basic
+      OPENCODE_SERVER_PASSWORD: interop-secret
+      ENGINE_PROVIDER_SCRIPTED: "true"
+      ENGINE_DB_KIND: sqlite
+      ENGINE_DB_PATH: /data/qoc.db
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:sqlite:/data/qoc.db
+      ENGINE_WORKSPACE: /data/workspace
+      QUARKUS_OTEL_ENABLED: "false"
+    volumes:
+      - qoc-a-data:/data
+      - ./interop/settings-a.json:/data/workspace/settings.json:ro
+    ports:
+      - "8078:8080"
+    depends_on:
+      - qoc-agent-b
+      - mcp-server
+
+  qoc-agent-b:
+    profiles: [a2a]
+    image: qoc-engine:sqlite
+    container_name: qoc-agent-b
+    restart: unless-stopped
+    environment:
+      ENGINE_A2A_SERVER_ENABLED: "true"
+      ENGINE_A2A_SERVER_NAME: Agent B
+      ENGINE_A2A_SERVER_BASE_URL: http://qoc-agent-b:8080
+      ENGINE_A2A_SERVER_AGENT: none
+      ENGINE_A2A_URLS: ""
+      ENGINE_MCP_SERVER_ENABLED: "false"
+      ENGINE_SECURITY_MODE: basic
+      OPENCODE_SERVER_PASSWORD: interop-secret
+      ENGINE_PROVIDER_SCRIPTED: "true"
+      ENGINE_DB_KIND: sqlite
+      ENGINE_DB_PATH: /data/qoc.db
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:sqlite:/data/qoc.db
+      ENGINE_WORKSPACE: /data/workspace
+      QUARKUS_OTEL_ENABLED: "false"
+    volumes:
+      - qoc-b-data:/data
+
+  mcp-server:
+    profiles: [a2a]
+    image: python:3.12-alpine
+    container_name: mcp-server
+    restart: unless-stopped
+    command: ["python", "/app/server.py"]
+    volumes:
+      - ./interop/mcp_server.py:/app/server.py:ro
+    ports:
+      - "8079:8090"
+
+volumes:
+  qoc-a-data:
+  qoc-b-data:

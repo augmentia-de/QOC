@@ -1,0 +1,11 @@
+# Testcontainers-Overlay: mountet den Docker-Socket in qoc-dev.
+# Nur für Testläufe verwenden, die Docker im Container benötigen.
+#
+#   cd deploy
+#   docker compose -f docker-compose.yml -f docker-compose.docker-socket.yml up -d qoc-dev
+#
+# Die Docker-GID wird bereits im Basis-Service über group_add gesetzt.
+services:
+  qoc-dev:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

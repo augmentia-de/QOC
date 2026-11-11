@@ -1,0 +1,26 @@
+# OIDC-Overlay für die lokalen Varianten (Keycloak auf http://localhost:8180).
+#
+#   cd deploy
+#   docker compose -f docker-compose.yml -f docker-compose.oidc.yml up -d qoc-local
+#   docker compose -f docker-compose.yml -f docker-compose.oidc.yml up -d qoc-dev
+#
+# Die API- und MCP-Pfade werden geschützt; die statische UI bleibt öffentlich,
+# damit der Browser den Authorization-Code+PKCE-Flow starten kann.
+services:
+  qoc-local:
+    env_file:
+      - .env.oidc
+    environment:
+      ENGINE_UI_OIDC_ENABLED: "true"
+      ENGINE_UI_OIDC_ISSUER: http://localhost:8180/realms/qoc
+      ENGINE_UI_OIDC_CLIENT_ID: qoc-ui
+      ENGINE_UI_OIDC_AUDIENCE: qoc-engine
+
+  qoc-dev:
+    env_file:
+      - .env.oidc
+    environment:
+      ENGINE_UI_OIDC_ENABLED: "true"
+      ENGINE_UI_OIDC_ISSUER: http://localhost:8180/realms/qoc
+      ENGINE_UI_OIDC_CLIENT_ID: qoc-ui
+      ENGINE_UI_OIDC_AUDIENCE: qoc-engine

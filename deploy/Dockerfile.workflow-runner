@@ -1,0 +1,15 @@
+# Multi-stage build for workflow-runner
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /app
+COPY pom.xml .
+COPY engine/pom.xml engine/
+COPY workflow-runner/pom.xml workflow-runner/
+COPY engine/src engine/src
+COPY workflow-runner/src workflow-runner/src
+RUN mvn -pl workflow-runner -am package -DskipTests -B
+
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY --from=build /app/workflow-runner/target/workflow-runner-1.0.0-SNAPSHOT.jar /app/workflow-runner.jar
+EXPOSE 8097
+ENTRYPOINT ["java", "-jar", "/app/workflow-runner.jar", "/data/wf"]

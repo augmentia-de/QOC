@@ -3,7 +3,7 @@ FROM eclipse-temurin:21-jre-alpine
 
 # script(1) provides the optional one-off PTY for the shell tool; git backs the
 # worktree tools.
-RUN apk add --no-cache util-linux git
+RUN apk add --no-cache util-linux git bubblewrap
 
 # Create dedicated user
 RUN addgroup -S qoc && adduser -S qoc -G qoc -h /var/lib/qoc -s /sbin/nologin
@@ -25,9 +25,10 @@ RUN mkdir -p /data/workspace /data/log /data/home/.opencode/plan /var/lib/qoc &&
     chmod 700 /data/home
 
 ENV HOME=/data/home
-ENV JAVA_OPTS="-Xms64m -Xmx384m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m"
+ENV JAVA_OPTS="-Xms64m -Xmx384m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
 ENV QUARKUS_HTTP_HOST=0.0.0.0
 ENV QUARKUS_HTTP_PORT=8080
+EXPOSE 5005
 ARG ENGINE_DB_KIND=postgresql
 ENV ENGINE_DB_KIND=${ENGINE_DB_KIND}
 ENV ENGINE_WORKSPACE=/data/workspace
@@ -46,4 +47,4 @@ USER qoc
 
 # The bind mount on /data hides the build-time /data/home, so create it again
 # at startup. HOME must be writable by the runtime user (see compose user:).
-ENTRYPOINT ["sh", "-c", "mkdir -p /data/workspace /data/log \"$HOME/.opencode/plan\" && exec java $JAVA_OPTS -jar /app/quarkus-run.jar"]
+ENTRYPOINT ["sh", "-c", "mkdir -p \"$ENGINE_WORKSPACE/plans\" && exec java $JAVA_OPTS -jar /app/quarkus-run.jar"]

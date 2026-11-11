@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the JVM fast-jar for the hermetic SQLite image used by the A2A/MCP
-# Docker E2E stack (deploy/docker-compose.a2a-mcp-e2e.yml).
+# A2A-Profil in deploy/docker-compose.yml (docker compose --profile a2a).
 #
 # The main local image (deploy/build-image.sh) is built for PostgreSQL.
 # quarkus.datasource.db-kind and the JDBC driver are build-time settings, so

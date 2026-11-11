@@ -1,0 +1,13 @@
+# JVM-Mode für qoc-dev: kein Hot-Reload, dafür schneller und stabiler Start.
+#
+#   cd deploy
+#   docker compose -f docker-compose.yml -f docker-compose.dev-jvm.yml up -d --build qoc-dev
+services:
+  qoc-dev:
+    command:
+      - sh
+      - -c
+      - >-
+        mvn -q package -DskipTests -Djacoco.skip=true &&
+        java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5006
+        -jar /app/quarkus/target/quarkus-app/quarkus-run.jar

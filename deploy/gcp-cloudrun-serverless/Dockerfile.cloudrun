@@ -1,0 +1,31 @@
+# Cloud Run container image for QOC (native).
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r qoc && useradd -r -g qoc -d /tmp/home -s /sbin/nologin qoc
+
+WORKDIR /app
+COPY quarkus/target/quarkus-1.0.0-SNAPSHOT-runner /app/qoc-runner
+RUN chmod +x /app/qoc-runner
+
+RUN mkdir -p /tmp/workspace /tmp/home/.opencode/plan && \
+    chown -R qoc:qoc /tmp/workspace /tmp/home
+
+ENV HOME=/tmp/home
+ENV QUARKUS_HTTP_HOST=0.0.0.0
+ENV QUARKUS_HTTP_PORT=8080
+ARG ENGINE_DB_KIND=postgresql
+ENV ENGINE_DB_KIND=${ENGINE_DB_KIND}
+ENV ENGINE_WORKSPACE=/tmp/workspace
+ENV QUARKUS_OTEL_ENABLED=false
+ENV QUARKUS_LOG_CONSOLE_LEVEL=INFO
+
+EXPOSE 8080
+
+USER qoc
+
+# Cloud Run sets PORT env var; Quarkus reads QUARKUS_HTTP_PORT
+ENTRYPOINT ["sh", "-c", "mkdir -p \"$HOME/.opencode/plan\" && exec /app/qoc-runner"]
