@@ -1,0 +1,7 @@
+11:36:20.375 DEBUG WorkflowExecutor - Executing workflow: runtest (input: Hello)
+11:36:20.376 DEBUG WorkflowExecutor - Expanded workflow: 2 nodes, 0 edges
+11:36:20.377 DEBUG WorkflowExecutor - Delegating to QocEngine workflow-mode loop
+11:36:20.384 DEBUG WorkflowStepProviderImpl - provideStep: stepNo=1, currentNode=null
+11:36:20.384 DEBUG WorkflowStepProviderImpl - getNextNodeId: currentNode=null
+11:36:20.384 DEBUG DefaultNodeDispatcher - Dispatching node: start (type: start)
+11:36:20.386 DEBUG WorkflowExecutor - Workflow completed: Session ses_be3ac60b7426f7194268576b853bdf1c85ece4c990ad82d75b973d71cd0c533b — LLM response: started

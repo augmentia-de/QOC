@@ -561,8 +561,9 @@ public static record EngineConfig(
             return de.augmentia.oc.engine.core.model.EngineResult.failed(
                     "session is already being executed: " + session.value(), false);
         }
-        // Preflight checks
-        if (engineConfig.preflightEnabled() && preflightChecker != null) {
+        boolean workflowMode = (workflowStepProvider != null && workflowContext != null);
+        // Preflight checks (skip in workflow mode)
+        if (!workflowMode && engineConfig.preflightEnabled() && preflightChecker != null) {
             var preflightCtx = new de.augmentia.oc.engine.runtime.resilience.PreflightChecker.PreflightContext(
                     null, null, () -> true, java.nio.file.Path.of("."));
             var preflightResult = preflightChecker.check(preflightCtx);
@@ -596,7 +597,6 @@ public static record EngineConfig(
         }
 
         // If no provider/step is wired AND not in workflow mode, return placeholder
-        boolean workflowMode = (workflowStepProvider != null && workflowContext != null);
         if (!workflowMode && (provider == null || step == null)) {
             stores.claims().release(session);
             return de.augmentia.oc.engine.core.model.EngineResult.completed(
