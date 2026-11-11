@@ -31,4 +31,4 @@ echo "OPENAI_API_KEY: ${OPENAI_API_KEY:+set}${OPENAI_API_KEY:-not set}"
 echo "OPENAI_BASE_URL: ${OPENAI_BASE_URL:-default}"
 echo ""
 
-java -cp "$CP" de.augmentia.qoc.temporal.QocEngineMain "$PROMPT"
+java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -cp "$CP" de.augmentia.qoc.temporal.QocEngineMain "$PROMPT"
