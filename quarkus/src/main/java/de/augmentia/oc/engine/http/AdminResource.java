@@ -56,6 +56,16 @@ public class AdminResource {
     }
 
     @GET
+    @Path("/admin/ping")
+    public Response adminPing() {
+        Response denied = requireRole("admin");
+        if (denied != null) return denied;
+        var p = principalContext == null ? null : principalContext.get();
+        String id = p == null ? "anonymous" : p.id();
+        return Response.ok(Map.of("status", "ok", "user", id, "message", "admin-only endpoint")).build();
+    }
+
+    @GET
     @Path("/health/live")
     public Response healthLive() {
         return Response.ok(Map.of("status", "UP", "check", "live")).build();
