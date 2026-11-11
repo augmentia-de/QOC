@@ -92,6 +92,8 @@ public static record EngineConfig(
 
     private final Stores stores;
     private final Clock clock;
+    public de.augmentia.oc.engine.core.port.world.ToolTokenService toolTokenService =
+            de.augmentia.oc.engine.core.port.world.ToolTokenService.disabled();
     private final SessionService sessionService;
     private final Coordinator coordinator;
     private final StorageConfig storageConfig;
@@ -655,7 +657,7 @@ public static record EngineConfig(
                                     session, info.agent(),
                                     de.augmentia.oc.engine.core.model.MessageId.create(),
                                     de.augmentia.oc.engine.core.model.CallId.create(),
-                                    null, principal);
+                                    null, principal, toolTokenService);
 
                     result = step.run(prepared, toolContext);
                 }
@@ -679,7 +681,7 @@ public static record EngineConfig(
                                     session, info.agent(),
                                     de.augmentia.oc.engine.core.model.MessageId.create(),
                                     de.augmentia.oc.engine.core.model.CallId.create(),
-                                    null, principal);
+                                    null, principal, toolTokenService);
                     result = step.run(prepared, toolContext);
                 }
 

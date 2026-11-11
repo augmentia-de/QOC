@@ -149,7 +149,7 @@ public final class Step {
                             LOG.fine("tool call requested: " + call.name());
                             ToolContext callContext = new ToolContext(context.sessionId(),
                                     context.agentId(), context.messageId(), call.callId(),
-                                    null, context.principal());
+                                    null, context.principal(), context.toolTokenService());
                             ToolOutcome outcome = tools.execute(
                                     new ToolCall(call.callId(), call.name(), call.input()), callContext);
                             return new StepResult.ToolCallOutcome(
@@ -197,7 +197,7 @@ public final class Step {
                     LOG.fine("tool call requested: " + call.name());
                     ToolContext callContext = new ToolContext(context.sessionId(),
                             context.agentId(), context.messageId(), call.callId(),
-                            null, context.principal());
+                            null, context.principal(), context.toolTokenService());
                     ToolOutcome outcome = tools.execute(
                             new ToolCall(call.callId(), call.name(), call.input()), callContext);
                     outcomes.set(i, new StepResult.ToolCallOutcome(
