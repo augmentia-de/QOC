@@ -4,8 +4,31 @@ target/
 *.iml
 .DS_Store
 .env
+.env.oidc
+deploy/gcp-vm/gcp-auth0.env
 log/
 quarkus/log/
 data/
-deploy/vm.md
-/deploy/gcp-ssl.sh
+deploy/gcp-vm/vm.md
+/deploy/gcp-vm/gcp-ssl.sh
+
+
+# Terraform
+deploy/aws-ecs-minimal/.terraform/
+deploy/aws-ecs-minimal/.terraform.lock.hcl
+deploy/aws-ecs-minimal/terraform.tfstate
+deploy/aws-ecs-minimal/terraform.tfstate.backup
+deploy/aws-ecs-minimal/tfplan*
+deploy/aws-ecs-minimal/terraform.tfvars
+
+# Variant-local writable directories: keep the empty directories in git,
+# ignore the runtime data inside them.
+deploy/docker-*/home/**
+!deploy/docker-*/home/.gitkeep
+!deploy/docker-*/home/work/
+!deploy/docker-*/home/work/.gitkeep
+deploy/docker-*/workspace/**
+!deploy/docker-*/workspace/.gitkeep
+/workflow-ui/node_modules/
+/workflow-ui/dist/
+/wf-data/

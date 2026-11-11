@@ -38,6 +38,51 @@ in a demo.
   automatic and manual compaction, subagents, parallel tool calls.
 - **Tool parity:** files, shell (optional PTY), search, web, skills, subagents,
   todos, questions, worktrees, MCP tools and resources.
+
+## Permission System (Least Privilege)
+
+QOC uses a **deny-by-default** permission model. Every tool call is checked
+against the agent's permission rules before execution.
+
+### Default rules (least-privilege)
+
+| Regel | Effekt | Begründung |
+|-------|--------|------------|
+| `*:* = deny` | DENY | Baseline: alles verboten |
+| `read * = allow` | ALLOW | Lesen erlaubt |
+| `external_directory * = deny` | DENY | Extern gesperrt |
+| `edit * = deny` | DENY | Nichts ändern (Default) |
+| `write * = deny` | DENY | Nichts schreiben (Default) |
+| `patch * = deny` | DENY | Nichts patchen (Default) |
+| `shell *git log* = allow` | ALLOW | Read-only Befehle |
+| `shell *git status* = allow` | ALLOW | Read-only Befehle |
+| `shell *git diff* = allow` | ALLOW | Read-only Befehle |
+| `shell *ls* = allow` | ALLOW | Read-only Befehle |
+| `shell *cat* = allow` | ALLOW | Read-only Befehle |
+| `read *.env = ask` | ASK | Secrets nachfragen |
+| `read *.env.* = ask` | ASK | Secrets nachfragen |
+| `read *.env.example = allow` | ALLOW | Templates erlauben |
+
+### No-Questions Mode (Headless/CI)
+
+Für Ausführung ohne UI:
+```bash
+ENGINE_PERMISSION_ASK_MODE=deny   # default: fail-safe
+ENGINE_PERMISSION_ASK_MODE=allow  # permissiv (Tests/CI)
+```
+
+### Agent-spezifische Regeln
+Agenten können eigene Regeln definieren, die die Defaults überschreiben
+(letzte passende Regel gewinnt). Beispiel: Build-Agent darf editieren:
+```yaml
+permissions:
+  - action: edit
+    resource: "*"
+    effect: allow
+  - action: write
+    resource: "*"
+    effect: allow
+```
 - **Context files:** automatic `AGENTS.md`/`CLAUDE.md` discovery plus
   `SYSTEM.md`/`APPEND_SYSTEM.md`.
 - **Skills:** progressive disclosure, 8 KiB body limit, `allow`/`deny`/`max`,
@@ -246,18 +291,22 @@ cd qoc
 cp deploy/.env.example deploy/.env
 # edit deploy/.env: JDBC URL, username, password
 ./deploy/build-image.sh
-cd deploy && docker compose up -d
+cd deploy && docker compose up -d qoc-local
 ```
 
 `build-image.sh` builds the fast-jar with **PostgreSQL as a build-time
-setting**. The database is external (for example Neon); the `qoc-data` Docker
-volume holds the workspace, logs, snapshots, and tool output. For a single-node
+setting**. The database is external (for example Neon). `qoc-local` bind-mounts
+the workspace, HOME, SQLite file and log from the host. For a single-node
 SQLite deployment, use `deploy/build-image-sqlite.sh` and the SQLite values
 from `deploy/.env.example`.
 
-- UI/API: <http://127.0.0.1:8333>
+All deployment variants (ports, profiles, hardening) are listed in
+`deploy/README.md`; the shell-isolated variant is
+`deploy/docker-secure-shell/README.md`.
+
+- UI/API: <http://127.0.0.1:8071>
 - Persistence: external PostgreSQL
-- Plan files: `/data/home/.opencode/plan` (`HOME=/data/home`)
+- Plan files: `<workspace>/plans` (inside the workspace volume)
 
 ### Native image
 
@@ -265,7 +314,7 @@ from `deploy/.env.example`.
 ENGINE_DB_KIND=postgresql ENGINE_DB_DRIVER=org.postgresql.Driver \
   QUARKUS_FLYWAY_LOCATIONS=classpath:db/migration \
   mvn -DskipTests package -Dnative     # requires GraalVM
-cd deploy && docker compose -f docker-compose.native.yml up -d --build
+cd deploy && docker compose --profile native up -d --build
 ```
 
 The native image intentionally contains **no Git**; worktree tools are not
@@ -278,8 +327,8 @@ Prerequisites: user `qoc`, directory `/var/lib/qoc`, fast-jar at
 `/opt/qoc/quarkus-run.jar`, and environment file `/etc/qoc/env`.
 
 ```bash
-sudo install -m 644 deploy/qoc.service /etc/systemd/system/qoc.service
-sudo install -m 755 deploy/qoc-prepare.sh /usr/local/bin/qoc-prepare.sh
+sudo install -m 644 deploy/gcp-vm/qoc.service /etc/systemd/system/qoc.service
+sudo install -m 755 deploy/gcp-vm/qoc-prepare.sh /usr/local/bin/qoc-prepare.sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now qoc
 ```
@@ -351,7 +400,7 @@ implementations.
 | operate QOC | [`docs/spec/betrieb/README.md`](./docs/spec/betrieb/README.md) |
 | review quality gates | [`docs/spec/qualitaet/README.md`](./docs/spec/qualitaet/README.md) |
 | see implementation status | [`docs/STATUS.md`](./docs/STATUS.md) |
-| optimize context or cost | [`docs/improve.md`](./docs/improve.md) |
+| optimize context or cost | [`docs/optimization.md`](./docs/optimization.md) |
 
 ## Typical request flow
 
@@ -367,9 +416,9 @@ implementations.
 
 - **Development:** `./start.sh` or `mvn -pl quarkus quarkus:dev`
 - **JVM container:** `deploy/Dockerfile` with `deploy/docker-compose.yml`
-- **Native image:** `deploy/Dockerfile.native` with `deploy/docker-compose.native.yml`
+- **Native image:** `deploy/Dockerfile.native` mit dem Profil `native` in `deploy/docker-compose.yml`
 - **Bare metal:** `java -jar quarkus/target/quarkus-app/quarkus-run.jar`
-- **systemd:** `deploy/qoc.service` with the preparation script `deploy/qoc-prepare.sh`
+- **systemd:** `deploy/gcp-vm/qoc.service` with the preparation script `deploy/gcp-vm/qoc-prepare.sh`
 
 Persistent data lives under `/data` in containers: SQLite database, workspace,
 logs, and plan files.

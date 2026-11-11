@@ -38,6 +38,6 @@ QOC uses a three-layer approach:
    execution.
 3. **Input validation** — shell scanner and structured tool boundaries.
 
-See [`docs/Security.md`](./docs/Security.md) and
+See [`docs/security.md`](./docs/security.md) and
 [`docs/guides/OS-based-security.md`](./docs/guides/OS-based-security.md) for
 details.
