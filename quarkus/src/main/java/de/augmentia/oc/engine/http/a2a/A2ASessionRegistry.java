@@ -6,6 +6,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -53,7 +54,11 @@ public class A2ASessionRegistry {
             if (existing != null && engine.session(existing).isPresent()) {
                 return existing;
             }
-            SessionId created = engine.createSession(config.agent(), user);
+            // A2A is an authenticated server-to-server channel. Treat it as
+            // trusted for the built-in roles so existing A2A agents keep
+            // working, while custom-role-only agents remain restricted.
+            SessionId created = engine.createSession(config.agent(), user, "workspace", false,
+                    List.of("admin", "qoc-user", "mcp-user"));
             sessions.put(key, created);
             return created;
         }

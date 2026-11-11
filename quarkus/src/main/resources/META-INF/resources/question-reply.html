@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>QOC Question</title>
+<style>body{font-family:sans-serif;max-width:600px;margin:40px auto;padding:20px}
+button{padding:8px 16px;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer;margin-top:10px}
+textarea{width:100%;min-height:80px;margin-top:8px}</style>
+</head><body>
+<h2>QOC Agent Question</h2>
+<div id="content">Laden...</div>
+<script>
+const params = new URLSearchParams(location.search);
+const token = params.get('token');
+async function load() {
+  try {
+    const r = await fetch('/api/question/' + token);
+    if (!r.ok) { document.getElementById('content').textContent = 'Frage nicht gefunden oder abgelaufen.'; return; }
+    const data = await r.json();
+    const q = data.data;
+    let html = '';
+    if (q && q.questions) {
+      q.questions.forEach(qq => {
+        html += '<p><strong>' + esc(qq.question) + '</strong></p>';
+        if (qq.options && qq.options.length) {
+          qq.options.forEach(o => {
+            html += '<label style="display:block;margin:4px 0"><input type="radio" name="sel" value="' + esc(o.label) + '"> ' + esc(o.label) + ' - ' + esc(o.description) + '</label>';
+          });
+        }
+        html += '<textarea id="text" placeholder="Antwort (optional)..."></textarea>';
+      });
+    }
+    html += '<br><button onclick="submit()">Antworten</button>';
+    document.getElementById('content').innerHTML = html;
+  } catch (e) {
+    document.getElementById('content').textContent = 'Fehler: ' + e.message;
+  }
+}
+async function submit() {
+  const sel = document.querySelector('input[name="sel"]:checked');
+  const text = document.getElementById('text')?.value || '';
+  const body = {selected: sel ? [sel.value] : [], text};
+  const r = await fetch('/api/question/' + token + '/reply', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if (r.ok) {
+    document.body.innerHTML = '<h2>Antwort gesendet!</h2><p>Du kannst dieses Fenster schliessen.</p>';
+  } else {
+    alert('Fehler: ' + r.status);
+  }
+}
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+load();
+</script>
+</body></html>

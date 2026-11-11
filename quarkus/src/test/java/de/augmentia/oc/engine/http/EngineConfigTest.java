@@ -4,6 +4,8 @@ import de.augmentia.oc.engine.core.error.Defect;
 import de.augmentia.oc.engine.core.eval.PermissionRules;
 import de.augmentia.oc.engine.core.model.Effect;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -18,6 +20,21 @@ class EngineConfigTest {
 
     @TempDir
     Path workspace;
+
+    private String previousHome;
+
+    @BeforeEach
+    void isolateUserHome() {
+        previousHome = System.getProperty("user.home");
+        System.setProperty("user.home", workspace.toString());
+    }
+
+    @AfterEach
+    void restoreUserHome() {
+        if (previousHome != null) {
+            System.setProperty("user.home", previousHome);
+        }
+    }
 
     @Test
     void projectFileOverridesDefaultsAndMasksThePassword() throws Exception {
@@ -58,6 +75,28 @@ class EngineConfigTest {
         assertThat(config.agents()).allMatch(agent -> agent.maxSteps() == 0);
         assertThat(config.skillsEnabled()).isTrue();
         assertThat(config.skillPaths()).isEmpty();
+    }
+
+    @Test
+    void runtimeWorkspaceOverrideSurvivesReloadAndUsesNewSettings() throws Exception {
+        Path other = Files.createDirectory(workspace.resolve("other"));
+        Files.writeString(workspace.resolve("settings.json"), """
+                {"model": {"id": "old-model"}}
+                """);
+        Files.writeString(other.resolve("settings.json"), """
+                {"model": {"id": "new-model"}}
+                """);
+
+        EngineConfig config = config();
+        config.load();
+        assertThat(config.workspace()).isEqualTo(workspace.toString());
+        assertThat(config.model()).isEqualTo("old-model");
+
+        config.setWorkspace(other.toString());
+        config.load();
+
+        assertThat(config.workspace()).isEqualTo(other.toString());
+        assertThat(config.model()).isEqualTo("new-model");
     }
 
     @Test
@@ -158,11 +197,30 @@ class EngineConfigTest {
     }
 
     @Test
+    void allowAllPermissionDefaultAlsoAppliesToTheBaselineBuildAgent() {
+        EngineConfig config = config();
+        config.permissionDefaultProperty = "allow-all";
+        config.load();
+
+        assertThat(PermissionRules.evaluate(agent(config, "build").permissions(),
+                "shell", "mvn -q package")).isEqualTo(Effect.ALLOW);
+    }
+
+    @Test
+    void leastPrivilegePermissionDefaultKeepsTheShellAskForTheBuildAgent() {
+        EngineConfig config = config();
+        config.load();
+
+        assertThat(PermissionRules.evaluate(agent(config, "build").permissions(),
+                "shell", "mvn -q package")).isEqualTo(Effect.ASK);
+    }
+
+    @Test
     void defaultAgentsMayOnlyReachOutsideTheWorkspaceThroughThePlanDirectory() {
         EngineConfig config = config();
         config.load();
 
-        String planFile = EngineConfig.planDirectory() + "/my-plan.md";
+        String planFile = config.planDirectory() + "/my-plan.md";
         for (EngineConfig.AgentConfig agent : config.agents()) {
             assertThat(PermissionRules.evaluate(agent.permissions(), "external_directory", planFile))
                     .as("plan directory for agent %s", agent.name())
@@ -216,7 +274,14 @@ class EngineConfigTest {
         config.modelProperty = "gpt-4o-mini";
         config.urlProperty = "https://api.openai.com/v1/chat/completions";
         config.passwordProperty = Optional.empty();
+        config.permissionDefaultProperty = "least-privilege";
         config.workspaceSettingsEnabledProperty = true;
+        config.modeProperty = "server";
+        config.agentSourceUrlProperty = Optional.empty();
+        config.agentAuthoringEnabledProperty = true;
+        config.agentSourceTokenProperty = Optional.empty();
+        config.globalSettingsFileProperty =
+                Optional.of(workspace.resolve("global-settings.json").toString());
         return config;
     }
 

@@ -1,20 +1,19 @@
 package de.augmentia.oc.engine.http;
 
+import de.augmentia.oc.engine.adapter.sql.PendingApprovalSql;
 import de.augmentia.oc.engine.core.model.ApprovalResult;
 import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.PermissionRequestId;
 import de.augmentia.oc.engine.core.model.SessionId;
 import de.augmentia.oc.engine.core.port.human.ApprovalSource;
+import de.augmentia.oc.engine.core.port.store.PendingApprovalStore;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,7 +41,16 @@ public class WebApprovalSource implements ApprovalSource {
             new ConcurrentHashMap<>();
 
     @Inject
-    DataSource dataSource;
+    Instance<DataSource> dataSource;
+
+    @Inject
+    @ConfigProperty(name = "engine.storage", defaultValue = "")
+    String storageKind;
+
+    private DataSource dataSourceOrNull() {
+        if ("memory".equalsIgnoreCase(storageKind)) return null;
+        return dataSource.isResolvable() ? dataSource.get() : null;
+    }
 
     @Override
     public ApprovalResult request(PermissionRequestId requestId, SessionId sessionId,
@@ -50,12 +58,14 @@ public class WebApprovalSource implements ApprovalSource {
         String key = key(sessionId.value(), requestId.value());
         Instant now = Instant.now();
         Instant deadline = now.plusSeconds(TIMEOUT_SECONDS);
-        try {
-            persistPending(requestId.value(), sessionId.value(), action, context, now, deadline);
-        } catch (SQLException e) {
-            // Fail closed: an approval that cannot be made durable must not be
-            // silently approved or left in a process-local limbo.
-            return new ApprovalResult.Denied(Option.some("approval store unavailable"));
+        if (dataSourceOrNull() != null) {
+            try {
+                persistPending(requestId.value(), sessionId.value(), action, context, now, deadline);
+            } catch (Exception e) {
+                // Fail closed: an approval that cannot be made durable must not be
+                // silently approved or left in a process-local limbo.
+                return new ApprovalResult.Denied(Option.some("approval store unavailable"));
+            }
         }
 
         CompletableFuture<ApprovalResult> future = new CompletableFuture<>();
@@ -87,51 +97,23 @@ public class WebApprovalSource implements ApprovalSource {
     }
 
     /** Pending rows, including orphaned rows from a previous process. */
-    public List<PendingApproval> pending(String sessionId) {
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "select id, session_id, action, context, created_at, deadline_at, state " +
-                             "from pending_approval where session_id = ? " +
-                             "and state in (?, ?) order by created_at")) {
-            statement.setString(1, sessionId);
-            statement.setString(2, PENDING);
-            statement.setString(3, ORPHANED);
-            try (ResultSet resultSet = statement.executeQuery()) {
-                List<PendingApproval> rows = new ArrayList<>();
-                while (resultSet.next()) {
-                    rows.add(new PendingApproval(
-                            resultSet.getString("id"),
-                            resultSet.getString("session_id"),
-                            resultSet.getString("action"),
-                            resultSet.getString("context"),
-                            instant(resultSet, "created_at"),
-                            instant(resultSet, "deadline_at"),
-                            resultSet.getString("state")));
-                }
-                return List.copyOf(rows);
-            }
-        } catch (SQLException e) {
+    public List<PendingApprovalStore.PendingApproval> pending(String sessionId) {
+        DataSource ds = dataSourceOrNull();
+        if (ds == null) return List.of();
+        try {
+            return PendingApprovalSql.pending(ds, sessionId);
+        } catch (Exception e) {
             return List.of();
         }
     }
 
     private void persistPending(String requestId, String sessionId, String action,
                                 String context, Instant createdAt, Instant deadline)
-            throws SQLException {
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "insert into pending_approval " +
-                             "(id, session_id, action, context, created_at, deadline_at, state) " +
-                             "values (?, ?, ?, ?, ?, ?, ?)")) {
-            statement.setString(1, requestId);
-            statement.setString(2, sessionId);
-            statement.setString(3, action);
-            statement.setString(4, context);
-            statement.setTimestamp(5, Timestamp.from(createdAt));
-            statement.setTimestamp(6, Timestamp.from(deadline));
-            statement.setString(7, PENDING);
-            statement.executeUpdate();
-        }
+            throws Exception {
+        DataSource ds = dataSourceOrNull();
+        if (ds == null) return;
+        PendingApprovalSql.persistPending(ds, requestId, sessionId, action, context,
+                createdAt, deadline, null, null);
     }
 
     private boolean markDecided(String requestId) {
@@ -142,45 +124,41 @@ public class WebApprovalSource implements ApprovalSource {
         updateState(requestId, EXPIRED);
     }
 
+    /** Deletes decided approvals older than the cutoff. */
+    public int deleteDecidedBefore(Instant cutoff) {
+        DataSource ds = dataSourceOrNull();
+        if (ds == null) return 0;
+        try {
+            return PendingApprovalSql.deleteDecidedBefore(ds, cutoff);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     /** Marks approvals from a previous process as orphaned, not silently lost. */
     public int recoverOrphans() {
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "update pending_approval set state = ? where state = ?")) {
-            statement.setString(1, ORPHANED);
-            statement.setString(2, PENDING);
-            return statement.executeUpdate();
-        } catch (SQLException e) {
+        DataSource ds = dataSourceOrNull();
+        if (ds == null) return 0;
+        try {
+            return PendingApprovalSql.recoverOrphans(ds);
+        } catch (Exception e) {
             return 0;
         }
     }
 
     private boolean updateState(String requestId, String state) {
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "update pending_approval set state = ? where id = ? and state in (?, ?)")) {
-            statement.setString(1, state);
-            statement.setString(2, requestId);
-            statement.setString(3, PENDING);
-            statement.setString(4, ORPHANED);
-            return statement.executeUpdate() > 0;
-        } catch (SQLException e) {
+        DataSource ds = dataSourceOrNull();
+        if (ds == null) return false;
+        try {
+            PendingApprovalSql.markState(ds, requestId, state);
+            return true;
+        } catch (Exception e) {
             return false;
         }
-    }
-
-    private static Instant instant(ResultSet resultSet, String column) throws SQLException {
-        Timestamp timestamp = resultSet.getTimestamp(column);
-        if (timestamp != null) return timestamp.toInstant();
-        long millis = resultSet.getLong(column);
-        return resultSet.wasNull() ? Instant.EPOCH : Instant.ofEpochMilli(millis);
     }
 
     private static String key(String sessionId, String requestId) {
         return sessionId + ":" + requestId;
     }
 
-    public record PendingApproval(String id, String sessionId, String action,
-                                  String context, Instant createdAt, Instant deadline,
-                                  String state) {}
 }

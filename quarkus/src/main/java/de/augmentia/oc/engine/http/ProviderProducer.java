@@ -36,21 +36,45 @@ public class ProviderProducer {
     @Produces
     @ApplicationScoped
     ProviderAdapter provider(
+            @ConfigProperty(name = "engine.provider.type", defaultValue = "http") String providerType,
             @ConfigProperty(name = "engine.provider.scripted", defaultValue = "true") boolean scripted,
             @ConfigProperty(name = "engine.provider.api-key", defaultValue = "demo-key") String apiKey,
             @ConfigProperty(name = "engine.llm-log.enabled", defaultValue = "true") boolean llmLogEnabled,
             @ConfigProperty(name = "engine.llm-log.path", defaultValue = "./log/llm.log") String llmLogPath,
             @ConfigProperty(name = "engine.llm-log.limit-bytes", defaultValue = "2097152") long llmLogLimit,
             @ConfigProperty(name = "engine.llm-log.count", defaultValue = "20") int llmLogCount,
-            EngineConfig config) {
-        if (scripted) return scripted();
+            @ConfigProperty(name = "engine.llm-trace.first-request-max", defaultValue = "4000") int llmTraceFirstRequestMax,
+            @ConfigProperty(name = "engine.llm-trace.subsequent-request-max", defaultValue = "800") int llmTraceSubsequentRequestMax,
+            @ConfigProperty(name = "engine.llm-trace.response-max", defaultValue = "800") int llmTraceResponseMax,
+            EngineConfig config,
+            dev.langchain4j.model.chat.ChatModel chatModel,
+            dev.langchain4j.model.chat.StreamingChatModel streamingChatModel) {
+        if (scripted) {
+            LOG.info("LLM provider: scripted mock (ENGINE_PROVIDER_SCRIPTED=true)");
+            return scripted();
+        }
+        if ("langchain4j".equalsIgnoreCase(providerType)) {
+            if (chatModel == null && streamingChatModel == null) {
+                LOG.warning("LangChain4j requested but no ChatModel bean available; falling back to HTTP");
+            } else {
+                LOG.info("LLM provider: LangChain4j");
+                return new LangChain4jProviderAdapter(streamingChatModel, chatModel);
+            }
+        }
+        if (apiKey == null || apiKey.isBlank() || "demo-key".equals(apiKey)) {
+            LOG.warning("LLM provider: real mode enabled but OPENAI_API_KEY is missing "
+                    + "or still the demo key; LLM calls will fail.");
+        } else {
+            LOG.info("LLM provider: " + config.url() + " model=" + config.model());
+        }
         LlmTrace trace = openTrace(llmLogEnabled, Path.of(llmLogPath), llmLogLimit, llmLogCount);
         return new HttpProviderAdapter(new JdkHttpTransport(), URI.create(config.url()),
                 Map.of("authorization", "Bearer " + apiKey,
                         "User-Agent", "opencode-engine/1.0"),
                 new OpenAiRequestEncoder(config.model()),
                 new SseReader(), OpenAiEventTranslator::new, new ProviderErrorClassifier(),
-                Duration.ofMinutes(2), trace);
+                Duration.ofMinutes(2), trace,
+                llmTraceFirstRequestMax, llmTraceSubsequentRequestMax, llmTraceResponseMax);
     }
 
     private static LlmTrace openTrace(boolean enabled, Path path, long limit, int count) {

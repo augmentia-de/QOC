@@ -54,7 +54,8 @@ public class McpServerResource {
                     .entity(Map.of("error", "MCP server is disabled")).build();
         }
         if (oauthEnabled || (securityConfig != null && securityConfig.mode() == AuthMode.MCP_OAUTH)) {
-            if (principalContext == null || principalContext.get() == null) {
+            if (principalContext == null || principalContext.get() == null
+                    || "anonymous".equals(principalContext.get().id())) {
                 LOG.log(Level.WARNING, "security.mcp_unauthorized");
                 return Response.status(Response.Status.UNAUTHORIZED)
                         .entity(Map.of("error", "unauthorized"))
@@ -64,6 +65,16 @@ public class McpServerResource {
         }
         Object id = request == null ? null : request.get("id");
         String method = request == null ? null : String.valueOf(request.get("method"));
+        if (engine.isRegistryMode() && "tools/call".equals(method)) {
+            Map<String, Object> error = new LinkedHashMap<>();
+            error.put("code", -32001);
+            error.put("message", "execution is disabled in registry role");
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("jsonrpc", "2.0");
+            response.put("id", id);
+            response.put("error", error);
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE).entity(response).build();
+        }
         Map<String, Object> params = request == null || !(request.get("params") instanceof Map)
                 ? Map.of() : (Map<String, Object>) request.get("params");
 
@@ -132,8 +143,22 @@ public class McpServerResource {
         tool.put("description", "Run a QOC agent task and return its result.");
         tool.put("inputSchema", schema);
 
+        // qoc_run_agent_with_config schema
+        Map<String, Object> configSchema = new LinkedHashMap<>(schema);
+        Map<String, Object> configProps = new LinkedHashMap<>(properties);
+        configProps.put("agentConfig", Map.of("type", "string",
+                "description", "Agent definition (Markdown with frontmatter) or JSON object"));
+        configSchema.put("properties", configProps);
+        configSchema.put("required", List.of("agentConfig", "prompt"));
+
+        Map<String, Object> configTool = new LinkedHashMap<>();
+        configTool.put("name", "qoc_run_agent_with_config");
+        configTool.put("description", "Run a stateless QOC subagent with an inline agent configuration. "
+                + "The agent is created temporarily, the prompt is executed, and the agent is deleted afterwards.");
+        configTool.put("inputSchema", configSchema);
+
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("tools", List.of(tool));
+        result.put("tools", List.of(tool, configTool));
         return result;
     }
 
@@ -162,67 +187,168 @@ public class McpServerResource {
 
     private Map<String, Object> toolsCall(Map<String, Object> params) {
         String name = String.valueOf(params.getOrDefault("name", ""));
-        if (!"qoc_run_agent".equals(name)) {
+        if (!"qoc_run_agent".equals(name) && !"qoc_run_agent_with_config".equals(name)) {
             throw new IllegalArgumentException("unknown tool: " + name);
         }
         Map<String, Object> arguments = params.get("arguments") instanceof Map
                 ? (Map<String, Object>) params.get("arguments") : Map.of();
 
-        String agent = stringArg(arguments, "agent", null);
         String prompt = stringArg(arguments, "prompt", null);
         if (prompt == null || prompt.isBlank()) {
             throw new IllegalArgumentException("prompt is required");
         }
         String user = "opencode";
+        if (principalContext != null && principalContext.get() != null) {
+            String pid = principalContext.get().id();
+            if (pid != null && !pid.isBlank() && !"anonymous".equals(pid)) {
+                user = pid;
+            }
+        }
+
+        // Inline agents are materialised in memory only, so serverless/Lambda
+        // instances never need a writable agent directory.
+        String tempAgentName = null;
+        String transientAgentName = null;
+        boolean agentCreated = false;
+        if ("qoc_run_agent_with_config".equals(name)) {
+            Object agentConfig = arguments.get("agentConfig");
+            if (agentConfig == null) {
+                throw new IllegalArgumentException("agentConfig is required");
+            }
+            String configText = agentConfig instanceof String s ? s : String.valueOf(agentConfig);
+            if (configText.isBlank()) {
+                throw new IllegalArgumentException("agentConfig must not be blank");
+            }
+            if (configText.length() > 65536) {
+                throw new IllegalArgumentException("agentConfig exceeds maximum size (64 KiB)");
+            }
+            tempAgentName = "mcp-tmp-" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+            EngineConfig.AgentConfig cfg = AgentMarkdownLoader.parseContent(configText, tempAgentName);
+            if (cfg == null) {
+                throw new IllegalArgumentException(
+                        "agentConfig must be a Markdown agent definition with frontmatter");
+            }
+            if (!AgentAccess.allowed(cfg, currentRoles())) {
+                throw new IllegalArgumentException("agent not allowed: inline configuration");
+            }
+            engine.defineTransientAgent(tempAgentName, cfg, null);
+            transientAgentName = tempAgentName;
+            agentCreated = true;
+        }
+
+        String agent = stringArg(arguments, "agent", null);
+
+        // Serverless: fetch the agent definition on demand for exactly this
+        // call, then remove it again in the finally block below.
+        if ("qoc_run_agent".equals(name) && agent != null && !agent.isBlank()
+                && engine.isServerlessMode() && !engine.hasAgent(agent)) {
+            String callerToken = principalContext != null && principalContext.get() != null
+                    ? principalContext.get().accessToken() : null;
+            java.util.Map<String, Object> fetched = engine.fetchAgentConfig(agent, callerToken);
+            if (fetched == null) {
+                throw new IllegalArgumentException("agent not available: " + agent);
+            }
+            engine.defineTransientAgent(agent, fetched);
+            transientAgentName = agent;
+            agentCreated = true;
+        }
+
+        if (tempAgentName != null) {
+            agent = tempAgentName;
+        }
+        if (agent != null && !agent.isBlank() && !agentAllowed(agent)) {
+            if (transientAgentName != null) {
+                try {
+                    engine.removeTransientAgent(transientAgentName);
+                } catch (RuntimeException ignored) {
+                }
+                transientAgentName = null;
+            }
+            throw new IllegalArgumentException("agent not allowed: " + agent);
+        }
         String sessionId = stringArg(arguments, "sessionId", null);
         String sessionMode = stringArg(arguments, "sessionMode", "new");
         Object structuredSchema = arguments.get("structuredOutput");
         Integer maxSteps = intArg(arguments, "maxSteps");
         String mode = stringArg(arguments, "mode", "workspace");
         boolean retain = boolArg(arguments, "retain", false);
-        String workspaceSubdir = stringArg(arguments, "workspace", null);
 
         SessionId session;
-        if ("reuse".equalsIgnoreCase(sessionMode) && sessionId != null && !sessionId.isBlank()) {
-            session = SessionId.parse(sessionId);
-        } else {
-            session = engine.createSession(agent, user, mode, retain);
-        }
-
-        Option<Schema> responseSchema = Option.none();
-        if (structuredSchema instanceof Map) {
-            Result<Schema> parsed = JsonSchema.parse(JsonValues.fromJava(structuredSchema));
-            if (parsed instanceof Result.Err<Schema> error) {
-                throw new IllegalArgumentException("invalid structuredOutput at " + error.error().path()
-                        + ": " + error.error().message());
+        Engine.PromptResult promptResult = null;
+        boolean agentDeleted = false;
+        try {
+            if ("reuse".equalsIgnoreCase(sessionMode) && sessionId != null && !sessionId.isBlank()) {
+                session = SessionId.parse(sessionId);
+                engine.session(session).ifPresent(info -> {
+                    String existing = engine.agentName(info.agent());
+                    if (!agentAllowed(existing)) {
+                        throw new IllegalArgumentException("agent not allowed: " + existing);
+                    }
+                });
+            } else {
+                session = engine.createSession(agent, user, mode, retain, currentRoles());
             }
-            responseSchema = Option.some(parsed.valueOrNull());
+
+            Option<Schema> responseSchema = Option.none();
+            if (structuredSchema instanceof Map) {
+                Result<Schema> parsed = JsonSchema.parse(JsonValues.fromJava(structuredSchema));
+                if (parsed instanceof Result.Err<Schema> error) {
+                    throw new IllegalArgumentException("invalid structuredOutput at " + error.error().path()
+                            + ": " + error.error().message());
+                }
+                responseSchema = Option.some(parsed.valueOrNull());
+            }
+
+            promptResult = engine.prompt(session, prompt, responseSchema);
+
+        } finally {
+            if (transientAgentName != null) {
+                try {
+                    engine.removeTransientAgent(transientAgentName);
+                    agentDeleted = true;
+                } catch (Exception ignored) {
+                }
+            }
         }
 
-        Engine.PromptResult result = engine.prompt(session, prompt, responseSchema);
+        if (promptResult == null) {
+            throw new IllegalStateException("prompt did not produce a result");
+        }
 
         Map<String, Object> contentItem = new LinkedHashMap<>();
         contentItem.put("type", "text");
-        contentItem.put("text", result.text());
+        contentItem.put("text", promptResult.text());
 
         Map<String, Object> toolResult = new LinkedHashMap<>();
         toolResult.put("content", List.of(contentItem));
         toolResult.put("isError", false);
 
-        Map<String, Object> structured = result.structured()
-                .map(JsonValues::toJava).map(v -> (Map<String, Object>) v).orElse(null);
-        if (structured != null) {
-            toolResult.put("structuredContent", structured);
-        }
+        promptResult.structured()
+                .map(JsonValues::toJava)
+                .map(v -> (Map<String, Object>) v)
+                .ifPresent(s -> toolResult.put("structuredContent", s));
 
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("sessionId", session.value());
-        meta.put("finish", result.finish());
-        meta.put("inputTokens", result.inputTokens());
-        meta.put("outputTokens", result.outputTokens());
+        meta.put("finish", promptResult.finish());
+        meta.put("inputTokens", promptResult.inputTokens());
+        meta.put("outputTokens", promptResult.outputTokens());
+        meta.put("agentCreated", agentCreated);
+        meta.put("agentDeleted", agentDeleted);
         toolResult.put("_meta", meta);
 
         return toolResult;
+    }
+
+    private List<String> currentRoles() {
+        if (principalContext == null) return List.of();
+        var principal = principalContext.get();
+        if (principal == null || principal.roles() == null) return List.of();
+        return principal.roles();
+    }
+
+    private boolean agentAllowed(String name) {
+        return engine.agentAllowed(name, currentRoles());
     }
 
     private static String stringArg(Map<String, Object> args, String key, String defaultValue) {

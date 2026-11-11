@@ -1,5 +1,6 @@
 package de.augmentia.oc.engine.http;
 
+import de.augmentia.oc.engine.adapter.sql.PendingApprovalSql;
 import de.augmentia.oc.engine.core.model.ApprovalResult;
 import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.PermissionRequestId;
@@ -8,17 +9,13 @@ import de.augmentia.oc.engine.core.port.human.ApprovalSource;
 import de.augmentia.oc.engine.core.port.human.NotificationChannel;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
@@ -37,7 +34,16 @@ public class DurableApprovalSource implements ApprovalSource {
     private static final Logger LOG = Logger.getLogger(DurableApprovalSource.class.getName());
 
     @Inject
-    DataSource dataSource;
+    Instance<DataSource> dataSource;
+
+    @Inject
+    @ConfigProperty(name = "engine.storage", defaultValue = "")
+    String storageKind;
+
+    private DataSource ds() {
+        if ("memory".equalsIgnoreCase(storageKind)) return null;
+        return dataSource.isResolvable() ? dataSource.get() : null;
+    }
 
     @Inject
     NotificationChannel notificationChannel;
@@ -59,6 +65,9 @@ public class DurableApprovalSource implements ApprovalSource {
     @Override
     public ApprovalResult requestAsync(PermissionRequestId requestId, SessionId sessionId, String action,
                                       String context, String approvalUrl) {
+        if (ds() == null) {
+            return new ApprovalResult.Denied(Option.some("approval store unavailable"));
+        }
         String token = generateToken();
         String tokenHash = sha256(token);
         Instant now = Instant.now();
@@ -68,7 +77,7 @@ public class DurableApprovalSource implements ApprovalSource {
 
         try {
             persistPending(requestId.value(), sessionId.value(), action, context, now, deadline, tokenHash);
-        } catch (SQLException e) {
+        } catch (Exception e) {
             LOG.warning("approval store unavailable: " + e.getMessage());
             return new ApprovalResult.Denied(Option.some("approval store unavailable"));
         }
@@ -85,6 +94,9 @@ public class DurableApprovalSource implements ApprovalSource {
     @Override
     public ApprovalResult request(PermissionRequestId requestId, SessionId sessionId,
                                   String action, String context) {
+        if (ds() == null) {
+            return new ApprovalResult.Denied(Option.some("approval store unavailable"));
+        }
         String token = generateToken();
         String tokenHash = sha256(token);
         Instant now = Instant.now();
@@ -93,7 +105,7 @@ public class DurableApprovalSource implements ApprovalSource {
 
         try {
             persistPending(requestId.value(), sessionId.value(), action, context, now, deadline, tokenHash);
-        } catch (SQLException e) {
+        } catch (Exception e) {
             LOG.warning("approval store unavailable: " + e.getMessage());
             return new ApprovalResult.Denied(Option.some("approval store unavailable"));
         }
@@ -142,119 +154,95 @@ public class DurableApprovalSource implements ApprovalSource {
     // --- persistence helpers ---
 
     private void persistPending(String requestId, String sessionId, String action, String context,
-                               Instant createdAt, Instant deadline, String tokenHash) throws SQLException {
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "insert into pending_approval " +
-                             "(id, session_id, action, context, created_at, deadline_at, state, token, channel) " +
-                             "values (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
-            statement.setString(1, requestId);
-            statement.setString(2, sessionId);
-            statement.setString(3, action);
-            statement.setString(4, context);
-            statement.setTimestamp(5, Timestamp.from(createdAt));
-            statement.setTimestamp(6, Timestamp.from(deadline));
-            statement.setString(7, "PENDING");
-            statement.setString(8, tokenHash);
-            statement.setString(9, "email");
-            statement.executeUpdate();
-        }
+                               Instant createdAt, Instant deadline, String tokenHash) throws Exception {
+        PendingApprovalSql.persistPending(ds(), requestId, sessionId, action, context,
+                createdAt, deadline, tokenHash, "email");
     }
 
     private String readDecision(String requestId) {
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "select decision from pending_approval where id = ?")) {
-            statement.setString(1, requestId);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) return null;
-                return rs.getString(1);
-            }
-        } catch (SQLException e) {
+        DataSource ds = ds();
+        if (ds == null) return null;
+        try {
+            return PendingApprovalSql.decision(ds, requestId);
+        } catch (Exception e) {
             LOG.warning("cannot read decision: " + e.getMessage());
             return null;
         }
     }
 
     private String readFeedback(String requestId) {
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "select feedback from pending_approval where id = ?")) {
-            statement.setString(1, requestId);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) return null;
-                return rs.getString(1);
-            }
-        } catch (SQLException e) {
+        DataSource ds = ds();
+        if (ds == null) return null;
+        try {
+            return PendingApprovalSql.feedback(ds, requestId);
+        } catch (Exception e) {
             return null;
         }
     }
 
     public String sessionIdForToken(String token) {
+        DataSource ds = ds();
+        if (ds == null) return null;
         String hash = sha256(token);
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "select session_id from pending_approval where token = ?")) {
-            statement.setString(1, hash);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) return null;
-                return rs.getString(1);
-            }
-        } catch (SQLException e) {
+        try {
+            return PendingApprovalSql.sessionIdForToken(ds, hash);
+        } catch (Exception e) {
             LOG.warning("cannot find session by token: " + e.getMessage());
             return null;
         }
     }
 
     public String findRequestIdByToken(String tokenHash) {
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "select id from pending_approval where token = ?")) {
-            statement.setString(1, tokenHash);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) return null;
-                return rs.getString(1);
-            }
-        } catch (SQLException e) {
+        DataSource ds = ds();
+        if (ds == null) return null;
+        try {
+            return PendingApprovalSql.requestIdForToken(ds, tokenHash);
+        } catch (Exception e) {
             LOG.warning("cannot find request by token: " + e.getMessage());
             return null;
         }
     }
 
     private boolean updateDecision(String requestId, String decision, String feedback) {
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "update pending_approval set decision = ?, feedback = ?, state = 'DECIDED' " +
-                             "where id = ? and state in ('PENDING','ORPHANED')")) {
-            statement.setString(1, decision);
-            statement.setString(2, feedback);
-            statement.setString(3, requestId);
-            return statement.executeUpdate() > 0;
-        } catch (SQLException e) {
+        DataSource ds = ds();
+        if (ds == null) return false;
+        try {
+            return PendingApprovalSql.updateDecision(ds, requestId, decision, feedback);
+        } catch (Exception e) {
             LOG.warning("cannot update decision: " + e.getMessage());
             return false;
         }
     }
 
     private void markDecided(String requestId) {
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "update pending_approval set state = 'DECIDED' where id = ?")) {
-            statement.setString(1, requestId);
-            statement.executeUpdate();
-        } catch (SQLException e) {
+        DataSource ds = ds();
+        if (ds == null) return;
+        try {
+            PendingApprovalSql.markState(ds, requestId, "DECIDED");
+        } catch (Exception e) {
             LOG.warning("cannot mark decided: " + e.getMessage());
         }
     }
 
     private void markExpired(String requestId) {
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "update pending_approval set state = 'EXPIRED' where id = ?")) {
-            statement.setString(1, requestId);
-            statement.executeUpdate();
-        } catch (SQLException e) {
+        DataSource ds = ds();
+        if (ds == null) return;
+        try {
+            PendingApprovalSql.markState(ds, requestId, "EXPIRED");
+        } catch (Exception e) {
             LOG.warning("cannot mark expired: " + e.getMessage());
+        }
+    }
+
+    /** Deletes decided approvals older than the cutoff. */
+    public int deleteDecidedBefore(Instant cutoff) {
+        DataSource ds = ds();
+        if (ds == null) return 0;
+        try {
+            return PendingApprovalSql.deleteDecidedBefore(ds, cutoff);
+        } catch (Exception e) {
+            LOG.warning("cannot purge decided approvals: " + e.getMessage());
+            return 0;
         }
     }
 

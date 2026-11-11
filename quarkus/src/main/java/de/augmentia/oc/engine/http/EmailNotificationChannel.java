@@ -56,6 +56,14 @@ public class EmailNotificationChannel implements NotificationChannel {
     @ConfigProperty(name = "engine.approval.email.starttls", defaultValue = "true")
     boolean starttls;
 
+    @Inject
+    @ConfigProperty(name = "engine.approval.base-url", defaultValue = "http://localhost:8080")
+    String baseUrl;
+
+    @Inject
+    @ConfigProperty(name = "engine.question.timeout-seconds", defaultValue = "300")
+    long timeoutSeconds;
+
     @Override
     public void send(PermissionRequestId requestId, SessionId sessionId, String action,
                      String context, String approvalUrl) {
@@ -103,6 +111,53 @@ public class EmailNotificationChannel implements NotificationChannel {
             LOG.info("Approval email sent to " + toVal + " for " + requestId.value());
         } catch (Exception e) {
             LOG.warning("Failed to send approval email: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void sendQuestion(String questionId, SessionId sessionId, String questionText, String questionUrl) {
+        String smtpHostVal = smtpHost.orElse("");
+        String usernameVal = username.orElse("");
+        String passwordVal = password.orElse("");
+        String fromVal = from.orElse("");
+        String toVal = to.orElse("");
+        if (smtpHostVal.isBlank() || fromVal.isBlank() || toVal.isBlank()) {
+            LOG.warning("Email channel not configured; question link: " + questionUrl
+                    + " (question=" + questionId + ", session=" + (sessionId == null ? "" : sessionId.value()) + ")");
+            return;
+        }
+        try {
+            Properties props = new Properties();
+            props.put("mail.smtp.host", smtpHostVal);
+            props.put("mail.smtp.port", String.valueOf(smtpPort));
+            props.put("mail.smtp.auth", String.valueOf(!usernameVal.isBlank()));
+            props.put("mail.smtp.starttls.enable", String.valueOf(starttls));
+
+            Session session = usernameVal.isBlank()
+                    ? Session.getInstance(props)
+                    : Session.getInstance(props, new jakarta.mail.Authenticator() {
+                        @Override
+                        protected jakarta.mail.PasswordAuthentication getPasswordAuthentication() {
+                            return new jakarta.mail.PasswordAuthentication(usernameVal, passwordVal);
+                        }
+                    });
+
+            MimeMessage message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(fromVal));
+            for (String recipient : toVal.split(",")) {
+                String r = recipient.trim();
+                if (!r.isBlank()) message.addRecipient(Message.RecipientType.TO, new InternetAddress(r));
+            }
+            message.setSubject("QOC question: " + (questionText == null ? "" : questionText.substring(0, Math.min(50, questionText.length()))));
+            message.setText("A QOC agent has a question for you.\n\n"
+                    + "Question: " + (questionText == null ? "" : questionText) + "\n"
+                    + "Session: " + (sessionId == null ? "" : sessionId.value()) + "\n\n"
+                    + "Answer in the QOC UI: " + baseUrl + "/?question=" + questionId + "\n\n"
+                    + "This question expires in " + timeoutSeconds + " seconds.");
+            Transport.send(message);
+            LOG.info("Question email sent to " + toVal + " for " + questionId);
+        } catch (Exception e) {
+            LOG.warning("Failed to send question email: " + e.getMessage());
         }
     }
 }

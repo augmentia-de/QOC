@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="/config.js"></script>
 <title>OpenCode Engine</title>
 <style>
   :root { --bg:#0f1115; --panel:#171a21; --border:#2a2f3a; --fg:#e6e6e6; --muted:#9aa0a6; --accent:#4f8cff; --ok:#3fb950; --warn:#d29922; --err:#f85149; }
@@ -18,6 +19,14 @@
   .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
   .dot.ok { background:var(--ok); }
   .dot.err { background:var(--err); }
+  header { display:flex; flex-wrap:wrap; gap:.45rem; align-items:center; padding:.6rem 1rem; }
+  header h1 { margin:0; font-size:1.05rem; }
+  header select, header button, header input { background:#0b0d12; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.3rem .55rem; font-size:.85rem; }
+  header button { cursor:pointer; }
+  header button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  header button.danger { background:#3a1f24; border-color:#5a1f24; color:#ffb4b4; }
+  .details-toggle { color:var(--muted); font-size:.8rem; display:flex; align-items:center; gap:.3rem; }
+  .status { margin-left:auto; color:var(--muted); font-size:.8rem; display:flex; align-items:center; gap:.4rem; white-space:nowrap; }
   main { display:flex; flex-direction:row; flex:1; overflow:hidden; }
   .chat { flex:1 1 auto; min-width:240px; display:flex; flex-direction:column; border-right:1px solid var(--border); }
   .side-resizer { flex:0 0 6px; width:6px; cursor:col-resize; background:var(--border); }
@@ -27,10 +36,15 @@
   .backdrop.open { display:block; }
   .chat { display:flex; flex-direction:column; border-right:1px solid var(--border); }
   .messages { flex:1; overflow:auto; padding:1rem; display:flex; flex-direction:column; gap:.75rem; }
-  .msg { padding:.6rem .8rem; border-radius:8px; max-width:92%; }
+  .msg { padding:.6rem .8rem; border-radius:8px; max-width:92%; position:relative; }
+  .ts { position:absolute; top:2px; left:6px; font-size:.6rem; color:var(--muted); opacity:.7; pointer-events:none; line-height:1; }
   .msg.user { background:#1f2937; align-self:flex-end; }
   .msg.assistant { background:#111827; border:1px solid var(--border); align-self:flex-start; }
   .msg.tool { background:#0b1a12; border:1px solid #1f3a2a; align-self:flex-start; font-family: ui-monospace, monospace; font-size:.8rem; white-space:pre-wrap; }
+  .msg.tool-in { border-left:3px solid #4f8cff; }
+  .msg.tool-out { border-left:3px solid #3fb950; background:#0b1a0b; }
+  .msg.llm-in { background:#0a1220; border:1px solid #1f2a4a; border-left:3px solid #7c5cff; font-family: ui-monospace, monospace; font-size:.75rem; white-space:pre-wrap; }
+  .msg.llm-out { background:#1a0f20; border:1px solid #3a1f4a; border-left:3px solid #d29922; font-family: ui-monospace, monospace; font-size:.75rem; white-space:pre-wrap; }
   .msg.error { background:#2a1215; border:1px solid #5a1f24; color:#ffb4b4; white-space:pre-wrap; }
   .msg .meta { font-size:.7rem; color:var(--muted); margin-top:.3rem; }
   .msg details { margin-top:.4rem; }
@@ -40,8 +54,13 @@
   .inputbar textarea { flex:1; background:#0b0d12; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.5rem; resize:none; height:70px; font-family:inherit; font-size:.9rem; }
   .inputbar button { background:var(--accent); color:#fff; border:none; border-radius:6px; padding:0 .9rem; cursor:pointer; }
   .inputbar button:disabled { opacity:.5; cursor:not-allowed; }
-  .side { display:flex; flex-direction:column; overflow:hidden; }
+  .side { display:flex; flex-direction:column; overflow-y:auto; overflow-x:hidden; }
   .panel { display:flex; flex-direction:column; overflow:hidden; min-height:60px; }
+  .panel.collapsed { min-height:0; padding-top:.25rem; padding-bottom:.25rem; }
+  .panel.collapsed > :not(h2) { display:none !important; }
+  .panel > h2 { cursor:pointer; user-select:none; }
+  .panel > h2::before { content:'▾ '; font-size:.7rem; } 
+  .panel.collapsed > h2::before { content:'▸ '; }
   .panel > h2 { flex:0 0 auto; }
   .panel > .filetree, .panel > .viewer, .panel > .logs { flex:1 1 auto; min-height:0; }
   .resizer { flex:0 0 6px; height:6px; cursor:row-resize; background:var(--border); }
@@ -88,12 +107,11 @@
     background:var(--panel); color:var(--fg); border:1px solid var(--border); border-right:none;
     border-radius:6px 0 0 6px; padding:.7rem .25rem; cursor:pointer; font-size:1rem; line-height:1; }
   .file-actions { display:flex; gap:.15rem; align-items:center; }
-  #agent { max-width: 300px; }
+  #agent { max-width: 180px; }
   /* Header-Stabilität: verhindert Layout-Sprünge durch lange Session-/Agent-Namen */
   header { flex-wrap: wrap; }
-  #sessions { min-width: 140px; max-width: 40vw; flex: 0 1 auto; }
-  #sessionTitle { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; color: var(--muted); font-size: .85rem; }
-  #agent { min-width: 120px; }
+  #sessions { min-width: 120px; max-width: 180px; flex: 0 1 auto; }
+  #agent { min-width: 100px; max-width: 180px; flex: 0 1 auto; }
   header .status { margin-left: auto; white-space: nowrap; flex: 0 0 auto; }
   header button, header select, header input, header label { flex: 0 0 auto; }
   .messages { overflow-y: auto; overscroll-behavior: contain; }
@@ -115,7 +133,6 @@
   @media (max-width: 480px) {
     header h1 { font-size: .95rem; }
     #sessions { max-width: 55vw; }
-    #sessionTitle { max-width: 45vw; }
     #agent { max-width: 40vw; min-width: 90px; }
   }
 </style>
@@ -123,23 +140,29 @@
 <body>
 <header>
   <h1>QOC Engine</h1>
-  <select id="sessions"></select>
-  <span id="sessionTitle" style="color:var(--muted);font-size:.85rem"></span>
-  <label>Agent <select id="agent"></select></label>
-  <!--label>Model <select id="model"></select></label>
-  <label>Provider <select id="provider"></select></label-->
-  <button id="newSession" class="primary">+ Neue Session</button>
-  <button id="deleteSession" class="danger">Löschen</button>
-  <button id="interrupt" class="danger">Interrupt</button>
-  <button id="compact">Compact</button>
   <button id="loginBtn">Login</button>
-  <span id="authStatus" style="color:var(--muted);font-size:.8rem"></span>
-  <button id="reloadConfig">Reload Config</button>
-  <button id="a2aAgents">A2A</button>
-  <button id="revert">Revert</button>
-  <button id="fork">Fork</button>
-  <label><input type="checkbox" id="showDetails"> Details</label>
-  <span class="status"><span class="dot" id="healthDot"></span><span id="status">bereit</span></span>
+  <button id="questionsBtn" title="Ausstehende Fragen" style="position:relative">❓ <span id="questionsBadge" style="display:none;position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:10px;padding:0 5px;font-size:0.7rem;min-width:16px;text-align:center">0</span></button>
+  <button id="hardCancelBtn" title="Lauf abbrechen (Parent + Subagents)" style="background:none;border:1px solid var(--border);color:#ef4444;cursor:pointer;border-radius:4px;padding:2px 8px;font-size:0.9rem;font-weight:bold" disabled>✕</button>
+  <select id="sessions" title="Session"></select>
+  <select id="sessionActions" title="Session-Aktionen">
+    <option value="">Session ▾</option>
+    <option value="new">Neue Session</option>
+    <option value="delete">Löschen</option>
+  </select>
+  <label>Agent <select id="agent"></select></label>
+  <select id="moreActions" title="Weitere Aktionen">
+    <option value="">Aktionen ▾</option>
+    <option value="compact">Compact</option>
+    <option value="revert">Revert</option>
+    <option value="fork">Fork</option>
+    <option value="reload">Reload Config</option>
+    <option value="a2a">A2A</option>
+    <option value="workspace">Workspace wechseln</option>
+  </select>
+  <label class="details-toggle"><input type="checkbox" id="showDetails"> Tools</label>
+  <label class="details-toggle"><input type="checkbox" id="showLlm"> LLM</label>
+  <span id="status" style="display:none">bereit</span>
+<span id="fallbackBanner" style="display:none;background:#3a2f1f;border:1px solid #5a4f1f;color:#ffd9a0;border-radius:6px;padding:.2rem .5rem;font-size:.75rem">Orchestrator nicht verbunden – Freigaben/Fragen werden hier angezeigt.</span>
 </header>
 <main>
   <div class="chat">
@@ -152,9 +175,17 @@
   </div>
   <div class="side-resizer" id="sideResizer"></div>
   <aside class="side" id="side">
+    <section class="section panel" id="panelQuestions" style="display:none">
+      <h2>Ausstehende Fragen <button id="refreshQuestions" title="Aktualisieren" style="float:right;background:none;border:none;color:var(--muted);cursor:pointer">↻</button></h2>
+      <div id="questionsList" style="max-height:300px;overflow-y:auto"></div>
+    </section>
+    <section class="section panel" id="panelQuestions" style="display:none">
+      <h2>Ausstehende Fragen <button id="refreshQuestions" title="Aktualisieren" style="float:right;background:none;border:none;color:var(--muted);cursor:pointer">↻</button></h2>
+      <div id="questionsList" style="max-height:300px;overflow-y:auto"></div>
+    </section>
     <button class="close-side" id="closeSide" title="Schließen">×</button>
     <section class="section panel" id="panelFiles">
-      <h2>Arbeitsverzeichnis
+      <h2><span id="filesPath">.</span>
         <span class="file-actions">
           <button id="uploadFile" title="Dateien hochladen">⤒</button>
           <button id="uploadDir" title="Ordner hochladen">⇪</button>
@@ -170,7 +201,7 @@
     <section class="section panel" id="panelViewer">
       <h2>Datei <span id="currentFileName" style="color:var(--muted);font-weight:normal;text-transform:none;letter-spacing:0"></span>
         <span class="file-actions">
-          <button id="editFileBtn" title="Datei bearbeiten (max. 10000 Zeichen)" style="display:none">✎</button>
+          <button id="editFileBtn" title="Datei bearbeiten (max. 1000000 Zeichen)" style="display:none">✎</button>
         </span>
       </h2>
       <pre class="viewer" id="viewer">Datei auswählen…</pre>
@@ -182,9 +213,19 @@
       </div>
     </section>
     <div class="resizer" data-i="1"></div>
+    <section class="section panel" id="panelTasks">
+      <h2>Subagents <button id="backToParent" title="Zurück zur Parent-Session" style="float:right;display:none;background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;border-radius:4px;padding:2px 8px;font-size:0.75rem">← Zurück</button></h2>
+      <div id="tasks" style="padding:.5rem 1rem;font-size:.8rem"></div>
+    </section>
+    <div class="resizer" data-i="2"></div>
     <section class="section panel" id="panelLogs">
       <h2>Ereignisse</h2>
       <div class="logs" id="logs"></div>
+    </section>
+    <div class="resizer" data-i="3"></div>
+    <section class="section panel collapsed" id="panelLlm">
+      <h2>LLM-Trace <button id="refreshLlm" title="Aktualisieren" style="float:right;background:none;border:none;color:var(--muted);cursor:pointer">↻</button></h2>
+      <pre class="logs" id="llmTrace" style="height:800px;max-height:800px;overflow:auto;white-space:pre-wrap"></pre>
     </section>
   </aside>
 </main>
@@ -231,77 +272,373 @@ const messages = document.getElementById('messages');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('send');
 const status = document.getElementById('status');
-const healthDot = document.getElementById('healthDot');
 const filetree = document.getElementById('filetree');
 const viewer = document.getElementById('viewer');
 const currentFileName = document.getElementById('currentFileName');
 const logs = document.getElementById('logs');
 
-// --- OIDC token handling (browser login against Keycloak) ---
+// --- OIDC Authorization Code + PKCE (Keycloak, Auth0, ...) ---
+const AUTH_RUNTIME = window.QOC_AUTH || {};
 const AUTH = {
-  tokenUrl: localStorage.getItem('qoc.tokenUrl') || 'http://localhost:8180/realms/qoc/protocol/openid-connect/token',
-  clientId: localStorage.getItem('qoc.clientId') || 'qoc-ui',
-  token: localStorage.getItem('qoc.accessToken') || '',
-  refresh: localStorage.getItem('qoc.refreshToken') || ''
+  oidcEnabled: !!(AUTH_RUNTIME.oidcEnabled || AUTH_RUNTIME.issuer ||
+    localStorage.getItem('qoc.oidcEnabled') === 'true' ||
+    localStorage.getItem('qoc.issuer')),
+  issuer: AUTH_RUNTIME.issuer || localStorage.getItem('qoc.issuer') || '',
+  clientId: AUTH_RUNTIME.clientId || localStorage.getItem('qoc.clientId') || 'qoc-ui',
+  audience: AUTH_RUNTIME.audience || localStorage.getItem('qoc.audience') || '',
+  apiScope: AUTH_RUNTIME.apiScope || localStorage.getItem('qoc.apiScope') || '',
+  redirectUri: location.origin + location.pathname,
+  scope: 'openid profile email',
+  token: sessionStorage.getItem('qoc.accessToken') || '',
+  refresh: sessionStorage.getItem('qoc.refreshToken') || '',
+  expiresAt: Number(sessionStorage.getItem('qoc.expiresAt') || 0),
+  authorizationEndpoint: '',
+  tokenEndpoint: '',
+  logoutEndpoint: ''
 };
+const nativeFetch = window.fetch.bind(window);
+let oidcDiscoveryPromise = null;
+
+function oidcIssuerBase() {
+  return AUTH.issuer.replace(/\/+$/, '');
+}
+function oidcScope() {
+  let scope = AUTH.scope;
+  if (AUTH.audience) {
+    if (AUTH.apiScope) scope += ' ' + AUTH.apiScope;
+    if (!scope.split(/\s+/).includes('offline_access')) scope += ' offline_access';
+  }
+  return scope;
+}
+function fallbackLogoutEndpoint() {
+  const base = oidcIssuerBase();
+  return base.includes('/realms/')
+    ? base + '/protocol/openid-connect/logout'
+    : base + '/oidc/logout';
+}
+function setFallbackOidcEndpoints() {
+  const base = oidcIssuerBase();
+  if (base.includes('/realms/')) {
+    AUTH.authorizationEndpoint = base + '/protocol/openid-connect/auth';
+    AUTH.tokenEndpoint = base + '/protocol/openid-connect/token';
+    AUTH.logoutEndpoint = base + '/protocol/openid-connect/logout';
+  } else {
+    AUTH.authorizationEndpoint = base + '/authorize';
+    AUTH.tokenEndpoint = base + '/oauth/token';
+    AUTH.logoutEndpoint = fallbackLogoutEndpoint();
+  }
+}
+async function loadOidcConfig() {
+  if (!AUTH.oidcEnabled || !AUTH.issuer) return;
+  const discoveryUrl = oidcIssuerBase() + '/.well-known/openid-configuration';
+  try {
+    const res = await nativeFetch(discoveryUrl, {headers: {'Accept': 'application/json'}});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (!data.authorization_endpoint || !data.token_endpoint) {
+      throw new Error('Discovery unvollständig');
+    }
+    AUTH.authorizationEndpoint = data.authorization_endpoint;
+    AUTH.tokenEndpoint = data.token_endpoint;
+    AUTH.logoutEndpoint = data.end_session_endpoint || fallbackLogoutEndpoint();
+    AUTH.discovery = data;
+  } catch (e) {
+    console.warn('OIDC-Discovery fehlgeschlagen, nutze Fallback-Endpunkte:', e.message);
+    setFallbackOidcEndpoints();
+  }
+}
+function ensureOidcConfig() {
+  if (!AUTH.oidcEnabled) return Promise.resolve();
+  if (AUTH.authorizationEndpoint && AUTH.tokenEndpoint && AUTH.logoutEndpoint) {
+    return Promise.resolve();
+  }
+  if (!oidcDiscoveryPromise) oidcDiscoveryPromise = loadOidcConfig();
+  return oidcDiscoveryPromise;
+}
+
+function base64UrlEncode(value) {
+  const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function randomString(length) {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return base64UrlEncode(bytes).slice(0, length);
+}
+async function sha256(value) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return base64UrlEncode(digest);
+}
 function authHeaders(headers) {
   const h = new Headers(headers || {});
   if (AUTH.token) h.set('Authorization', 'Bearer ' + AUTH.token);
   return h;
 }
-const nativeFetch = window.fetch.bind(window);
-window.fetch = (input, init) => {
-  const opts = Object.assign({}, init || {});
-  const url = typeof input === 'string' ? input : (input && input.url) || '';
-  if (url.startsWith('/api/') || url.startsWith(location.origin + '/api/')) {
-    opts.headers = authHeaders(opts.headers);
+function tokenValid() {
+  return !!AUTH.token && (!AUTH.expiresAt || Date.now() < AUTH.expiresAt - 30000);
+}
+function storeTokens(data) {
+  AUTH.token = data.access_token || '';
+  AUTH.refresh = data.refresh_token || AUTH.refresh || '';
+  AUTH.expiresAt = Date.now() + (Number(data.expires_in || 300) * 1000);
+  sessionStorage.setItem('qoc.accessToken', AUTH.token);
+  sessionStorage.setItem('qoc.refreshToken', AUTH.refresh);
+  sessionStorage.setItem('qoc.expiresAt', String(AUTH.expiresAt));
+  if (data.id_token) sessionStorage.setItem('qoc.idToken', data.id_token);
+  updateAuthStatus();
+}
+function clearTokens(includePkce = false) {
+  AUTH.token = ''; AUTH.refresh = ''; AUTH.expiresAt = 0;
+  ['qoc.accessToken', 'qoc.refreshToken', 'qoc.expiresAt', 'qoc.idToken']
+    .forEach(k => sessionStorage.removeItem(k));
+  if (includePkce) {
+    ['qoc.pkce.verifier', 'qoc.pkce.state'].forEach(k => sessionStorage.removeItem(k));
   }
-  return nativeFetch(input, opts).then(res => {
-    if (res.status === 401 && AUTH.token) {
-      AUTH.token = ''; AUTH.refresh = '';
-      localStorage.removeItem('qoc.accessToken');
-      localStorage.removeItem('qoc.refreshToken');
-      updateAuthStatus();
-    }
-    return res;
+  localStorage.removeItem('qoc.accessToken');
+  localStorage.removeItem('qoc.refreshToken');
+  updateAuthStatus();
+}
+function pkcePending() {
+  try { return !!sessionStorage.getItem('qoc.pkce.state'); } catch (e) { return false; }
+}
+function clearPkce() {
+  ['qoc.pkce.verifier', 'qoc.pkce.state'].forEach(k => sessionStorage.removeItem(k));
+}
+async function refreshAccessToken() {
+  if (!AUTH.oidcEnabled) throw new Error('OIDC deaktiviert');
+  if (!AUTH.refresh) throw new Error('Kein Refresh-Token');
+  await ensureOidcConfig();
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token', client_id: AUTH.clientId, refresh_token: AUTH.refresh
   });
+  const res = await nativeFetch(AUTH.tokenEndpoint, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error_description || data.error || ('HTTP ' + res.status));
+  storeTokens(data);
+  return data;
+}
+async function apiFetch(input, init, retries = 2) {
+  if (!AUTH.oidcEnabled) return nativeFetchWithRetry(input, init, retries);
+  // While an interactive login is in progress, never discard the PKCE state or
+  // freshly obtained tokens because of a racing 401 from an earlier page load.
+  if (!pkcePending() && !tokenValid() && AUTH.refresh) {
+    try { await refreshAccessToken(); } catch (e) { clearTokens(); }
+  }
+  let opts = Object.assign({}, init || {});
+  opts.headers = authHeaders(opts.headers);
+  let res;
+  try {
+    res = await nativeFetchWithRetry(input, opts, retries);
+  } catch (e) {
+    throw e;
+  }
+  if (res.status === 401 && AUTH.refresh && !pkcePending()) {
+    try {
+      await refreshAccessToken();
+      opts = Object.assign({}, init || {});
+      opts.headers = authHeaders(opts.headers);
+      res = await nativeFetchWithRetry(input, opts, retries);
+    } catch (e) {
+      clearTokens();
+      throw e;
+    }
+  }
+  if (res.status === 401 && !pkcePending()) clearTokens();
+  return res;
+}
+
+async function nativeFetchWithRetry(input, init, retries = 2) {
+  let lastError;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await nativeFetch(input, init);
+      return res;
+    } catch (e) {
+      lastError = e;
+      if (i < retries) {
+        await new Promise(r => setTimeout(r, 500 * (i + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
+window.fetch = (input, init) => {
+  const url = typeof input === 'string' ? input : (input && input.url) || '';
+  const isApi = url.startsWith('/api/') || url.startsWith(location.origin + '/api/');
+  return isApi ? apiFetch(input, init) : nativeFetch(input, init);
 };
 function updateAuthStatus() {
-  const el = document.getElementById('authStatus');
-  if (!el) return;
-  el.textContent = AUTH.token ? 'angemeldet' : 'nicht angemeldet';
-  el.style.color = AUTH.token ? '#6ee7b7' : 'var(--muted)';
+  const btn = document.getElementById('loginBtn');
+  if (!AUTH.oidcEnabled) {
+    if (btn) btn.style.display = 'none';
+    return;
+  }
+  if (btn) {
+    btn.textContent = AUTH.token ? 'Logout' : 'Login';
+    btn.style.display = '';
+  }
 }
 async function login() {
-  const username = prompt('Benutzername (Keycloak):');
-  if (!username) return;
-  const password = prompt('Passwort:');
-  if (!password) return;
+  if (!AUTH.oidcEnabled) {
+    alert('OIDC ist in diesem Modus deaktiviert.');
+    return;
+  }
+  if (!window.crypto || !window.crypto.subtle) {
+    alert('Login benötigt HTTPS oder http://localhost (Web Crypto / PKCE).');
+    return;
+  }
+  await ensureOidcConfig();
+  const verifier = randomString(64);
+  const challenge = await sha256(verifier);
+  const state = randomString(32);
+  sessionStorage.setItem('qoc.pkce.verifier', verifier);
+  sessionStorage.setItem('qoc.pkce.state', state);
+  const params = new URLSearchParams({
+    client_id: AUTH.clientId,
+    redirect_uri: AUTH.redirectUri,
+    response_type: 'code',
+    scope: oidcScope(),
+    state,
+    code_challenge: challenge,
+    code_challenge_method: 'S256'
+  });
+  if (AUTH.audience) params.set('audience', AUTH.audience);
+  location.assign(AUTH.authorizationEndpoint + '?' + params.toString());
+}
+async function handleOidcCallback() {
+  if (!AUTH.oidcEnabled) return false;
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+  const error = params.get('error');
+  if (error) {
+    const desc = params.get('error_description') || error;
+    clearPkce();
+    history.replaceState({}, document.title, location.pathname);
+    alert('Login fehlgeschlagen: ' + desc);
+    return false;
+  }
+  if (!code) return false;
+  await ensureOidcConfig();
+  const expected = sessionStorage.getItem('qoc.pkce.state');
+  const verifier = sessionStorage.getItem('qoc.pkce.verifier');
+  if (!expected || state !== expected || !verifier) {
+    clearPkce();
+    history.replaceState({}, document.title, location.pathname);
+    alert('Login-State ungültig. Bitte erneut anmelden.');
+    return false;
+  }
   try {
     const body = new URLSearchParams({
-      grant_type: 'password', client_id: AUTH.clientId, username, password
+      grant_type: 'authorization_code',
+      client_id: AUTH.clientId,
+      code,
+      redirect_uri: AUTH.redirectUri,
+      code_verifier: verifier
     });
-    const res = await nativeFetch(AUTH.tokenUrl, {
+    const res = await nativeFetch(AUTH.tokenEndpoint, {
       method: 'POST',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error_description || data.error || ('HTTP ' + res.status));
-    AUTH.token = data.access_token || '';
-    AUTH.refresh = data.refresh_token || '';
-    localStorage.setItem('qoc.accessToken', AUTH.token);
-    localStorage.setItem('qoc.refreshToken', AUTH.refresh);
-    updateAuthStatus();
-    if (typeof loadSelectors === 'function') await loadSelectors();
-    if (typeof loadSessions === 'function') await loadSessions();
-    if (typeof loadFiles === 'function') await loadFiles(currentDir);
+    storeTokens(data);
+    clearPkce();
+    history.replaceState({}, document.title, location.pathname);
+    return true;
   } catch (e) {
-    alert('Login fehlgeschlagen: ' + e.message);
+    clearPkce();
+    history.replaceState({}, document.title, location.pathname);
+    alert('Token-Austausch fehlgeschlagen: ' + e.message);
+    return false;
   }
+}
+async function logout() {
+  if (!AUTH.oidcEnabled) {
+    clearTokens(true);
+    return;
+  }
+  await ensureOidcConfig();
+  const idToken = sessionStorage.getItem('qoc.idToken') || '';
+  clearTokens(true);
+  const params = new URLSearchParams({
+    client_id: AUTH.clientId,
+    post_logout_redirect_uri: AUTH.redirectUri
+  });
+  if (idToken) params.set('id_token_hint', idToken);
+  location.assign(AUTH.logoutEndpoint + '?' + params.toString());
+}
+async function loginOrLogout() {
+  if (AUTH.token) { await logout(); } else { await login(); }
 }
 
 let sessionId = null;
+let taskPoll = null;
+let subagentView = false;
+let parentSessionId = null;
+let orchestratorAlive = false;
+let lastOrchestratorHeartbeat = 0;
+let sessionNavStack = JSON.parse(sessionStorage.getItem('qoc.navStack') || '[]');
+
+function pushNav(parentId) {
+  if (!parentId) return;
+  sessionNavStack.push(parentId);
+  sessionStorage.setItem('qoc.navStack', JSON.stringify(sessionNavStack));
+  updateBackButton();
+}
+
+function popNav() {
+  const parent = sessionNavStack.pop();
+  sessionStorage.setItem('qoc.navStack', JSON.stringify(sessionNavStack));
+  updateBackButton();
+  return parent;
+}
+
+function updateBackButton() {
+  const btn = document.getElementById('backToParent');
+  if (btn) btn.style.display = sessionNavStack.length > 0 ? '' : 'none';
+}
+
+let orchestratorChannel = null;
+function initOrchestratorHeartbeat() {
+  if (!('BroadcastChannel' in window)) return;
+  try { orchestratorChannel = new BroadcastChannel('qoc-orchestrator'); } catch (e) { return; }
+  if (subagentView && parentSessionId) {
+    orchestratorChannel.onmessage = (ev) => {
+      if (ev.data && ev.data.type === 'qoc-orchestrator' && ev.data.session === parentSessionId) {
+        lastOrchestratorHeartbeat = Date.now();
+        orchestratorAlive = true;
+        updateFallbackBanner();
+      }
+    };
+    setInterval(() => {
+      if (orchestratorAlive && Date.now() - lastOrchestratorHeartbeat > 10000) {
+        orchestratorAlive = false;
+        updateFallbackBanner();
+      }
+    }, 2000);
+  }
+  setInterval(() => {
+    if (sessionId && orchestratorChannel) {
+      try { orchestratorChannel.postMessage({type:'qoc-orchestrator', session: sessionId}); } catch (e) { /* ignore */ }
+    }
+  }, 2000);
+}
+
+function updateFallbackBanner() {
+  const banner = document.getElementById('fallbackBanner');
+  if (!banner) return;
+  const active = subagentView && !orchestratorAlive &&
+    (lastOrchestratorHeartbeat === 0 || Date.now() - lastOrchestratorHeartbeat > 10000);
+  banner.style.display = active ? '' : 'none';
+}
 let es = null;
 let currentAssistant = null;
 let currentFile = null;
@@ -311,12 +648,121 @@ let pendingPermission = null;
 let resizersBound = false;
 let isMobileLayout = window.innerWidth <= 768;
 const sessionsSel = document.getElementById('sessions');
-const sessionTitle = document.getElementById('sessionTitle');
 const showDetails = document.getElementById('showDetails');
+const showLlm = document.getElementById('showLlm');
+const panelLlm = document.getElementById('panelLlm');
+const llmTrace = document.getElementById('llmTrace');
+const refreshLlm = document.getElementById('refreshLlm');
+// Persist toggle state
+try {
+  if (localStorage.getItem('qoc.showDetails') === '1') showDetails.checked = true;
+  if (localStorage.getItem('qoc.showLlm') === '1') showLlm.checked = true;
+} catch (e) {}
+showDetails.addEventListener('change', () => { try { localStorage.setItem('qoc.showDetails', showDetails.checked ? '1' : '0'); } catch (e) {} });
+showLlm.addEventListener('change', () => { try { localStorage.setItem('qoc.showLlm', showLlm.checked ? '1' : '0'); } catch (e) {} });
+function updateLlmPanel() {
+  if (!panelLlm) return;
+  panelLlm.style.display = showLlm.checked ? '' : 'none';
+  if (panelLlm) {
+    if (showLlm.checked) panelLlm.classList.remove('collapsed');
+    else panelLlm.classList.add('collapsed');
+  }
+  if (showLlm.checked) loadLlmTrace();
+}
+if (refreshLlm) refreshLlm.addEventListener('click', loadLlmTrace);
+showLlm.addEventListener('change', updateLlmPanel);
+// Collapsible side panels
+document.querySelectorAll('.panel').forEach(panel => {
+  const h2 = panel.querySelector('h2');
+  if (!h2) return;
+  const key = 'qoc.panel.' + panel.id;
+  try {
+    if (localStorage.getItem(key) === '1') panel.classList.add('collapsed');
+  } catch (e) {}
+  h2.addEventListener('click', (e) => {
+    if (e.target && e.target.tagName === 'BUTTON') return;
+    const wasCollapsed = panel.classList.contains('collapsed');
+    panel.classList.toggle('collapsed');
+    if (panel.classList.contains('collapsed')) {
+      panel.style.height = '60px';
+    } else {
+      // restore a sensible height
+      panel.style.height = '200px';
+    }
+    try { localStorage.setItem(key, panel.classList.contains('collapsed') ? '1' : '0'); } catch (e) {}
+  });
+});
+updateLlmPanel();
+const llmState = { start: 0, total: 0, loading: false };
+async function loadLlmTrace(reset) {
+  if (!showLlm.checked || !llmTrace) return;
+  if (llmState.loading) return;
+  llmState.loading = true;
+  try {
+    if (reset) {
+      const r0 = await fetch('/api/llm/trace?offset=0&limit=1');
+      const d0 = await r0.json();
+      llmState.total = (d0 && typeof d0.total === 'number') ? d0.total : 0;
+      llmState.start = Math.max(0, llmState.total - 50000);
+      llmTrace.innerHTML = '';
+    }
+    if (llmState.start < 0) llmState.start = 0;
+    const res = await fetch('/api/llm/trace?offset=' + llmState.start + '&limit=50000');
+    const data = await res.json();
+    const raw = (data && data.data) ? data.data : '';
+    llmState.total = (data && typeof data.total === 'number') ? data.total : llmState.total;
+    let aligned = raw;
+    if (llmState.start === 0) aligned = raw.replace(/^[\s\S]*?(===== )/, '$1');
+    const blocks = aligned.split(/(?===== )/).filter(b => b.trim());
+    const html = blocks.map(b => {
+      const isIn = /REQUEST/.test(b);
+      const cls = isIn ? 'llm-in' : 'llm-out';
+      const txt = escapeHtml(b.trim().slice(0, 800));
+      return '<div class="msg ' + cls + '" style="margin:4px 0;padding:4px 6px;">' + txt + '</div>';
+    }).join('');
+    const btn = document.getElementById('llmLoadMore');
+    if (btn) btn.remove();
+    if (reset) {
+      llmTrace.innerHTML = html;
+      llmTrace.scrollTop = llmTrace.scrollHeight;
+    } else {
+      llmTrace.insertAdjacentHTML('afterbegin', html);
+    }
+    const hasMoreBack = llmState.start > 0;
+    llmState.start = Math.max(0, llmState.start - 50000);
+    if (hasMoreBack) {
+      let more = document.getElementById('llmLoadMore');
+      if (!more) {
+        more = document.createElement('button');
+        more.id = 'llmLoadMore';
+        more.textContent = 'Ältere laden…';
+        more.style.cssText = 'margin:8px auto;display:block;padding:4px 12px;font-size:.8rem;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer';
+        more.onclick = () => { more.remove(); loadLlmTrace(false); };
+        llmTrace.insertBefore(more, llmTrace.firstChild);
+      }
+    }
+  } catch (e) { llmTrace.textContent = 'Fehler: ' + e.message; }
+  finally { llmState.loading = false; }
+}
+
+async function loadLlmChat() {
+  if (!showLlm.checked) return;
+  try {
+    const res = await fetch('/api/llm/trace?tail=1600');
+    const data = await res.json();
+    const raw = (data && data.data) ? data.data : '';
+    const blocks = raw.split(/(?===== )/).filter(b => b.trim());
+    const last = blocks.slice(-2);
+    last.forEach(b => {
+      const isIn = /REQUEST/.test(b);
+      addMessage('llm', b.trim(), isIn ? 'llm-in' : 'llm-out');
+    });
+  } catch (e) { addMessage('error', 'LLM-Trace: ' + e.message); }
+}
 let permPoll = null;
 let questionPoll = null;
 let pendingQuestion = null;
-const MAX_EVENTS = 100;
+const MAX_EVENTS = 10;
 const MAX_FILE_CHARS = 20000;
 
 function logEvent(text) {
@@ -327,13 +773,21 @@ function logEvent(text) {
   logs.scrollTop = logs.scrollHeight;
 }
 
-function addMessage(role, text) {
+function addMessage(role, text, extraClass, time) {
   const div = document.createElement('div');
-  div.className = 'msg ' + role;
-  div.innerHTML = role === 'assistant' ? renderMarkdown(text) : escapeHtml(text);
+  div.className = 'msg ' + role + (extraClass ? ' ' + extraClass : '');
+  const ts = document.createElement('span');
+  ts.className = 'ts';
+  const d = time ? new Date(time) : new Date();
+  ts.textContent = d.toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit',second:'2-digit'}) + '.' + String(d.getMilliseconds()).padStart(3,'0');
+  div.appendChild(ts);
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  body.innerHTML = role === 'assistant' ? renderMarkdown(text) : escapeHtml(text);
+  div.appendChild(body);
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
-  return div;
+  return body;
 }
 
 function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -373,25 +827,31 @@ function copyCode(btn) {
 
 function initResizers() {
   const side = document.querySelector('.side');
-  const panels = [document.getElementById('panelFiles'), document.getElementById('panelViewer'), document.getElementById('panelLogs')];
+  const panels = [document.getElementById('panelFiles'), document.getElementById('panelViewer'), document.getElementById('panelTasks'), document.getElementById('panelLogs'), document.getElementById('panelLlm')];
   const resizers = side.querySelectorAll('.resizer');
   if (window.innerWidth <= 768) {
-    // Auf Mobilgeräten: flexible Panels statt fester Resizer-Höhen
-    panels.forEach(p => { p.style.flex = '1 1 auto'; p.style.height = ''; });
+    panels.forEach(p => { if (p) { p.style.flex = '1 1 auto'; p.style.height = ''; } });
     resizers.forEach(r => { r.style.display = 'none'; });
     return;
   }
   const total = side.clientHeight || 600;
   const resizerTotal = Array.from(resizers).reduce((sum, r) => sum + r.offsetHeight, 0);
   const usable = Math.max(180, total - resizerTotal);
-  const init = [Math.round(usable*0.4), Math.round(usable*0.35), usable - Math.round(usable*0.4) - Math.round(usable*0.35)];
-  panels.forEach((p,i) => { p.style.flex = '0 0 auto'; p.style.height = init[i] + 'px'; });
+  // LLM-Panel darf den vollen Bereich einnehmen (großer Anteil, per Resizer anpassbar)
+  const init = [Math.round(usable*0.22), Math.round(usable*0.16), Math.round(usable*0.14), Math.round(usable*0.13), usable - Math.round(usable*0.22) - Math.round(usable*0.16) - Math.round(usable*0.14) - Math.round(usable*0.13)];
+  panels.forEach((p,i) => {
+    if (!p) return;
+    if (p.classList.contains('collapsed')) { p.style.flex = '0 0 auto'; p.style.height = '60px'; }
+    else { p.style.flex = '0 0 auto'; p.style.height = init[i] + 'px'; }
+  });
   resizers.forEach(r => { r.style.display = ''; });
   if (resizersBound) return;
   resizersBound = true;
   resizers.forEach((r, i) => {
     r.addEventListener('mousedown', (e) => {
       const top = panels[i], bot = panels[i+1];
+      if (!top || !bot) return;
+      if (top.classList.contains('collapsed') || bot.classList.contains('collapsed')) return;
       const startY = e.clientY;
       const topH = top.offsetHeight, botH = bot.offsetHeight;
       const onMove = (e2) => {
@@ -415,6 +875,7 @@ function initResizers() {
     });
   });
 }
+
 
 
 function initSideResizer() {
@@ -499,12 +960,179 @@ function initMobileSide() {
   }, {passive:true});
 }
 
+// === Questions Panel ===
+let questionsPollTimer = null;
+
+async function loadQuestions() {
+  if (!AUTH.token) return;
+  try {
+    const res = await fetch('/api/questions');
+    if (!res.ok) return;
+    const data = await res.json();
+    const questions = data.data || [];
+    const badge = document.getElementById('questionsBadge');
+    const panel = document.getElementById('panelQuestions');
+    const list = document.getElementById('questionsList');
+    if (!list) return;
+    if (questions.length > 0) {
+      if (badge) { badge.textContent = questions.length; badge.style.display = ''; }
+      if (panel) panel.style.display = '';
+    } else {
+      if (badge) badge.style.display = 'none';
+      list.innerHTML = '';
+      return;
+    }
+    list.innerHTML = '';
+    questions.forEach(q => {
+      const div = document.createElement('div');
+      div.style.cssText = 'border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px;background:var(--surface)';
+      const title = document.createElement('div');
+      title.style.cssText = 'font-weight:600;font-size:0.85rem;margin-bottom:4px;color:var(--accent)';
+      title.textContent = 'Session: ' + (q.sessionId || '').slice(0,12) + '…';
+      div.appendChild(title);
+      (q.questions || []).forEach(qq => {
+        const qText = document.createElement('div');
+        qText.style.cssText = 'font-size:0.85rem;margin-bottom:6px';
+        qText.textContent = qq.question || '';
+        div.appendChild(qText);
+        if (qq.options && qq.options.length > 0) {
+          qq.options.forEach((opt) => {
+            const label = document.createElement('label');
+            label.style.cssText = 'display:block;font-size:0.8rem;margin:2px 0;cursor:pointer';
+            const radio = document.createElement('input');
+            radio.type = qq.multiple ? 'checkbox' : 'radio';
+            radio.name = 'q_' + q.id;
+            radio.value = opt.label;
+            radio.style.marginRight = '4px';
+            label.appendChild(radio);
+            label.appendChild(document.createTextNode(opt.label + (opt.description ? ' – ' + opt.description : '')));
+            div.appendChild(label);
+          });
+        }
+        const textarea = document.createElement('textarea');
+        textarea.placeholder = 'Antwort (optional)...';
+        textarea.style.cssText = 'width:100%;margin-top:4px;font-size:0.8rem;min-height:40px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px';
+        div.appendChild(textarea);
+      });
+      const btn = document.createElement('button');
+      btn.textContent = 'Antworten';
+      btn.style.cssText = 'margin-top:6px;padding:4px 12px;font-size:0.8rem;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer';
+      btn.onclick = async () => {
+        const selected = [];
+        div.querySelectorAll('input[type="radio"]:checked, input[type="checkbox"]:checked').forEach(cb => selected.push(cb.value));
+        const text = div.querySelector('textarea')?.value || '';
+        const res = await fetch('/api/session/' + q.sessionId + '/question/' + q.id + '/reply', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({selected, text})
+        });
+        if (res.ok) {
+          logEvent('Frage beantwortet: ' + q.id);
+          loadQuestions();
+        } else {
+          logEvent('Fehler beim Antworten: ' + res.status);
+        }
+      };
+      div.appendChild(btn);
+      list.appendChild(div);
+    });
+  } catch (e) { /* ignore */ }
+}
+
+function startQuestionsPoll() {
+  if (questionsPollTimer) clearInterval(questionsPollTimer);
+  loadQuestions();
+  questionsPollTimer = setInterval(loadQuestions, 5000);
+}
+
+function stopQuestionsPoll() {
+  if (questionsPollTimer) { clearInterval(questionsPollTimer); questionsPollTimer = null; }
+}
+
 async function init() {
   try {
+    const urlParams = new URLSearchParams(location.search);
+    const deepSession = urlParams.get('session');
+    const deepParent = urlParams.get('parent');
+    if (deepParent) {
+      parentSessionId = deepParent;
+      subagentView = true;
+    }
+    if (deepSession) {
+      sessionStorage.setItem('qoc.pendingSession', deepSession);
+      if (deepParent) sessionStorage.setItem('qoc.pendingParent', deepParent);
+    }
+    if (AUTH.oidcEnabled) {
+      try {
+        await ensureOidcConfig();
+      } catch (e) {
+        console.warn('OIDC-Konfiguration konnte nicht geladen werden:', e.message);
+      }
+      await handleOidcCallback();
+      const pendingForLogin = sessionStorage.getItem('qoc.pendingSession');
+      if (!AUTH.token && pendingForLogin && !sessionStorage.getItem('qoc.autoLoginTried')) {
+        sessionStorage.setItem('qoc.autoLoginTried', '1');
+        await login();
+        return;
+      }
+    }
     await checkHealth();
     await loadSelectors();
-    await newSession();
     await loadSessions();
+    const pendingSession = sessionStorage.getItem('qoc.pendingSession');
+    const pendingParent = sessionStorage.getItem('qoc.pendingParent');
+    let targetSession = null;
+    if (pendingSession) {
+      sessionStorage.removeItem('qoc.pendingSession');
+      sessionStorage.removeItem('qoc.pendingParent');
+      sessionStorage.removeItem('qoc.autoLoginTried');
+      let valid = Array.from(sessionsSel.options).some(o => o.value === pendingSession);
+      if (!valid) {
+        try {
+          const r = await fetch('/api/session/' + encodeURIComponent(pendingSession));
+          if (r.ok) {
+            const data = await r.json().catch(() => ({}));
+            const o = document.createElement('option');
+            o.value = pendingSession;
+            o.textContent = (data.title || 'Session') + ' — ' + pendingSession.slice(0,12);
+            sessionsSel.appendChild(o);
+            valid = true;
+          }
+        } catch (e) { /* ignore */ }
+      }
+      if (valid) {
+        targetSession = pendingSession;
+        if (pendingParent) {
+          parentSessionId = pendingParent;
+          subagentView = true;
+          sessionNavStack = [pendingParent];
+          sessionStorage.setItem('qoc.navStack', JSON.stringify(sessionNavStack));
+        }
+      }
+    }
+    const storedSession = localStorage.getItem('qoc.sessionId');
+    if (!targetSession && storedSession && Array.from(sessionsSel.options).some(o => o.value === storedSession)) {
+      targetSession = storedSession;
+    }
+    if (!targetSession && sessionsSel.options.length) {
+      targetSession = sessionsSel.options[0].value;
+    }
+    if (targetSession) {
+      sessionId = targetSession;
+      sessionsSel.value = sessionId;
+      if (es) es.close();
+      connectSSE();
+      await loadFiles('.');
+      const hasRunning = await loadTasks(sessionId);
+      sendBtn.textContent = hasRunning ? 'Interrupt' : 'Senden';
+      if (hasRunning) status.textContent = 'Läuft…'; else status.textContent = 'bereit';
+      startTaskPoll(sessionId);
+      updateCancelButton();
+      updateBackButton();
+      initOrchestratorHeartbeat();
+    } else {
+      await newSession();
+      initOrchestratorHeartbeat();
+    }
     initResizers();
     initSideResizer();
     initMobileSide();
@@ -518,7 +1146,32 @@ async function init() {
       isMobileLayout = nowMobile;
       initResizers();
     });
-    await loadFiles('.');
+    if (AUTH.token) {
+      const qParam = new URLSearchParams(location.search).get('question');
+      if (qParam) {
+        const p = document.getElementById('panelQuestions');
+        if (p) p.style.display = '';
+        loadQuestions();
+      }
+      connectGlobalSSE();
+      updateBackButton();
+      startQuestionsPoll();
+      // Switch to user-specific workspace on first load, but only if the
+      // server is still on the global workspace (i.e., no manual switch yet).
+      try {
+        const wsRes = await fetch('/api/workspace').catch(() => null);
+        const wsData = wsRes ? await wsRes.json().catch(() => ({})) : {};
+        const currentWs = wsData.workspace || '';
+        const targetWs = wsData.userWorkspace || '';
+        // Only auto-switch if current workspace is the global base (/data/workspace)
+        // and the user has a specific workspace that differs.
+        if (targetWs && targetWs !== currentWs && (currentWs === '/data/workspace' || currentWs === '')) {
+          const rr = await fetch('/api/workspace', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path: targetWs, create:true})});
+          if (rr.ok) logEvent('Workspace: ' + targetWs);
+        }
+      } catch (e) { /* ignore */ }
+      await loadFiles('.');
+    }
   } catch (e) {
     status.textContent = 'Fehler: ' + e.message;
   }
@@ -527,13 +1180,21 @@ async function init() {
 async function checkHealth() {
   try {
     const res = await fetch('/api/health');
-    const data = await res.json();
-    healthDot.className = 'dot ok';
-    status.textContent = (data.provider||'') + ' / ' + (data.model||'');
+    const data = await res.json().catch(() => ({}));
+    const title = document.querySelector('header h1');
+    if (res.ok) {
+      if (title) title.style.color = 'var(--ok)';
+      status.textContent = (data.provider||'') + ' / ' + (data.model||'');
+    } else {
+      if (title) title.style.color = 'var(--err)';
+      status.textContent = AUTH.token ? 'Anmeldung abgelaufen' : 'offline / login erforderlich';
+    }
   } catch (e) {
-    healthDot.className = 'dot err';
+    const title = document.querySelector('header h1');
+    if (title) title.style.color = 'var(--err)';
     status.textContent = 'offline';
   }
+  updateAuthStatus();
 }
 
 
@@ -552,19 +1213,167 @@ async function loadSessions() {
   } catch (e) { /* ignore */ }
 }
 
+const taskElements = new Map();
+
+function upsertTask(id, patch) {
+  const container = document.getElementById('tasks');
+  if (!container) return;
+  if (container.textContent === 'Keine Subagent-Läufe.' || container.textContent === 'Keine Session.' || container.textContent.startsWith('Fehler')) {
+    container.innerHTML = '';
+  }
+  let div = taskElements.get(id);
+  if (!div) {
+    div = document.createElement('div');
+    div.dataset.taskId = id;
+    div.style.cssText = 'margin-bottom:.5rem;padding:.4rem;border:1px solid var(--border);border-radius:6px';
+    taskElements.set(id, div);
+    container.appendChild(div);
+  }
+  // merge state
+  const cur = div._state || {};
+  const next = Object.assign({}, cur, patch || {});
+  div._state = next;
+  div.innerHTML = '';
+  const stateColor = next.state === 'running' ? 'var(--warn)' : (next.state === 'succeeded' || next.state === 'completed' ? 'var(--ok)' : 'var(--err)');
+  const title = document.createElement('div');
+  title.style.cssText = 'display:flex;justify-content:space-between;gap:.5rem';
+  const name = document.createElement('strong');
+  name.textContent = next.agent || 'subagent';
+  const state = document.createElement('span');
+  state.style.color = stateColor;
+  state.textContent = next.state || '';
+  title.appendChild(name);
+  title.appendChild(state);
+  div.appendChild(title);
+  const meta = document.createElement('div');
+  meta.style.cssText = 'color:var(--muted);font-size:.75rem';
+  meta.textContent = (next.tokens || 0) + ' tokens';
+  div.appendChild(meta);
+  if (next.text) {
+    const txt = document.createElement('div');
+    txt.style.cssText = 'white-space:pre-wrap;margin-top:.25rem;font-size:.78rem';
+    txt.textContent = String(next.text).slice(0, 400);
+    div.appendChild(txt);
+  }
+  if (next.error) {
+    const err = document.createElement('div');
+    err.style.cssText = 'color:var(--err);margin-top:.25rem;font-size:.78rem';
+    err.textContent = next.error;
+    div.appendChild(err);
+  }
+  if (next.childSession) {
+    const actions = document.createElement('div');
+    actions.style.cssText = 'margin-top:.25rem;display:flex;gap:.5rem;flex-wrap:wrap';
+    const openHere = document.createElement('a');
+    openHere.href = '#';
+    openHere.style.cssText = 'font-size:.75rem';
+    openHere.textContent = 'Im Fenster öffnen';
+    openHere.onclick = (e) => { e.preventDefault(); pushNav(sessionId); switchSession(next.childSession); };
+    actions.appendChild(openHere);
+    const openTab = document.createElement('a');
+    openTab.href = '/?session=' + encodeURIComponent(next.childSession) +
+      '&parent=' + encodeURIComponent(sessionId);
+    openTab.target = '_blank';
+    openTab.rel = 'noopener noreferrer';
+    openTab.style.cssText = 'font-size:.75rem';
+    openTab.textContent = '↗ Neues Tab';
+    actions.appendChild(openTab);
+    div.appendChild(actions);
+  }
+  if (next.state === 'running') {
+    const btn = document.createElement('button');
+    btn.textContent = 'Abbrechen';
+    btn.style.marginTop = '.25rem';
+    btn.onclick = async () => {
+      await fetch('/api/session/' + encodeURIComponent(sessionId) + '/tasks/' + encodeURIComponent(id) + '/cancel', {method:'POST'});
+      await loadTasks(sessionId);
+    };
+    div.appendChild(btn);
+  }
+}
+
+async function loadTasks(id) {
+  const container = document.getElementById('tasks');
+  if (!container) return;
+  if (!id) { container.textContent = 'Keine Session.'; return; }
+  try {
+    const res = await fetch('/api/session/' + id + '/tasks');
+    const data = await res.json().catch(() => ({}));
+    const tasks = data.data || [];
+    if (!tasks.length) { container.textContent = 'Keine Subagent-Läufe.'; taskElements.clear(); return false; }
+    container.innerHTML = '';
+    taskElements.clear();
+  let hasRunning = false;
+    tasks.forEach(t => {
+    if (t.state === 'running') hasRunning = true;
+      upsertTask(t.id, { agent: t.agent || 'subagent', state: t.state || '', text: t.text || '', error: t.error || '', childSession: t.childSession, tokens: t.tokens || 0 });
+    });
+  return hasRunning;
+  } catch (e) {
+  return hasRunning;
+    container.textContent = 'Fehler: ' + e.message;
+  }
+}
+
+async function cancelTask(sessionId, taskId) {
+  try {
+    await fetch('/api/session/' + sessionId + '/tasks/' + taskId + '/cancel', {method:'POST'});
+    await loadTasks(sessionId);
+  } catch (e) {}
+}
+
+async function startTaskPoll(id) {
+  if (taskPoll) { clearInterval(taskPoll); taskPoll = null; }
+  const running = await loadTasks(id);
+  updateCancelButton();
+  if (!running) return; // SSE + manual refresh handle the rest
+  taskPoll = setInterval(async () => {
+    if (sessionId !== id) { clearInterval(taskPoll); taskPoll = null; return; }
+    const r = await loadTasks(id);
+    updateCancelButton();
+    if (!r) { clearInterval(taskPoll); taskPoll = null; }
+  }, 5000);
+}
+
 async function switchSession(id) {
   if (!id || id === sessionId) return;
+  if (taskPoll) { clearInterval(taskPoll); taskPoll = null; }
   sessionId = id;
+  if (subagentView) {
+    sessionStorage.setItem('qoc.sessionId', sessionId);
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set('session', sessionId);
+      if (parentSessionId) u.searchParams.set('parent', parentSessionId);
+      history.replaceState({}, document.title, u.pathname + u.search);
+    } catch (e) { /* ignore */ }
+  } else {
+    localStorage.setItem('qoc.sessionId', sessionId);
+  }
   messages.innerHTML = '';
   currentAssistant = null;
-  // load title
+  // load title + bind file browser to session directory
+  let sessionDir = '';
   try {
     const res = await fetch('/api/session/' + id);
     const data = await res.json();
-    sessionTitle.textContent = data.title || '';
     const agentSelect = document.getElementById('agent');
     if (data.agent && Array.from(agentSelect.options).some(o => o.value === data.agent)) {
       agentSelect.value = data.agent;
+    }
+    sessionDir = data.directory || '';
+  } catch (e) {}
+  // make the file browser follow the session's bound directory
+  try {
+    const wsRes = await fetch('/api/workspace');
+    const wsData = await wsRes.json();
+    const ws = (wsData && wsData.workspace) || '';
+    if (sessionDir && ws && sessionDir.startsWith(ws)) {
+      currentDir = sessionDir.slice(ws.length).replace(/^\/+/, '') || '.';
+    } else if (sessionDir) {
+      // directory outside current workspace: switch service workspace
+      await fetch('/api/workspace', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path: sessionDir})});
+      currentDir = '.';
     }
   } catch (e) {}
   // load messages
@@ -574,21 +1383,32 @@ async function switchSession(id) {
     (data.data||[]).forEach(m => {
       const role = (m.type||'').toLowerCase().includes('user') ? 'user'
         : (m.type||'').toLowerCase().includes('assistant') ? 'assistant' : 'tool';
-      addMessage(role, m.text || '');
+      addMessage(role, m.text || '', '', m.time);
+      if (Array.isArray(m.tools)) {
+        m.tools.forEach(tc => {
+          addMessage('tool', '🔧 ' + (tc.name||'') + '(' + (tc.input||'') + ')', 'tool-in', m.time);
+          addMessage('tool', '↳ ' + (tc.result || '(kein Ergebnis)'), 'tool-out', m.time);
+        });
+      }
     });
   } catch (e) { logEvent('Fehler beim Laden: ' + e.message); }
   if (es) es.close();
   connectSSE();
   status.textContent = 'Session ' + id.slice(0,12) + '…';
   await loadFiles('.');
+  await loadTasks(id);
+  startTaskPoll(id);
+    updateCancelButton();
 }
 
 async function newSession(agent) {
   try {
     const body = agent ? {agent} : {};
     const res = await fetch('/api/session', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    if (res.status === 401) { status.textContent = 'Login erforderlich'; return; }
     const data = await res.json();
     sessionId = data.id;
+    localStorage.setItem('qoc.sessionId', sessionId);
     const agentSelect = document.getElementById('agent');
     const createdAgent = data.data && data.data.agent;
     if (createdAgent && Array.from(agentSelect.options).some(o => o.value === createdAgent)) {
@@ -601,6 +1421,10 @@ async function newSession(agent) {
     if (es) es.close();
     connectSSE();
     await loadFiles('.');
+    const hasRunning2 = await loadTasks(sessionId);
+    sendBtn.textContent = hasRunning2 ? 'Interrupt' : 'Senden';
+    startTaskPoll(sessionId);
+    updateCancelButton();
   } catch (e) { status.textContent = 'Fehler: ' + e.message; }
 }
 
@@ -684,7 +1508,19 @@ async function deleteCurrentSession() {
   const label = selected ? selected.textContent : sessionId;
   if (!confirm('Session wirklich löschen?\n\n' + label)) return;
   try {
-    const res = await fetch('/api/session/' + encodeURIComponent(sessionId), {method:'DELETE'});
+    let res = await fetch('/api/session/' + encodeURIComponent(sessionId), {method:'DELETE'});
+    if (res.status === 409) {
+      const err = await res.json().catch(() => ({}));
+      if (err._tag === 'SessionRunningError' || /running/i.test(err.message || '')) {
+        if (!confirm('Die Session läuft noch.\n\nSession stoppen und löschen?')) return;
+        await fetch('/api/session/' + encodeURIComponent(sessionId) + '/interrupt', {method:'POST'});
+        for (let i = 0; i < 40; i++) {
+          res = await fetch('/api/session/' + encodeURIComponent(sessionId), {method:'DELETE'});
+          if (res.status !== 409) break;
+          await new Promise(r => setTimeout(r, 250));
+        }
+      }
+    }
     if (!res.ok && res.status !== 404) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.message || ('HTTP ' + res.status));
@@ -693,7 +1529,6 @@ async function deleteCurrentSession() {
     sessionId = null;
     currentAssistant = null;
     messages.innerHTML = '';
-    sessionTitle.textContent = '';
     await loadSessions();
     const next = sessionsSel.value;
     if (next) {
@@ -706,47 +1541,194 @@ async function deleteCurrentSession() {
   }
 }
 
+function handleSseEvent(ev) {
+  if (ev._type) {
+    switch (ev._type) {
+      case 'TextStarted':
+        if (!showDetails.checked) return;
+        currentAssistant = addMessage('assistant', '');
+        break;
+      case 'TextDelta':
+        if (!showDetails.checked || !currentAssistant) return;
+        currentAssistant.textContent += ev.text; currentAssistant.innerHTML = renderMarkdown(currentAssistant.textContent); messages.scrollTop = messages.scrollHeight;
+        break;
+      case 'TextEnded':
+        if (!showDetails.checked) { currentAssistant = null; return; }
+        if (currentAssistant && !currentAssistant.textContent) currentAssistant.innerHTML = renderMarkdown(ev.text);
+        currentAssistant = null;
+        break;
+      case 'ToolCallRequested':
+        if (!showDetails.checked) return;
+        addMessage('tool', '🔧 ' + ev.name + '(' + JSON.stringify(ev.input) + ')', 'tool-in');
+        break;
+      case 'ToolResultProvided': {
+        if (!showDetails.checked) return;
+        const t = (ev.outcome && (ev.outcome.text || (ev.outcome.value ? JSON.stringify(ev.outcome.value) : ''))) || '';
+        const trimmed = String(t).slice(0, 800);
+        addMessage('tool', '↳ ' + (trimmed || '(kein Ergebnis)'), 'tool-out');
+        break;
+      }
+      case 'LlmRequest':
+      case 'LlmResponse':
+        // LLM-Kommunikation nur im Side-Panel (LLM-Trace), nicht im Chat,
+        // um Tool-Aufrufe und -Ergebnisse nicht zu ueberlagern.
+        if (showLlm.checked) loadLlmTrace();
+        break;
+      case 'ToolFailed':
+        addMessage('error', '⚠ ' + ev.message);
+        break;
+      case 'SubagentStarted': {
+        if (!showDetails.checked) return;
+        upsertTask(ev.id, { agent: ev.agent || 'subagent', state: 'running', text: '', error: '', childSession: ev.childSession, tokens: 0 });
+        updateCancelButton();
+        if (!taskPoll && sessionId) startTaskPoll(sessionId);
+        break;
+      }
+      case 'SubagentFinished': {
+        if (!showDetails.checked) return;
+        upsertTask(ev.id, { state: ev.state || 'completed', text: ev.text || '', error: ev.state === 'failed' ? (ev.text || '') : '' });
+        updateCancelButton();
+        // stop polling if no running tasks remain
+        const stillRunning = Array.from(taskElements.values()).some(d => d._state && d._state.state === 'running');
+        if (!stillRunning && taskPoll) { clearInterval(taskPoll); taskPoll = null; }
+        break;
+      }
+      case 'SubagentCancelled': {
+        if (!showDetails.checked) return;
+        upsertTask(ev.id, { state: 'cancelled' });
+        updateCancelButton();
+        const stillRunning2 = Array.from(taskElements.values()).some(d => d._state && d._state.state === 'running');
+        if (!stillRunning2 && taskPoll) { clearInterval(taskPoll); taskPoll = null; }
+        break;
+      }
+        loadFiles(currentDir);
+        if (showLlm.checked) loadLlmTrace();
+        break;
+      case 'ProviderFailed':
+        addMessage('error', 'Provider-Fehler: ' + ev.message);
+        break;
+      case 'RetryScheduled': {
+        const secs = (ev.delay || '').match(/(\d+)S/)?.[1] || ev.delay;
+        addMessage('tool', '⏳ Retry in ' + secs + 's (Versuch ' + ev.attempt + ')');
+        break;
+      }
+    }
+  } else if (ev.type) {
+    logEvent(ev.type + (ev.data && ev.data.text ? ': ' + ev.data.text.slice(0,80) : ''));
+  }
+}
+
+// EventSource cannot send an Authorization header. Read the SSE stream with
+// fetch instead so the OIDC bearer token is included (and refresh/retry works).
+let sseRetryCount = 0;
+const SSE_MAX_RETRIES = 10;
+const SSE_BASE_DELAY = 1000;
+
+let globalSseController = null;
+function connectGlobalSSE() {
+  if (globalSseController) globalSseController.abort();
+  globalSseController = new AbortController();
+  const controller = globalSseController;
+  (async () => {
+    try {
+      const res = await apiFetch('/api/events', {
+        headers: { 'Accept': 'text/event-stream' },
+        signal: controller.signal
+      });
+      if (!res.ok || !res.body) throw new Error('Global SSE HTTP ' + res.status);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+        let idx;
+        while ((idx = buffer.indexOf('\n\n')) >= 0) {
+          const chunk = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          const data = chunk.split('\n')
+            .filter(line => line.startsWith('data:'))
+            .map(line => line.slice(5).replace(/^ /, ''))
+            .join('\n');
+          if (!data) continue;
+          let ev;
+          try { ev = JSON.parse(data); } catch { continue; }
+          if (ev.type === 'question_pending' || ev.type === 'question_resolved') {
+            loadQuestions();
+          }
+        }
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        setTimeout(() => { if (AUTH.token) connectGlobalSSE(); }, 5000);
+      }
+    }
+  })();
+}
+
 function connectSSE() {
   if (es) es.close();
-  es = new EventSource('/api/event?session=' + encodeURIComponent(sessionId) + '&live=true');
-  es.onmessage = (e) => {
-    let ev;
-    try { ev = JSON.parse(e.data); } catch { return; }
-    if (ev._type) {
-      switch (ev._type) {
-        case 'TextStarted':
-          if (!showDetails.checked) return;
-          currentAssistant = addMessage('assistant', '');
-          break;
-        case 'TextDelta':
-          if (!showDetails.checked || !currentAssistant) return;
-          currentAssistant.textContent += ev.text; currentAssistant.innerHTML = renderMarkdown(currentAssistant.textContent); messages.scrollTop = messages.scrollHeight;
-          break;
-        case 'TextEnded':
-          if (!showDetails.checked) { currentAssistant = null; return; }
-          if (currentAssistant && !currentAssistant.textContent) currentAssistant.innerHTML = renderMarkdown(ev.text);
-          currentAssistant = null;
-          break;
-        case 'ToolCallRequested':
-          if (!showDetails.checked) return;
-          addMessage('tool', '🔧 ' + ev.name + '(' + JSON.stringify(ev.input) + ')');
-          break;
-        case 'ToolFailed':
-          addMessage('error', '⚠ ' + ev.message);
-          break;
-        case 'Finished':
-          logEvent('Fertig: ' + ev.reason + ' (' + (ev.usage?ev.usage.input:0) + '/' + (ev.usage?ev.usage.output:0) + ')');
-          loadFiles(currentDir);
-          break;
-        case 'ProviderFailed':
-          addMessage('error', 'Provider-Fehler: ' + ev.message);
-          break;
+  es = null;
+  if (!sessionId) return;
+  const controller = new AbortController();
+  const handle = { close: () => controller.abort() };
+  es = handle;
+  (async () => {
+    try {
+      const res = await apiFetch('/api/event?session=' + encodeURIComponent(sessionId) + '&live=true', {
+        headers: { 'Accept': 'text/event-stream' },
+        signal: controller.signal
+      });
+      if (!res.ok || !res.body) throw new Error('SSE HTTP ' + res.status);
+      sseRetryCount = 0; // reset on successful connection
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+        let idx;
+        while ((idx = buffer.indexOf('\n\n')) >= 0) {
+          const chunk = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          const data = chunk.split('\n')
+            .filter(line => line.startsWith('data:'))
+            .map(line => line.slice(5).replace(/^ /, ''))
+            .join('\n');
+          if (!data) continue;
+          let ev;
+          try { ev = JSON.parse(data); } catch { continue; }
+          handleSseEvent(ev);
+        }
       }
-    } else if (ev.type) {
-      logEvent(ev.type + (ev.data && ev.data.text ? ': ' + ev.data.text.slice(0,80) : ''));
+      if (!controller.signal.aborted) {
+        status.textContent = 'SSE getrennt – reconnecting...';
+        scheduleSseReconnect();
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        status.textContent = 'SSE getrennt – reconnecting...';
+        scheduleSseReconnect();
+      }
+    } finally {
+      if (es === handle) es = null;
     }
-  };
-  es.onerror = () => { status.textContent = 'SSE getrennt'; };
+  })();
+}
+
+function scheduleSseReconnect() {
+  if (sseRetryCount >= SSE_MAX_RETRIES) {
+    status.textContent = 'SSE Verbindung verloren (max retries)';
+    return;
+  }
+  sseRetryCount++;
+  const delay = Math.min(SSE_BASE_DELAY * Math.pow(2, sseRetryCount - 1), 30000);
+  status.textContent = 'SSE reconnect in ' + Math.round(delay / 1000) + 's...';
+  setTimeout(() => {
+    if (sessionId) connectSSE();
+  }, delay);
 }
 
 async function send() {
@@ -760,7 +1742,8 @@ async function send() {
   }
   addMessage('user', text);
   input.value = '';
-  sendBtn.disabled = true;
+  window.__sending = true;
+  sendBtn.textContent = 'Interrupt';
   status.textContent = 'Denke…';
   if (permPoll) clearInterval(permPoll);
   permPoll = setInterval(checkPermissions, 700);
@@ -784,10 +1767,13 @@ async function send() {
   } finally {
     if (permPoll) { clearInterval(permPoll); permPoll = null; }
     if (questionPoll) { clearInterval(questionPoll); questionPoll = null; }
-    sendBtn.disabled = false;
+    window.__sending = false;
+    sendBtn.textContent = 'Senden';
     status.textContent = 'bereit';
     loadSessions();
     loadFiles(currentDir);
+    if (sessionId) { await loadTasks(sessionId); startTaskPoll(sessionId);
+    updateCancelButton(); }
   }
 }
 
@@ -833,6 +1819,14 @@ async function loadSelectors() {
     const models = await (await fetch('/api/model')).json();
     const providers = await (await fetch('/api/provider')).json();
     fill('agent', (agents.data||[]).filter(a=>!a.hidden).map(a=>({value:a.id,label:a.name})));
+    const agentSel = document.getElementById('agent');
+    if (agents.canAuthor === true) {
+      const newOpt = document.createElement('option');
+      newOpt.value = '__new__';
+      newOpt.textContent = '+ Neuer Agent';
+      agentSel.insertBefore(newOpt, agentSel.firstChild);
+    }
+    agentSel.dataset.prev = agentSel.value;
     fill('model', (models.data||[]).map(m=>({value:m.id||m.model,label:m.model||m.id})));
     fill('provider', (providers.data||[]).map(p=>({value:p.id,label:p.name})));
   } catch (e) { /* ignore */ }
@@ -871,10 +1865,13 @@ async function loadFiles(path) {
   const target = path || '.';
   try {
     const res = await fetch('/api/files?path=' + encodeURIComponent(target));
+    if (res.status === 401) return;
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || data.error || ('HTTP ' + res.status));
     filetree.innerHTML = '';
     currentDir = target;
+    const fp = document.getElementById('filesPath');
+    if (fp) fp.textContent = (target && target !== '.' && target !== '/') ? ('./' + target.replace(/^\.\/+/, '')) : '.';
     if (target !== '.' && target !== '/') {
       const up = document.createElement('div');
       up.className = 'entry dir';
@@ -951,7 +1948,7 @@ async function viewFile(path) {
 const EDITABLE_EXT = new Set(['txt','md','json','yaml','yml','xml','html','css','js','ts','java','py','sh','bash','properties','conf','cfg','ini','toml','csv','log','sql','kt','go','rs','c','cpp','h','hpp']);
 let editingFile = false;
 function isEditable(path, content) {
-  if (!path || content.length > 10000) return false;
+  if (!path || content.length > 1000000) return false;
   const lower = path.toLowerCase();
   const dot = lower.lastIndexOf('.');
   const ext = dot >= 0 ? lower.substring(dot + 1) : '';
@@ -976,7 +1973,7 @@ function exitEditMode() {
 async function saveFile() {
   if (!currentFile) return;
   const content = document.getElementById('fileEditor').value;
-  if (content.length > 10000) { alert('Zu groß (max. 10000 Zeichen)'); return; }
+  if (content.length > 1000000) { alert('Zu groß (max. 1000000 Zeichen)'); return; }
   try {
     const res = await fetch('/api/file', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path: currentFile, content})});
     const data = await res.json().catch(() => ({}));
@@ -1081,6 +2078,9 @@ document.getElementById('editFileBtn').onclick = () => {
 document.getElementById('saveFileBtn').onclick = saveFile;
 document.getElementById('cancelEditBtn').onclick = exitEditMode;
 document.getElementById('refreshFiles').onclick = () => loadFiles(currentDir);
+document.getElementById('backToParent').onclick = () => { const parent = popNav(); if (parent) switchSession(parent); };
+document.getElementById('refreshQuestions').onclick = () => loadQuestions();
+document.getElementById('refreshQuestions').onclick = () => loadQuestions();
 const uploadFileInput = document.getElementById('uploadFileInput');
 const uploadDirInput = document.getElementById('uploadDirInput');
 document.getElementById('uploadFile').onclick = () => uploadFileInput.click();
@@ -1093,28 +2093,66 @@ uploadDirInput.addEventListener('change', async () => {
   await uploadFiles(uploadDirInput.files);
   uploadDirInput.value = '';
 });
-document.getElementById('newSession').onclick = () => {
-  const agent = document.getElementById('agent').value;
-  newSession(agent || null);
-};
-document.getElementById('deleteSession').onclick = deleteCurrentSession;
-document.getElementById('interrupt').onclick = () => {
-  if (sessionId) fetch('/api/session/' + sessionId + '/interrupt', {method:'POST'});
-};
-document.getElementById('compact').onclick = () => compactNow();
-document.getElementById('loginBtn').onclick = login;
+// session actions are handled via the sessionActions dropdown
+// compact is handled via the actions dropdown
+document.getElementById('loginBtn').onclick = loginOrLogout;
+document.getElementById('questionsBtn').onclick = () => { const p = document.getElementById('panelQuestions'); if (p) p.style.display = p.style.display === 'none' ? '' : 'none'; loadQuestions(); };
+document.getElementById('questionsBtn').onclick = () => { const p = document.getElementById('panelQuestions'); if (p) p.style.display = p.style.display === 'none' ? '' : 'none'; loadQuestions(); };
 updateAuthStatus();
-document.getElementById('reloadConfig').onclick = async () => {
-  try {
-    const r = await fetch('/api/config/reload', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) { logEvent('Config reload failed: ' + (data.message || r.status)); return; }
-    logEvent('Config reloaded');
-    await loadSelectors();
-  } catch (e) { logEvent('Config reload error: ' + e.message); }
+// reload is handled via the actions dropdown below
+window.addEventListener('load', () => {
+document.getElementById('ag_cancel').onclick = () => {
+  document.getElementById('agentModal').style.display = 'none';
 };
-document.getElementById('revert').onclick = () => revertTurn();
-document.getElementById('fork').onclick = () => forkSession();
+document.getElementById('ag_save').onclick = async () => {
+  const status = document.getElementById('ag_status');
+  try {
+    const name = document.getElementById('ag_name').value.trim();
+    if (!name) throw new Error('Name erforderlich');
+    const mode = document.getElementById('ag_mode').value;
+    const model = document.getElementById('ag_model').value.trim();
+    const hidden = document.getElementById('ag_hidden').checked;
+    const maxSteps = parseInt(document.getElementById('ag_steps').value || '0', 10) || 0;
+    const system = document.getElementById('ag_system').value.trim();
+    const toolAllow = document.getElementById('ag_toolAllow').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const toolDeny = document.getElementById('ag_toolDeny').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const mcp = document.getElementById('ag_mcp').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const roles = document.getElementById('ag_roles').value.split(',').map(s=>s.trim()).filter(Boolean);
+    let perms = [];
+    const permsRaw = document.getElementById('ag_perms').value.trim();
+    if (permsRaw) perms = JSON.parse(permsRaw);
+    let skills = null;
+    const skillsRaw = document.getElementById('ag_skills').value.trim();
+    if (skillsRaw) skills = JSON.parse(skillsRaw);
+    const fm = [];
+    fm.push('---');
+    fm.push('name: ' + JSON.stringify(name));
+    fm.push('mode: ' + mode);
+    if (model) fm.push('model: ' + JSON.stringify(model));
+    fm.push('hidden: ' + hidden);
+    fm.push('steps: ' + maxSteps);
+    fm.push('toolAllow: ' + JSON.stringify(toolAllow.length ? toolAllow : ['*']));
+    fm.push('toolDeny: ' + JSON.stringify(toolDeny));
+    fm.push('mcpServers: ' + JSON.stringify(mcp.length ? mcp : ['*']));
+    if (roles.length) fm.push('rolesAllowed: ' + JSON.stringify(roles));
+    fm.push('permissions: ' + JSON.stringify(perms));
+    if (skills) fm.push('skills: ' + JSON.stringify(skills));
+    fm.push('---');
+    fm.push('');
+    if (system) fm.push(system);
+    const content = fm.join('\n');
+    const r = await fetch('/api/agent', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, content})});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.message || ('HTTP ' + r.status));
+    status.textContent = 'Gespeichert: ' + name;
+    document.getElementById('agentModal').style.display = 'none';
+    await loadSelectors();
+  } catch (e) {
+    status.textContent = 'Fehler: ' + e.message;
+  }
+};
+});
+// revert and fork are handled via the actions dropdown
 
 document.getElementById('permOnce').onclick = () => replyPermission('ONCE');
 document.getElementById('permAlways').onclick = () => replyPermission('ALWAYS');
@@ -1122,9 +2160,11 @@ document.getElementById('permReject').onclick = () => replyPermission('REJECT');
 document.getElementById('questionSend').onclick = () => replyPendingQuestion();
 
 async function replyPermission(reply) {
-  if (!pendingPermission || !sessionId) return;
+  if (!pendingPermission) return;
+  const targetSession = pendingPermission.sessionId || sessionId;
+  if (!targetSession) return;
   try {
-    await fetch('/api/session/' + sessionId + '/permission/' + pendingPermission.id + '/reply', {
+    await fetch('/api/session/' + targetSession + '/permission/' + pendingPermission.id + '/reply', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({reply})
     });
@@ -1135,17 +2175,20 @@ async function replyPermission(reply) {
 
 async function checkPermissions() {
   if (!sessionId) return;
+  if (subagentView && orchestratorAlive) return;
   try {
-    const res = await fetch('/api/session/' + sessionId + '/permission');
+    const res = await fetch('/api/session/' + sessionId + '/permission?includeChildren=true');
     const data = await res.json();
     const list = data.data || [];
     if (list.length && !pendingPermission) {
       pendingPermission = list[0];
+      const target = pendingPermission.sessionId || sessionId;
+      const label = (target !== sessionId) ? ' (Subagent ' + target.slice(0,8) + '…)' : '';
       const permMsg = (pendingPermission.message && pendingPermission.message.trim())
         ? pendingPermission.message
         : (pendingPermission.action + ' — ' + (pendingPermission.resources||[]).join(', '));
       document.getElementById('permContext').textContent =
-        permMsg.length > 750 ? permMsg.substring(0, 750) + '…' : permMsg;
+        (permMsg.length > 750 ? permMsg.substring(0, 750) + '…' : permMsg) + label;
       document.getElementById('permModal').classList.add('open');
     }
   } catch (e) { /* ignore */ }
@@ -1153,8 +2196,9 @@ async function checkPermissions() {
 
 async function checkQuestions() {
   if (!sessionId || pendingQuestion) return;
+  if (subagentView && orchestratorAlive) return;
   try {
-    const res = await fetch('/api/session/' + sessionId + '/question');
+    const res = await fetch('/api/session/' + sessionId + '/question?includeChildren=true');
     const data = await res.json();
     if (data.id && data.questions && data.questions.length) {
       pendingQuestion = data;
@@ -1211,7 +2255,8 @@ async function replyPendingQuestion() {
   pendingQuestion.selections.forEach(set => set.forEach(value => selected.push(value)));
   const text = document.getElementById('questionAnswer').value;
   try {
-    await fetch('/api/session/' + sessionId + '/question/' + encodeURIComponent(pendingQuestion.id) + '/reply', {
+    const targetSession = pendingQuestion.sessionId || sessionId;
+    await fetch('/api/session/' + targetSession + '/question/' + encodeURIComponent(pendingQuestion.id) + '/reply', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ selected, text })
     });
@@ -1303,19 +2348,148 @@ function renderA2AAgent(a) {
   return box;
 }
 
-document.getElementById('a2aAgents').onclick = () => {
-  document.getElementById('a2aModal').classList.add('open');
-  loadA2AAgents(false);
-};
 document.getElementById('a2aRefresh').onclick = () => loadA2AAgents(true);
 document.getElementById('a2aClose').onclick = () => document.getElementById('a2aModal').classList.remove('open');
 
 sessionsSel.addEventListener('change', (e) => switchSession(e.target.value));
-document.getElementById('agent').addEventListener('change', () => switchAgent());
-sendBtn.onclick = send;
+document.getElementById('agent').addEventListener('change', async (e) => {
+  if (e.target.value === '__new__') {
+    const prev = e.target.dataset.prev || '';
+    e.target.value = prev;
+    document.getElementById('ag_status').textContent = '';
+    document.getElementById('agentModal').style.display = 'block';
+    try {
+      const [tools, mcp, a2a] = await Promise.all([
+        fetch('/api/tool').then(r=>r.json()).catch(()=>({})),
+        fetch('/api/mcp').then(r=>r.json()).catch(()=>({})),
+        fetch('/api/a2a').then(r=>r.json()).catch(()=>({}))
+      ]);
+      const lines = [];
+      lines.push('Tools: ' + (tools.data||[]).map(x=>x.name).join(', '));
+      lines.push('MCP: ' + (mcp.data||[]).join(', '));
+      lines.push('A2A: ' + (a2a.data||[]).join(', '));
+      document.getElementById('ag_avail').value = lines.join('\n');
+    } catch (e) {}
+    return;
+  }
+  e.target.dataset.prev = e.target.value;
+  await switchAgent();
+});
+sendBtn.onclick = async () => {
+  if (window.__sending) {
+    if (sessionId) fetch('/api/session/' + sessionId + '/interrupt', {method:'POST'});
+    return;
+  }
+  await send();
+};
+
+// Harter Cancel-Button: bricht den laufenden Agenten (Parent + Subagents + Background-Tasks) ab.
+const hardCancelBtn = document.getElementById('hardCancelBtn');
+async function updateCancelButton() {
+  if (!hardCancelBtn) return;
+  if (!sessionId) { hardCancelBtn.disabled = true; return; }
+  try {
+    const res = await fetch('/api/session/' + encodeURIComponent(sessionId) + '/running');
+    const data = await res.json().catch(() => ({}));
+    hardCancelBtn.disabled = !data.running;
+  } catch (e) {
+    hardCancelBtn.disabled = true;
+  }
+}
+hardCancelBtn.onclick = async () => {
+  if (!sessionId || hardCancelBtn.disabled) return;
+  if (!confirm('Laufenden Agent abbrechen? (Parent + Subagents)')) return;
+  hardCancelBtn.disabled = true;
+  try {
+    const res = await fetch('/api/session/' + encodeURIComponent(sessionId) + '/interrupt', {method:'POST'});
+    const data = await res.json().catch(() => ({}));
+    const n = (data.cancelledChildren || 0) + (data.cancelledTasks || 0);
+    status.textContent = 'Abgebrochen (cancel by user)' + (n ? ' — ' + n + ' Kind(er)/Task(s) gestoppt' : '');
+    logEvent('Interrupt gesendet (hard cancel)');
+    // Zurück zur Parent-Session, falls vorhanden
+    const backBtn = document.getElementById('backToParent');
+    if (backBtn && backBtn.style.display !== 'none') {
+      backBtn.click();
+    }
+  } catch (e) {
+    status.textContent = 'Fehler beim Abbrechen: ' + e.message;
+  } finally {
+    setTimeout(updateCancelButton, 500);
+  }
+};
+document.getElementById('moreActions').onchange = async (e) => {
+  const v = e.target.value;
+  e.target.value = '';
+  if (!v) return;
+  if (v === 'compact') await compactNow();
+  else if (v === 'revert') revertTurn();
+  else if (v === 'fork') forkSession();
+  else if (v === 'reload') {
+    try {
+      const r = await fetch('/api/config/reload', {method:'POST', headers:{'Content-Type':'application/json','X-QOC-User':'opencode'}, body:'{}'});
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { logEvent('Config reload failed: ' + (data.message || r.status)); return; }
+      logEvent('Config reloaded');
+      await loadSelectors();
+    } catch (e) { logEvent('Config reload error: ' + e.message); }
+  } else if (v === 'a2a') {
+    document.getElementById('a2aModal').classList.add('open');
+    loadA2AAgents(false);
+  } else if (v === 'workspace') {
+    try {
+      const ws = await fetch('/api/workspace').then(r=>r.json()).catch(()=>({}));
+      const path = window.prompt('Neuer Workspace-Pfad:', ws.userWorkspace || ws.workspace || '');
+      if (!path) return;
+      const r = await fetch('/api/workspace', {method:'POST', headers:{'Content-Type':'application/json','X-QOC-User':'opencode'}, body: JSON.stringify({path, create:true})});
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { logEvent('Workspace-Wechsel fehlgeschlagen: ' + (data.message || r.status)); return; }
+      logEvent('Workspace gewechselt: ' + (data.workspace || path));
+      await loadFiles('.');
+      await loadSelectors();
+      const agent = document.getElementById('agent').value;
+      await newSession(agent && agent !== '__new__' ? agent : null);
+    } catch (e) { logEvent('Workspace-Wechsel Fehler: ' + e.message); }
+  }
+};
+document.getElementById('sessionActions').onchange = async (e) => {
+  const v = e.target.value;
+  e.target.value = '';
+  if (!v) return;
+  if (v === 'new') {
+    const agent = document.getElementById('agent').value;
+    newSession(agent && agent !== '__new__' ? agent : null);
+  } else if (v === 'delete') {
+    deleteCurrentSession();
+  }
+};
 input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey||e.metaKey)) { e.preventDefault(); send(); } });
 
 init();
 </script>
+<div id="agentModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;overflow:auto">
+  <div style="max-width:760px;margin:40px auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px">
+    <h2>Neuer Agent</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <label>Name <input id="ag_name" style="width:100%"></label>
+      <label>Mode <select id="ag_mode" style="width:100%"><option>subagent</option><option>primary</option><option>all</option></select></label>
+      <label>Model <input id="ag_model" placeholder="openai/gpt-4o-mini" style="width:100%"></label>
+      <label>Max Steps <input id="ag_steps" type="number" value="0" style="width:100%"></label>
+      <label>Hidden <input id="ag_hidden" type="checkbox"></label>
+    </div>
+    <label style="display:block;margin-top:8px">System-Prompt <textarea id="ag_system" rows="6" style="width:100%"></textarea></label>
+    <label style="display:block;margin-top:8px">Tool Allow (kommagetrennt oder *) <input id="ag_toolAllow" value="*" style="width:100%"></label>
+    <label style="display:block;margin-top:8px">Tool Deny (kommagetrennt) <input id="ag_toolDeny" style="width:100%"></label>
+    <label style="display:block;margin-top:8px">MCP-Server (kommagetrennt oder *) <input id="ag_mcp" value="*" style="width:100%"></label>
+    <label style="display:block;margin-top:8px">Rollen (kommagetrennt, leer = admin) <input id="ag_roles" placeholder="admin" style="width:100%"></label>
+    <label style="display:block;margin-top:8px">Verfügbare Tools / MCP / A2A <textarea id="ag_avail" rows="4" readonly style="width:100%"></textarea></label>
+    <label style="display:block;margin-top:8px">Permissions (JSON-Array) <textarea id="ag_perms" rows="4" style="width:100%">[{"action":"*","resource":"*","effect":"allow"}]</textarea></label>
+    <label style="display:block;margin-top:8px">Skills (JSON) <textarea id="ag_skills" rows="4" style="width:100%">{"enabled":true,"allow":[],"deny":[],"max":0,"prompt":"top-k"}</textarea></label>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button id="ag_save" class="primary">Speichern</button>
+      <button id="ag_cancel">Abbrechen</button>
+      <span id="ag_status" style="color:var(--muted);align-self:center"></span>
+    </div>
+  </div>
+</div>
 </body>
 </html>

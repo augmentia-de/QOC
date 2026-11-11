@@ -1,11 +1,14 @@
 package de.augmentia.oc.engine.http;
 
+import de.augmentia.oc.engine.http.a2a.A2AServerConfig;
 import de.augmentia.oc.engine.runtime.tool.a2a.A2AEgress;
 import de.augmentia.oc.engine.runtime.tool.a2a.A2AAgentCardCache;
 import de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider;
 import de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider.A2AEndpoint;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.Config;
+import org.jboss.logging.Logger;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -20,8 +23,12 @@ import java.util.Optional;
  */
 @ApplicationScoped
 public class A2AConfig {
+    private static final Logger LOG = Logger.getLogger(A2AConfig.class);
     private static final long DEFAULT_CACHE_TTL_SECONDS = 300;
     private static final long MAX_CACHE_TTL_SECONDS = 86_400;
+
+    @Inject
+    A2AServerConfig serverConfig;
 
     private final Config config;
     private final A2AAgentCardCache cache;
@@ -83,7 +90,32 @@ public class A2AConfig {
         return List.copyOf(result);
     }
 
+    /**
+     * Returns the effective endpoints.
+     *
+     * <p>Endpoints pointing back to this instance's own A2A server are removed:
+     * resolving their card while the application-scoped engine is still being
+     * created would call the engine through HTTP and deadlock startup.</p>
+     */
     public List<A2AEndpoint> endpoints() {
+        List<A2AEndpoint> configured = configuredEndpoints();
+        if (serverConfig == null || !serverConfig.enabled()) {
+            return configured;
+        }
+        String serverBaseUrl = serverConfig.baseUrl();
+        List<A2AEndpoint> result = new ArrayList<>(configured.size());
+        for (A2AEndpoint endpoint : configured) {
+            if (endpoint != null && isSelfEndpoint(endpoint.url(), serverBaseUrl)) {
+                LOG.warnf("Ignoring self-referential A2A endpoint %s to avoid a startup deadlock",
+                        endpoint.url());
+                continue;
+            }
+            result.add(endpoint);
+        }
+        return List.copyOf(result);
+    }
+
+    private List<A2AEndpoint> configuredEndpoints() {
         List<A2AEndpoint> result = new ArrayList<>();
         // Support env/MP config: engine.a2a.endpoints.0.url etc not easily mapped, use simple list via comma
         Optional<String> list = config.getOptionalValue("engine.a2a.endpoints", String.class);
@@ -148,6 +180,51 @@ public class A2AConfig {
             }
         }
         return result;
+    }
+
+    /**
+     * True when both URLs address the same origin (scheme, host and port).
+     *
+     * <p>Paths are ignored on purpose: any path on our own A2A server ends up in
+     * the same engine instance and would deadlock during startup.</p>
+     */
+    static boolean isSelfEndpoint(String endpointUrl, String serverBaseUrl) {
+        if (endpointUrl == null || serverBaseUrl == null) {
+            return false;
+        }
+        String endpoint = endpointUrl.trim();
+        String server = serverBaseUrl.trim();
+        if (endpoint.isEmpty() || server.isEmpty()) {
+            return false;
+        }
+        try {
+            java.net.URI e = java.net.URI.create(endpoint);
+            java.net.URI s = java.net.URI.create(server);
+            if (e.getScheme() == null || e.getHost() == null
+                    || s.getScheme() == null || s.getHost() == null) {
+                return normalized(endpoint).equals(normalized(server));
+            }
+            return e.getScheme().equalsIgnoreCase(s.getScheme())
+                    && e.getHost().equalsIgnoreCase(s.getHost())
+                    && effectivePort(e) == effectivePort(s);
+        } catch (IllegalArgumentException ex) {
+            return normalized(endpoint).equals(normalized(server));
+        }
+    }
+
+    private static String normalized(String url) {
+        String result = url;
+        while (result.endsWith("/")) {
+            result = result.substring(0, result.length() - 1);
+        }
+        return result;
+    }
+
+    private static int effectivePort(java.net.URI uri) {
+        if (uri.getPort() != -1) {
+            return uri.getPort();
+        }
+        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
     }
 
     private java.util.List<String> splitList(java.util.Optional<String> value) {

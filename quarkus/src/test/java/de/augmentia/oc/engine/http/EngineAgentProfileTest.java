@@ -5,6 +5,7 @@ import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Rule;
 import de.augmentia.oc.engine.core.eval.PermissionRules;
 import de.augmentia.oc.engine.runtime.context.AgentProfile;
+import de.augmentia.oc.engine.runtime.context.ContextBuilder;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,7 +31,9 @@ class EngineAgentProfileTest {
 
         assertThat(profile.system().orElseThrow()).isEqualTo("You are a research agent.");
         assertThat(profile.maxSteps()).isEqualTo(7);
-        assertThat(profile.permissions()).containsExactly(new Rule("read", "*", Effect.ALLOW));
+        assertThat(profile.permissions())
+                .containsAll(ContextBuilder.leastPrivilegeDefaults())
+                .contains(new Rule("read", "*", Effect.ALLOW));
     }
 
     @Test
@@ -49,7 +52,11 @@ class EngineAgentProfileTest {
     @Test
     void buildAgentWithScopedEnvEditDenyIsNotPlanMode() {
         Engine engine = new Engine();
-        EngineConfig.AgentConfig build = new EngineConfig.AgentConfig("build", null, false);
+        EngineConfig.AgentConfig build = new EngineConfig.AgentConfig("build", null, false,
+                "all", null, 0, List.of("*"), List.of(),
+                List.of(new Rule("edit", "*", Effect.ALLOW),
+                        new Rule("edit", "*.env", Effect.DENY)),
+                List.of("*"));
 
         AgentProfile profile = engine.agentProfile(AgentId.create(), "build", build);
 
@@ -64,9 +71,8 @@ class EngineAgentProfileTest {
 
         assertThat(profile.system().isEmpty()).isTrue();
         assertThat(profile.maxSteps()).isZero();
-        assertThat(profile.permissions()).containsExactly(
-                new Rule("*", "*", Effect.ALLOW),
-                new Rule("grep", "*", Effect.ASK));
+        assertThat(profile.permissions())
+                .containsExactlyElementsOf(ContextBuilder.leastPrivilegeDefaults());
     }
 
     @Test
@@ -82,6 +88,10 @@ class EngineAgentProfileTest {
         config.urlProperty = "https://api.openai.com/v1/chat/completions";
         config.passwordProperty = Optional.empty();
         config.workspaceSettingsEnabledProperty = true;
+        config.modeProperty = "server";
+        config.agentSourceUrlProperty = Optional.empty();
+        config.agentAuthoringEnabledProperty = true;
+        config.agentSourceTokenProperty = Optional.empty();
         config.load();
 
         Engine engine = new Engine();
@@ -106,8 +116,7 @@ class EngineAgentProfileTest {
 
         AgentProfile profile = engine.agentProfile(AgentId.create(), "plan", config);
 
-        assertThat(profile.permissions()).containsExactly(
-                new Rule("*", "*", Effect.ALLOW),
-                new Rule("grep", "*", Effect.ASK));
+        assertThat(profile.permissions())
+                .containsExactlyElementsOf(ContextBuilder.leastPrivilegeDefaults());
     }
 }

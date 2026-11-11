@@ -56,6 +56,11 @@ public class QocAgentExecutor implements AgentExecutor {
             emitter.fail(new UnsupportedOperationError(null, "A2A server is disabled", null));
             return;
         }
+        if (engine.isRegistryMode()) {
+            emitter.fail(new UnsupportedOperationError(null,
+                    "execution is disabled in registry role", null));
+            return;
+        }
         String user = username(context);
         try {
             String text = extractInput(context);

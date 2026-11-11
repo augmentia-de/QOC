@@ -10,8 +10,13 @@ public record Principal(
         List<String> groups,
         AuthMode authMode,
         String source,
-        Map<String, Object> claims
+        Map<String, Object> claims,
+        String accessToken
 ) {
+    public Principal(String id, String name, List<String> roles, List<String> groups,
+                     AuthMode authMode, String source, Map<String, Object> claims) {
+        this(id, name, roles, groups, authMode, source, claims, null);
+    }
     public Principal {
         roles = roles == null ? List.of() : List.copyOf(roles);
         groups = groups == null ? List.of() : List.copyOf(groups);
@@ -28,6 +33,10 @@ public record Principal(
 
     public static Principal opencode() {
         return new Principal("opencode", "opencode", List.of("admin"), List.of(), AuthMode.BASIC, "basic", Map.of());
+    }
+
+    public static Principal localAdmin() {
+        return new Principal("local", "local", List.of("admin"), List.of(), AuthMode.NONE, "local", Map.of());
     }
 
     public Map<String, Object> toMetadata() {

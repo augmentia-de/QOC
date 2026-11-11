@@ -33,7 +33,8 @@ public final class AgentCreateTool {
                 "maxSteps", Schema.opt(Schema.num()),
                 "toolAllow", Schema.opt(Schema.arr(Schema.str())),
                 "toolDeny", Schema.opt(Schema.arr(Schema.str())),
-                "skills", Schema.opt(Schema.obj(Map.of(), true))));
+                "skills", Schema.opt(Schema.obj(Map.of(), true)),
+                "persistent", Schema.opt(Schema.str())));
         return new ToolDefinition(new ToolName("agent_create"),
                 "Define a new agent at runtime (available as a subagent afterwards)",
                 input, Option.none(),
@@ -52,6 +53,8 @@ public final class AgentCreateTool {
             List<String> allow = stringList(JsonArgs.field(value, "toolAllow"));
             if (allow.isEmpty()) allow = List.of("*");
             List<String> deny = stringList(JsonArgs.field(value, "toolDeny"));
+            String persistent = JsonArgs.string(value, "persistent");
+            if (persistent == null || persistent.isBlank()) persistent = "NONE";
 
             EngineConfig.AgentSkillsConfig skills = parseSkills(JsonArgs.field(value, "skills"));
 
@@ -61,8 +64,18 @@ public final class AgentCreateTool {
                     List.of("*"));
 
             catalogue.define(name, config, skills);
+
+            // Persist to disk if requested
+            String persistMode = persistent.trim().toUpperCase();
+            if (!"NONE".equals(persistMode)) {
+                String markdown = buildMarkdown(name, system, mode, hidden, maxSteps, allow, deny, skills);
+                catalogue.persistAgent(name, markdown, persistMode);
+            }
+
             return new ToolOutcome.Ok(new ToolResult(Option.none(),
-                    List.of(new ToolContent.TextItem("created agent: " + name)), Map.of("agent", name)));
+                    List.of(new ToolContent.TextItem("created agent: " + name
+                            + ("NONE".equals(persistMode) ? " (in-memory)" : " (persisted: " + persistMode + ")"))),
+                    Map.of("agent", name, "persistent", persistMode)));
         } catch (IllegalArgumentException e) {
             return new ToolOutcome.Failed(
                     new de.augmentia.oc.engine.core.model.SessionError.ToolExecutionError("agent_create", e.getMessage()),
@@ -72,6 +85,32 @@ public final class AgentCreateTool {
                     new de.augmentia.oc.engine.core.model.SessionError.ToolExecutionError("agent_create", e.getMessage()),
                     Map.of());
         }
+    }
+
+    private static String buildMarkdown(String name, String system, String mode, boolean hidden,
+                                       int maxSteps, List<String> allow, List<String> deny,
+                                       EngineConfig.AgentSkillsConfig skills) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("---\n");
+        sb.append("name: ").append(name).append("\n");
+        sb.append("mode: ").append(mode).append("\n");
+        sb.append("hidden: ").append(hidden).append("\n");
+        if (maxSteps > 0) sb.append("steps: ").append(maxSteps).append("\n");
+        sb.append("toolAllow: ").append(allow).append("\n");
+        sb.append("toolDeny: ").append(deny).append("\n");
+        sb.append("mcpServers: ['*']\n");
+        sb.append("permissions:\n");
+        sb.append("  - action: '*'\n    resource: '*'\n    effect: allow\n");
+        if (skills != null) {
+            sb.append("skills:\n");
+            sb.append("  allow: ").append(skills.allow()).append("\n");
+            sb.append("  deny: ").append(skills.deny()).append("\n");
+        }
+        sb.append("---\n\n");
+        if (system != null && !system.isBlank()) {
+            sb.append(system).append("\n");
+        }
+        return sb.toString();
     }
 
     private static List<String> stringList(JsonValue value) {

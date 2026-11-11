@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Rule;
+import de.augmentia.oc.engine.runtime.context.ContextBuilder;
 import de.augmentia.oc.engine.runtime.skill.SkillFilterOptions;
 import java.util.logging.Logger;
 
@@ -31,6 +32,31 @@ public class EngineConfig {
     private static final Logger LOG = Logger.getLogger(EngineConfig.class.getName());
     private static final List<String> KNOWN = List.of(
             "model", "provider", "workspace", "auth", "agents", "mcp", "skills", "guardrails");
+    @Inject
+    @ConfigProperty(name = "engine.mode", defaultValue = "server")
+    String modeProperty;
+
+    /**
+     * Runtime role. {@code server} is the normal executor, {@code registry}
+     * only exposes the agent catalogue/authoring API and disables execution.
+     * Optional; the default keeps the previous behaviour.
+     */
+    @Inject
+    @ConfigProperty(name = "engine.role", defaultValue = "server")
+    String roleProperty;
+
+    @Inject
+    @ConfigProperty(name = "engine.agent.source-url")
+    java.util.Optional<String> agentSourceUrlProperty;
+
+    @Inject
+    @ConfigProperty(name = "engine.agent.authoring-enabled", defaultValue = "true")
+    boolean agentAuthoringEnabledProperty;
+
+    @Inject
+    @ConfigProperty(name = "engine.agent.source-token")
+    java.util.Optional<String> agentSourceTokenProperty;
+
     @Inject
     @ConfigProperty(name = "engine.workspace", defaultValue = ".")
     String workspaceProperty;
@@ -64,13 +90,30 @@ public class EngineConfig {
     @ConfigProperty(name = "engine.auth.password")
     java.util.Optional<String> passwordProperty;
 
+    @Inject
+    @ConfigProperty(name = "engine.permission.default", defaultValue = "least-privilege")
+    String permissionDefaultProperty;
+
+    private String mode;
+    private String role;
+    private String agentSourceUrl;
+    private boolean agentAuthoringEnabled;
+    private String agentSourceToken;
     private String provider;
     private String model;
     private String workspace;
+    /**
+     * Runtime override for {@link #workspace}. A dynamic workspace switch must
+     * survive {@link #reload()} (which re-reads the configuration files and
+     * environment), otherwise the next config reload silently jumps back to
+     * the value from {@code ENGINE_WORKSPACE}.
+     */
+    private volatile String workspaceOverride;
     private String sessionTempDir;
     private boolean workspaceSettingsEnabled = true;
     private String url;
     private String password;
+    private String permissionDefault = "least-privilege";
     private List<AgentConfig> agents;
     private List<de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig> mcpServers;
     private boolean skillsEnabled;
@@ -93,13 +136,20 @@ public class EngineConfig {
         skillFilter = SkillFilterOptions.defaults();
         agentSkills = new LinkedHashMap<>();
         webhookConfig = WebhookConfig.disabled();
-        entries.clear();        workspace = workspaceProperty;
+        entries.clear();        mode = modeProperty == null || modeProperty.isBlank() ? "server" : modeProperty.trim().toLowerCase();
+        role = roleProperty == null || roleProperty.isBlank() ? "server" : roleProperty.trim().toLowerCase();
+        agentSourceUrl = agentSourceUrlProperty.orElse("").trim();
+        agentAuthoringEnabled = agentAuthoringEnabledProperty;
+        agentSourceToken = agentSourceTokenProperty.orElse("").trim();
+        workspace = workspaceProperty;
         sessionTempDir = sessionTempDirProperty;
         workspaceSettingsEnabled = workspaceSettingsEnabledProperty;
         provider = providerProperty;
         model = modelProperty;
         url = urlProperty;
         password = passwordProperty.orElse("");
+        permissionDefault = permissionDefaultProperty == null || permissionDefaultProperty.isBlank()
+                ? "least-privilege" : permissionDefaultProperty.trim().toLowerCase(java.util.Locale.ROOT);
         agents = new ArrayList<>();
         mcpServers = new ArrayList<>();
         skillsEnabled = true;
@@ -117,6 +167,12 @@ public class EngineConfig {
         merge(merged, read(globalFile()));
         if (merged.get("workspace") instanceof JsonValue.Str globalWorkspace) {
             workspace = globalWorkspace.value();
+        }
+        // A runtime workspace switch must also select the settings.json of the
+        // new workspace. Apply it before the project file is read, and again
+        // after the merged workspace key so that the runtime value always wins.
+        if (workspaceOverride != null && !workspaceOverride.isBlank()) {
+            workspace = workspaceOverride;
         }
         // Project/workspace settings are optional and can be disabled entirely
         // via engine.settings.workspace-enabled=false, so that only the
@@ -136,6 +192,9 @@ public class EngineConfig {
                 .forEach(key -> LOG.warning("unknown settings.json key: " + key));
 
         if (merged.get("workspace") instanceof JsonValue.Str value) workspace = value.value();
+        if (workspaceOverride != null && !workspaceOverride.isBlank()) {
+            workspace = workspaceOverride;
+        }
         if (merged.get("model") instanceof JsonValue.Obj modelObject) {
             provider = string(modelObject, "provider", provider);
             model = string(modelObject, "id", model);
@@ -146,7 +205,10 @@ public class EngineConfig {
         if (merged.get("auth") instanceof JsonValue.Obj authObject) {
             password = string(authObject, "password", password);
         }
-        if (merged.get("agents") instanceof JsonValue.Arr list) {
+        // Serverless instances only get the baseline agents (build/plan) plus
+        // temporary agents fetched on demand for a single MCP call. Agent
+        // definitions from settings.json and from the workspace are ignored.
+        if (!isServerlessMode() && merged.get("agents") instanceof JsonValue.Arr list) {
             for (JsonValue item : list.values()) {
                 if (item instanceof JsonValue.Obj agent) {
                     List<String> toolAllow = stringList(agent, "tools", "allow");
@@ -160,7 +222,8 @@ public class EngineConfig {
                     agents.add(new AgentConfig(name,
                             string(agent, "system", null),
                             Boolean.TRUE.equals(bool(agent, "hidden")),
-                            mode, model, maxSteps, toolAllow, toolDeny, permissions, mcpServers));
+                            mode, model, maxSteps, toolAllow, toolDeny, permissions, mcpServers,
+                            agentRoles(agent)));
                     AgentSkillsConfig skills = parseAgentSkills(agent);
                     if (skills != null) {
                         agentSkills.put(name.toLowerCase(java.util.Locale.ROOT), skills);
@@ -168,6 +231,20 @@ public class EngineConfig {
                 }
             }
         }
+        // OpenCode-style Markdown agents. Global definitions are always loaded;
+        // project definitions follow the workspace-settings gate so a workspace
+        // cannot silently redefine agents when settings are disabled.
+        for (EngineConfig.AgentConfig mdAgent : AgentMarkdownLoader.loadDirectory(AgentMarkdownLoader.globalAgentDir())) {
+            replaceAgent(mdAgent);
+        }
+        if (workspaceSettingsEnabled && !isServerlessMode()) {
+            for (Path projectDir : AgentMarkdownLoader.projectAgentDirs(Path.of(workspace))) {
+                for (EngineConfig.AgentConfig mdAgent : AgentMarkdownLoader.loadDirectory(projectDir)) {
+                    replaceAgent(mdAgent);
+                }
+            }
+        }
+
         if (agents.isEmpty()) {
             agents.add(defaultBuildAgent());
             agents.add(defaultPlanAgent());
@@ -225,7 +302,22 @@ public class EngineConfig {
 
     public String provider() { return provider; }
     public String model() { return model; }
-    public String workspace() { return workspace; }
+    public String mode() { return mode == null ? "server" : mode; }
+    public String role() { return role == null || role.isBlank() ? "server" : role; }
+    public boolean isRegistryMode() { return "registry".equalsIgnoreCase(role()); }
+    public boolean isServerMode() { return "server".equalsIgnoreCase(mode()); }
+    public boolean isServerlessMode() { return "serverless".equalsIgnoreCase(mode()); }
+    public String agentSourceUrl() { return agentSourceUrl == null ? "" : agentSourceUrl; }
+    public boolean agentAuthoringEnabled() { return agentAuthoringEnabled; }
+    public String agentSourceToken() { return agentSourceToken == null ? "" : agentSourceToken; }
+public String workspace() { return workspace; }
+
+    /** Runtime override for the workspace (dynamic project switch). */
+    public synchronized void setWorkspace(String workspace) {
+        if (workspace == null || workspace.isBlank()) return;
+        this.workspaceOverride = workspace;
+        this.workspace = workspace;
+    }
     public String sessionTempDir() { return sessionTempDir == null || sessionTempDir.isBlank() ? "sessions" : sessionTempDir; }
     public boolean workspaceSettingsEnabled() { return workspaceSettingsEnabled; }
     public String url() { return url; }
@@ -312,6 +404,13 @@ public class EngineConfig {
                 .filter(JsonValue.Str.class::isInstance)
                 .map(v -> ((JsonValue.Str) v).value())
                 .toList();
+    }
+
+    /** Reads {@code rolesAllowed} or the shorter {@code roles} alias. */
+    private static List<String> agentRoles(JsonValue.Obj agent) {
+        List<String> roles = stringList(agent, "rolesAllowed");
+        if (roles.isEmpty()) roles = stringList(agent, "roles");
+        return roles.isEmpty() ? null : roles;
     }
 
     private static WebhookConfig parseWebhook(JsonValue value) {
@@ -426,6 +525,79 @@ public class EngineConfig {
         return configured > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) configured;
     }
 
+    /**
+     * Parses a single agent object in the {@code settings.json} shape. Used by
+     * serverless instances to materialise an agent fetched from the server for
+     * exactly one MCP call.
+     */
+    public static AgentConfig agentFromJson(JsonValue.Obj agent) {
+        List<String> toolAllow = stringList(agent, "tools", "allow");
+        List<String> toolDeny = stringList(agent, "tools", "deny");
+        List<String> mcpServers = stringList(agent, "mcpServers", null);
+        int maxSteps = stepLimit(agent);
+        String model = string(agent, "model", null);
+        String mode = string(agent, "mode", "all");
+        List<Rule> permissions = rules(agent);
+        String name = string(agent, "name", "build");
+        return new AgentConfig(name, string(agent, "system", null),
+                Boolean.TRUE.equals(bool(agent, "hidden")),
+                mode, model, maxSteps, toolAllow, toolDeny, permissions, mcpServers,
+                agentRoles(agent));
+    }
+
+    /** Parses the optional {@code skills} block of an agent object. */
+    public static AgentSkillsConfig agentSkillsFromJson(JsonValue.Obj agent) {
+        return parseAgentSkills(agent);
+    }
+
+    /** Serializes an agent definition into the {@code settings.json} shape. */
+    public static JsonValue.Obj agentToJson(AgentConfig cfg, AgentSkillsConfig skills) {
+        Map<String, JsonValue> obj = new LinkedHashMap<>();
+        obj.put("name", JsonValue.of(cfg.name()));
+        if (cfg.system() != null) obj.put("system", JsonValue.of(cfg.system()));
+        obj.put("hidden", JsonValue.of(cfg.hidden()));
+        obj.put("mode", JsonValue.of(cfg.mode()));
+        if (cfg.model() != null) obj.put("model", JsonValue.of(cfg.model()));
+        if (cfg.maxSteps() > 0) obj.put("maxSteps", JsonValue.of((long) cfg.maxSteps()));
+        Map<String, JsonValue> tools = new LinkedHashMap<>();
+        tools.put("allow", JsonValue.of(cfg.toolAllow().stream().map(JsonValue::of).toList()));
+        tools.put("deny", JsonValue.of(cfg.toolDeny().stream().map(JsonValue::of).toList()));
+        obj.put("tools", JsonValue.of(tools));
+        List<JsonValue> perms = new ArrayList<>();
+        for (Rule rule : cfg.permissions()) {
+            Map<String, JsonValue> r = new LinkedHashMap<>();
+            r.put("action", JsonValue.of(rule.action()));
+            r.put("resource", JsonValue.of(rule.resource()));
+            r.put("effect", JsonValue.of(rule.effect().name().toLowerCase(java.util.Locale.ROOT)));
+            perms.add(JsonValue.of(r));
+        }
+        obj.put("permissions", JsonValue.of(perms));
+        obj.put("mcpServers", JsonValue.of(cfg.mcpServers().stream().map(JsonValue::of).toList()));
+        obj.put("rolesAllowed", JsonValue.of(cfg.rolesAllowed().stream().map(JsonValue::of).toList()));
+        if (skills != null) {
+            Map<String, JsonValue> sk = new LinkedHashMap<>();
+            sk.put("enabled", JsonValue.of(skills.enabled()));
+            sk.put("allow", JsonValue.of(skills.allow().stream().map(JsonValue::of).toList()));
+            sk.put("deny", JsonValue.of(skills.deny().stream().map(JsonValue::of).toList()));
+            sk.put("max", JsonValue.of((long) skills.max()));
+            sk.put("prompt", JsonValue.of(skills.prompt()));
+            sk.put("core", JsonValue.of(skills.core().stream().map(JsonValue::of).toList()));
+            SkillFilterOptions filter = skills.filter();
+            if (filter != null) {
+                Map<String, JsonValue> f = new LinkedHashMap<>();
+                f.put("enabled", JsonValue.of(filter.enabled()));
+                f.put("strategy", JsonValue.of(filter.strategy()));
+                f.put("topK", JsonValue.of((long) filter.topK()));
+                f.put("minScore", JsonValue.of(filter.minScore()));
+                f.put("thresholdCount", JsonValue.of((long) filter.thresholdCount()));
+                f.put("alwaysInclude", JsonValue.of(filter.alwaysInclude().stream().map(JsonValue::of).toList()));
+                sk.put("filter", JsonValue.of(f));
+            }
+            obj.put("skills", JsonValue.of(sk));
+        }
+        return new JsonValue.Obj(Map.copyOf(obj));
+    }
+
     private Path globalFile() {
         if (globalSettingsFileProperty != null && globalSettingsFileProperty.isPresent()
                 && !globalSettingsFileProperty.get().isBlank()) {
@@ -466,11 +638,16 @@ public class EngineConfig {
     }
 
     /**
-     * Plan mode writes to {@code ~/.opencode/plan}. Resolve it with the same
+     * Plan mode writes to {@code <workspace>/plans}. Resolve it with the same
      * rule the filesystem tools use so the permission allow-list matches.
      */
-    static String planDirectory() {
-        return Path.of(System.getProperty("user.home", "."), ".opencode", "plan").toString();
+    String planDirectory() {
+        return planDirectory(workspace);
+    }
+
+    static String planDirectory(String workspace) {
+        String ws = (workspace == null || workspace.isBlank()) ? System.getProperty("user.home", ".") : workspace;
+        return Path.of(ws, "plans").toString();
     }
 
     private static List<String> patterns(JsonValue.Obj object, String key) {
@@ -483,33 +660,47 @@ public class EngineConfig {
     }
 
     /** Baseline build agent with the secure defaults. */
-    private static AgentConfig defaultBuildAgent() {
-        String planDir = planDirectory();
-        return new AgentConfig("build", null, false, "all", null, 0,
-                List.of("*"), List.of(),
-                List.of(
-                        new Rule("*", "*", Effect.ALLOW),
-                        new Rule("external_directory", "*", Effect.DENY),
-                        new Rule("read", "*.env", Effect.ASK),
-                        new Rule("edit", "*.env", Effect.DENY),
-                        new Rule("shell", "*", Effect.ASK),
-                        new Rule("external_directory", planDir + "/*", Effect.ALLOW)),
-                List.of("*"));
+    private void replaceAgent(AgentConfig mdAgent) {
+        if (mdAgent == null) return;
+        agents.removeIf(existing -> existing.name().equalsIgnoreCase(mdAgent.name()));
+        agents.add(mdAgent);
+        agentSkills.remove(mdAgent.name().toLowerCase(java.util.Locale.ROOT));
+    }
+
+    private AgentConfig defaultBuildAgent() {
+        // The baseline build agent inherits the configured global default
+        // (allow-all in dev, least-privilege in production). Its own rules are
+        // appended after the global ones by Engine#agentProfile, so a hardcoded
+        // least-privilege set would otherwise override allow-all and ask for
+        // every shell command.
+        List<Rule> rules = new ArrayList<>(ContextBuilder.defaults(permissionDefault));
+        // Build-agent: edit/write/patch erlauben (Least-Privilege: explizit, nicht *:*=ALLOW)
+        rules.add(new Rule("edit", "*", Effect.ALLOW));
+        rules.add(new Rule("write", "*", Effect.ALLOW));
+        rules.add(new Rule("patch", "*", Effect.ALLOW));
+        // Plan-Ordner erlauben (für Plan-Notizen)
+        String planDir = planDirectory(workspace);
+        rules.add(new Rule("external_directory", planDir + "/*", Effect.ALLOW));
+        String buildSystem = "You are a coding agent. Prefer to proceed with a sensible default " +
+                "for simple, low-risk tasks and state your assumptions. Only use the question tool when " +
+                "a wrong choice would cause irreversible or costly effects, or when information is " +
+                "truly missing and cannot be inferred.";
+        return new AgentConfig("build", buildSystem, false, "all", null, 0,
+                List.of("*"), List.of(), rules, List.of("*"));
     }
 
     /** Baseline plan agent: no edits except the plan directory. */
-    private static AgentConfig defaultPlanAgent() {
-        String planDir = planDirectory();
-        return new AgentConfig("plan", "You are in plan mode. Do not edit files.",
-                false, "all", null, 0, List.of("*"), List.of(),
-                List.of(
-                        new Rule("*", "*", Effect.ALLOW),
-                        new Rule("edit", "*", Effect.DENY),
-                        new Rule("external_directory", "*", Effect.DENY),
-                        new Rule("read", "*.env", Effect.ASK),
-                        new Rule("shell", "*", Effect.ASK),
-                        new Rule("external_directory", planDir + "/*", Effect.ALLOW)),
-                List.of("*"));
+    private AgentConfig defaultPlanAgent() {
+        List<Rule> rules = new ArrayList<>(ContextBuilder.leastPrivilegeDefaults());
+        // Plan-Agent: edit bleibt deny (bereits in defaults), nur Plan-Ordner erlauben
+        String planDir = planDirectory(workspace);
+        rules.add(new Rule("external_directory", planDir + "/*", Effect.ALLOW));
+        return new AgentConfig("plan",
+                "You are in plan mode. Do not edit files. Prefer to proceed with a sensible default " +
+                "for simple, low-risk tasks and state your assumptions. Only use the question tool when " +
+                "a wrong choice would cause irreversible or costly effects, or when information is " +
+                "truly missing and cannot be inferred.",
+                false, "all", null, 0, List.of("*"), List.of(), rules, List.of("*"));
     }
 
     /**
@@ -517,7 +708,7 @@ public class EngineConfig {
      * only its own roles. Configured agents win; missing baseline agents are
      * appended.
      */
-    private static void ensureBaselineAgents(List<AgentConfig> agents) {
+    private void ensureBaselineAgents(List<AgentConfig> agents) {
         java.util.Set<String> names = agents.stream()
                 .map(agent -> agent.name().toLowerCase(java.util.Locale.ROOT))
                 .collect(java.util.stream.Collectors.toSet());
@@ -528,7 +719,8 @@ public class EngineConfig {
     public record AgentConfig(String name, String system, boolean hidden, String mode,
                               String model, int maxSteps,
                               List<String> toolAllow, List<String> toolDeny,
-                              List<Rule> permissions, List<String> mcpServers) {
+                              List<Rule> permissions, List<String> mcpServers,
+                              List<String> rolesAllowed) {
         public AgentConfig {
             if (name == null || name.isBlank()) name = "build";
             if (mode == null || mode.isBlank()) mode = "all";
@@ -537,6 +729,25 @@ public class EngineConfig {
             toolDeny = toolDeny == null ? List.of() : List.copyOf(toolDeny);
             permissions = permissions == null ? List.of() : List.copyOf(permissions);
             mcpServers = mcpServers == null ? List.of("*") : List.copyOf(mcpServers);
+            rolesAllowed = normalizeRoles(name, rolesAllowed);
+        }
+
+        /**
+         * Default authorization: the baseline agents are available to everyone;
+         * every other agent is admin-only until explicit roles are configured.
+         */
+        private static List<String> normalizeRoles(String name, List<String> roles) {
+            if (roles != null && !roles.isEmpty()) {
+                List<String> cleaned = roles.stream()
+                        .filter(role -> role != null && !role.isBlank())
+                        .map(String::trim)
+                        .toList();
+                if (!cleaned.isEmpty()) return cleaned;
+            }
+            if ("build".equalsIgnoreCase(name) || "plan".equalsIgnoreCase(name)) {
+                return List.of("*");
+            }
+            return List.of("admin");
         }
         // backward-compatible constructor with secure defaults
         public AgentConfig(String name, String system, boolean hidden) {
@@ -547,8 +758,15 @@ public class EngineConfig {
                             new Rule("read", "*.env", Effect.ASK),
                             new Rule("edit", "*.env", Effect.DENY),
                             new Rule("shell", "*", Effect.ASK),
-                            new Rule("external_directory", EngineConfig.planDirectory() + "/*", Effect.ALLOW)),
+                            new Rule("external_directory", EngineConfig.planDirectory(null) + "/*", Effect.ALLOW)),
                     List.of("*"));
+        }
+
+        // backward-compatible constructor for callers that do not pass roles
+        public AgentConfig(String name, String system, boolean hidden, String mode, String model, int maxSteps,
+                           List<String> toolAllow, List<String> toolDeny,
+                           List<Rule> permissions, List<String> mcpServers) {
+            this(name, system, hidden, mode, model, maxSteps, toolAllow, toolDeny, permissions, mcpServers, null);
         }
 
         // backward-compatible constructor for callers that do not pass mode

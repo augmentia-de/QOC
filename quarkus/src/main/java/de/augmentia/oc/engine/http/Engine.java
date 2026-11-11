@@ -1,6 +1,8 @@
 package de.augmentia.oc.engine.http;
 
 import de.augmentia.oc.engine.core.contract.provider.ModelEvent;
+import de.augmentia.oc.engine.runtime.provider.client.HttpProviderAdapter;
+import de.augmentia.oc.engine.core.contract.provider.OutcomePayload;
 import de.augmentia.oc.engine.core.contract.provider.ModelInfo;
 import de.augmentia.oc.engine.core.contract.provider.Modality;
 import de.augmentia.oc.engine.core.contract.provider.Choice;
@@ -33,6 +35,9 @@ import de.augmentia.oc.engine.adapter.fs.NioFileSystem;
 import de.augmentia.oc.engine.adapter.fs.NioInstructionLoader;
 import de.augmentia.oc.engine.adapter.net.JdkHttpTransport;
 import de.augmentia.oc.engine.adapter.process.JdkProcessRunner;
+import de.augmentia.oc.engine.adapter.process.SandboxedProcessRunner;
+import de.augmentia.oc.engine.core.port.world.ProcessRunner;
+import de.augmentia.oc.engine.core.shell.SandboxMode;
 import de.augmentia.oc.engine.adapter.sql.*;
 import de.augmentia.oc.engine.adapter.sqlite.*;
 import de.augmentia.oc.engine.adapter.time.SystemClock;
@@ -48,6 +53,8 @@ import de.augmentia.oc.engine.runtime.tool.fs.GlobTool;
 import de.augmentia.oc.engine.runtime.tool.fs.GrepTool;
 import de.augmentia.oc.engine.runtime.tool.fs.PatchTool;
 import de.augmentia.oc.engine.runtime.tool.fs.ReadTool;
+import de.augmentia.oc.engine.runtime.observability.CorrelationContext;
+import de.augmentia.oc.engine.runtime.resilience.LoopDetector;
 import de.augmentia.oc.engine.runtime.tool.shell.ProcessRegistry;
 import de.augmentia.oc.engine.runtime.tool.shell.ProcessTool;
 import de.augmentia.oc.engine.runtime.tool.shell.ShellTool;
@@ -61,6 +68,7 @@ import de.augmentia.oc.engine.runtime.tool.email.EmailTool;
 import de.augmentia.oc.engine.runtime.tool.email.EmailLimits;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
 import de.augmentia.oc.engine.runtime.tool.agent.AgentCreateTool;
+import de.augmentia.oc.engine.runtime.tool.agent.AgentListTool;
 import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
 import de.augmentia.oc.engine.runtime.permission.engine.PermissionEngine;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpInstructions;
@@ -121,6 +129,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
@@ -132,7 +141,10 @@ import java.util.concurrent.TimeUnit;
 public class Engine {
 
     @Inject
-    DataSource dataSource;
+    jakarta.enterprise.inject.Instance<DataSource> dataSourceInstance;
+
+    private DataSource dataSource;
+    private boolean memoryMode;
 
     @Inject
     EngineMetrics metrics;
@@ -148,6 +160,10 @@ public class Engine {
 
     private static final Logger LOG = Logger.getLogger(Engine.class);
 
+    /** Per-session LLM call counter. */
+    private final java.util.concurrent.ConcurrentHashMap<SessionId, java.util.concurrent.atomic.AtomicInteger> llmCallCounts =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     @Inject
     jakarta.enterprise.inject.Instance<Tracer> tracerInstance;
 
@@ -155,8 +171,44 @@ public class Engine {
     EngineConfig config;
 
     @Inject
+    @ConfigProperty(name = "engine.storage", defaultValue = "postgres")
+    String storageKind;
+
+    @Inject
     @ConfigProperty(name = "engine.db.kind", defaultValue = "postgresql")
     String dbKind;
+
+    @Inject
+    @ConfigProperty(name = "engine.recovery.enabled", defaultValue = "true")
+    boolean recoveryEnabled;
+
+    @Inject
+    @ConfigProperty(name = "engine.permission.default", defaultValue = "least-privilege")
+    String permissionDefault;
+
+    @Inject
+    @ConfigProperty(name = "engine.model.context-limit", defaultValue = "512000")
+    int modelContextLimit;
+
+    @Inject
+    @ConfigProperty(name = "engine.model.output-limit", defaultValue = "128000")
+    int modelOutputLimit;
+
+    @Inject
+    @ConfigProperty(name = "engine.question.timeout-seconds", defaultValue = "300")
+    int questionTimeoutSeconds;
+
+    @Inject
+    @ConfigProperty(name = "engine.question.auto-retry", defaultValue = "false")
+    boolean questionAutoRetry;
+
+    @Inject
+    @ConfigProperty(name = "engine.question.max-retries", defaultValue = "1")
+    int questionMaxRetries;
+
+    @Inject
+    @ConfigProperty(name = "engine.permission.ask-mode", defaultValue = "deny")
+    String permissionAskMode;
 
     @Inject
     @ConfigProperty(name = "engine.firecrawl.api-key")
@@ -251,8 +303,103 @@ public class Engine {
     java.util.Optional<String> emailSmtpPassword;
 
     @Inject
-    @ConfigProperty(name = "engine.session.retention-days", defaultValue = "14")
+    @ConfigProperty(name = "engine.session.retention-days", defaultValue = "7")
     long sessionRetentionDays;
+
+    @ConfigProperty(name = "engine.audit.retention-days", defaultValue = "2")
+    long auditRetentionDays;
+
+    @Inject
+    @ConfigProperty(name = "engine.shell.sandbox.enabled", defaultValue = "true")
+    boolean shellSandboxEnabled;
+
+    @Inject
+    @ConfigProperty(name = "engine.shell.sandbox.mode", defaultValue = "workspace-write")
+    String shellSandboxMode;
+
+    @Inject
+    @ConfigProperty(name = "engine.shell.sandbox.uid", defaultValue = "-1")
+    int shellSandboxUid;
+
+    @Inject
+    @ConfigProperty(name = "engine.shell.sandbox.gid", defaultValue = "-1")
+    int shellSandboxGid;
+
+    @Inject
+    @ConfigProperty(name = "engine.provider.retry.max-attempts", defaultValue = "3")
+    int retryMaxAttempts;
+
+    @Inject
+    @ConfigProperty(name = "engine.provider.retry.delay1-seconds", defaultValue = "10")
+    long retryDelay1Seconds;
+
+    @Inject
+    @ConfigProperty(name = "engine.provider.retry.delay2-seconds", defaultValue = "30")
+    long retryDelay2Seconds;
+
+    @Inject
+    @ConfigProperty(name = "engine.provider.api-key", defaultValue = "demo-key")
+    String providerApiKey;
+
+    @Inject
+    @ConfigProperty(name = "engine.preflight.enabled", defaultValue = "true")
+    boolean preflightEnabled;
+
+    @Inject
+    @ConfigProperty(name = "engine.preflight.ttl-seconds", defaultValue = "60")
+    long preflightTtlSeconds;
+
+    @Inject
+    @ConfigProperty(name = "engine.preflight.timeout-seconds", defaultValue = "5")
+    long preflightTimeoutSeconds;
+
+    @Inject
+    @ConfigProperty(name = "engine.preflight.dns.enabled", defaultValue = "true")
+    boolean preflightDnsEnabled;
+
+    @Inject
+    @ConfigProperty(name = "engine.preflight.http-check.enabled", defaultValue = "true")
+    boolean preflightHttpCheckEnabled;
+
+    @Inject
+    @ConfigProperty(name = "engine.step.timeout-seconds", defaultValue = "30")
+    long stepTimeoutSeconds;
+
+    @Inject
+    @ConfigProperty(name = "engine.loop.detection.threshold", defaultValue = "5")
+    int loopDetectionThreshold;
+
+    @Inject
+    @ConfigProperty(name = "engine.triage.enabled", defaultValue = "false")
+    boolean triageEnabled;
+
+    @Inject
+    @ConfigProperty(name = "engine.triage.max-attempts", defaultValue = "3")
+    int triageMaxAttempts;
+
+    @Inject
+    @ConfigProperty(name = "engine.webhook.enabled", defaultValue = "false")
+    boolean webhookEnabled;
+
+    @Inject
+    @ConfigProperty(name = "engine.webhook.url", defaultValue = "none")
+    String webhookUrl;
+
+    @Inject
+    @ConfigProperty(name = "engine.webhook.format", defaultValue = "generic")
+    String webhookFormat;
+
+    @Inject
+    @ConfigProperty(name = "engine.shell.sandbox.bwrap", defaultValue = "bwrap")
+    String shellSandboxBwrap;
+
+    @Inject
+    @ConfigProperty(name = "engine.shell.sandbox.env-allowlist", defaultValue = "PATH,HOME,LANG,LC_ALL,LC_CTYPE,TMPDIR,TERM")
+    String shellSandboxEnvAllowlist;
+
+    @Inject
+    @ConfigProperty(name = "engine.shell.sandbox.extraWritable", defaultValue = "")
+    java.util.Optional<String> shellSandboxExtraWritable;
 
     @Inject
     @ConfigProperty(name = "engine.revert.snapshot.enabled", defaultValue = "true")
@@ -273,7 +420,7 @@ public class Engine {
     boolean asyncApprovalEnabled;
 
     @Inject
-    WebQuestionSource questionSource;
+    DurableQuestionSource questionSource;
 
     private TodoTool todoTool;
 
@@ -282,11 +429,22 @@ public class Engine {
     private ConversationStore conversation;
     private SessionStore sessions;
     private SessionService sessionService;
+    private de.augmentia.oc.engine.runtime.QocEngine qocEngine;
+    private de.augmentia.oc.engine.core.wiring.Stores storesField;
+    private de.augmentia.oc.engine.core.wiring.StorageConfig storageConfigField;
     private ContextBuilder contextBuilder;
     private CommandLoader commandLoader;
     private SkillCatalog skillCatalog = SkillCatalog.empty();
     private TitleGenerator titleGenerator;
     private Step step;
+
+    // Resilience components (Phase 1)
+    private de.augmentia.oc.engine.runtime.resilience.PreflightChecker preflightChecker;
+    private de.augmentia.oc.engine.runtime.resilience.ErrorClassifier errorClassifier;
+    private de.augmentia.oc.engine.runtime.resilience.RetryPolicy retryPolicy;
+    private de.augmentia.oc.engine.runtime.resilience.LoopDetector loopDetector;
+    private de.augmentia.oc.engine.runtime.resilience.TriageService triageService;
+    private de.augmentia.oc.engine.runtime.resilience.WebhookAlerter webhookAlerter;
     private ToolSnapshot toolSnapshot;
     private ToolRegistry registry;
     private InstructionLoader instructionLoader = InstructionLoader.none();
@@ -306,23 +464,34 @@ public class Engine {
     A2AConfig a2aConfig;
     private ModelRef modelRef;
     private FileSystem fileSystem;
+    private Path workspacePath;
+    private Path workspaceBase;
+
+    private CredentialStore credentialStore;
     private InstructionStore instructions;
     private CompactionService compaction;
-    private McpServerManager mcp;
+    private McpRegistry mcp;
     private List<Rule> allowAll;
     private SubagentTool subagentTool;
     private ProcessRegistry processRegistry;
     private PermissionEngine permissionEngine;
     private SessionRetention sessionRetention;
-    private ScheduledExecutorService retentionExecutor;
+    private RetentionService retentionService;
     private SnapshotStore snapshots;
+    private SnapshotStore storageSnapshots;
     private Revert revert;
     private final java.util.concurrent.ConcurrentHashMap<SessionId, CapturedSnapshot> revertSnapshots =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** Roles captured at session creation for subagent authorization. */
+    private final java.util.concurrent.ConcurrentHashMap<SessionId, List<String>> sessionRoles =
             new java.util.concurrent.ConcurrentHashMap<>();
     private record CapturedSnapshot(SnapshotId id, List<Path> paths) {}
     private final EventCodec codec = EventCodec.standard();
     private final java.util.concurrent.ConcurrentHashMap<SessionId, Thread> running =
             new java.util.concurrent.ConcurrentHashMap<>();
+    /** Runtime-owned registry of parent/child subagent sessions. */
+    private final de.augmentia.oc.engine.runtime.tool.subagent.SubagentSessionRegistry subagentRegistry =
+            new de.augmentia.oc.engine.runtime.tool.subagent.InMemorySubagentSessionRegistry();
     /** Bounded prompt admission: overload degrades to BUSY instead of OOM. */
     private java.util.concurrent.Semaphore promptSlots;
 
@@ -339,56 +508,86 @@ public class Engine {
     @ConfigProperty(name = "engine.turn.max.wall-minutes", defaultValue = "30")
     long maxTurnWallMinutes;
 
+    @ConfigProperty(name = "engine.memory.max-bytes", defaultValue = "1073741824")
+    long memoryMaxBytes;
+
     @PostConstruct
     void wire() {
         effectiveAuthorizer = new SkillAuthorizer(toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer);
         clock = new SystemClock();
         promptSlots = new java.util.concurrent.Semaphore(Math.max(1, maxConcurrentPrompts));
-        boolean sqlite = "sqlite".equalsIgnoreCase(dbKind);
-        if (sqlite) Sqlite.enableWal(dataSource);
-        journal = sqlite ? new SqliteJournal(dataSource, clock) : new SqlJournal(dataSource, clock);
-        conversation = sqlite ? new SqliteConversation(dataSource) : new SqlConversation(dataSource);
-        sessions = sqlite ? new SqliteSessions(dataSource) : new SqlSessions(dataSource);
+
+        // Startup guard: memory mode disables DB and recovery.
+        memoryMode = "memory".equalsIgnoreCase(storageKind);
+        if (memoryMode && recoveryEnabled) {
+            throw new IllegalStateException("Recovery is not available in memory mode");
+        }
+        if (memoryMode) {
+            // Do not resolve the datasource at all: Quarkus keeps an inactive
+            // synthetic bean whose proxy would only fail on first use.
+            dataSource = null;
+            LOG.info("Storage mode: memory (no database, no recovery)");
+        } else {
+            dataSource = dataSourceInstance.get();
+            if (!de.augmentia.oc.engine.adapter.sql.DbHealthSql.isHealthy(dataSource, 3)) {
+                throw new IllegalStateException(
+                        "Storage mode " + storageKind + " requires an active datasource");
+            }
+            LOG.info("Storage mode: " + dbKind);
+        }
+        de.augmentia.oc.engine.core.wiring.StorageKind kind;
+        if (memoryMode) {
+            kind = de.augmentia.oc.engine.core.wiring.StorageKind.MEMORY;
+        } else if ("sqlite".equalsIgnoreCase(storageKind) || "sqlite".equalsIgnoreCase(dbKind)) {
+            kind = de.augmentia.oc.engine.core.wiring.StorageKind.SQLITE;
+        } else {
+            kind = de.augmentia.oc.engine.core.wiring.StorageKind.POSTGRES;
+        }
+        if (kind == de.augmentia.oc.engine.core.wiring.StorageKind.SQLITE) Sqlite.enableWal(dataSource);
+
+        // Shared RuntimeState for in-memory adapters (null for DB backends)
+        de.augmentia.oc.engine.adapter.memory.RuntimeState memoryState = null;
+        if (kind == de.augmentia.oc.engine.core.wiring.StorageKind.MEMORY) {
+            memoryState = new de.augmentia.oc.engine.adapter.memory.RuntimeState(
+                    new de.augmentia.oc.engine.adapter.memory.MemoryBudget(memoryMaxBytes));
+        }
+
+        de.augmentia.oc.engine.core.wiring.StorageConfig storageConfig =
+                new de.augmentia.oc.engine.core.wiring.StorageConfig(kind);
+        de.augmentia.oc.engine.core.wiring.Stores stores =
+                de.augmentia.oc.engine.adapter.StorageFactory.create(
+                        storageConfig, memoryState, dataSource, clock, null);
+
+        journal = stores.journal();
+        storesField = stores;
+        storageConfigField = storageConfig;
+        conversation = stores.conversation();
+        sessions = (SessionStore) stores.sessions();
         sessionWorkspaces = sessions instanceof de.augmentia.oc.engine.core.port.store.SessionWorkspaceStore
                 ? (de.augmentia.oc.engine.core.port.store.SessionWorkspaceStore) sessions : null;
-        toolResultCache = sqlite ? new de.augmentia.oc.engine.adapter.sqlite.SqliteToolResultCache(dataSource)
-                : new de.augmentia.oc.engine.adapter.sql.SqlToolResultCache(dataSource);
+        storageSnapshots = stores.snapshots();
+        toolResultCache = stores.toolCache();
         instanceId = java.util.UUID.randomUUID().toString();
-        ClaimStore claims = sqlite ? new SqliteClaims(dataSource) : new SqlClaims(dataSource);
-        ApprovalStore approvals = sqlite ? new SqliteApprovals(dataSource) : new SqlApprovals(dataSource);
-        instructions = sqlite ? new SqliteInstructions(dataSource) : new SqlInstructions(dataSource);
-        toolOutput = sqlite
-                ? new SqliteToolOutput(dataSource, Path.of("tool-output"))
-                : new SqlToolOutput(dataSource, Path.of("tool-output"));
-        SessionWake wake = session -> {
-            // Background notification: if the session is not currently running,
-            // trigger a runPrompt in a background thread to process pending
-            // background subagent results. This is a best-effort notification;
-            // the parent can also retrieve results via subagent(sessionID=...).
-            if (running.containsKey(session)) {
-                LOG.debug("SessionWake: session " + session.value() + " is running, skip");
-                return;
-            }
-            new Thread(() -> {
-                try {
-                    // Check for completed background subagent results
-                    // and process them via a synthetic prompt.
-                    LOG.infof("SessionWake: processing background results for %s", session.value());
-                } catch (Exception e) {
-                    LOG.warn("SessionWake failed for " + session.value() + ": " + e.getMessage());
-                }
-            }, "wake-" + session.value()).start();
-        };
+        ClaimStore claims = stores.claims();
+        ApprovalStore approvals = stores.approvals();
+        instructions = stores.instructions();
+        toolOutput = stores.toolOutputs();
+        credentialStore = stores.credentials();
+        // SessionWake is intentionally a no-op: background subagent results are
+        // retrieved explicitly via subagent(sessionID=...) or the task registry.
+        // Auto-resume via a synthetic prompt is not implemented (H12).
+        SessionWake wake = session -> LOG.debugf("SessionWake: no-op for %s", session.value());
 
         sessionService = new SessionService(journal, sessions, wake, sessions::removeInbox);
         sessionRetention = new SessionRetention(sessions, journal, clock, sessionRetentionDays);
-        ApprovalStore permissionApprovals = sqlite ? new SqliteApprovals(dataSource) : new SqlApprovals(dataSource);
-        CredentialStore credentialStore = sqlite ? new SqliteCredentials(dataSource) : new SqlCredentials(dataSource);
+        ApprovalStore permissionApprovals = stores.approvals();
         de.augmentia.oc.engine.core.port.human.ApprovalSource effectiveApproval =
                 asyncApprovalEnabled && durableApprovalSource != null
                         ? durableApprovalSource : approvalSource;
+        de.augmentia.oc.engine.core.contract.permission.AskMode askMode =
+                parseAskMode(permissionAskMode);
         permissionEngine = new PermissionEngine(Option.some(permissionApprovals),
-                Option.some(effectiveApproval), Option.some((PolicySource) () -> List.of()), Option.none());
+                Option.some(effectiveApproval), Option.some((PolicySource) () -> List.of()), Option.none(), askMode);
         if (approvalSource != null) {
             int orphaned = approvalSource.recoverOrphans();
             if (orphaned > 0) {
@@ -396,14 +595,31 @@ public class Engine {
             }
         }
 
-        Path workspacePath = Path.of(config.workspace()).toAbsolutePath().normalize();
-        commandLoader = new CommandLoader(workspacePath,
+        workspacePath = Path.of(config.workspace()).toAbsolutePath().normalize();
+        try {
+            workspacePath = workspacePath.toRealPath();
+        } catch (java.io.IOException ignored) {
+            // Keep the logical path when the workspace does not exist yet.
+        }
+        workspaceBase = workspacePath;
+        buildWorkspaceRuntime();
+    }
+
+
+    private void buildWorkspaceRuntime() {
+commandLoader = new CommandLoader(workspacePath,
                 Path.of(System.getProperty("user.home", "."), ".config", "opencode"));
         NioFileSystem nio = new NioFileSystem(workspacePath);
         fileSystem = new CachedFileSystem(nio);
         FileSystem fs = fileSystem;
-        snapshots = sqlite ? new SqliteSnapshots(dataSource, fs) : new SqlSnapshots(dataSource, fs);
+        snapshots = memoryMode
+                ? storageSnapshots
+                : ("sqlite".equalsIgnoreCase(dbKind)
+                        ? new SqliteSnapshots(dataSource, fs)
+                        : new SqlSnapshots(dataSource, fs));
         revert = new Revert(journal, Option.some(snapshots), Option.some(instructions));
+        // workspaceBase stays at the root workspace set in wire(); it must not
+        // follow workspace switches, otherwise allowedBaseFor nests per user.
         FileAccess access = new FileAccess(fs, workspacePath, workspacePath);
         permissionGate = request -> {
             SessionInfo info = sessions.info(request.sessionId()).orElse(null);
@@ -414,10 +630,12 @@ public class Engine {
                 try {
                     String agentName = agentCatalogue.nameOf(info.agent());
                     EngineConfig.AgentConfig cfg = agentCatalogue.config(agentName);
-                    if (cfg != null && !cfg.permissions().isEmpty()) {
-                        agentRules = cfg.permissions();
-                    }
-                    agentRules = withSkillRules(agentName, agentRules);
+                    // Same rule set as the context builder: global defaults first,
+                    // then agent-specific rules (last match wins). Without this,
+                    // ENGINE_PERMISSION_DEFAULT is dead as soon as an agent declares
+                    // any permission, and unlisted actions (e.g. read) fall through
+                    // to NO_MATCH_EFFECT=ASK.
+                    agentRules = agentProfile(info.agent(), agentName, cfg).permissions();
                 } catch (RuntimeException e) {
                     LOG.warnf("cannot resolve agent rules for %s: %s", info.agent(), e.getMessage());
                 }
@@ -443,10 +661,11 @@ public class Engine {
         registry.register(WriteTool.definition(fs, access, permissionGate));
         registry.register(EditTool.definition(fs, access, permissionGate));
         registry.register(AgentCreateTool.definition(agentCatalogue, permissionGate));
+        registry.register(AgentListTool.definition(agentCatalogue));
         registry.register(PatchTool.definition(fs, access, permissionGate));
         registry.register(GlobTool.definition(fs, access, permissionGate));
         registry.register(GrepTool.definition(fs, access, permissionGate, toolOutput));
-        JdkProcessRunner processRunner = new JdkProcessRunner();
+        ProcessRunner processRunner = createProcessRunner(workspacePath);
         processRegistry = new ProcessRegistry();
         registry.register(ShellTool.definition(processRunner, workspacePath, workspacePath, null,
                 permissionGate, processRegistry));
@@ -514,7 +733,9 @@ public class Engine {
         } else {
             LOG.info("worktree tools disabled: git is not available or the workspace is not a git repository");
         }
-        registry.register(QuestionTool.definition(new QuestionTool(questionSource)));
+        int qMaxRetries = questionAutoRetry ? questionMaxRetries : 0;
+        long qTimeout = questionTimeoutSeconds;
+        registry.register(QuestionTool.definition(new QuestionTool(questionSource, qMaxRetries, qTimeout)));
         // Skills are project text, loaded on request: <workspace>/skill(s),
         // <workspace>/.opencode/skills and any configured skills.paths.
         List<Path> skillRoots = new ArrayList<>();
@@ -534,41 +755,93 @@ public class Engine {
             LOG.infof("loaded %d skill(s): %s", skillCatalog.all().size(),
                     skillCatalog.all().stream().map(skill -> skill.id().value()).toList());
         }
-        java.util.function.Function<AgentId, List<Rule>> skillRules = agentId ->
-                agentProfile(agentId, agentCatalogue.nameOf(agentId),
-                        agentCatalogue.config(agentCatalogue.nameOf(agentId))).permissions();
+        java.util.function.Function<AgentId, List<Rule>> skillRules = agentId -> {
+            String agentName = agentCatalogue.nameOf(agentId);
+            EngineConfig.AgentConfig cfg = agentName == null ? null : agentCatalogue.config(agentName);
+            return agentProfile(agentId, agentName, cfg).permissions();
+        };
         registry.register(SkillTool.definition(skillCatalog, skillRules));
         registry.register(SkillTool.listDefinition(skillCatalog, skillRules));
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
-        mcp = new McpServerManager(registry, new JdkHttpTransport(), new JdkProcessRunner(),
+        mcp = new McpRegistry(registry, new JdkHttpTransport(), new JdkProcessRunner(),
                 Option.some(credentialStore));
-        for (de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig server : config.mcpServers()) {
-            mcp.add(server);
-        }
-        registry.register(McpResourceTools.list(mcp));
-        registry.register(McpResourceTools.read(mcp));
-        try {
-            List<de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider.A2AEndpoint> endpoints =
-                    a2aConfig == null ? List.of() : a2aConfig.endpoints();
-            de.augmentia.oc.engine.runtime.tool.a2a.A2AAgentCardCache cards =
-                    a2aConfig == null ? null : a2aConfig.cards();
-            for (de.augmentia.oc.engine.core.contract.tool.ToolDefinition a2aTool :
-                    de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider.load(endpoints, cards)) {
-                registry.register(a2aTool);
-            }
-        } catch (RuntimeException e) {
-            LOG.warnf("A2A tool registration failed: %s", e.getMessage());
-        }
+        mcp.setup(registry, config, a2aConfig);
+        registry.register(McpResourceTools.list(mcp.manager()));
+        registry.register(McpResourceTools.read(mcp.manager()));
         toolSnapshot = registry.snapshot(allowAll);
         toolRuntime = new ToolRuntime(toolSnapshot, effectiveAuthorizer,
-                permissionGate, toolHooks, toolOutput, toolResultCache);
+                permissionGate, toolHooks, toolOutput, toolResultCache, stepTimeoutSeconds);
         instructionLoader = instructionsEnabled
                 ? new NioInstructionLoader(Path.of(System.getProperty("user.home", "."),
                         ".config", "opencode"))
                 : InstructionLoader.none();
         contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
-                instructions == null ? Option.none() : Option.some(instructions), config.skillFilter());
+                instructions == null ? Option.none() : Option.some(instructions), config.skillFilter(),
+                ContextBuilder.leastPrivilegeDefaults());
+
+        // Create QocEngine (BaseEngine) for workflow delegation
+        // Use Quarkus's stores for QocEngine (shared data)
+        de.augmentia.oc.engine.runtime.QocEngine.EngineConfig qocConfig =
+                new de.augmentia.oc.engine.runtime.QocEngine.EngineConfig(
+                        retryDelay1Seconds, retryDelay2Seconds, retryMaxAttempts,
+                        preflightEnabled, preflightTtlSeconds, preflightTimeoutSeconds,
+                        preflightDnsEnabled, preflightHttpCheckEnabled,
+                        loopDetectionThreshold, triageEnabled, triageMaxAttempts,
+                        webhookEnabled, webhookUrl, webhookFormat,
+                        stepTimeoutSeconds, Math.max(1, maxTurnToolCalls), Math.max(0, maxTurnTokens),
+                        Math.max(1, maxTurnWallMinutes));
+        qocEngine = de.augmentia.oc.engine.runtime.QocEngine.create(
+                storesField, storageConfigField, clock, recoveryEnabled,
+                provider,
+                qocConfig,
+                new QuarkusEventPublisher(eventBus),
+                new de.augmentia.oc.engine.runtime.callback.AgentResolver() {
+                    public String nameOf(de.augmentia.oc.engine.core.model.AgentId agent) {
+                        return agentCatalogue.nameOf(agent);
+                    }
+                    public de.augmentia.oc.engine.runtime.QocEngine.AgentConfig config(String name) {
+                        EngineConfig.AgentConfig cfg = agentCatalogue.config(name);
+                        if (cfg == null) return null;
+                        return new de.augmentia.oc.engine.runtime.QocEngine.AgentConfig(
+                                name, cfg.model(), 0.3, 4096, 1.0, null,
+                                java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), false);
+                    }
+                },
+                new de.augmentia.oc.engine.runtime.callback.TracerProvider() {
+                    public Object startSpan(String name, java.util.Map<String, String> attributes) {
+                        return tracer().spanBuilder(name).startSpan();
+                    }
+                    public void endSpan(Object span) {
+                        if (span instanceof io.opentelemetry.api.trace.Span s) s.end();
+                    }
+                },
+                de.augmentia.oc.engine.adapter.ToolFactory.create(java.nio.file.Path.of(".")));
+        // Crash recovery: resume sessions that were interrupted by a previous process stop.
+        if (!memoryMode && recoveryEnabled) {
+            try {
+                qocEngine.recover();
+                LOG.info("Crash recovery completed");
+            } catch (RuntimeException e) {
+                LOG.warn("Crash recovery failed: " + e.getMessage(), e);
+            }
+        }
+        // Resilience components
+        preflightChecker = new de.augmentia.oc.engine.runtime.resilience.DefaultPreflightChecker(
+                java.net.http.HttpClient.newBuilder()
+                        .connectTimeout(java.time.Duration.ofSeconds(Math.max(1, preflightTimeoutSeconds)))
+                        .build(),
+                java.time.Duration.ofSeconds(Math.max(1, preflightTimeoutSeconds)),
+                java.time.Duration.ofSeconds(Math.max(0, preflightTtlSeconds)),
+                preflightDnsEnabled,
+                preflightHttpCheckEnabled);
+        errorClassifier = new de.augmentia.oc.engine.runtime.resilience.DefaultErrorClassifier(loopDetectionThreshold);
+        retryPolicy = new de.augmentia.oc.engine.runtime.resilience.RetryPolicy.Default();
+        loopDetector = new de.augmentia.oc.engine.runtime.resilience.LoopDetector.Default();
+        webhookAlerter = new de.augmentia.oc.engine.runtime.resilience.WebhookAlerter.Default(webhookUrl, webhookFormat);
         modelRef = new ModelRef(ProviderId.create(), ModelId.create());
+        triageService = triageEnabled
+                ? new de.augmentia.oc.engine.runtime.resilience.LlmTriageService(provider, modelRef)
+                : new de.augmentia.oc.engine.runtime.resilience.NoOpTriageService();
         titleGenerator = new TitleGenerator(provider, modelRef);
         step = new Step(provider, toolRuntime);
         if (subagentTool != null) {
@@ -577,70 +850,16 @@ public class Engine {
         }
         compaction = new CompactionService(journal, conversation, instructions,
                 new Compaction(journal, provider), clock, 8, provider);
-        startRetention();
-    }
-
-    private void startRetention() {
-        if (sessionRetentionDays <= 0) return;
-        retentionExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "qoc-session-retention");
-            thread.setDaemon(true);
-            return thread;
-        });
-        retentionExecutor.scheduleWithFixedDelay(this::purgeExpiredSessions, 0, 1, TimeUnit.HOURS);
-        // Ephemeral one-shot cleanup on startup + hourly.
-        retentionExecutor.scheduleWithFixedDelay(this::sweepEphemeralOrphans, 0, 1, TimeUnit.HOURS);
-        // Paused-session sweeper: expire stale paused sessions.
-        retentionExecutor.scheduleWithFixedDelay(this::sweepPausedSessions, 0, 1, TimeUnit.HOURS);
-    }
-
-    private void sweepEphemeralOrphans() {
-        if (sessionWorkspaces == null) return;
-        try {
-            for (SessionId id : sessionWorkspaces.ephemeralOrphans(instanceId)) {
-                try { sessionRetention.delete(id); } catch (RuntimeException ignored) {}
-                String root = sessionWorkspaces.workspaceRoot(id);
-                if (root != null && !root.isBlank()) {
-                    try { deleteDirectoryRecursively(Path.of(root)); } catch (RuntimeException ignored) {}
-                }
-                try { sessionWorkspaces.deleteWorkspace(id); } catch (RuntimeException ignored) {}
-            }
-        } catch (RuntimeException e) {
-            LOG.warn("ephemeral orphan sweep failed: " + e.getMessage());
-        }
-    }
-
-    private void sweepPausedSessions() {
-        if (sessionWorkspaces == null) return;
-        try {
-            // Expire paused sessions older than retentionDays.
-            for (SessionInfo info : sessions.list()) {
-                if (!"suspended".equals(sessionWorkspaces.state(info.id()))) continue;
-                if (info.updated().isBefore(clock.now().minus(java.time.Duration.ofDays(
-                        Math.max(1, sessionRetentionDays))))) {
-                    sessionWorkspaces.updateState(info.id(), "expired");
-                    pausedPrompts.remove(info.id());
-                    sessionWorkspaces.setPausedPrompt(info.id(), null);
-                    LOG.infof("expired paused session %s", info.id().value());
-                }
-            }
-        } catch (RuntimeException e) {
-            LOG.warn("paused session sweep failed: " + e.getMessage());
-        }
-    }
-
-    private void purgeExpiredSessions() {
-        try {
-            int deleted = sessionRetention.purgeExpired(id -> running.containsKey(id));
-            if (deleted > 0) LOG.infof("session retention deleted %d session(s)", deleted);
-        } catch (RuntimeException e) {
-            LOG.warn("session retention failed: " + e.getMessage(), e);
-        }
+        retentionService = new RetentionService(sessionRetention, sessions, journal, conversation, clock,
+                (int) sessionRetentionDays, (int) auditRetentionDays, sessionWorkspaces, processRegistry,
+                sessionRoles, running, instanceId, dataSource, toolResultCache, approvalSource,
+                durableApprovalSource);
+        retentionService.start();
     }
 
     @PreDestroy
     void shutdownRetention() {
-        if (retentionExecutor != null) retentionExecutor.shutdownNow();
+        if (retentionService != null) retentionService.shutdown();
         if (processRegistry != null) processRegistry.closeAll();
         if (subagentTool != null) subagentTool.close();
     }
@@ -653,9 +872,12 @@ public class Engine {
         if (processRegistry != null) processRegistry.closeSession(id);
         if (subagentTool != null) subagentTool.closeSession(id);
         if (toolResultCache != null) {
-            try { toolResultCache.deleteBySession(id.value()); } catch (RuntimeException ignored) {}
+            try { toolResultCache.deleteBySession(id.value()); } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
         }
-        return sessionRetention.delete(id);
+        boolean deleted = sessionRetention.delete(id);
+        sessionRoles.remove(id);
+        subagentRegistry.remove(id);
+        return deleted;
     }
 
     public SessionId createSession() {
@@ -675,14 +897,36 @@ public class Engine {
     }
 
     public SessionId createSession(String agentName, String user, String mode, boolean retain) {
+        return createSession(agentName, user, mode, retain, List.of("*"));
+    }
+
+    public SessionId createSession(String agentName, String user, String mode, boolean retain,
+                                   List<String> roles) {
         String normalizedUser = (user == null || user.isBlank()) ? "anonymous" : user.trim();
         String normalizedMode = (mode == null || mode.isBlank()) ? "workspace" : mode.trim().toLowerCase();
-        Path base = Path.of(config.workspace()).toAbsolutePath().normalize();
+        // Session-specific (ephemeral) workspaces are only created in serverless mode.
+        // In server mode, ephemeral requests fall back to the regular workspace directory.
+        if ("ephemeral".equals(normalizedMode) && !isServerlessMode()) {
+            normalizedMode = "workspace";
+        }
+        // Use the fixed workspace base (not the mutable config.workspace()) so that
+        // user-specific directories are always relative to the original base,
+        // regardless of previous workspace switches.
+        Path base = (workspacePath != null ? workspacePath : Path.of(config.workspace())).toAbsolutePath().normalize();
         Path directory = base;
-        if (!"opencode".equalsIgnoreCase(normalizedUser) && !"anonymous".equalsIgnoreCase(normalizedUser)) {
-            Path candidate = base.resolve(normalizedUser).normalize();
-            if (candidate.startsWith(base) && java.nio.file.Files.isDirectory(candidate)) {
-                directory = candidate;
+        if (!"opencode".equalsIgnoreCase(normalizedUser) && !"anonymous".equalsIgnoreCase(normalizedUser)
+                && !"local".equalsIgnoreCase(normalizedUser)) {
+            Path candidate = base.resolve("user-ws").resolve(normalizedUser).normalize();
+            if (candidate.startsWith(base)) {
+                if (!java.nio.file.Files.isDirectory(candidate)) {
+                    try {
+                        java.nio.file.Files.createDirectories(candidate);
+                    } catch (java.io.IOException ignored) {
+                    }
+                }
+                if (java.nio.file.Files.isDirectory(candidate)) {
+                    directory = candidate;
+                }
             }
         }
         Location location = new Location(directory, ProjectId.create(), Option.none());
@@ -694,17 +938,23 @@ public class Engine {
         AgentId agent = selected == null ? agentCatalogue.primaryId() : selected;
         Instant now = clock.now();
         SessionId id = sessionService.create(location, agent, Option.none(), now);
-        sessions.put(new SessionInfo(id, location.projectId(), location, "New session", agent,
+        String aName = agentCatalogue.nameOf(agent);
+        if (aName == null || aName.isBlank()) aName = "session";
+        // Title: Name + HHMMSS + SessionId (for logical caller identification)
+        java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+                .withZone(java.time.ZoneId.systemDefault());
+        String ts = fmt.format(now);
+        String title = aName + " " + ts;
+        sessions.put(new SessionInfo(id, location.projectId(), location, title, agent,
                 Option.none(), List.of(), Money.zero(), TokenCount.zero(), now, now,
-                Option.none(), Option.none(), 0, Option.none()));
+                Option.none(), Option.none(), 0, Option.none(), normalizedUser));
         if (sessionWorkspaces != null) {
             String root = directory.toString();
             if ("ephemeral".equals(normalizedMode)) {
                 Path tempRoot = Path.of(config.sessionTempDir());
                 if (!tempRoot.isAbsolute()) tempRoot = base.resolve(tempRoot);
-                Path sessionDir = tempRoot.toAbsolutePath().normalize()
-                        .resolve(instanceId == null ? "default" : instanceId)
-                        .resolve(id.value());
+                // Session-specific workspace named directly after the session ID.
+                Path sessionDir = tempRoot.toAbsolutePath().normalize().resolve(id.value());
                 try {
                     java.nio.file.Files.createDirectories(sessionDir);
                 } catch (java.io.IOException e) {
@@ -716,6 +966,7 @@ public class Engine {
                 sessionWorkspaces.put(id, "workspace", "active", root, instanceId, retain);
             }
         }
+        sessionRoles.put(id, roles == null ? List.of() : List.copyOf(roles));
         return id;
     }
 
@@ -750,7 +1001,7 @@ public class Engine {
         sessions.put(new SessionInfo(id, info.projectId(), info.location(), info.title(),
                 selected, info.model(), info.permissions(), info.cost(), info.tokens(),
                 info.created(), clock.now(), info.idle(), info.suspended(),
-                info.resumeAttempts(), info.archived()));
+                info.resumeAttempts(), info.archived(), info.ownerId()));
         journal.append(new EventDraft(id.value(), 1,
                 new SessionEvent.SessionAgentSelected(id, selected, Option.some(info.agent()))));
         return Option.some(selected);
@@ -783,7 +1034,7 @@ public class Engine {
         List<PermissionRequest> inMemory = permissionEngine.pending().list(id);
         if (approvalSource == null) return inMemory;
         List<PermissionRequest> merged = new ArrayList<>(inMemory);
-        for (WebApprovalSource.PendingApproval durable : approvalSource.pending(id.value())) {
+        for (de.augmentia.oc.engine.core.port.store.PendingApprovalStore.PendingApproval durable : approvalSource.pending(id.value())) {
             boolean present = inMemory.stream().anyMatch(request ->
                     request.id().value().equals(durable.id()));
             if (present) continue;
@@ -804,6 +1055,30 @@ public class Engine {
 
     public List<PermissionRequest> allPendingPermissions() {
         return permissionEngine.pending().list(null);
+    }
+
+    /** Pending permissions for a session plus its direct child sessions. */
+    public List<PermissionRequest> pendingPermissionsForChildren(SessionId id) {
+        if (id == null) return List.of();
+        List<PermissionRequest> result = new ArrayList<>(pendingPermissions(id));
+        for (SessionId child : subagentRegistry.children(id)) {
+            result.addAll(pendingPermissions(child));
+        }
+        // Deduplicate by request id.
+        Map<String, PermissionRequest> byId = new LinkedHashMap<>();
+        for (PermissionRequest r : result) byId.putIfAbsent(r.id().value(), r);
+        return List.copyOf(byId.values());
+    }
+
+    /** Pending questions for a session plus its direct child sessions. */
+    public List<WebQuestionSource.Pending> pendingQuestionsForChildren(SessionId id) {
+        if (id == null || questionSource == null) return List.of();
+        java.util.Set<SessionId> sessions = new java.util.LinkedHashSet<>();
+        sessions.add(id);
+        sessions.addAll(subagentRegistry.children(id));
+        return questionSource.listPending().stream()
+                .filter(p -> p.session() != null && sessions.contains(p.session()))
+                .toList();
     }
 
     public Option<ReplyOutcome> replyPermission(SessionId id, PermissionRequestId requestId,
@@ -830,6 +1105,25 @@ public class Engine {
      * snapshot per session (the last turn); capture failures never block the
      * prompt, they only disable file restore for that revert.
      */
+    private void purgeDecidedApprovals() {
+        Instant cutoff = clock.now().minus(java.time.Duration.ofDays(7));
+        int deleted = 0;
+        if (approvalSource != null) {
+            deleted += approvalSource.deleteDecidedBefore(cutoff);
+        }
+        if (durableApprovalSource != null) {
+            deleted += durableApprovalSource.deleteDecidedBefore(cutoff);
+        }
+        if (deleted > 0) LOG.infof("purged %d decided approvals", deleted);
+    }
+
+    private void purgeToolResultCache() {
+        if (toolResultCache == null) return;
+        Instant cutoff = clock.now().minus(java.time.Duration.ofDays(1));
+        int deleted = toolResultCache.deleteCreatedBefore(cutoff);
+        if (deleted > 0) LOG.infof("purged %d tool result cache entries", deleted);
+    }
+
     private void captureSnapshot(SessionId id) {
         if (snapshots == null || !revertSnapshotEnabled) return;
         try {
@@ -1043,7 +1337,7 @@ public class Engine {
         SessionId child = sessionService.create(location, agent, parent.model(), now);
         sessions.put(new SessionInfo(child, location.projectId(), location,
                 "Fork of " + parent.title(), agent, parent.model(), parent.permissions(),
-                Money.zero(), TokenCount.zero(), now, now, Option.none(), Option.none(), 0, Option.none()));
+                Money.zero(), TokenCount.zero(), now, now, Option.none(), Option.none(), 0, Option.none(), parent.ownerId()));
 
         MessageId previous = null;
         Map<String, String> copiedArtifacts = new java.util.HashMap<>();
@@ -1246,7 +1540,7 @@ public class Engine {
     }
 
     public Option<WebQuestionSource.Pending> pendingQuestion(SessionId id) {
-        return questionSource.pending(id);
+        return questionSource != null ? questionSource.pending(id) : Option.none();
     }
 
     public boolean replyQuestion(SessionId id, String questionId, List<String> selected, String text) {
@@ -1255,10 +1549,8 @@ public class Engine {
 
     /** Liveness is process-local; readiness also checks DB and workspace. */
     public boolean ready() {
-        try (var connection = dataSource.getConnection()) {
-            if (!connection.isValid(2)) return false;
-        } catch (java.sql.SQLException e) {
-            LOG.warnf("readiness: database check failed: %s", e.getMessage());
+        if (!memoryMode && !de.augmentia.oc.engine.adapter.sql.DbHealthSql.isHealthy(dataSource, 2)) {
+            LOG.warnf("readiness: database check failed");
             return false;
         }
         try {
@@ -1273,7 +1565,7 @@ public class Engine {
     private static SessionInfo copy(SessionInfo info, Location location, String title) {
         return new SessionInfo(info.id(), info.projectId(), location, title, info.agent(),
                 info.model(), info.permissions(), info.cost(), info.tokens(), info.created(),
-                Instant.now(), info.idle(), info.suspended(), info.resumeAttempts(), info.archived());
+                Instant.now(), info.idle(), info.suspended(), info.resumeAttempts(), info.archived(), info.ownerId());
     }
 
     public String generateTitle(SessionId id) {
@@ -1289,7 +1581,7 @@ public class Engine {
         sessions.put(new SessionInfo(info.id(), info.projectId(), info.location(), title,
                 info.agent(), info.model(), info.permissions(), info.cost(), info.tokens(),
                 info.created(), clock.now(), info.idle(), info.suspended(),
-                info.resumeAttempts(), info.archived()));
+                info.resumeAttempts(), info.archived(), info.ownerId()));
         return title;
     }
 
@@ -1416,8 +1708,8 @@ public class Engine {
         PromptResult result = runPrompt(id, text);
         pausedPrompts.remove(id);
         if (sessionWorkspaces != null) {
-            try { sessionWorkspaces.setPausedPrompt(id, null); } catch (RuntimeException ignored) {}
-            try { sessionWorkspaces.updateState(id, "active"); } catch (RuntimeException ignored) {}
+            try { sessionWorkspaces.setPausedPrompt(id, null); } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
+            try { sessionWorkspaces.updateState(id, "active"); } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
         }
         return result;
     }
@@ -1449,6 +1741,9 @@ public class Engine {
         }
 
         InboxId inboxId = InboxId.create();
+        CorrelationContext.set(inboxId.value(), id.value());
+        org.jboss.logmanager.MDC.put("correlation_id", inboxId.value());
+        org.jboss.logmanager.MDC.put("session_id", id.value());
         InboxItem item = new InboxItem.UserItem(text, List.of(), List.of(), List.of(), Map.of());
         sessionService.enqueue(id, inboxId, item);
         Seq enqueuedSeq = Seq.of(journal.history(id.value(), Seq.zero()).size());
@@ -1459,7 +1754,7 @@ public class Engine {
         sessions.put(new SessionInfo(info.id(), info.projectId(), info.location(), info.title(),
                 info.agent(), info.model(), info.permissions(), info.cost(), info.tokens(),
                 info.created(), clock.now(), info.idle(), info.suspended(),
-                info.resumeAttempts(), info.archived()));
+                info.resumeAttempts(), info.archived(), info.ownerId()));
         info = sessions.info(id).orElseThrow();
         LOG.debugf("runPrompt session=%s agent=%s", id.value(), info.agent());
 
@@ -1482,6 +1777,18 @@ public class Engine {
 
         // Agent-specific tool snapshot
         ToolSnapshot agentToolSnapshot = filterToolSnapshot(runSnapshot, agentConfig);
+        // Subagents must not ask the user questions; the orchestrator handles
+        // them if they arise anyway.
+        if (subagentDepths.containsKey(id)) {
+            java.util.Map<de.augmentia.oc.engine.core.model.ToolName, de.augmentia.oc.engine.core.contract.tool.ToolDefinition> filtered =
+                    new java.util.LinkedHashMap<>();
+            for (de.augmentia.oc.engine.core.contract.tool.ToolDefinition def : agentToolSnapshot.list()) {
+                if (!"question".equalsIgnoreCase(def.effectiveName())) {
+                    filtered.put(def.name(), def);
+                }
+            }
+            agentToolSnapshot = new ToolSnapshot(filtered);
+        }
 
         if (resultSchema != null) {
             PermissionGate structuredGate = request -> {
@@ -1490,10 +1797,10 @@ public class Engine {
                 }
             };
             runStep = new Step(provider, new ToolRuntime(agentToolSnapshot,
-                    effectiveAuthorizer, structuredGate, toolHooks, toolOutput, toolResultCache));
+                    effectiveAuthorizer, structuredGate, toolHooks, toolOutput, toolResultCache, stepTimeoutSeconds));
         } else if (agentToolSnapshot != runSnapshot) {
             runStep = new Step(provider, new ToolRuntime(agentToolSnapshot,
-                    effectiveAuthorizer, permissionGate, toolHooks, toolOutput, toolResultCache));
+                    effectiveAuthorizer, permissionGate, toolHooks, toolOutput, toolResultCache, stepTimeoutSeconds));
         }
 
         // MODE-PLAN: log synthetic message when entering/leaving plan mode (PR-7).
@@ -1506,6 +1813,10 @@ public class Engine {
         var liveSink = (java.util.function.Consumer<de.augmentia.oc.engine.core.contract.provider.ModelEvent>) event ->
                 eventBus.publishLive(id.value(), Json.encode(ContractCodec.encode(event,
                         de.augmentia.oc.engine.core.contract.provider.ModelEvent.class)));
+
+        int llmCallNo = llmCallCounts.computeIfAbsent(id, k -> new java.util.concurrent.atomic.AtomicInteger()).getAndIncrement();
+        java.util.concurrent.atomic.AtomicReference<String> llmResponseSummary =
+                new java.util.concurrent.atomic.AtomicReference<>();
 
         int stepNo = 1;
         StepResult.Finished finished = null;
@@ -1525,142 +1836,70 @@ public class Engine {
                         java.time.Duration.ofMinutes(Math.max(1, maxTurnWallMinutes)));
         int totalToolCalls = 0;
         long totalTokens = 0;
+        java.util.List<de.augmentia.oc.engine.core.contract.tool.ToolCall> recentToolCalls = new java.util.ArrayList<>();
         java.time.Instant turnStarted = clock.now();
+        int retryAttempts = 0;
 
-        while (true) {
-            LOG.debugf("step %d session=%s", stepNo, id.value());
-            Span stepSpan = tracer().spanBuilder("engine.step")
-                    .setAttribute("session.id", id.value())
-                    .setAttribute("step", (long) stepNo)
-                    .startSpan();
-            try (Scope stepScope = stepSpan.makeCurrent()) {
-            Option<Choice> forcedChoice = resultSchema != null && submitForced
-                    ? Option.some(new Choice.One(new ToolName(SubmitResult.TOOL_NAME)))
-                    : Option.none();
-            var prepared = contextBuilder.prepare(info, agent, model, agentToolSnapshot, Seq.zero(),
-                    stepNo, forcedChoice, Option.some(text), skillSelection);
-            if (resultSchema != null) {
-                prepared = prepared.withSystem(SubmitResult.INSTRUCTION);
-            }
-            ToolContext context = new ToolContext(id, info.agent(), MessageId.create(), CallId.create());
-            StepResult result = runStep.run(prepared, context, liveSink);
-            if (result instanceof StepResult.NeedsCompaction) {
-                // Automatic compaction (I-07, I-09): exactly one per step.
-                Span cspan = tracer().spanBuilder("compaction").setAttribute("session.id", id.value()).startSpan();
-                try (Scope cscope = cspan.makeCurrent()) {
-                compaction.compact(id, CompactionReason.OVERFLOW, preparedModel(info, model),
-                        model.limits().context(), Option.none(),
-                        Seq.of(journal.history(id.value(), Seq.zero()).size()),
-                        clock.now());
-                metrics.compaction();
-                cspan.end();
+        // Phase 1: Pre-flight checks
+        if (preflightEnabled && preflightChecker != null) {
+            var preflightCtx = new de.augmentia.oc.engine.runtime.resilience.PreflightChecker.PreflightContext(
+                    config != null ? config.url() : null,
+                    providerApiKey,
+                    () -> memoryMode || de.augmentia.oc.engine.adapter.sql.DbHealthSql.isHealthy(dataSource, 3),
+                    workspacePath);
+            var preflightResult = preflightChecker.check(preflightCtx);
+            if (!preflightResult.passed()) {
+                StringBuilder msg = new StringBuilder("Pre-flight checks failed:\n");
+                for (var issue : preflightResult.issues()) {
+                    msg.append("  - ").append(issue.type()).append(": ").append(issue.message()).append("\n");
                 }
-                prepared = contextBuilder.prepare(info, agent, model, agentToolSnapshot, Seq.zero(),
-                        stepNo, forcedChoice, Option.some(text), skillSelection);
-                if (resultSchema != null) {
-                    prepared = prepared.withSystem(SubmitResult.INSTRUCTION);
+                LOG.warn(msg.toString());
+                if (webhookAlerter != null) {
+                    webhookAlerter.alert(new de.augmentia.oc.engine.runtime.resilience.WebhookAlerter.Alert(
+                            id.value(), "preflight", msg.toString(), null, List.of(), java.time.Instant.now()));
                 }
-                result = runStep.run(prepared, context, liveSink);
+                SessionError error = new SessionError.ProviderError("preflight", msg.toString(), null, null, null);
+                CorrelationContext.clear();
+        org.jboss.logmanager.MDC.clear();
+        return PromptResult.failed(error, false);
             }
-            if (result instanceof StepResult.Failed failed) {
-                throw new IllegalStateException("model call failed: " + failed.message());
-            }
-            if (result instanceof StepResult.Paused paused) {
-                // Suspend the session and return a paused result.
-                pausedPrompts.put(id, text);
-                if (sessionWorkspaces != null) {
-                    try { sessionWorkspaces.setPausedPrompt(id, text); } catch (RuntimeException ignored) {}
-                    try { sessionWorkspaces.updateState(id, "suspended"); } catch (RuntimeException ignored) {}
-                }
-                // Mark session suspended in SessionInfo
-                SessionInfo cur = sessions.info(id).orElse(info);
-                sessions.put(new SessionInfo(cur.id(), cur.projectId(), cur.location(), cur.title(), cur.agent(),
-                        cur.model(), cur.permissions(), cur.cost(), cur.tokens(), cur.created(), clock.now(),
-                        cur.idle(), Option.some(clock.now()), cur.resumeAttempts(), cur.archived()));
-                return new PromptResult(new TurnOutcome.Paused(paused.approvalId(), paused.approvalUrl(),
-                        "approval pending"), "paused", 0, 0, "", Option.none());
-            }
-            if (!(result instanceof StepResult.Finished done)) {
-                throw new IllegalStateException("context overflow: compaction required");
-            }
-            finished = done;
-            finishReason = done.reason();
-            usage = done.usage();
-            totalToolCalls += done.toolCalls().size();
-            totalTokens += usage.total();
-            metrics.toolCalls(done.toolCalls().size());
-            String stepText = text(done.events());
-            if (!stepText.isBlank()) finalText = stepText;
-
-            // Persist the assistant turn (text + tool calls/results) so the next step sees it.
-            List<Content> assistantContent = new ArrayList<>();
-            if (!stepText.isBlank()) {
-                assistantContent.add(new Content.TextContent(stepText, clock.now()));
-            }
-            for (StepResult.ToolCallOutcome outcome : done.toolCalls()) {
-                ToolCall call = outcome.call();
-                ToolState state;
-                if (outcome.outcome() instanceof ToolOutcome.Ok ok) {
-                    state = new ToolState.Completed(call.input(), ok.result().content(), ok.result().metadata());
-                } else if (outcome.outcome() instanceof ToolOutcome.Failed failed) {
-                    state = new ToolState.Failed(call.input(), failed.error(), Option.none(), failed.metadata());
-                } else {
-                    state = new ToolState.Completed(call.input(), List.of(), Map.of());
-                }
-                assistantContent.add(new Content.ToolCardContent(
-                        new ToolCard(call.id(), call.name(), call.input(), state, true, clock.now())));
-            }
-            if (!assistantContent.isEmpty()) {
-                Seq assistantSeq = conversation.nextSeq(id);
-                conversation.insert(id, assistantSeq, new Message.AssistantMessage(
-                        MessageId.create(), info.agent(),
-                        info.model().orElse(new ModelRef(model.providerId(), model.id())),
-                        assistantContent, Option.some(finishReason), Option.none(), Option.none(),
-                        Option.none(), Money.zero(), usage, AssistantTime.started(clock.now())));
-            }
-            LOG.debugf("persisted assistant turn session=%s step=%d tools=%d", id.value(), stepNo, done.toolCalls().size());
-            stepSpan.setAttribute("finish", finished.reason().name());
-            stepSpan.setAttribute("tool_calls", (long) finished.toolCalls().size());
-            for (StepResult.ToolCallOutcome outcome : finished.toolCalls()) {
-                stepSpan.addEvent("tool.call", io.opentelemetry.api.common.Attributes.of(
-                        io.opentelemetry.api.common.AttributeKey.stringKey("tool.name"), outcome.call().name().value()));
-            }
-            } finally {
-            stepSpan.end();
-            }
-
-            if (resultSchema != null) {
-                Option<JsonValue> submitted = SubmittedResult.result(finished, resultSchema);
-                if (submitted.isPresent()) {
-                    structured = submitted;
-                    break;
-                }
-            }
-            if (submitForced) break;
-
-            boolean hasToolCalls = !finished.toolCalls().isEmpty();
-            if (!hasToolCalls) {
-                if (resultSchema != null) {
-                    submitForced = true;
-                    stepNo++;
-                    continue;
-                }
-                break;
-            }
-            de.augmentia.oc.engine.core.eval.TurnPolicy.Decision decision =
-                    turnPolicy.decide(stepNo, totalToolCalls,
-                            TokenCount.of(totalTokens, 0),
-                            java.time.Duration.between(turnStarted, clock.now()));
-            if (decision != de.augmentia.oc.engine.core.eval.TurnPolicy.Decision.CONTINUE) {
-                if (resultSchema != null) {
-                    submitForced = true;
-                    stepNo++;
-                    continue;
-                }
-                break;
-            }
-            stepNo++;
         }
+
+        // Delegate core execution to QocEngine (BaseEngine) — no second loop
+        de.augmentia.oc.engine.runtime.QocEngine.AgentConfig qocConfig = null;
+        if (agentName != null) {
+            EngineConfig.AgentConfig cfg = agentCatalogue.config(agentName);
+            if (cfg != null) {
+                qocConfig = new de.augmentia.oc.engine.runtime.QocEngine.AgentConfig(
+                        agentName, cfg.model(), 0.3, cfg.maxSteps() > 0 ? cfg.maxSteps() : 4096, 1.0,
+                        null, java.util.List.of(), java.util.List.of(), java.util.List.of(),
+                        java.util.List.of(), false);
+            }
+        }
+        if (qocConfig == null) {
+            qocConfig = new de.augmentia.oc.engine.runtime.QocEngine.AgentConfig(
+                    agentName == null ? "build" : agentName, null, 0.3, 4096, 1.0, null,
+                    java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), false);
+        }
+
+        de.augmentia.oc.engine.core.model.EngineResult qocResult =
+                qocEngine.runPrompt(id, agentName == null ? "build" : agentName, text, qocConfig, false);
+
+        // Map EngineResult to Quarkus types
+        String qocFinalText = qocResult.text();
+        String qocFinish = qocResult.finish();
+        long qocInputTokens = qocResult.inputTokens();
+        long qocOutputTokens = qocResult.outputTokens();
+        FinishReason qocFinishReason = FinishReason.NORMAL;
+        if ("FAILED".equals(qocFinish)) qocFinishReason = FinishReason.ABORTED;
+        TokenCount qocUsage = TokenCount.of(qocInputTokens, qocOutputTokens);
+        de.augmentia.oc.engine.core.model.Option<de.augmentia.oc.engine.core.json.JsonValue> qocStructured = qocResult.structured();
+        // Assign to existing variables
+        finalText = qocFinalText;
+        finishReason = qocFinishReason;
+        usage = qocUsage;
+        structured = qocStructured;
+
 
         TurnOutcome outcome = switch (finishReason) {
             case CONTENT_FILTER -> new TurnOutcome.Refused("content_filter",
@@ -1672,25 +1911,46 @@ public class Engine {
         PromptResult promptResult = new PromptResult(outcome, finishReason.name(),
                 usage.input(), usage.output(), finalText, structured);
 
+        // Persist idle outcome so the session is marked as completed/cancelled/...
+        try {
+            String idleOutcome = outcome instanceof TurnOutcome.Completed ? "completed"
+                    : outcome instanceof TurnOutcome.Cancelled ? "cancelled"
+                    : outcome instanceof TurnOutcome.Paused ? "paused"
+                    : outcome instanceof TurnOutcome.Refused ? "refused"
+                    : outcome instanceof TurnOutcome.Failed ? "failed"
+                    : "completed";
+            sessions.setIdleOutcome(id, idleOutcome);
+        } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
+
         // Generate title after the first successful prompt if not yet set.
         // Generate title after the first successful prompt if not yet set.
-        if (info.title().equals("New session") || info.title().isBlank()) {
+        // Generate title after the first successful prompt if not yet set
+        // (only if the title still contains the session ID, i.e. auto-generated)
+        if (info.title().matches(".*\\d{2}:\\d{2}:\\d{2}$") && !info.title().startsWith("Generated")) {
             generateTitle(id);
         }
+
+        // Clean up empty sessions (no assistant messages produced).
+        try {
+            if (conversation.messages(id, Seq.zero()).size() <= 1) {  // only user message, no assistant response
+                sessionRetention.delete(id);
+                LOG.infof("deleted empty session %s", id.value());
+            }
+        } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
 
         // Ephemeral one-shot cleanup.
         if (sessionWorkspaces != null && "ephemeral".equals(sessionWorkspaces.executionMode(id))) {
             if (!sessionWorkspaces.retain(id)) {
-                try { sessionWorkspaces.updateState(id, "completed"); } catch (RuntimeException ignored) {}
+                try { sessionWorkspaces.updateState(id, "completed"); } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
                 if (processRegistry != null) {
-                    try { processRegistry.closeSession(id); } catch (RuntimeException ignored) {}
+                    try { processRegistry.closeSession(id); } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
                 }
                 if (toolResultCache != null) {
-                    try { toolResultCache.deleteBySession(id.value()); } catch (RuntimeException ignored) {}
+                    try { toolResultCache.deleteBySession(id.value()); } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
                 }
                 try { sessionRetention.delete(id); } catch (RuntimeException e) {
                     LOG.warn("ephemeral session delete failed: " + e.getMessage());
-                    try { sessionWorkspaces.updateState(id, "cleanup_pending"); } catch (RuntimeException ignored) {}
+                    try { sessionWorkspaces.updateState(id, "cleanup_pending"); } catch (RuntimeException inner) { LOG.debugf("ignored: %s", inner.getMessage()); }
                 }
                 String root = sessionWorkspaces.workspaceRoot(id);
                 if (root != null && !root.isBlank()) {
@@ -1698,11 +1958,14 @@ public class Engine {
                         LOG.warn("ephemeral dir delete failed: " + e.getMessage());
                     }
                 }
-                try { sessionWorkspaces.deleteWorkspace(id); } catch (RuntimeException ignored) {}
+                try { sessionWorkspaces.deleteWorkspace(id); } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
+                sessionRoles.remove(id);
             } else {
-                try { sessionWorkspaces.updateState(id, "completed"); } catch (RuntimeException ignored) {}
+                try { sessionWorkspaces.updateState(id, "completed"); } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
             }
         }
+        CorrelationContext.clear();
+        org.jboss.logmanager.MDC.clear();
         return promptResult;
     }
 
@@ -1714,14 +1977,53 @@ public class Engine {
             "worktree_create", "worktree_list", "worktree_remove");
     private final java.util.concurrent.Semaphore subagentSemaphore = new java.util.concurrent.Semaphore(MAX_CONCURRENT_SUBAGENTS);
 
+    private static String providerErrorType(de.augmentia.oc.engine.core.contract.provider.FailureKind kind) {
+        if (kind == null) return "anbieter.unbekannt";
+        return switch (kind) {
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.Transport t -> "anbieter.transport";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.RateLimited ignored -> "anbieter.ratenbegrenzung";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.ProviderInternal ignored -> "anbieter.intern";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.Timeout ignored -> "anbieter.zeitueberschreitung";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.Authentication ignored -> "anbieter.auth";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.QuotaExceeded ignored -> "anbieter.kontingent";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.ContentPolicy ignored -> "anbieter.inhaltsfilter";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.UnsupportedOperation ignored -> "anbieter.nicht-unterstuetzt";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.NoRoute ignored -> "anbieter.keine-route";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.UnknownProvider ignored -> "anbieter.unbekannt";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.InvalidOutput ignored -> "anbieter.ungueltige-ausgabe";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.InvalidRequest ignored -> "anbieter.ungueltige-anfrage";
+            default -> "anbieter.unbekannt";
+        };
+    }
+
+    private static de.augmentia.oc.engine.core.contract.permission.AskMode parseAskMode(String value) {
+        if (value == null || value.isBlank()) return de.augmentia.oc.engine.core.contract.permission.AskMode.DENY;
+        return switch (value.trim().toLowerCase()) {
+            case "allow" -> de.augmentia.oc.engine.core.contract.permission.AskMode.ALLOW;
+            case "interactive" -> de.augmentia.oc.engine.core.contract.permission.AskMode.INTERACTIVE;
+            default -> de.augmentia.oc.engine.core.contract.permission.AskMode.DENY;
+        };
+    }
+
     AgentProfile agentProfile(AgentId id, String name, EngineConfig.AgentConfig config) {
-        List<Rule> rules = (config == null || config.permissions().isEmpty())
-                ? List.of(new Rule("*", "*", Effect.ALLOW), new Rule("grep", "*", Effect.ASK))
-                : config.permissions();
+        // Agent-specific rules override defaults (last matching rule wins).
+        List<Rule> rules = new ArrayList<>(ContextBuilder.defaults(permissionDefault));
+        if (config != null && !config.permissions().isEmpty()) {
+            rules.addAll(config.permissions());
+        }
         rules = withSkillRules(name, rules);
         int maxSteps = config == null ? 0 : config.maxSteps();
         Option<String> system = config == null ? Option.none() : Option.of(config.system());
-        return AgentProfile.forAgent(id, system, maxSteps, rules, name);
+        String mode = config == null ? "all" : config.mode();
+        // Subagents always run in deny mode (no questions)
+        de.augmentia.oc.engine.core.contract.permission.AskMode askMode =
+                "subagent".equalsIgnoreCase(mode)
+                        ? de.augmentia.oc.engine.core.contract.permission.AskMode.DENY
+                        : null; // inherit global
+        if (askMode != null && permissionEngine != null) {
+            permissionEngine.registerAgentAskMode(id, askMode);
+        }
+        return AgentProfile.forAgent(id, system, maxSteps, rules, name, askMode);
     }
 
     /**
@@ -1779,6 +2081,10 @@ public class Engine {
         if (!agentCatalogue.isSubagent(agentName)) {
             throw new IllegalArgumentException("agent cannot run as subagent: " + agentName);
         }
+        List<String> parentRoles = sessionRoles.getOrDefault(parent, List.of());
+        if (!agentAllowed(agentName, parentRoles)) {
+            throw new IllegalArgumentException("agent not allowed: " + agentName);
+        }
         // Recursion protection
         int parentDepth = subagentDepths.getOrDefault(parent, 0);
         if (parentDepth >= 2) {
@@ -1795,6 +2101,15 @@ public class Engine {
             throw new IllegalStateException("interrupted while waiting for subagent slot");
         }
 
+        // Track this run as a background task so the UI can show it immediately
+        // (sync and async subagents share the same task registry).
+        String taskId = null;
+        BackgroundTasks tasks = (subagentTool == null) ? null : subagentTool.backgroundTasks();
+        if (tasks != null) {
+            taskId = tasks.create(parent, agentName);
+            tasks.attach(taskId, Thread.currentThread());
+        }
+
         try {
             Path directory = Path.of(config.workspace()).toAbsolutePath().normalize();
             Location location = new Location(directory, ProjectId.create(), Option.none());
@@ -1803,30 +2118,75 @@ public class Engine {
             SessionId child = sessionService.create(location, agentId, Option.none(), clock.now());
             sessions.put(new SessionInfo(child, location.projectId(), location, "Subagent: " + agentName, agentId,
                     Option.none(), List.of(), Money.zero(), TokenCount.zero(), clock.now(), clock.now(),
-                    Option.none(), Option.none(), 0, Option.none()));
+                    Option.none(), Option.none(), 0, Option.none(),
+                    sessions.info(parent).map(SessionInfo::ownerId).orElse("")));
 
             subagentDepths.put(child, parentDepth + 1);
+            sessionRoles.put(child, parentRoles);
+            subagentRegistry.registerChild(parent, child);
 
-            PromptResult result = runPrompt(child, prompt, agent);
-
-            // Token accumulation: add subagent usage to parent session
-            SessionInfo parentInfo = sessions.info(parent).orElse(null);
-            if (parentInfo != null) {
-                sessions.put(new SessionInfo(parentInfo.id(), parentInfo.projectId(), parentInfo.location(),
-                        parentInfo.title(), parentInfo.agent(), parentInfo.model(), parentInfo.permissions(),
-                        parentInfo.cost(),
-                        TokenCount.of(parentInfo.tokens().input() + result.inputTokens(),
-                                parentInfo.tokens().output() + result.outputTokens()),
-                        parentInfo.created(), clock.now(),
-                        parentInfo.idle(), parentInfo.suspended(), parentInfo.resumeAttempts(), parentInfo.archived()));
+            // Notify UI that the subagent started (with child session id).
+            if (taskId != null) {
+                try {
+                    eventBus.publishLive(parent.value(), "{\"_type\":\"SubagentStarted\",\"id\":\"" + taskId
+                            + "\",\"agent\":\"" + agentName + "\",\"childSession\":\"" + child.value() + "\"}");
+                } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
             }
 
-            String text = result.text() == null || result.text().isBlank()
-                    ? "Subagent completed with no text output."
-                    : result.text();
-            return new SubagentRunner.SubagentResult(text, result.inputTokens() > 0
-                    ? TokenCount.of(result.inputTokens(), result.outputTokens())
-                    : TokenCount.zero(), child);
+            PromptResult result = null;
+            try {
+                String subagentPrompt = "You are a subagent. Do not ask the user questions; "
+                        + "make reasonable assumptions and report your result back.\n\n" + prompt;
+                result = runPrompt(child, subagentPrompt, agent);
+
+                // Token accumulation: add subagent usage to parent session
+                SessionInfo parentInfo = sessions.info(parent).orElse(null);
+                if (parentInfo != null) {
+                    sessions.put(new SessionInfo(parentInfo.id(), parentInfo.projectId(), parentInfo.location(),
+                            parentInfo.title(), parentInfo.agent(), parentInfo.model(), parentInfo.permissions(),
+                            parentInfo.cost(),
+                            TokenCount.of(parentInfo.tokens().input() + result.inputTokens(),
+                                    parentInfo.tokens().output() + result.outputTokens()),
+                            parentInfo.created(), clock.now(),
+                            parentInfo.idle(), parentInfo.suspended(), parentInfo.resumeAttempts(), parentInfo.archived(), parentInfo.ownerId()));
+                }
+
+                String text = result.text() == null || result.text().isBlank()
+                        ? "Subagent completed with no text output."
+                        : result.text();
+                SubagentRunner.SubagentResult out = new SubagentRunner.SubagentResult(text, result.inputTokens() > 0
+                        ? TokenCount.of(result.inputTokens(), result.outputTokens())
+                        : TokenCount.zero(), child);
+
+                if (tasks != null && taskId != null) {
+                    tasks.succeed(taskId, out);
+                    try {
+                        eventBus.publishLive(parent.value(), "{\"_type\":\"SubagentFinished\",\"id\":\"" + taskId
+                                + "\",\"state\":\"succeeded\",\"text\":" + Json.encode(new JsonValue.Str(text)) + "}");
+                    } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
+                }
+                return out;
+            } catch (Throwable t) {
+                if (tasks != null && taskId != null) {
+                    boolean cancelled = (t instanceof InterruptedException) || Thread.currentThread().isInterrupted();
+                    if (cancelled) {
+                        tasks.cancel(parent, taskId);
+                        try {
+                            eventBus.publishLive(parent.value(), "{\"_type\":\"SubagentCancelled\",\"id\":\"" + taskId + "\"}");
+                        } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
+                    } else {
+                        tasks.fail(taskId, t);
+                        String msg = t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage();
+                        try {
+                            eventBus.publishLive(parent.value(), "{\"_type\":\"SubagentFinished\",\"id\":\"" + taskId
+                                    + "\",\"state\":\"failed\",\"text\":" + Json.encode(new JsonValue.Str(msg)) + "}");
+                        } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
+                    }
+                }
+                if (t instanceof RuntimeException re) throw re;
+                if (t instanceof Error e) throw e;
+                throw new RuntimeException(t);
+            }
         } finally {
             subagentSemaphore.release();
         }
@@ -1849,10 +2209,49 @@ public class Engine {
     }
 
     public boolean interrupt(SessionId id) {
+        return interruptAll(id, new java.util.HashSet<>()) > 0;
+    }
+
+    private int interruptAll(SessionId id, java.util.Set<SessionId> visited) {
+        if (id == null || !visited.add(id)) return 0;
+        int count = 0;
         Thread thread = running.get(id);
-        if (thread == null) return false;
-        thread.interrupt();
-        return true;
+        if (thread != null) {
+            thread.interrupt();
+            count++;
+        }
+        // Cancel background tasks owned by this session.
+        if (subagentTool != null) {
+            try {
+                for (BackgroundTasks.Snapshot t : subagentTool.backgroundTasks().list(id)) {
+                    if (t.running()) {
+                        subagentTool.backgroundTasks().cancel(id, t.id());
+                        count++;
+                    }
+                }
+            } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
+        }
+        // Cascade to direct child sessions (tracked in the runtime registry).
+        for (SessionId child : subagentRegistry.children(id)) {
+            count += interruptAll(child, visited);
+        }
+        return count;
+    }
+
+    public boolean isRunning(SessionId id) {
+        if (id == null) return false;
+        if (running.containsKey(id)) return true;
+        for (SessionId c : subagentRegistry.children(id)) {
+            if (isRunning(c)) return true;
+        }
+        if (subagentTool != null) {
+            try {
+                for (BackgroundTasks.Snapshot t : subagentTool.backgroundTasks().list(id)) {
+                    if (t.running()) return true;
+                }
+            } catch (RuntimeException e) { LOG.debugf("ignored: %s", e.getMessage()); }
+        }
+        return false;
     }
 
     public synchronized void reloadConfig() {
@@ -1872,23 +2271,312 @@ public class Engine {
                         config.skillAllow(), config.skillDeny(), config.skillMax())
                 : SkillCatalog.empty();
         skillCatalog = newSkillCatalog;
-        java.util.function.Function<AgentId, List<Rule>> skillRules = agentId ->
-                agentProfile(agentId, agentCatalogue.nameOf(agentId),
-                        agentCatalogue.config(agentCatalogue.nameOf(agentId))).permissions();
+        java.util.function.Function<AgentId, List<Rule>> skillRules = agentId -> {
+            String agentName = agentCatalogue.nameOf(agentId);
+            EngineConfig.AgentConfig cfg = agentName == null ? null : agentCatalogue.config(agentName);
+            return agentProfile(agentId, agentName, cfg).permissions();
+        };
         registry.register(SkillTool.definition(skillCatalog, skillRules));
         registry.register(SkillTool.listDefinition(skillCatalog, skillRules));
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
         toolSnapshot = registry.snapshot(allowAll);
         toolRuntime = new ToolRuntime(toolSnapshot, effectiveAuthorizer,
-                permissionGate, toolHooks, toolOutput, toolResultCache);
+                permissionGate, toolHooks, toolOutput, toolResultCache, stepTimeoutSeconds);
         contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
-                instructions == null ? Option.none() : Option.some(instructions), config.skillFilter());
+                instructions == null ? Option.none() : Option.some(instructions), config.skillFilter(),
+                ContextBuilder.leastPrivilegeDefaults());
         LOG.infof("reloaded config: %d agent(s), %d skill(s)",
                 agentCatalogue.list().size(), skillCatalog.all().size());
     }
 
+    public synchronized void reloadWorkspace(String newWorkspace, String user, boolean isAdmin) {
+        if (newWorkspace == null || newWorkspace.isBlank()) {
+            throw new IllegalArgumentException("workspace must not be blank");
+        }
+        java.nio.file.Path normalized = java.nio.file.Path.of(newWorkspace).toAbsolutePath().normalize();
+        try {
+            normalized = normalized.toRealPath();
+        } catch (java.io.IOException ignored) {
+            // Allow a not-yet-existing path to be validated below.
+        }
+        // Determine the allowed base based on user role.
+        // Admin: can switch to /data/workspace (all user workspaces).
+        // Regular user: can only switch within their own workspace.
+        java.nio.file.Path allowedBase = workspaceBase;
+        if (user != null && !user.isBlank() && !"opencode".equalsIgnoreCase(user)
+                && !"anonymous".equalsIgnoreCase(user) && !"local".equalsIgnoreCase(user)
+                && !"admin".equalsIgnoreCase(user)) {
+            if (!isAdmin) {
+                // Regular user: base is their own workspace
+                java.nio.file.Path userBase = workspaceBase.resolve("user-ws").resolve(user).normalize();
+                if (userBase.startsWith(workspaceBase)) {
+                    allowedBase = userBase;
+                }
+            } else {
+                // Admin: base is workspaceBase itself, so they can see all user workspaces
+                if (workspaceBase != null) {
+                    allowedBase = workspaceBase;
+                }
+            }
+        }
+        // A project folder may only be switched to a subdirectory of the
+        // allowed base workspace.
+        if (allowedBase != null && !de.augmentia.oc.engine.runtime.tool.fs.FileAccess.isUnder(allowedBase, normalized)) {
+            throw new IllegalArgumentException("workspace must be inside " + allowedBase + ": " + normalized);
+        }
+        if (!java.nio.file.Files.isDirectory(normalized)) {
+            throw new IllegalArgumentException("workspace directory does not exist: " + normalized);
+        }
+        if (!java.nio.file.Files.isReadable(normalized) || !java.nio.file.Files.isWritable(normalized)) {
+            throw new IllegalArgumentException("workspace directory must be readable and writable: " + normalized);
+        }
+        config.setWorkspace(normalized.toString());
+        workspacePath = normalized;
+        buildWorkspaceRuntime();
+        // Reload agents/skills/settings from the new workspace so that
+        // project-level definitions (when workspace settings are enabled)
+        // take effect instead of keeping the previous workspace's agents.
+        reloadConfig();
+        LOG.infof("workspace reloaded: %s", normalized);
+    }
+
+
+    public synchronized void reloadWorkspace(String newWorkspace) {
+        reloadWorkspace(newWorkspace, null, false);
+    }
+
+    public void createAgent(String name, String content) {
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("agent name must not be blank");
+        if (content == null) content = "";
+        String safe = name.trim().replaceAll("[^A-Za-z0-9_-]", "_");
+        if (safe.isBlank()) throw new IllegalArgumentException("invalid agent name");
+        try {
+            java.nio.file.Path dir = java.nio.file.Path.of(System.getProperty("user.home", "."),
+                    ".config", "opencode", "agents");
+            java.nio.file.Files.createDirectories(dir);
+            java.nio.file.Path file = dir.resolve(safe + ".md");
+            java.nio.file.Files.writeString(file, content, java.nio.charset.StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+            reloadConfig();
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("cannot create agent: " + name, e);
+        }
+    }
+
+    public void deleteAgent(String name) {
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("agent name must not be blank");
+        String safe = name.trim().replaceAll("[^A-Za-z0-9_-]", "_");
+        if (safe.isBlank()) throw new IllegalArgumentException("invalid agent name");
+        if (safe.equalsIgnoreCase("build") || safe.equalsIgnoreCase("plan")) {
+            throw new IllegalArgumentException("cannot delete baseline agent: " + safe);
+        }
+        try {
+            java.nio.file.Path dir = java.nio.file.Path.of(System.getProperty("user.home", "."),
+                    ".config", "opencode", "agents");
+            java.nio.file.Path file = dir.resolve(safe + ".md");
+            java.nio.file.Files.deleteIfExists(file);
+            reloadConfig();
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("cannot delete agent: " + name, e);
+        }
+    }
+
+    /**
+     * Fetches a single agent definition from the configured source server.
+     * Used by serverless instances to run an agent for exactly one MCP call;
+     * the caller materialises it and removes it again afterwards.
+     *
+     * @return the agent definition in {@code settings.json} shape, or
+     *         {@code null} when no source is configured or the agent cannot
+     *         be fetched
+     */
+    public java.util.Map<String, Object> fetchAgentConfig(String name, String callerToken) {
+        if (name == null || name.isBlank()) return null;
+        String sourceUrl = config.agentSourceUrl();
+        if (sourceUrl == null || sourceUrl.isBlank()) return null;
+        String baseUrl = sourceUrl.endsWith("/") ? sourceUrl.substring(0, sourceUrl.length() - 1) : sourceUrl;
+        try {
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(10))
+                    .build();
+            java.net.http.HttpRequest.Builder req = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(baseUrl + "/api/agent/"
+                            + java.net.URLEncoder.encode(name, java.nio.charset.StandardCharsets.UTF_8)))
+                    .timeout(java.time.Duration.ofSeconds(30))
+                    .GET();
+            String token = callerToken != null && !callerToken.isBlank()
+                    ? callerToken : config.agentSourceToken();
+            if (token != null && !token.isBlank()) {
+                req.header("Authorization", "Bearer " + token);
+            }
+            java.net.http.HttpResponse<String> response = client.send(req.build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                LOG.warnf("agent fetch: server returned %d for %s", response.statusCode(), name);
+                return null;
+            }
+            de.augmentia.oc.engine.core.json.JsonValue parsed =
+                    de.augmentia.oc.engine.core.json.Json.parse(response.body()).valueOrNull();
+            if (!(parsed instanceof de.augmentia.oc.engine.core.json.JsonValue.Obj obj)) return null;
+            de.augmentia.oc.engine.core.json.JsonValue configVal = obj.values().get("config");
+            if (!(configVal instanceof de.augmentia.oc.engine.core.json.JsonValue.Obj configObj)) return null;
+            Object javaConfig = de.augmentia.oc.engine.core.json.JsonValues.toJava(configObj);
+            if (!(javaConfig instanceof java.util.Map<?, ?> map)) return null;
+            java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+            map.forEach((k, v) -> result.put(String.valueOf(k), v));
+            return result;
+        } catch (Exception e) {
+            LOG.warnf("agent fetch failed for %s: %s", name, e.getMessage());
+            return null;
+        }
+    }
+
+    /** Returns the full agent definition in {@code settings.json} shape. */
+    public de.augmentia.oc.engine.core.json.JsonValue.Obj agentConfig(String name) {
+        if (name == null || name.isBlank()) return null;
+        EngineConfig.AgentConfig cfg = agentCatalogue.config(name);
+        if (cfg == null) return null;
+        return EngineConfig.agentToJson(cfg, agentCatalogue.agentSkills(name));
+    }
+
+    /**
+     * Materialises an agent fetched from the server for one MCP call. The
+     * caller must call {@link #removeTransientAgent(String)} afterwards.
+     */
+    public void defineTransientAgent(String name, java.util.Map<String, Object> config) {
+        de.augmentia.oc.engine.core.json.JsonValue value =
+                de.augmentia.oc.engine.core.json.JsonValues.fromJava(config);
+        if (!(value instanceof de.augmentia.oc.engine.core.json.JsonValue.Obj obj)) {
+            throw new IllegalArgumentException("invalid agent config");
+        }
+        EngineConfig.AgentConfig cfg = EngineConfig.agentFromJson(obj);
+        EngineConfig.AgentSkillsConfig skills = EngineConfig.agentSkillsFromJson(obj);
+        defineTransientAgent(name, cfg, skills);
+    }
+
+    /** Materialises an in-memory agent for one MCP call (no filesystem access). */
+    public void defineTransientAgent(String name, EngineConfig.AgentConfig cfg,
+                                     EngineConfig.AgentSkillsConfig skills) {
+        agentCatalogue.define(name, cfg, skills);
+    }
+
+    /** Removes an agent that was materialised for a single MCP call. */
+    public void removeTransientAgent(String name) {
+        agentCatalogue.remove(name);
+    }
+
+    /** Returns true when the agent is already part of the local catalogue. */
+    public boolean hasAgent(String name) {
+        return name != null && !name.isBlank() && agentCatalogue.config(name) != null;
+    }
+
+    /**
+     * Serverless mode flag. Exposed as a method so callers never touch the
+     * {@link EngineConfig} field through the CDI client proxy.
+     */
+    public boolean isServerlessMode() {
+        return config != null && config.isServerlessMode();
+    }
+
+    /** Returns the immutable base workspace directory set at startup. */
+    public java.nio.file.Path workspaceBase() {
+        return workspaceBase;
+    }
+
+    /**
+     * Registry role flag. A registry QOC instance only serves the agent
+     * catalogue/authoring API and must not execute prompts.
+     */
+    public boolean isRegistryMode() {
+        return config != null && config.isRegistryMode();
+    }
+
+    /** Whether agent authoring (create/update/delete) is allowed. */
+    public boolean isAgentAuthoringEnabled() {
+        return config == null || config.agentAuthoringEnabled();
+    }
+
+    public List<java.util.Map<String, Object>> availableTools() {
+        if (toolSnapshot == null) return List.of();
+        List<java.util.Map<String, Object>> result = new ArrayList<>();
+        for (de.augmentia.oc.engine.core.contract.tool.ToolDefinition def : toolSnapshot.list()) {
+            result.add(Map.of("name", def.effectiveName(),
+                    "namespace", def.options().namespace().orElse("")));
+        }
+        return result;
+    }
+
+    public List<String> a2aToolNames() {
+        if (a2aConfig == null) return List.of();
+        List<String> result = new ArrayList<>();
+        for (de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider.A2AEndpoint ep : a2aConfig.endpoints()) {
+            result.add(de.augmentia.oc.engine.runtime.tool.a2a.A2AToolProvider.toolName(ep, null));
+        }
+        return result;
+    }
+
+
     public List<AgentCatalogue.AgentDto> agents() {
         return agentCatalogue.list();
+    }
+
+    /**
+     * Returns true when the given principal roles may use the agent selected by
+     * name or id. Unknown selectors return true so the normal 404/fallback
+     * handling remains in charge.
+     */
+    public boolean agentAllowed(String agentSelector, List<String> principalRoles) {
+        if (agentSelector == null || agentSelector.isBlank()) return true;
+        AgentCatalogue.AgentDto found = agentCatalogue.list().stream()
+                .filter(agent -> agent.name().equalsIgnoreCase(agentSelector)
+                        || agent.id().equalsIgnoreCase(agentSelector))
+                .findFirst()
+                .orElse(null);
+        return found == null || agentCatalogue.isAllowed(found.name(), principalRoles);
+    }
+
+    public String agentContent(String name) {
+        if (name == null || name.isBlank()) return null;
+        String safe = name.trim().replaceAll("[^A-Za-z0-9_-]", "_");
+        if (safe.isBlank()) return null;
+        try {
+            java.nio.file.Path dir = java.nio.file.Path.of(System.getProperty("user.home", "."),
+                    ".config", "opencode", "agents");
+            java.nio.file.Path file = dir.resolve(safe + ".md");
+            if (!java.nio.file.Files.isRegularFile(file)) return null;
+            return java.nio.file.Files.readString(file, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException e) {
+            return null;
+        }
+    }
+
+    public String agentHash(String name) {
+        String content = agentContent(name);
+        if (content == null) return null;
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            return null;
+        }
+    }
+
+    public String agentUpdatedAt(String name) {
+        String safe = name == null ? null : name.trim().replaceAll("[^A-Za-z0-9_-]", "_");
+        if (safe == null || safe.isBlank()) return null;
+        try {
+            java.nio.file.Path dir = java.nio.file.Path.of(System.getProperty("user.home", "."),
+                    ".config", "opencode", "agents");
+            java.nio.file.Path file = dir.resolve(safe + ".md");
+            if (!java.nio.file.Files.isRegularFile(file)) return null;
+            return java.time.Instant.ofEpochMilli(java.nio.file.Files.getLastModifiedTime(file).toMillis()).toString();
+        } catch (java.io.IOException e) {
+            return null;
+        }
     }
 
     /** Listed skills (description set, autoinvoke enabled), sorted by ID. */
@@ -1917,7 +2605,7 @@ public class Engine {
     }
 
     public String mcpStatus(String name) {
-        return mcp.status(name).name();
+        return mcp.status(name);
     }
 
     public String mcpError(String name) {
@@ -1929,7 +2617,7 @@ public class Engine {
         String effectiveRedirect = redirectUri == null || redirectUri.isBlank()
                 ? "http://127.0.0.1:8080/api/mcp/" + name + "/callback"
                 : redirectUri;
-        return mcp.client(name) instanceof de.augmentia.oc.engine.runtime.tool.mcp.McpDiscoveryClient discovery
+        return mcp.manager().client(name) instanceof de.augmentia.oc.engine.runtime.tool.mcp.McpDiscoveryClient discovery
                 ? discovery.authorizationUrl(effectiveClient, effectiveRedirect, "state-" + System.currentTimeMillis())
                 : null;
     }
@@ -1941,7 +2629,6 @@ public class Engine {
                 : redirectUri;
         mcp.authenticate(name, code, effectiveRedirect, effectiveClient,
                 clientSecret == null ? "" : clientSecret);
-        mcp.reload(name);
     }
 
     public ConfigDto config() {
@@ -1966,10 +2653,43 @@ public class Engine {
     }
 
     public List<SessionInfo> listSessions() {
+        return listSessions(null, true);
+    }
+
+    /** Lists sessions visible to the given user (admins see all). */
+    public List<SessionInfo> listSessions(String user, boolean isAdmin) {
         return sessions.list().stream()
+                .filter(info -> isAdmin || isOwner(info, user))
                 .sorted(java.util.Comparator.comparing(SessionInfo::updated).reversed())
                 .limit(25)
                 .toList();
+    }
+
+    /**
+     * Per-user ownership check. New sessions carry an explicit owner id; legacy
+     * sessions fall back to the workspace directory layout.
+     * "anonymous", "opencode" and "local" share the installation base directory.
+     */
+    public boolean isOwner(SessionInfo info, String user) {
+        if (info == null || user == null || user.isBlank()) {
+            return false;
+        }
+        String normalizedUser = user.trim();
+        if (info.ownerId() != null && !info.ownerId().isBlank()) {
+            return info.ownerId().equals(normalizedUser);
+        }
+        java.nio.file.Path base = (workspaceBase != null ? workspaceBase : java.nio.file.Path.of(config.workspace())).toAbsolutePath().normalize();
+        java.nio.file.Path userBase = base;
+        if (!"opencode".equalsIgnoreCase(normalizedUser)
+                && !"anonymous".equalsIgnoreCase(normalizedUser)
+                && !"local".equalsIgnoreCase(normalizedUser)) {
+            java.nio.file.Path candidate = base.resolve("user-ws").resolve(normalizedUser).normalize();
+            if (candidate.startsWith(base)) {
+                userBase = candidate;
+            }
+        }
+        java.nio.file.Path sessionDir = info.location().directory().toAbsolutePath().normalize();
+        return sessionDir.startsWith(userBase);
     }
 
     public record LocationDto(String directory, ProjectDto project) {}
@@ -1981,10 +2701,41 @@ public class Engine {
         journal.history(id.value(), Seq.of(Math.max(0, before))).forEach(eventBus::publish);
     }
 
+    private Path allowedBaseFor(String user, boolean isAdmin) {
+        Path root = workspaceRoot();
+        Path allowedBase = root;
+        if (user != null && !user.isBlank() && !"opencode".equalsIgnoreCase(user)
+                && !"anonymous".equalsIgnoreCase(user) && !"local".equalsIgnoreCase(user)
+                && !"admin".equalsIgnoreCase(user)) {
+            if (!isAdmin) {
+                Path userBase = workspaceBase.resolve("user-ws").resolve(user).normalize();
+                if (userBase.startsWith(workspaceBase)) {
+                    allowedBase = userBase;
+                }
+            } else {
+                allowedBase = workspaceBase;
+            }
+        }
+        return allowedBase;
+    }
+
     public List<FileEntry> listFiles(String path) {
+        return listFiles(path, null, false);
+    }
+
+    public List<FileEntry> listFiles(String path, String user, boolean isAdmin) {
         String target = (path == null || path.isBlank()) ? "." : path;
         Path root = workspaceRoot();
-        Path resolved = fileSystem.realPath(resolvePath(target));
+        Path allowedBase = allowedBaseFor(user, isAdmin);
+        // If current workspace is outside user's allowed base, use allowed base
+        if (!root.startsWith(allowedBase) && !root.equals(allowedBase)) {
+            root = allowedBase;
+        }
+        Path resolved = root.resolve(target).normalize();
+        if (!resolved.startsWith(root) || !resolved.startsWith(allowedBase)) {
+            throw new IllegalArgumentException("path escapes workspace: " + path);
+        }
+        resolved = fileSystem.realPath(resolved);
         List<FileEntry> entries = new ArrayList<>();
         for (Path child : fileSystem.list(resolved)) {
             try {
@@ -1992,13 +2743,26 @@ public class Engine {
                 entries.add(new FileEntry(child.getFileName().toString(), child.toString(),
                         root.relativize(child).toString().replace('\\', '/'),
                         stat.directory(), stat.size()));
-            } catch (Exception ignored) { }
+            } catch (Exception e) { LOG.debugf("ignored: %s", e.getMessage()); }
         }
         return entries;
     }
 
     public String readFile(String path) {
-        Path resolved = fileSystem.realPath(resolvePath(path));
+        return readFile(path, null, false);
+    }
+
+    public String readFile(String path, String user, boolean isAdmin) {
+        Path root = workspaceRoot();
+        Path allowedBase = allowedBaseFor(user, isAdmin);
+        if (!root.startsWith(allowedBase) && !root.equals(allowedBase)) {
+            root = allowedBase;
+        }
+        Path resolved = root.resolve(path == null ? "" : path).normalize();
+        if (!resolved.startsWith(root) || !resolved.startsWith(allowedBase)) {
+            throw new IllegalArgumentException("path escapes workspace: " + path);
+        }
+        resolved = fileSystem.realPath(resolved);
         if (java.nio.file.Files.isDirectory(resolved)) {
             throw new IllegalArgumentException("path is a directory: " + path);
         }
@@ -2006,7 +2770,20 @@ public class Engine {
     }
 
     public byte[] readFileBytes(String path) {
-        Path resolved = fileSystem.realPath(resolvePath(path));
+        return readFileBytes(path, null, false);
+    }
+
+    public byte[] readFileBytes(String path, String user, boolean isAdmin) {
+        Path root = workspaceRoot();
+        Path allowedBase = allowedBaseFor(user, isAdmin);
+        if (!root.startsWith(allowedBase) && !root.equals(allowedBase)) {
+            root = allowedBase;
+        }
+        Path resolved = root.resolve(path == null ? "" : path).normalize();
+        if (!resolved.startsWith(root) || !resolved.startsWith(allowedBase)) {
+            throw new IllegalArgumentException("path escapes workspace: " + path);
+        }
+        resolved = fileSystem.realPath(resolved);
         if (java.nio.file.Files.isDirectory(resolved)) {
             throw new IllegalArgumentException("path is a directory: " + path);
         }
@@ -2014,17 +2791,45 @@ public class Engine {
     }
 
     public void writeFile(String path, byte[] content) {
-        fileSystem.write(resolvePath(path), content == null ? new byte[0] : content);
+        writeFile(path, content, null, false);
+    }
+
+    public void writeFile(String path, byte[] content, String user, boolean isAdmin) {
+        Path root = workspaceRoot();
+        Path allowedBase = allowedBaseFor(user, isAdmin);
+        if (!root.startsWith(allowedBase) && !root.equals(allowedBase)) {
+            root = allowedBase;
+        }
+        Path resolved = root.resolve(path == null ? "" : path).normalize();
+        if (!resolved.startsWith(root) || !resolved.startsWith(allowedBase)) {
+            throw new IllegalArgumentException("path escapes workspace: " + path);
+        }
+        fileSystem.write(resolved, content == null ? new byte[0] : content);
     }
 
     public void createFile(String path, String content) {
-        writeFile(path, (content == null ? "" : content).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        createFile(path, content, null, false);
+    }
+
+    public void createFile(String path, String content, String user, boolean isAdmin) {
+        writeFile(path, (content == null ? "" : content).getBytes(java.nio.charset.StandardCharsets.UTF_8), user, isAdmin);
     }
 
     public void deletePath(String path) {
-        Path resolved = resolvePath(path);
+        deletePath(path, null, false);
+    }
+
+    public void deletePath(String path, String user, boolean isAdmin) {
         Path root = workspaceRoot();
-        if (resolved.equals(root)) {
+        Path allowedBase = allowedBaseFor(user, isAdmin);
+        if (!root.startsWith(allowedBase) && !root.equals(allowedBase)) {
+            root = allowedBase;
+        }
+        Path resolved = root.resolve(path == null ? "" : path).normalize();
+        if (!resolved.startsWith(root) || !resolved.startsWith(allowedBase)) {
+            throw new IllegalArgumentException("path escapes workspace: " + path);
+        }
+        if (resolved.equals(allowedBase) || resolved.equals(root)) {
             throw new IllegalArgumentException("cannot delete the workspace root");
         }
         if (!java.nio.file.Files.exists(resolved)) {
@@ -2098,6 +2903,8 @@ public class Engine {
     public Map<String, Object> health() {
         Map<String, Object> m = new java.util.LinkedHashMap<>();
         m.put("status", "ok");
+        m.put("role", config.role());
+        m.put("mode", config.mode());
         m.put("provider", config.provider());
         m.put("model", config.model());
         m.put("workspace", config.workspace());
@@ -2119,7 +2926,7 @@ public class Engine {
 
     private ModelInfo modelInfo() {
         return new ModelInfo(modelRef.model(), modelRef.provider(), List.of(),
-                new ModelInfo.ModelLimits(128_000, 8_192),
+                new ModelInfo.ModelLimits(modelContextLimit, modelOutputLimit),
                 new ModelInfo.CostModel(Money.zero(), Money.zero(), Money.zero(), Money.zero()),
                 new ModelInfo.ModelCapabilities(List.of(Modality.TEXT), List.of(Modality.TEXT)),
                 Option.none(), Option.none());
@@ -2142,6 +2949,40 @@ public class Engine {
         return text.toString();
     }
 
+
+    private ProcessRunner createProcessRunner(Path root) {
+        if (!shellSandboxEnabled) {
+            return new JdkProcessRunner();
+        }
+        SandboxMode mode = SandboxMode.fromString(shellSandboxMode);
+        if (mode == SandboxMode.NONE || mode == SandboxMode.DANGER_FULL_ACCESS) {
+            return new JdkProcessRunner();
+        }
+        java.util.List<Path> extra = new java.util.ArrayList<>();
+        if (shellSandboxExtraWritable != null && shellSandboxExtraWritable.isPresent()) {
+            String val = shellSandboxExtraWritable.get();
+            if (val != null && !val.isBlank()) {
+                for (String part : val.split(",")) {
+                    String t = part.trim();
+                    if (!t.isEmpty()) extra.add(Path.of(t));
+                }
+            }
+        }
+        java.util.List<String> allowlist = new java.util.ArrayList<>();
+        if (shellSandboxEnvAllowlist != null && !shellSandboxEnvAllowlist.isBlank()) {
+            for (String part : shellSandboxEnvAllowlist.split(",")) {
+                String t = part.trim();
+                if (!t.isEmpty()) allowlist.add(t);
+            }
+        }
+        for (String k : java.util.List.of("AGENT", "OPENCODE", "AI_AGENT", "OPENCODE_SESSION_ID")) {
+            if (!allowlist.contains(k)) allowlist.add(k);
+        }
+        int gid = shellSandboxGid >= 0 ? shellSandboxGid : shellSandboxUid;
+        return new SandboxedProcessRunner(
+                new JdkProcessRunner(), mode, root, extra,
+                shellSandboxUid, gid, shellSandboxBwrap, allowlist);
+    }
 
     private ToolSnapshot buildEphemeralBaseSnapshot(Path root) {
         ToolRegistry r = new ToolRegistry();
@@ -2168,7 +3009,7 @@ public class Engine {
         defs.add(PatchTool.definition(fs, access, permissionGate));
         defs.add(GlobTool.definition(fs, access, permissionGate));
         defs.add(GrepTool.definition(fs, access, permissionGate, toolOutput));
-        JdkProcessRunner processRunner = new JdkProcessRunner();
+        ProcessRunner processRunner = createProcessRunner(root);
         defs.add(ShellTool.definition(processRunner, root, root, null,
                 permissionGate, processRegistry));
         if (includeWorktree && WorktreeTool.available(processRunner, root)) {
@@ -2190,7 +3031,7 @@ public class Engine {
         return java.util.List.copyOf(out);
     }
 
-    private static void deleteDirectoryRecursively(Path root) {
+    static void deleteDirectoryRecursively(Path root) {
         if (root == null || !java.nio.file.Files.exists(root)) return;
         try {
             java.nio.file.Files.walkFileTree(root,
@@ -2219,8 +3060,17 @@ public class Engine {
         if (global == null) return ToolSnapshot.empty();
         if (agentConfig == null) return global;
         List<String> allow = agentConfig.toolAllow();
-        List<String> deny = agentConfig.toolDeny();
+        List<String> deny = new ArrayList<>(agentConfig.toolDeny() == null ? List.of() : agentConfig.toolDeny());
         List<String> mcpServers = agentConfig.mcpServers();
+
+        // An agent with skills disabled must not reach the skill tools, even if
+        // its tool allow list contains "*".
+        EngineConfig.AgentSkillsConfig agentSkills = agentCatalogue == null ? null : agentCatalogue.agentSkills(agentConfig.name());
+        boolean skillsEnabled = agentSkills == null || agentSkills.enabled();
+        if (!skillsEnabled) {
+            if (!deny.contains("skill")) deny.add("skill");
+            if (!deny.contains("skill_list")) deny.add("skill_list");
+        }
 
         java.util.Set<String> allowedNames = new java.util.LinkedHashSet<>();
         for (ToolDefinition def : global.list()) {

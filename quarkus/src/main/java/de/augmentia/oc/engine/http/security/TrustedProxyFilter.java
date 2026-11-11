@@ -46,9 +46,11 @@ public class TrustedProxyFilter implements ContainerRequestFilter {
         }
         String email = request.getHeaderString("X-Forwarded-Email");
         String groupsHeader = request.getHeaderString("X-Forwarded-Groups");
+        String rolesHeader = request.getHeaderString("X-Forwarded-Roles");
         List<String> groups = parseGroups(groupsHeader);
-        LOG.log(Level.FINE, "security.trusted_proxy_accepted user={0}", user);
-        principalContext.set(new Principal(user, user, List.of(), groups,
+        List<String> roles = parseGroups(rolesHeader);
+        LOG.log(Level.FINE, "security.trusted_proxy_accepted user={0} roles={1}", new Object[]{user, roles});
+        principalContext.set(new Principal(user, user, roles, groups,
                 AuthMode.PROXY, "proxy", Map.of("email", email == null ? "" : email)));
     }
 

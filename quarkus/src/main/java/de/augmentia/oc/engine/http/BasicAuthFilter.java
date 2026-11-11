@@ -40,12 +40,17 @@ public class BasicAuthFilter implements ContainerRequestFilter {
         String path = request.getUriInfo().getPath();
         if ("health/live".equals(path) || "health/ready".equals(path)) return;
         if ("metrics".equals(path) || "audit".equals(path)) return;
+        // The UI needs /config.js before login to discover the OIDC issuer.
+        // getPath() may include a leading slash or the /api prefix, so match
+        // the suffix to be safe.
+        if (path != null && path.endsWith("config.js")) return;
 
         AuthMode mode = securityConfig == null ? AuthMode.NONE : securityConfig.mode();
         if (mode == AuthMode.NONE) {
             String password = config.password();
             if (password == null || password.isBlank()) {
-                principalContext.set(Principal.anonymous());
+                // Local, login-free mode: treat the caller as a local admin.
+                principalContext.set(Principal.localAdmin());
                 return;
             }
             mode = AuthMode.BASIC;
