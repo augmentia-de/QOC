@@ -25,5 +25,6 @@ echo "=== Workflow Runner ==="
 echo "Port: 8097"
 echo "OPENAI_API_KEY: ${OPENAI_API_KEY:+set}${OPENAI_API_KEY:-not set}"
 echo ""
-
-java -cp "$CP" de.augmentia.qoc.workflowrunner.WorkflowRunnerServer
+echo "NOTE: WorkflowRunnerServer main class was removed (temporal part)."
+echo "      workflow-runner is now a library module only."
+echo "      Use it as a dependency in your application."

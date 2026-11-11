@@ -17,23 +17,19 @@ echo "Skip tests: ${SKIP_TESTS:-no}"
 echo ""
 
 # Build engine
-echo "[1/5] Building engine..."
+echo "[1/4] Building engine..."
 mvn -pl engine -am package $SKIP_TESTS -B -q 2>&1 | tail -3
 
 # Build quarkus
-echo "[2/5] Building quarkus..."
+echo "[2/4] Building quarkus..."
 mvn -pl quarkus -am package $SKIP_TESTS -B -q 2>&1 | tail -3
 
-# Build temporal
-echo "[3/5] Building temporal..."
-mvn -pl temporal -am package $SKIP_TESTS -B -q 2>&1 | tail -3
-
 # Build workflow-runner
-echo "[4/5] Building workflow-runner..."
+echo "[3/4] Building workflow-runner..."
 mvn -pl workflow-runner -am package $SKIP_TESTS -B -q 2>&1 | tail -3
 
 # Build workflow-ui
-echo "[5/5] Building workflow-ui..."
+echo "[4/4] Building workflow-ui..."
 cd "$QOC_DIR/workflow-ui"
 if [ ! -d "node_modules" ]; then
     npm install --silent 2>&1 | tail -2

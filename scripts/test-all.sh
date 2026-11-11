@@ -14,10 +14,10 @@ echo ""
 echo "[1/3] Engine tests..."
 mvn -pl engine test -B 2>&1 | tail -3
 
-# Workflow-runner E2E
+# Workflow-runner tests
 echo ""
-echo "[2/3] Workflow E2E test..."
-bash scripts/e2e-workflow-test.sh 2>&1 | tail -5
+echo "[2/3] Workflow-runner tests..."
+mvn -pl workflow-runner test -B 2>&1 | tail -3
 
 # Workflow-ui build (type check)
 echo ""

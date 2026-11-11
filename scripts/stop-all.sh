@@ -27,12 +27,5 @@ if [ -f /tmp/wr.pid ]; then
 fi
 pkill -f "workflow-runner-1.0.0-SNAPSHOT.jar" 2>/dev/null || true
 
-# Stop Temporal (optional - keep running by default)
-if [ "${STOP_TEMPORAL:-false}" = "true" ]; then
-    docker stop qoc-temporal 2>/dev/null && echo "  Temporal stopped" || true
-else
-    echo "  Temporal left running (set STOP_TEMPORAL=true to stop)"
-fi
-
 echo ""
 echo "=== All services stopped ==="
