@@ -1,12 +1,15 @@
-import { Handle, Position } from '@xyflow/react';
+import type { NodeProps } from '@xyflow/react';
+import { NodeShell, PortRow } from './NodeShell';
 
-export function SubworkflowNode({ data }: { data: Record<string, unknown> }) {
+export function SubworkflowNode({ data, selected }: NodeProps) {
   return (
-    <div className="px-4 py-2 rounded-lg bg-indigo-600 border-2 border-indigo-400 min-w-[120px]">
-      <Handle type="target" position={Position.Left} />
-      <div className="font-bold text-sm">{String(data.title || 'Sub-Workflow')}</div>
-      <div className="text-xs opacity-70">{String(data.workflowRef || 'ref')}</div>
-      <Handle type="source" position={Position.Right} />
-    </div>
+    <NodeShell
+      title={String(data.title || 'Sub-Workflow')}
+      subtitle={String(data.workflowRef || 'no reference')}
+      color="bg-indigo-600 border-indigo-400"
+      selected={selected}
+    >
+      <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
+    </NodeShell>
   );
 }

@@ -13,7 +13,10 @@ import java.util.regex.Pattern;
  */
 public final class CacheAffinity {
 
-    private static final Pattern SESSION_FORM = Pattern.compile("ses_[0-9a-f]{64}");
+    // Keep this aligned with SessionId: 16/32-byte IDs and parent-prefixed
+    // child IDs are valid session forms.
+    private static final Pattern SESSION_FORM =
+            Pattern.compile("ses_(?:ses_)*[0-9a-f]+(?:_[0-9a-f]+)*");
 
     public static final String HEADER_AFFINITY = "x-session-affinity";
     public static final String HEADER_SESSION_ID = "X-Session-Id";

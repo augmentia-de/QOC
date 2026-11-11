@@ -32,6 +32,11 @@ public class DatabaseMigration {
     String storageKind;
 
     void onStart(@Observes StartupEvent event) {
+        migrate();
+    }
+
+    /** Runs the configured migration. Idempotent; used by startup hooks. */
+    public void migrate() {
         // In-memory mode: no database, no migration, no Flyway.
         if ("memory".equalsIgnoreCase(storageKind)) {
             return;

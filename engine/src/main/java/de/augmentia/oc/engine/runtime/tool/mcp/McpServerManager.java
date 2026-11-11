@@ -164,6 +164,17 @@ public final class McpServerManager {
         discover(entry);
     }
 
+    /** Removes a server and closes its tool registrations. */
+    public void remove(String name) {
+        ServerEntry entry = servers.remove(name);
+        if (entry == null) return;
+        for (Registration registration : entry.registrations) registration.close();
+        entry.registrations.clear();
+        entry.client = null;
+        entry.tools = List.of();
+        entry.status = McpServerStatus.DISABLED;
+    }
+
     private McpClient client(McpServerConfig config) {
         return switch (config) {
             case McpServerConfig.Remote remote -> new McpDiscoveryClient(httpTransport, remote,

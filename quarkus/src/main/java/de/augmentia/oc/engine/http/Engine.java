@@ -442,6 +442,8 @@ public class Engine {
     private SessionStore sessions;
     private SessionService sessionService;
     private de.augmentia.oc.engine.runtime.QocEngine qocEngine;
+
+    public de.augmentia.oc.engine.runtime.QocEngine qocEngine() { return qocEngine; }
     private de.augmentia.oc.engine.core.wiring.Stores storesField;
     private de.augmentia.oc.engine.core.wiring.StorageConfig storageConfigField;
     private ContextBuilder contextBuilder;
@@ -483,6 +485,10 @@ public class Engine {
     private InstructionStore instructions;
     private CompactionService compaction;
     private McpRegistry mcp;
+
+    public McpRegistry mcp() {
+        return mcp;
+    }
     private List<Rule> allowAll;
     private SubagentTool subagentTool;
     private ProcessRegistry processRegistry;
@@ -522,6 +528,9 @@ public class Engine {
 
     @ConfigProperty(name = "engine.memory.max-bytes", defaultValue = "1073741824")
     long memoryMaxBytes;
+
+    @ConfigProperty(name = "engine.workflow.max-steps", defaultValue = "100")
+    int workflowMaxSteps;
 
     @PostConstruct
     void wire() {
@@ -817,7 +826,8 @@ commandLoader = new CommandLoader(workspacePath,
                         if (cfg == null) return null;
                         return new de.augmentia.oc.engine.runtime.QocEngine.AgentConfig(
                                 name, cfg.model(), 0.3, 4096, 1.0, null,
-                                java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), false);
+                                java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), false,
+                                de.augmentia.oc.engine.core.model.Option.none());
                     }
                 },
                 new de.augmentia.oc.engine.runtime.callback.TracerProvider() {
@@ -828,11 +838,39 @@ commandLoader = new CommandLoader(workspacePath,
                         if (span instanceof io.opentelemetry.api.trace.Span s) s.end();
                     }
                 },
-                de.augmentia.oc.engine.adapter.ToolFactory.create(java.nio.file.Path.of(".")));
+                new de.augmentia.oc.engine.core.wiring.ToolDependencies(
+                        new de.augmentia.oc.engine.adapter.fs.CachedFileSystem(
+                                new de.augmentia.oc.engine.adapter.fs.NioFileSystem(java.nio.file.Path.of(".").toAbsolutePath().normalize())),
+                        new de.augmentia.oc.engine.adapter.process.JdkProcessRunner(),
+                        new de.augmentia.oc.engine.adapter.net.JdkHttpTransport(),
+                        java.nio.file.Path.of(".").toAbsolutePath().normalize(),
+                        registry -> {
+                            // Register MCP tools into QocEngine's ToolRegistry
+                            try {
+                                de.augmentia.oc.engine.runtime.tool.mcp.McpServerManager mgr = mcp.manager();
+                                for (String serverName : mgr.serverNames()) {
+                                    if (mgr.status(serverName) != de.augmentia.oc.engine.runtime.tool.mcp.McpServerStatus.CONNECTED) continue;
+                                    de.augmentia.oc.engine.runtime.tool.mcp.McpClient client = mgr.client(serverName);
+                                    if (client == null) continue;
+                                    for (de.augmentia.oc.engine.runtime.tool.mcp.McpRegistrar.McpToolSpec tool : mgr.discovered(serverName)) {
+                                        registry.register(de.augmentia.oc.engine.runtime.tool.mcp.McpTool.definition(
+                                                serverName, tool.name(), tool.description(), tool.inputSchema(), client));
+                                    }
+                                }
+                            } catch (RuntimeException e) {
+                                LOG.warnf("MCP tool registration for QocEngine failed: %s", e.getMessage());
+                            }
+                        }));
         if (toolTokenEnabled && toolTokenSigningKey != null && !toolTokenSigningKey.isBlank()
                 && !"disabled".equalsIgnoreCase(toolTokenSigningKey)) {
             qocEngine.toolTokenService = new de.augmentia.oc.engine.adapter.security.HmacToolTokenService(toolTokenSigningKey);
         }
+        qocEngine.setWorkflowMaxSteps(workflowMaxSteps);
+        qocEngine.setPreflightContext(new de.augmentia.oc.engine.runtime.resilience.PreflightChecker.PreflightContext(
+                config == null ? null : config.url(),
+                providerApiKey,
+                () -> memoryMode || de.augmentia.oc.engine.adapter.sql.DbHealthSql.isHealthy(dataSource, 3),
+                workspacePath));
         // Crash recovery: resume sessions that were interrupted by a previous process stop.
         if (!memoryMode && recoveryEnabled) {
             try {
@@ -1911,17 +1949,22 @@ commandLoader = new CommandLoader(workspacePath,
                 qocConfig = new de.augmentia.oc.engine.runtime.QocEngine.AgentConfig(
                         agentName, cfg.model(), 0.3, cfg.maxSteps() > 0 ? cfg.maxSteps() : 4096, 1.0,
                         null, java.util.List.of(), java.util.List.of(), java.util.List.of(),
-                        java.util.List.of(), false);
+                        java.util.List.of(), false,
+                        de.augmentia.oc.engine.core.model.Option.none());
             }
         }
         if (qocConfig == null) {
             qocConfig = new de.augmentia.oc.engine.runtime.QocEngine.AgentConfig(
                     agentName == null ? "build" : agentName, null, 0.3, 4096, 1.0, null,
-                    java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), false);
+                    java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), false,
+                    de.augmentia.oc.engine.core.model.Option.none());
         }
 
         de.augmentia.oc.engine.core.model.EngineResult qocResult =
-                qocEngine.runPrompt(id, agentName == null ? "build" : agentName, text, qocConfig, false, null, null, principal);
+                qocEngine.runPrompt(id, agentName == null ? "build" : agentName, text, qocConfig, false,
+                        null, null, principal,
+                        new de.augmentia.oc.engine.runtime.QocEngine.ExecutionOverrides(
+                                agent, model, runStep, agentToolSnapshot, contextBuilder, skillSelection));
 
         // Map EngineResult to Quarkus types
         String qocFinalText = qocResult.text();
@@ -2155,7 +2198,7 @@ commandLoader = new CommandLoader(workspacePath,
             Location location = new Location(directory, ProjectId.create(), Option.none());
             AgentProfile agent = agentProfile(agentId, agentName, agentCatalogue.config(agentName));
 
-            SessionId child = sessionService.create(location, agentId, Option.none(), clock.now());
+            SessionId child = sessionService.create(location, agentId, Option.none(), clock.now(), parent);
             sessions.put(new SessionInfo(child, location.projectId(), location, "Subagent: " + agentName, agentId,
                     Option.none(), List.of(), Money.zero(), TokenCount.zero(), clock.now(), clock.now(),
                     Option.none(), Option.none(), 0, Option.none(),

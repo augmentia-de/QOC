@@ -41,7 +41,7 @@ public record WorkflowDefinition(
             if (id == null) id = "";
             if (type == null) type = "agent";
             if (position == null) position = new Point(0, 0);
-            if (data == null) data = new NodeData("", "", false, "human", 3, "", List.of(), "all", null, List.of(), "", "");
+            if (data == null) data = new NodeData("", "", false, "human", 3, "", List.of(), "all", null, List.of(), "", "", null, "", "", Map.of(), null);
         }
     }
 
@@ -61,7 +61,12 @@ public record WorkflowDefinition(
             Integer joinN,
             List<Branch> branches,
             String defaultTarget,
-            String workflowRef
+            String workflowRef,
+            Map<String, Object> responseSchema,
+            String mcpServer,
+            String mcpTool,
+            Map<String, Object> mcpArgs,
+            Boolean jsonOutput
     ) {
         public NodeData {
             if (title == null) title = "";
@@ -74,6 +79,10 @@ public record WorkflowDefinition(
             if (branches == null) branches = List.of();
             if (defaultTarget == null) defaultTarget = "";
             if (workflowRef == null) workflowRef = "";
+            // responseSchema may be null (no structured output)
+            if (mcpServer == null) mcpServer = "";
+            if (mcpTool == null) mcpTool = "";
+            if (mcpArgs == null) mcpArgs = Map.of();
         }
     }
 
@@ -92,14 +101,23 @@ public record WorkflowDefinition(
             String source,
             String target,
             String type,
-            String condition
+            String condition,
+            String sourceHandle,
+            String targetHandle
     ) {
+        /** Backwards-compatible constructor for callers without handle metadata. */
+        public Edge(String id, String source, String target, String type, String condition) {
+            this(id, source, target, type, condition, "", "");
+        }
+
         public Edge {
             if (id == null) id = "";
             if (source == null) source = "";
             if (target == null) target = "";
             if (type == null) type = "default";
             if (condition == null) condition = "";
+            if (sourceHandle == null) sourceHandle = "";
+            if (targetHandle == null) targetHandle = "";
         }
     }
 
@@ -119,7 +137,8 @@ public record WorkflowDefinition(
             List<String> hooks,
             boolean jsonOutput,
             boolean active,
-            String systemPrompt
+            String systemPrompt,
+            Map<String, Object> responseSchema
     ) {
         public Agent {
             if (id == null) id = "";
@@ -132,6 +151,7 @@ public record WorkflowDefinition(
             if (guardrailsOutput == null) guardrailsOutput = List.of();
             if (hooks == null) hooks = List.of();
             if (systemPrompt == null) systemPrompt = "";
+            // responseSchema may be null (no structured output)
         }
     }
 }

@@ -16,6 +16,7 @@ Profil und eigenem Host-Port:
 | `qoc-secure` | `secure` | 8075 | gehärtet, Least-Privilege |
 | `qoc-secure-shell` | `secure-shell` | 8076 | Shell sieht nur `/data/home` |
 | `qoc-native` | `native` | 8077 | Native-Image |
+| `qoc-native-ui` | `native` | 5174 | Workflow-UI (nginx) für `qoc-native` |
 | `qoc-agent-a` | `a2a` | 8078 | A2A-Interop-Agent A |
 | `mcp-server` | `a2a` | 8079 | MCP-Testserver |
 
@@ -164,13 +165,31 @@ Details: `deploy/docker-memory/README.md`.
 
 ## Native image
 
+Der native Build läuft vollständig im Docker-Build (Mandrel 25 + Maven,
+`deploy/Dockerfile.native`); auf dem Host ist kein GraalVM nötig:
+
 ```bash
 cd qoc
-ENGINE_DB_KIND=postgresql ENGINE_DB_DRIVER=org.postgresql.Driver \
-  QUARKUS_FLYWAY_LOCATIONS=classpath:db/migration \
-  mvn -DskipTests package -Dnative     # requires GraalVM
 cd deploy
 docker compose --profile native up -d --build
+```
+
+Damit starten zwei Container:
+
+| Container | URL | Rolle |
+|---|---|---|
+| `qoc-native` | http://localhost:8077 | Engine (native Binary) |
+| `qoc-native-ui` | http://localhost:5174 | Workflow-UI, `/api` → `qoc-native:8080` |
+
+Beide Container teilen sich das Compose-Netz; das UI-Image leitet `/api`
+unverändert an die Engine weiter (`API_UPSTREAM`).
+
+Alternativ nur die Engine: `docker compose --profile native up -d qoc-native`.
+Für die UI-Entwicklung gegen den nativen Container:
+
+```bash
+cd qoc/workflow-ui
+VITE_API_TARGET=http://localhost:8077 npm run dev   # http://localhost:5173
 ```
 
 A native binary built for SQLite must be rebuilt with the PostgreSQL settings
@@ -178,6 +197,14 @@ above before it can use the default `.env` (external PostgreSQL). The native
 image now includes **git** and **util-linux** (see `Dockerfile.native`), so
 commit-per-step workflows (e.g. AISDLC) work in native mode. Worktree tools
 are available as well.
+
+`workflow-runner` ist seit der Quarkus-Integration eine reine Library. Sein
+JAR darf deshalb weder `engine`-Klassen noch ein eigenes SLF4J-Binding
+enthalten: ein eingebettetes `slf4j-simple` hält beim Native-Image-Build
+`System.err` (und damit einen `FileDescriptor`) in der Image-Heap fest und
+lässt GraalVM mit `Detected a FileDescriptor in the image heap` abbrechen.
+Deshalb liefert `workflow-runner` nur noch `slf4j-api`; das Binding stellt
+Quarkus (JBoss LogManager) bereit.
 
 The native compose file mounts `deploy/AGENTS.native.md` read-only at
 `/data/workspace/AGENTS.md`, so agents see the native-specific restrictions

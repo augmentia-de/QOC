@@ -1,0 +1,50 @@
+# Runtime-only image for the QOC engine, built from an already compiled native
+# runner (quarkus/target/*-runner).
+#
+# Use this when the native build already ran (e.g. ./deploy/build-native-image.sh)
+# and only the runtime image is needed. For a fully self-contained build inside
+# Docker use deploy/Dockerfile.native.
+#
+#   docker build -f deploy/Dockerfile.native-runtime -t qoc-engine:native .
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates git util-linux bubblewrap \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r qoc && useradd -r -g qoc -d /data/home -s /sbin/nologin qoc
+
+WORKDIR /app
+COPY quarkus/target/*-runner /app/qoc-runner
+RUN chmod +x /app/qoc-runner
+
+VOLUME ["/data"]
+
+RUN mkdir -p /data/workspace /data/log /data/home/.opencode/plan && \
+    chown -R qoc:qoc /data && \
+    chmod 750 /data /data/workspace /data/log && \
+    chmod 700 /data/home
+
+ENV HOME=/data/home
+ENV QUARKUS_HTTP_HOST=0.0.0.0
+ENV QUARKUS_HTTP_PORT=8080
+ARG ENGINE_DB_KIND=postgresql
+ENV ENGINE_DB_KIND=${ENGINE_DB_KIND}
+ENV ENGINE_WORKSPACE=/data/workspace
+ENV LOG_DIR=/data/log
+ENV QUARKUS_OTEL_ENABLED=false
+ENV QUARKUS_LOG_FILE_ENABLED=true
+ENV QUARKUS_LOG_LEVEL=DEBUG
+ENV QUARKUS_LOG_CONSOLE_LEVEL=INFO
+ENV QUARKUS_LOG_FILE_LEVEL=DEBUG
+ENV QUARKUS_LOG_FILE_PATH=/data/log/qoc.log
+
+EXPOSE 8080
+
+# Run as dedicated user (not root)
+USER qoc
+
+# The bind mount on /data hides the build-time /data/home, so create it again
+# at startup. HOME must be writable by the runtime user (see compose user:).
+ENTRYPOINT ["sh", "-c", "mkdir -p \"$ENGINE_WORKSPACE/plans\" && exec /app/qoc-runner"]

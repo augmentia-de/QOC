@@ -122,4 +122,86 @@ public sealed interface SessionEvent extends Payload {
                           Instant at, SessionError error) implements SessionEvent {}
 
     record UsageRecorded(SessionId sessionId, Money cost, TokenCount tokens) implements SessionEvent {}
+
+    // ------------------------------------------------------------------
+    // Workflow run state (WF-03). These events are the durable source of
+    // truth for workflow execution; the database only stores the workflow
+    // specification (definition + versions).
+    // ------------------------------------------------------------------
+
+    record WorkflowRunStarted(SessionId sessionId, String runId, String workflowId,
+                              String definitionVersion, String contentHash, String input,
+                              Instant time) implements SessionEvent {
+        public WorkflowRunStarted {
+            if (runId == null || runId.isBlank()) throw new IllegalArgumentException("runId must not be blank");
+            if (workflowId == null || workflowId.isBlank()) throw new IllegalArgumentException("workflowId must not be blank");
+            if (definitionVersion == null) definitionVersion = "";
+            if (contentHash == null) contentHash = "";
+            if (input == null) input = "";
+            if (time == null) time = Instant.EPOCH;
+        }
+    }
+
+    record WorkflowNodeStarted(SessionId sessionId, String runId, String nodeId, int attempt,
+                               Instant time) implements SessionEvent {
+        public WorkflowNodeStarted {
+            if (runId == null || runId.isBlank()) throw new IllegalArgumentException("runId must not be blank");
+            if (nodeId == null || nodeId.isBlank()) throw new IllegalArgumentException("nodeId must not be blank");
+            if (attempt < 1) attempt = 1;
+            if (time == null) time = Instant.EPOCH;
+        }
+    }
+
+    record WorkflowNodeCompleted(SessionId sessionId, String runId, String nodeId, String status,
+                                 String outputText, Object output, String childSessionId,
+                                 Map<String, Object> stateDelta,
+                                 Instant time) implements SessionEvent {
+        public WorkflowNodeCompleted {
+            if (runId == null || runId.isBlank()) throw new IllegalArgumentException("runId must not be blank");
+            if (nodeId == null || nodeId.isBlank()) throw new IllegalArgumentException("nodeId must not be blank");
+            if (status == null) status = "COMPLETED";
+            if (outputText == null) outputText = "";
+            if (childSessionId == null) childSessionId = "";
+            if (stateDelta == null) stateDelta = Map.of();
+            if (time == null) time = Instant.EPOCH;
+        }
+    }
+
+    record WorkflowNodeFailed(SessionId sessionId, String runId, String nodeId,
+                              SessionError error, int attempt, Instant time) implements SessionEvent {
+        public WorkflowNodeFailed {
+            if (runId == null || runId.isBlank()) throw new IllegalArgumentException("runId must not be blank");
+            if (nodeId == null || nodeId.isBlank()) throw new IllegalArgumentException("nodeId must not be blank");
+            if (error == null) error = new SessionError.Unknown("workflow-node", "unknown");
+            if (attempt < 1) attempt = 1;
+            if (time == null) time = Instant.EPOCH;
+        }
+    }
+
+    record WorkflowRunResumed(SessionId sessionId, String runId, int attempt,
+                              Instant time) implements SessionEvent {
+        public WorkflowRunResumed {
+            if (runId == null || runId.isBlank()) throw new IllegalArgumentException("runId must not be blank");
+            if (attempt < 1) attempt = 1;
+            if (time == null) time = Instant.EPOCH;
+        }
+    }
+
+    record WorkflowRunFinished(SessionId sessionId, String runId, String status,
+                               Instant time) implements SessionEvent {
+        public WorkflowRunFinished {
+            if (runId == null || runId.isBlank()) throw new IllegalArgumentException("runId must not be blank");
+            if (status == null) status = "COMPLETED";
+            if (time == null) time = Instant.EPOCH;
+        }
+    }
+
+    record WorkflowRunFailed(SessionId sessionId, String runId, SessionError error,
+                             Instant time) implements SessionEvent {
+        public WorkflowRunFailed {
+            if (runId == null || runId.isBlank()) throw new IllegalArgumentException("runId must not be blank");
+            if (error == null) error = new SessionError.Unknown("workflow", "unknown");
+            if (time == null) time = Instant.EPOCH;
+        }
+    }
 }

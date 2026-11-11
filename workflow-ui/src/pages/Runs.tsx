@@ -1,28 +1,32 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 
 interface Run {
-  workflowId: string;
   runId: string;
-  workflowType: string;
+  sessionId: string;
+  workflowId: string;
   status: string;
-  startTime: string;
-  closeTime: string | null;
+  currentNodeId: string;
+  startedAt: string;
+  updatedAt: string;
+  error?: string;
+  active?: boolean;
 }
 
 export default function Runs() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
-  const [detail, setDetail] = useState<any>(null);
+  const [detail, setDetail] = useState<Run | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [streamEvents, setStreamEvents] = useState<any[]>([]);
   const [streaming, setStreaming] = useState(false);
+  const streamRef = useRef<EventSource | null>(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/api/runs?limit=50');
+      const res = await axios.get('/api/workflows/runs?limit=50');
       setRuns(res.data.runs || []);
     } catch (e) {
       console.error(e);
@@ -37,45 +41,47 @@ export default function Runs() {
     const t = setInterval(load, 3000);
     return () => clearInterval(t);
   }, [autoRefresh]);
+  useEffect(() => () => streamRef.current?.close(), []);
 
-  const showDetail = async (id: string) => {
-    setSelected(id);
+  const showDetail = async (runId: string) => {
+    setSelected(runId);
     try {
-      const res = await axios.get(`/api/runs/${id}`);
+      const res = await axios.get(`/api/workflows/runs/${runId}`);
       setDetail(res.data);
     } catch (e) {
       console.error(e);
     }
   };
 
-  const startStream = (id: string) => {
+  const startStream = (run: Run) => {
+    streamRef.current?.close();
     setStreamEvents([]);
     setStreaming(true);
-    const es = new EventSource(`/api/runs/${id}/stream`);
+    const es = new EventSource(`/api/event?session=${encodeURIComponent(run.sessionId)}`);
+    streamRef.current = es;
     es.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data);
-        setStreamEvents((prev) => [...prev, data]);
-      } catch {}
+        setStreamEvents((prev) => [...prev, JSON.parse(e.data)]);
+      } catch {
+        setStreamEvents((prev) => [...prev, { raw: e.data }]);
+      }
     };
-    es.addEventListener('complete', (e: any) => {
-      try {
-        const data = JSON.parse(e.data);
-        setDetail(data);
-      } catch {}
-      es.close();
-      setStreaming(false);
-    });
     es.onerror = () => {
       es.close();
       setStreaming(false);
     };
   };
 
-  const terminate = async (id: string) => {
-    if (!window.confirm(`Run ${id} wirklich beenden?`)) return;
+  const stopStream = () => {
+    streamRef.current?.close();
+    streamRef.current = null;
+    setStreaming(false);
+  };
+
+  const terminate = async (run: Run) => {
+    if (!window.confirm(`Run ${run.runId} wirklich beenden?`)) return;
     try {
-      await axios.post(`/api/runs/${id}/terminate`);
+      await axios.post(`/api/session/${encodeURIComponent(run.sessionId)}/interrupt`);
       load();
     } catch (e: any) {
       console.error(e);
@@ -87,6 +93,7 @@ export default function Runs() {
     if (s === 'COMPLETED') return 'text-green-400';
     if (s === 'RUNNING') return 'text-blue-400';
     if (s === 'FAILED') return 'text-red-400';
+    if (s === 'PAUSED') return 'text-yellow-400';
     return 'text-gray-400';
   };
 
@@ -106,20 +113,20 @@ export default function Runs() {
           <div className="space-y-2">
             {runs.map((r) => (
               <div
-                key={r.workflowId}
-                onClick={() => showDetail(r.workflowId)}
-                className={`p-3 bg-gray-800 rounded cursor-pointer hover:bg-gray-700 ${selected === r.workflowId ? 'ring-2 ring-blue-500' : ''}`}
+                key={r.runId}
+                onClick={() => showDetail(r.runId)}
+                className={`p-3 bg-gray-800 rounded cursor-pointer hover:bg-gray-700 ${selected === r.runId ? 'ring-2 ring-blue-500' : ''}`}
               >
-                <div className="flex justify-between">
-                  <span className="font-mono text-sm text-blue-400">{r.workflowId}</span>
+                <div className="flex justify-between gap-2">
+                  <span className="font-mono text-sm text-blue-400 truncate">{r.runId}</span>
                   <span className={`text-sm font-bold ${statusColor(r.status)}`}>{r.status}</span>
                 </div>
                 <div className="text-xs text-gray-400 mt-1">
-                  {r.workflowType} · {r.startTime}
+                  {r.workflowId} · {r.currentNodeId || '—'} · {r.startedAt}
                 </div>
-                {r.status === 'RUNNING' && (
+                {(r.status === 'RUNNING' || r.active) && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); terminate(r.workflowId); }}
+                    onClick={(e) => { e.stopPropagation(); terminate(r); }}
                     className="mt-2 px-2 py-1 bg-red-600 rounded text-xs"
                   >
                     Terminate
@@ -133,13 +140,19 @@ export default function Runs() {
               <div className="bg-gray-800 rounded p-4">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="font-bold">Detail</h3>
-                  <button
-                    onClick={() => startStream(detail.workflowId)}
-                    disabled={streaming}
-                    className="px-2 py-1 bg-blue-600 rounded text-xs"
-                  >
-                    {streaming ? 'Streaming...' : 'Live Stream'}
-                  </button>
+                  {streaming ? (
+                    <button onClick={stopStream} className="px-2 py-1 bg-red-600 rounded text-xs">
+                      Stop Stream
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => startStream(detail)}
+                      disabled={!detail.sessionId}
+                      className="px-2 py-1 bg-blue-600 rounded text-xs disabled:opacity-50"
+                    >
+                      Live Stream
+                    </button>
+                  )}
                 </div>
                 <pre className="text-xs text-green-400 overflow-auto max-h-96">
                   {JSON.stringify(detail, null, 2)}
@@ -150,7 +163,9 @@ export default function Runs() {
                     <div className="max-h-48 overflow-auto text-xs font-mono space-y-1">
                       {streamEvents.map((e, i) => (
                         <div key={i} className="text-gray-300">
-                          [{e.eventId}] {e.type} {e.detail ? `- ${e.detail}` : ''}
+                          <span className="text-blue-400">{e.type || e.eventType || 'event'}</span>
+                          {' '}
+                          {JSON.stringify(e)}
                         </div>
                       ))}
                     </div>

@@ -13,6 +13,10 @@ import java.util.Map;
  * <p>Hält strukturierte Node-Outputs, globale State-Variablen und die
  * aktuelle Position im React-Flow-Graphen. Enthält <b>keine</b> Chat-Historie —
  * die wird von QocEngine.runPrompt() intern über ConversationStore verwaltet.</p>
+ *
+ * <p>Der Kontext ist bewusst nur ein Laufzeitobjekt. Seine Bestandteile werden
+ * als Workflow-Events im Session-Journal persistiert und beim Resume daraus
+ * wiederhergestellt.</p>
  */
 public class WorkflowContext {
 
@@ -29,7 +33,7 @@ public class WorkflowContext {
     private String currentNodeId;
 
     public void setNodeOutput(String nodeId, Object output) {
-        nodeOutputs.put(nodeId, output);
+        nodeOutputs.put(nodeId, WorkflowValues.canonical(output));
     }
 
     public Object getNodeOutput(String nodeId) {
@@ -41,7 +45,7 @@ public class WorkflowContext {
     }
 
     public void setState(String key, Object val) {
-        workflowState.put(key, val);
+        workflowState.put(key, WorkflowValues.canonical(val));
     }
 
     public Object getState(String key) {
@@ -58,5 +62,13 @@ public class WorkflowContext {
 
     public void setCurrentNodeId(String id) {
         this.currentNodeId = id;
+    }
+
+    /** Restores a context from journal events. */
+    public void restore(Map<String, Object> nodeOutputs, Map<String, Object> workflowState,
+                        String currentNodeId) {
+        if (nodeOutputs != null) nodeOutputs.forEach(this::setNodeOutput);
+        if (workflowState != null) workflowState.forEach(this::setState);
+        this.currentNodeId = currentNodeId;
     }
 }

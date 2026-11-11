@@ -13,6 +13,11 @@ export interface NodeData {
   branches?: Branch[];
   defaultTarget?: string;
   workflowRef?: string;
+  responseSchema?: Record<string, unknown> | null;
+  mcpServer?: string;
+  mcpTool?: string;
+  mcpArgs?: Record<string, unknown>;
+  jsonOutput?: boolean | null;
 }
 
 export interface Branch {
@@ -33,6 +38,9 @@ export interface WorkflowEdge {
   source: string;
   target: string;
   type?: string;
+  condition?: string;
+  sourceHandle?: string;
+  targetHandle?: string;
 }
 
 export interface Agent {
@@ -51,6 +59,7 @@ export interface Agent {
   jsonOutput: boolean;
   active: boolean;
   systemPrompt: string;
+  responseSchema?: Record<string, unknown> | null;
 }
 
 export interface WorkflowDefinition {

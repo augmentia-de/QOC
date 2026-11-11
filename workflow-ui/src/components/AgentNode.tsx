@@ -1,23 +1,20 @@
-import { Handle, Position } from '@xyflow/react';
+import type { NodeProps } from '@xyflow/react';
+import { NodeShell, PortRow } from './NodeShell';
 
-export function AgentNode({ data }: { data: Record<string, unknown> }) {
+export function AgentNode({ data, selected }: NodeProps) {
   return (
-    <div className="px-4 py-2 rounded-lg bg-blue-600 border-2 border-blue-400 min-w-[120px]">
-      <Handle type="target" position={Position.Left} />
-      <div className="font-bold text-sm">{String(data.title || 'Agent')}</div>
-      <div className="text-xs opacity-70">{String(data.agentRef || 'no agent')}</div>
-      {Boolean(data.requiresHumanApproval) && <div className="text-xs text-amber-300">HITL</div>}
-      <Handle type="source" position={Position.Right} />
-    </div>
-  );
-}
-
-export function EndNode({ data }: { data: Record<string, unknown> }) {
-  return (
-    <div className="px-4 py-2 rounded-lg bg-gray-600 border-2 border-gray-400 min-w-[80px]">
-      <Handle type="target" position={Position.Left} />
-      <div className="font-bold text-sm">{String(data.title || 'End')}</div>
-      <Handle type="source" position={Position.Right} />
-    </div>
+    <NodeShell
+      title={String(data.title || 'Agent')}
+      subtitle={String(data.agentRef || 'no agent')}
+      color="bg-blue-600 border-blue-400"
+      selected={selected}
+    >
+      <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
+      {Boolean(data.requiresHumanApproval) && (
+        <div className="px-3 pb-1 text-[10px] font-semibold text-amber-200">
+          HITL required
+        </div>
+      )}
+    </NodeShell>
   );
 }

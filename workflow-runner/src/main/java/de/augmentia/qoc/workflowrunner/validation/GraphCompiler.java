@@ -13,11 +13,20 @@ public class GraphCompiler {
 
     private static final Set<String> VALID_NODE_TYPES = Set.of(
             "agent", "start", "decision", "loop", "fork", "join", "hitl", "subworkflow", "end",
-            "llm_eval", "llm_summarize");
+            "llm_eval", "llm_summarize", "mcp_call");
 
     public record ValidationResult(boolean valid, List<String> errors, String summary) {}
 
     public static ValidationResult validate(WorkflowDefinition def) {
+        return validate(def, Set.of());
+    }
+
+    /**
+     * Validates a definition and additionally accepts agents that live outside
+     * the definition (global agent store, Option B). {@code externalAgentIds}
+     * may be empty for self-contained definitions.
+     */
+    public static ValidationResult validate(WorkflowDefinition def, Set<String> externalAgentIds) {
         List<String> errors = new ArrayList<>();
 
         if (def == null) {
@@ -66,6 +75,7 @@ public class GraphCompiler {
         for (WorkflowDefinition.Agent a : def.agents()) {
             agentIds.add(a.id());
         }
+        if (externalAgentIds != null) agentIds.addAll(externalAgentIds);
         for (WorkflowDefinition.Node n : def.nodes()) {
             if ("agent".equals(n.type()) && n.data() != null && n.data().agentRef() != null
                     && !n.data().agentRef().isBlank()) {

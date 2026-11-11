@@ -30,6 +30,37 @@ export const HealthApi = {
   check: () => api.get<{ status: string }>('/health'),
 };
 
+export interface ToolInfo {
+  name: string;
+  description: string;
+  source: string;
+}
+
+export interface McpServerInfo {
+  name: string;
+  status: string;
+  toolCount: number;
+  error: string | null;
+}
+
+export interface McpToolInfo {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export const ToolApi = {
+  list: () => api.get<{ tools: ToolInfo[] }>('/mcp-client/tools'),
+};
+
+export const McpClientApi = {
+  listServers: () => api.get<{ servers: McpServerInfo[] }>('/mcp-client/servers'),
+  getServerTools: (name: string) => api.get<{ server: string; tools: McpToolInfo[] }>(`/mcp-client/servers/${name}/tools`),
+  reloadServer: (name: string) => api.post<{ server: string; status: string; tools: number }>(`/mcp-client/servers/${name}/reload`),
+  addServer: (config: Record<string, unknown>) => api.post<{ name: string; status: string }>('/mcp-client/servers', config),
+  removeServer: (name: string) => api.delete<{ deleted: boolean }>(`/mcp-client/servers/${name}`),
+};
+
 export const AgentApi = {
   list: () => api.get<{ agents: import('../types/workflow').Agent[] }>('/agents'),
   get: (id: string) => api.get<import('../types/workflow').Agent>(`/agents/${id}`),

@@ -1,29 +1,25 @@
 package de.augmentia.qoc.workflowrunner.store;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Persists workflow definitions as JSON files with version snapshots.
- * Ported from agentflow's WorkflowDefinitionStore.
+ * File-based {@link WorkflowDefinitionStore}. Definitions live as JSON files;
+ * every content change keeps the previous definition as a version snapshot.
  */
-public class WorkflowStore {
+public class WorkflowStore implements WorkflowDefinitionStore {
 
     private final Path stateDir;
-    private final ObjectMapper mapper = new ObjectMapper();
     private final Map<String, WorkflowDefinition> cache = new ConcurrentHashMap<>();
 
     public WorkflowStore(String stateDir) {
@@ -36,13 +32,14 @@ public class WorkflowStore {
         }
     }
 
+    @Override
     public WorkflowDefinition get(String id) {
         WorkflowDefinition cached = cache.get(id);
         if (cached != null) return cached;
         Path file = stateDir.resolve(id + ".json");
         if (!Files.exists(file)) return null;
         try {
-            WorkflowDefinition def = mapper.readValue(Files.readString(file), WorkflowDefinition.class);
+            WorkflowDefinition def = WorkflowJson.read(Files.readString(file));
             cache.put(id, def);
             return def;
         } catch (IOException e) {
@@ -50,6 +47,7 @@ public class WorkflowStore {
         }
     }
 
+    @Override
     public boolean delete(String id) {
         cache.remove(id);
         Path file = stateDir.resolve(id + ".json");
@@ -73,6 +71,7 @@ public class WorkflowStore {
         return deleted;
     }
 
+    @Override
     public List<String> list() {
         List<String> ids = new ArrayList<>();
         try (var stream = Files.list(stateDir)) {
@@ -85,38 +84,32 @@ public class WorkflowStore {
         return ids;
     }
 
+    @Override
     public WorkflowDefinition save(String id, WorkflowDefinition def) {
-        // Snapshot current version before overwriting
+        WorkflowDefinition normalized = WorkflowDefaults.withId(id, def);
         WorkflowDefinition current = get(id);
-        if (current != null) {
-            snapshot(id, current);
+        if (current != null
+                && !WorkflowJson.contentHash(current).equals(WorkflowJson.contentHash(normalized))) {
+            snapshotCurrent(id, current);
         }
-        // Write new version
         Path file = stateDir.resolve(id + ".json");
         try {
-            Files.writeString(file, mapper.writeValueAsString(def));
-            cache.put(id, def);
-            return def;
+            writeAtomic(file, WorkflowJson.write(normalized));
+            cache.put(id, normalized);
+            return normalized;
         } catch (IOException e) {
             throw new RuntimeException("Cannot save workflow: " + id, e);
         }
     }
 
+    @Override
     public WorkflowDefinition create(String name) {
-        String id = (name == null || name.isBlank()) ? "workflow-" + System.currentTimeMillis()
-                : name.toLowerCase().replaceAll("[^a-z0-9-]", "-");
-        WorkflowDefinition def = new WorkflowDefinition(
-                id, name == null ? id : name, "1.0.0", "draft",
-                List.of(
-                        new WorkflowDefinition.Node("start", "start", new WorkflowDefinition.Point(100, 200),
-                                new WorkflowDefinition.NodeData("Start", "", false, "human", 3, "", List.of(), "all", null, List.of(), "", "")),
-                        new WorkflowDefinition.Node("end", "end", new WorkflowDefinition.Point(400, 200),
-                                new WorkflowDefinition.NodeData("Done", "", false, "human", 3, "", List.of(), "all", null, List.of(), "", ""))),
-                List.of(), List.of());
-        save(id, def);
+        WorkflowDefinition def = WorkflowDefaults.create(name);
+        save(def.id(), def);
         return def;
     }
 
+    @Override
     public List<String> versions(String id) {
         Path vDir = stateDir.resolve("versions").resolve(id);
         List<String> versions = new ArrayList<>();
@@ -132,26 +125,56 @@ public class WorkflowStore {
         return versions;
     }
 
+    @Override
     public WorkflowDefinition version(String id, String version) {
         Path file = stateDir.resolve("versions").resolve(id).resolve(version + ".json");
         if (!Files.exists(file)) return null;
         try {
-            return mapper.readValue(Files.readString(file), WorkflowDefinition.class);
+            return WorkflowJson.read(Files.readString(file));
         } catch (IOException e) {
             throw new RuntimeException("Cannot read version: " + id + "/" + version, e);
         }
     }
 
-    private void snapshot(String id, WorkflowDefinition def) {
+    @Override
+    public void snapshot(String id, String version, WorkflowDefinition def) {
         Path vDir = stateDir.resolve("versions").resolve(id);
         try {
             Files.createDirectories(vDir);
-            String ts = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS")
-                    .withZone(ZoneOffset.UTC).format(Instant.now());
-            Path file = vDir.resolve(ts + ".json");
-            Files.writeString(file, mapper.writeValueAsString(def));
+            writeAtomic(vDir.resolve(version + ".json"),
+                    WorkflowJson.write(WorkflowDefaults.withId(id, def)));
         } catch (IOException e) {
-            // Ignore snapshot failures
+            throw new RuntimeException("Cannot snapshot workflow: " + id + "/" + version, e);
+        }
+    }
+
+    @Override
+    public WorkflowDefinition findByHash(String id, String contentHash) {
+        WorkflowDefinition current = get(id);
+        if (current != null && WorkflowJson.contentHash(current).equals(contentHash)) {
+            return current;
+        }
+        for (String version : versions(id)) {
+            WorkflowDefinition candidate = version(id, version);
+            if (candidate != null && WorkflowJson.contentHash(candidate).equals(contentHash)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private void snapshotCurrent(String id, WorkflowDefinition def) {
+        snapshot(id, WorkflowJson.versionId(), def);
+    }
+
+    private static void writeAtomic(Path target, String content) throws IOException {
+        Path temp = target.resolveSibling(target.getFileName() + ".tmp");
+        Files.writeString(temp, content);
+        try {
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 }

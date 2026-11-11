@@ -68,6 +68,7 @@ x-base-env: &base-env
   LOG_DIR: /data/log
   QUARKUS_LOG_FILE_PATH: /data/log/qoc.log
   ENGINE_WORKSPACE: /data/workspace
+  ENGINE_WORKFLOW_STORAGE_DIR: /data/wf
   ENGINE_REVERT_SNAPSHOT: "false"
   ENGINE_TURN_MAX_TOKENS: "0"
   ENGINE_MAX_CONCURRENT_PROMPTS: "4"
@@ -134,6 +135,9 @@ services:
       ENGINE_MODEL_ID: glm-5.3-flash
       ENGINE_PERMISSION_DEFAULT: allow-all
       ENGINE_PERMISSION_ASK_MODE: interactive
+      # Dev: Workflow-Definitionen als Dateien unter /data/wf (gemountetes
+      # ../wf-data), damit sie ohne DB-Migration sofort editierbar sind.
+      ENGINE_WORKFLOW_STORAGE: file
       MAVEN_CONFIG: /home/ubuntu/.m2
       MAVEN_OPTS: -Duser.home=/home/ubuntu
       MAVEN_REPO: /home/ubuntu/.m2
@@ -143,6 +147,8 @@ services:
       - ./docker-dev/data/home:/data/home
       - ../data/workspace:/data/workspace
       - ./docker-dev/log:/data/log
+      # Workflows/Checkpoints mit den anderen Stacks teilen.
+      - ../wf-data:/data/wf
       - ./docker-dev/entrypoint-dev.sh:/usr/local/bin/entrypoint-dev.sh:ro
     ports:
       - "8070:8080"
@@ -150,6 +156,22 @@ services:
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     group_add:
       - "${DOCKER_GID:-983}"
+
+  # Workflow-UI für den Dev-Stack (nginx, serviert /api an qoc-dev).
+  qoc-dev-ui:
+    profiles: [dev]
+    build:
+      context: ../workflow-ui
+      dockerfile: ../deploy/Dockerfile.workflow-ui
+    image: qoc-workflow-ui:local
+    container_name: qoc-dev-ui
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://qoc-dev:8080
+    ports:
+      - "5175:80"
+    depends_on:
+      - qoc-dev
 
   # -------------------------------------------------------------------------
   # Native-Entwicklung: Mandrel 25, Native-Build beim Start, kein Hot-Reload
@@ -224,6 +246,8 @@ services:
       <<: *base-env
       ENGINE_STORAGE: memory
       ENGINE_RECOVERY_ENABLED: "false"
+      ENGINE_WORKFLOW_STORAGE: memory
+      ENGINE_WORKFLOW_RECOVERY_ENABLED: "false"
       ENGINE_REVERT_SNAPSHOT: "true"
       ENGINE_MEMORY_MAX_BYTES: "1073741824"
       ENGINE_SECURITY_MODE: none
@@ -424,9 +448,28 @@ services:
       - ../data/home:/data/home
       - ../data/qoc.db:/data/qoc.db
       - ../log:/data/log
+      # Workflows/Checkpoints überleben Container-Neustarts (base-env nutzt
+      # ENGINE_WORKFLOW_STORAGE_DIR=/data/wf).
+      - ../wf-data:/data/wf
       - ./AGENTS.native.md:/data/workspace/AGENTS.md:ro
     ports:
       - "8077:8080"
+
+  # Workflow-UI für den nativen Stack (nginx, serviert /api an qoc-native).
+  qoc-native-ui:
+    profiles: [native]
+    build:
+      context: ../workflow-ui
+      dockerfile: ../deploy/Dockerfile.workflow-ui
+    image: qoc-workflow-ui:local
+    container_name: qoc-native-ui
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://qoc-native:8080
+    ports:
+      - "5174:80"
+    depends_on:
+      - qoc-native
 
   # -------------------------------------------------------------------------
   # E2E: A2A/MCP-Interop (eigenständiges SQLite-Image, keine echte LLM)
@@ -452,6 +495,7 @@ services:
       ENGINE_DB_PATH: /data/qoc.db
       QUARKUS_DATASOURCE_JDBC_URL: jdbc:sqlite:/data/qoc.db
       ENGINE_WORKSPACE: /data/workspace
+      ENGINE_WORKFLOW_STORAGE_DIR: /data/wf
       QUARKUS_OTEL_ENABLED: "false"
     volumes:
       - qoc-a-data:/data
@@ -481,6 +525,7 @@ services:
       ENGINE_DB_PATH: /data/qoc.db
       QUARKUS_DATASOURCE_JDBC_URL: jdbc:sqlite:/data/qoc.db
       ENGINE_WORKSPACE: /data/workspace
+      ENGINE_WORKFLOW_STORAGE_DIR: /data/wf
       QUARKUS_OTEL_ENABLED: "false"
     volumes:
       - qoc-b-data:/data

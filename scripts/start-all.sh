@@ -1,46 +1,50 @@
 #!/usr/bin/env bash
-# Start the complete workflow stack: workflow-runner + workflow-ui
+# Start the local workflow stack for development:
+#   - QOC engine in Quarkus dev mode (see start.sh, HTTP port 8007 by default)
+#   - workflow-ui dev server (Vite, port 5173, proxies /api to the engine)
+#
 # Usage: ./scripts/start-all.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QOC_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Load .env
+# Load .env (engine + LLM configuration).
 if [ -f "$QOC_DIR/.env" ]; then
     set -a
+    # shellcheck disable=SC1091
     source "$QOC_DIR/.env"
     set +a
 fi
 
+: "${QUARKUS_HTTP_PORT:=8007}"
+export QUARKUS_HTTP_PORT
+
 echo "=== Starting QOC Workflow Stack ==="
 
-# 1. workflow-runner
+# 1. Engine (Quarkus dev mode; workflow REST API under /api/workflows)
 echo ""
-echo "[1/2] Starting workflow-runner..."
-if [ ! -f "$QOC_DIR/workflow-runner/target/workflow-runner-1.0.0-SNAPSHOT.jar" ]; then
-    echo "  Building workflow-runner..."
-    cd "$QOC_DIR"
-    mvn -pl workflow-runner -am package -DskipTests -B -q 2>&1 | tail -3
+echo "[1/2] Starting QOC engine (Quarkus dev, port ${QUARKUS_HTTP_PORT})..."
+if [ -f /tmp/wr.pid ] && kill -0 "$(cat /tmp/wr.pid)" 2>/dev/null; then
+    echo "  engine already running (PID $(cat /tmp/wr.pid))"
+else
+    nohup "$QOC_DIR/start.sh" > /tmp/wr.log 2>&1 &
+    echo $! > /tmp/wr.pid
 fi
 
-rm -rf "$QOC_DIR/wf-data"
-mkdir -p "$QOC_DIR/wf-data"
-
-cd "$QOC_DIR"
-export $(grep -v '^#' .env | xargs) 2>/dev/null || true
-nohup java -Djava.util.logging.config.file="$QOC_DIR/engine/src/main/resources/logging.properties" -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -jar workflow-runner/target/workflow-runner-1.0.0-SNAPSHOT.jar "$QOC_DIR/wf-data" > /tmp/wr.log 2>&1 &
-WR_PID=$!
-echo $WR_PID > /tmp/wr.pid
-
-echo "  Waiting for workflow-runner..."
-for i in $(seq 1 30); do
-    if curl -sS --max-time 2 http://localhost:8097/health >/dev/null 2>&1; then
-        echo "  workflow-runner ready"
+echo "  Waiting for engine..."
+ENGINE_READY=0
+for i in $(seq 1 180); do
+    if curl -sS --max-time 2 "http://localhost:${QUARKUS_HTTP_PORT}/api/health" >/dev/null 2>&1; then
+        echo "  engine ready"
+        ENGINE_READY=1
         break
     fi
-    sleep 1
+    sleep 2
 done
+if [ "$ENGINE_READY" -ne 1 ]; then
+    echo "  engine did not become ready; see /tmp/wr.log" >&2
+fi
 
 # 2. workflow-ui
 echo ""
@@ -50,12 +54,11 @@ if [ ! -d "node_modules" ]; then
     echo "  Installing dependencies..."
     npm install --silent 2>&1 | tail -2
 fi
-nohup npm run dev > /tmp/wu.log 2>&1 &
-WU_PID=$!
-echo $WU_PID > /tmp/wu.pid
+VITE_API_TARGET="http://localhost:${QUARKUS_HTTP_PORT}" nohup npm run dev > /tmp/wu.log 2>&1 &
+echo $! > /tmp/wu.pid
 
 echo "  Waiting for workflow-ui..."
-for i in $(seq 1 30); do
+for i in $(seq 1 60); do
     if curl -sS --max-time 2 http://localhost:5173 >/dev/null 2>&1; then
         echo "  workflow-ui ready"
         break
@@ -65,7 +68,7 @@ done
 
 echo ""
 echo "=== All services started ==="
-echo "  workflow-runner: http://localhost:8097"
-echo "  workflow-ui:     http://localhost:5173"
+echo "  QOC engine:   http://localhost:${QUARKUS_HTTP_PORT}"
+echo "  workflow-ui:  http://localhost:5173"
 echo ""
 echo "Stop with: ./scripts/stop-all.sh"

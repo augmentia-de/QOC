@@ -1,0 +1,149 @@
+14:52:16.849 INFO MainEventBusProcessor - MainEventBusProcessor started
+14:52:16.849 INFO MainEventBusProcessor - MainEventBusProcessor processing loop started
+14:52:16.850 DEBUG MainEventBusProcessor - MainEventBusProcessor already started
+14:52:16.850 DEBUG MainEventBusProcessor - MainEventBusProcessor: Waiting for event from MainEventBus...
+14:52:16.850 INFO MainEventBusProcessorInitializer - MainEventBusProcessor initialized and started
+14:52:16.850 DEBUG MainEventBus - MainEventBus: Waiting to take event (current queue size: 0)...
+14:52:16.859 DEBUG InternalLoggerFactory - Using SLF4J as the default logging framework
+14:52:16.958 DEBUG InternalLoggerFactory - Using SLF4J as the default logging framework
+14:52:17.301 DEBUG PlatformDependent0 - Java version: 21
+14:52:17.301 DEBUG PlatformDependent0 - -Dio.netty.noUnsafe: false
+14:52:17.302 DEBUG PlatformDependent0 - sun.misc.Unsafe.theUnsafe: available
+14:52:17.302 DEBUG PlatformDependent0 - sun.misc.Unsafe base methods: all available
+14:52:17.303 DEBUG PlatformDependent0 - sun.misc.Unsafe.storeFence: available
+14:52:17.303 DEBUG PlatformDependent0 - java.nio.Buffer.address: available
+14:52:17.304 DEBUG PlatformDependent0 - direct buffer constructor: unavailable: Reflective setAccessible(true) disabled
+14:52:17.304 DEBUG PlatformDependent0 - java.nio.Bits.unaligned: available, true
+14:52:17.305 DEBUG PlatformDependent0 - jdk.internal.misc.Unsafe.allocateUninitializedArray(int): unavailable: class io.netty.util.internal.PlatformDependent0$7 cannot access class jdk.internal.misc.Unsafe (in module java.base) because module java.base does not export jdk.internal.misc to unnamed module @5d1e09bc
+14:52:17.306 DEBUG PlatformDependent0 - java.nio.DirectByteBuffer.<init>(long, {int,long}): unavailable
+14:52:17.306 DEBUG PlatformDependent - sun.misc.Unsafe: available
+14:52:17.306 DEBUG PlatformDependent - -Dio.netty.tmpdir: /tmp (java.io.tmpdir)
+14:52:17.306 DEBUG PlatformDependent - -Dio.netty.bitMode: 64 (sun.arch.data.model)
+14:52:17.306 DEBUG PlatformDependent - -Dio.netty.maxDirectMemory: -1 bytes
+14:52:17.306 DEBUG PlatformDependent - -Dio.netty.uninitializedArrayAllocationThreshold: -1
+14:52:17.307 DEBUG CleanerJava9 - java.nio.ByteBuffer.cleaner(): available
+14:52:17.307 DEBUG PlatformDependent - -Dio.netty.noPreferDirect: false
+14:52:17.315 DEBUG ResourceLeakDetector - -Dio.netty.leakDetection.level: simple
+14:52:17.315 DEBUG ResourceLeakDetector - -Dio.netty.leakDetection.targetRecords: 4
+14:52:17.344 DEBUG MultithreadEventLoopGroup - -Dio.netty.eventLoopThreads: 56
+14:52:17.350 DEBUG GlobalEventExecutor - -Dio.netty.globalEventExecutor.quietPeriodSeconds: 1
+14:52:17.353 DEBUG InternalThreadLocalMap - -Dio.netty.threadLocalMap.stringBuilder.initialSize: 1024
+14:52:17.353 DEBUG InternalThreadLocalMap - -Dio.netty.threadLocalMap.stringBuilder.maxSize: 4096
+14:52:17.357 DEBUG NioEventLoop - -Dio.netty.noKeySetOptimization: false
+14:52:17.357 DEBUG NioEventLoop - -Dio.netty.selectorAutoRebuildThreshold: 512
+14:52:17.360 DEBUG PlatformDependent - org.jctools-core.MpscChunkedArrayQueue: available
+14:52:17.648 WARN CompositeMeterRegistry - A MeterFilter is being configured after a Meter has been registered to this registry. All MeterFilters should be configured before any Meters are registered. If that is not possible or you have a use case where it should be allowed, let the Micrometer maintainers know at https://github.com/micrometer-metrics/micrometer/issues/4920.
+java.base/java.lang.Thread.getStackTrace(Thread.java:2451)
+	at io.micrometer.core.instrument.MeterRegistry$Config.logWarningAboutLateFilter(MeterRegistry.java:926)
+	at io.micrometer.core.instrument.MeterRegistry$Config.meterFilter(MeterRegistry.java:910)
+	at io.quarkus.micrometer.runtime.MicrometerRecorder.applyMeterFilters(MicrometerRecorder.java:247)
+	at io.quarkus.micrometer.runtime.MicrometerRecorder.configureRegistries(MicrometerRecorder.java:103)
+	at io.quarkus.runner.recorded.MicrometerProcessor$configureRegistry478634845.deploy_0(Unknown Source)
+	at io.quarkus.runner.recorded.MicrometerProcessor$configureRegistry478634845.deploy(Unknown Source)
+	at io.quarkus.runner.ApplicationImpl.doStart(Unknown Source)
+	at io.quarkus.runtime.Application.start(Application.java:112)
+	at io.quarkus.runtime.ApplicationLifecycleManager.run(ApplicationLifecycleManager.java:129)
+	at io.quarkus.runtime.Quarkus.run(Quarkus.java:79)
+	at io.quarkus.runtime.Quarkus.run(Quarkus.java:50)
+	at io.quarkus.runtime.Quarkus.run(Quarkus.java:143)
+	at io.quarkus.runner.GeneratedMain.main(Unknown Source)
+	at io.quarkus.bootstrap.runner.QuarkusEntryPoint.doRun(QuarkusEntryPoint.java:70)
+	at io.quarkus.bootstrap.runner.QuarkusEntryPoint.main(QuarkusEntryPoint.java:36)
+14:52:17.649 WARN CompositeMeterRegistry - A MeterFilter is being configured after a Meter has been registered to this registry. All MeterFilters should be configured before any Meters are registered. If that is not possible or you have a use case where it should be allowed, let the Micrometer maintainers know at https://github.com/micrometer-metrics/micrometer/issues/4920.
+java.base/java.lang.Thread.getStackTrace(Thread.java:2451)
+	at io.micrometer.core.instrument.MeterRegistry$Config.logWarningAboutLateFilter(MeterRegistry.java:926)
+	at io.micrometer.core.instrument.MeterRegistry$Config.meterFilter(MeterRegistry.java:910)
+	at io.quarkus.micrometer.runtime.MicrometerRecorder.applyMeterFilters(MicrometerRecorder.java:247)
+	at io.quarkus.micrometer.runtime.MicrometerRecorder.configureRegistries(MicrometerRecorder.java:103)
+	at io.quarkus.runner.recorded.MicrometerProcessor$configureRegistry478634845.deploy_0(Unknown Source)
+	at io.quarkus.runner.recorded.MicrometerProcessor$configureRegistry478634845.deploy(Unknown Source)
+	at io.quarkus.runner.ApplicationImpl.doStart(Unknown Source)
+	at io.quarkus.runtime.Application.start(Application.java:112)
+	at io.quarkus.runtime.ApplicationLifecycleManager.run(ApplicationLifecycleManager.java:129)
+	at io.quarkus.runtime.Quarkus.run(Quarkus.java:79)
+	at io.quarkus.runtime.Quarkus.run(Quarkus.java:50)
+	at io.quarkus.runtime.Quarkus.run(Quarkus.java:143)
+	at io.quarkus.runner.GeneratedMain.main(Unknown Source)
+	at io.quarkus.bootstrap.runner.QuarkusEntryPoint.doRun(QuarkusEntryPoint.java:70)
+	at io.quarkus.bootstrap.runner.QuarkusEntryPoint.main(QuarkusEntryPoint.java:36)
+14:52:17.649 WARN CompositeMeterRegistry - A MeterFilter is being configured after a Meter has been registered to this registry. All MeterFilters should be configured before any Meters are registered. If that is not possible or you have a use case where it should be allowed, let the Micrometer maintainers know at https://github.com/micrometer-metrics/micrometer/issues/4920.
+java.base/java.lang.Thread.getStackTrace(Thread.java:2451)
+	at io.micrometer.core.instrument.MeterRegistry$Config.logWarningAboutLateFilter(MeterRegistry.java:926)
+	at io.micrometer.core.instrument.MeterRegistry$Config.meterFilter(MeterRegistry.java:910)
+	at io.quarkus.micrometer.runtime.MicrometerRecorder.applyMeterFilters(MicrometerRecorder.java:247)
+	at io.quarkus.micrometer.runtime.MicrometerRecorder.configureRegistries(MicrometerRecorder.java:103)
+	at io.quarkus.runner.recorded.MicrometerProcessor$configureRegistry478634845.deploy_0(Unknown Source)
+	at io.quarkus.runner.recorded.MicrometerProcessor$configureRegistry478634845.deploy(Unknown Source)
+	at io.quarkus.runner.ApplicationImpl.doStart(Unknown Source)
+	at io.quarkus.runtime.Application.start(Application.java:112)
+	at io.quarkus.runtime.ApplicationLifecycleManager.run(ApplicationLifecycleManager.java:129)
+	at io.quarkus.runtime.Quarkus.run(Quarkus.java:79)
+	at io.quarkus.runtime.Quarkus.run(Quarkus.java:50)
+	at io.quarkus.runtime.Quarkus.run(Quarkus.java:143)
+	at io.quarkus.runner.GeneratedMain.main(Unknown Source)
+	at io.quarkus.bootstrap.runner.QuarkusEntryPoint.doRun(QuarkusEntryPoint.java:70)
+	at io.quarkus.bootstrap.runner.QuarkusEntryPoint.main(QuarkusEntryPoint.java:36)
+14:52:17.649 WARN CompositeMeterRegistry - A MeterFilter is being configured after a Meter has been registered to this registry. All MeterFilters should be configured before any Meters are registered. If that is not possible or you have a use case where it should be allowed, let the Micrometer maintainers know at https://github.com/micrometer-metrics/micrometer/issues/4920.
+java.base/java.lang.Thread.getStackTrace(Thread.java:2451)
+	at io.micrometer.core.instrument.MeterRegistry$Config.logWarningAboutLateFilter(MeterRegistry.java:926)
+	at io.micrometer.core.instrument.MeterRegistry$Config.meterFilter(MeterRegistry.java:910)
+	at io.quarkus.micrometer.runtime.MicrometerRecorder.applyMeterFilters(MicrometerRecorder.java:247)
+	at io.quarkus.micrometer.runtime.MicrometerRecorder.configureRegistries(MicrometerRecorder.java:103)
+	at io.quarkus.runner.recorded.MicrometerProcessor$configureRegistry478634845.deploy_0(Unknown Source)
+	at io.quarkus.runner.recorded.MicrometerProcessor$configureRegistry478634845.deploy(Unknown Source)
+	at io.quarkus.runner.ApplicationImpl.doStart(Unknown Source)
+	at io.quarkus.runtime.Application.start(Application.java:112)
+	at io.quarkus.runtime.ApplicationLifecycleManager.run(ApplicationLifecycleManager.java:129)
+	at io.quarkus.runtime.Quarkus.run(Quarkus.java:79)
+	at io.quarkus.runtime.Quarkus.run(Quarkus.java:50)
+	at io.quarkus.runtime.Quarkus.run(Quarkus.java:143)
+	at io.quarkus.runner.GeneratedMain.main(Unknown Source)
+	at io.quarkus.bootstrap.runner.QuarkusEntryPoint.doRun(QuarkusEntryPoint.java:70)
+	at io.quarkus.bootstrap.runner.QuarkusEntryPoint.main(QuarkusEntryPoint.java:36)
+14:52:17.710 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.numHeapArenas: 56
+14:52:17.710 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.numDirectArenas: 56
+14:52:17.710 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.pageSize: 8192
+14:52:17.711 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.maxOrder: 3
+14:52:17.711 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.chunkSize: 65536
+14:52:17.711 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.smallCacheSize: 256
+14:52:17.711 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.normalCacheSize: 64
+14:52:17.711 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.maxCachedBufferCapacity: 32768
+14:52:17.711 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.cacheTrimInterval: 8192
+14:52:17.711 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.cacheTrimIntervalMillis: 0
+14:52:17.711 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.useCacheForAllThreads: false
+14:52:17.711 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.maxCachedByteBuffersPerChunk: 1023
+14:52:17.711 DEBUG PooledByteBufAllocator - -Dio.netty.allocator.disableCacheFinalizersForFastThreadLocalThreads: true
+14:52:17.759 INFO AsyncManagedExecutorProducer - Initializing ManagedExecutor for async operations with CDI context propagation
+14:52:17.760 DEBUG AsyncManagedExecutorProducer - Using ManagedExecutor for async operations with CDI context propagation
+14:52:18.153 INFO FlywayExecutor - Database: jdbc:postgresql://localhost:20000/qoc?sslmode=disable (PostgreSQL 16.15)
+14:52:18.249 INFO DbValidate - Successfully validated 9 migrations (execution time 00:00.051s)
+14:52:18.284 INFO DbMigrate - Current version of schema "public": 9
+14:52:18.287 INFO DbMigrate - Schema "public" is up to date. No migration necessary.
+14:52:18.330 DEBUG NetUtil - -Djava.net.preferIPv4Stack: false
+14:52:18.331 DEBUG NetUtil - -Djava.net.preferIPv6Addresses: false
+14:52:18.332 DEBUG NetUtilInitializations - Loopback interface: lo (lo, 127.0.0.1)
+14:52:18.333 DEBUG NetUtil - /proc/sys/net/core/somaxconn: 4096
+14:52:18.360 DEBUG DefaultChannelId - -Dio.netty.processId: 1880710 (auto-detected)
+14:52:18.361 DEBUG DefaultChannelId - -Dio.netty.machineId: 04:b4:38:16:bc:68:ec:a5 (user-set)
+14:52:18.377 DEBUG ByteBufUtil - -Dio.netty.allocator.type: pooled
+14:52:18.378 DEBUG ByteBufUtil - -Dio.netty.threadLocalDirectBufferSize: 0
+14:52:18.378 DEBUG ByteBufUtil - -Dio.netty.maxThreadLocalCharBufferSize: 16384
+14:52:18.380 DEBUG ChannelInitializerExtensions - -Dio.netty.bootstrap.extensions: null
+14:52:46.459 DEBUG Recycler - -Dio.netty.recycler.maxCapacityPerThread: 4096
+14:52:46.459 DEBUG Recycler - -Dio.netty.recycler.ratio: 8
+14:52:46.459 DEBUG Recycler - -Dio.netty.recycler.chunkSize: 32
+14:52:46.459 DEBUG Recycler - -Dio.netty.recycler.blocking: false
+14:52:46.459 DEBUG Recycler - -Dio.netty.recycler.batchFastThreadLocalOnly: true
+14:52:46.463 DEBUG AbstractByteBuf - -Dio.netty.buffer.checkAccessible: true
+14:52:46.463 DEBUG AbstractByteBuf - -Dio.netty.buffer.checkBounds: true
+14:52:46.463 DEBUG ResourceLeakDetectorFactory - Loaded default ResourceLeakDetector: io.netty.util.ResourceLeakDetector@24a851d2
+14:52:54.273 DEBUG WorkflowExecutor - Executing workflow: test-wf2 (input: hello)
+14:52:54.274 DEBUG WorkflowExecutor - Expanded workflow: 2 nodes, 0 edges
+14:52:54.275 DEBUG WorkflowExecutor - Delegating to QocEngine workflow-mode loop
+14:52:54.323 DEBUG WorkflowStepProviderImpl - provideStep: stepNo=1, currentNode=null
+14:52:54.323 DEBUG WorkflowStepProviderImpl - getNextNodeId: currentNode=null
+14:52:54.323 DEBUG DefaultNodeDispatcher - Dispatching node: start (type: start)
+14:52:54.330 DEBUG WorkflowStepProviderImpl - provideStep: stepNo=2, currentNode=start
+14:52:54.330 DEBUG WorkflowStepProviderImpl - getNextNodeId: currentNode=start
+14:52:54.330 DEBUG WorkflowStepProviderImpl - No outgoing edges -> DONE
+14:52:54.335 DEBUG WorkflowExecutor - Workflow completed: Session ses_71c8cb4878d7021d860348b220ab59af15a01ddf3853d65783ffa9d0f4895834 — LLM response: started

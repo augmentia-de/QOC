@@ -1,23 +1,29 @@
-import { Handle, Position } from '@xyflow/react';
+import type { NodeProps } from '@xyflow/react';
+import { NodeShell, PortRow } from './NodeShell';
 
-export function LlmEvalNode({ data }: { data: Record<string, unknown> }) {
+export function LlmEvalNode({ data, selected }: NodeProps) {
+  const jsonOutput = data.jsonOutput === false ? false : true;
   return (
-    <div className="px-4 py-2 rounded-lg bg-purple-600 border-2 border-purple-400 min-w-[120px]">
-      <Handle type="target" position={Position.Left} />
-      <div className="font-bold text-sm">{String(data.title || 'LLM Eval')}</div>
-      <div className="text-xs opacity-70">evaluate → JSON</div>
-      <Handle type="source" position={Position.Right} />
-    </div>
+    <NodeShell
+      title={String(data.title || 'LLM Eval')}
+      subtitle={jsonOutput ? 'evaluate → JSON' : 'evaluate → text'}
+      color="bg-purple-600 border-purple-400"
+      selected={selected}
+    >
+      <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
+    </NodeShell>
   );
 }
 
-export function LlmSummarizeNode({ data }: { data: Record<string, unknown> }) {
+export function LlmSummarizeNode({ data, selected }: NodeProps) {
   return (
-    <div className="px-4 py-2 rounded-lg bg-indigo-600 border-2 border-indigo-400 min-w-[120px]">
-      <Handle type="target" position={Position.Left} />
-      <div className="font-bold text-sm">{String(data.title || 'LLM Summarize')}</div>
-      <div className="text-xs opacity-70">summarize</div>
-      <Handle type="source" position={Position.Right} />
-    </div>
+    <NodeShell
+      title={String(data.title || 'LLM Summarize')}
+      subtitle="summarize"
+      color="bg-indigo-600 border-indigo-400"
+      selected={selected}
+    >
+      <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
+    </NodeShell>
   );
 }

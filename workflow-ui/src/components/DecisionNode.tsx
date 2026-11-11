@@ -1,13 +1,64 @@
-import { Handle, Position } from '@xyflow/react';
+import { useEffect } from 'react';
+import {
+  useNodeConnections,
+  useUpdateNodeInternals,
+  type NodeProps,
+} from '@xyflow/react';
+import { NodeShell, PortRow } from './NodeShell';
 
-export function DecisionNode({ data }: { data: Record<string, unknown> }) {
+interface Branch {
+  branchId?: string;
+  condition?: string;
+  target?: string;
+}
+
+export function DecisionNode({ id, data, selected }: NodeProps) {
+  const updateNodeInternals = useUpdateNodeInternals();
+  const outgoing = useNodeConnections({ handleType: 'source' });
+  const branches = Array.isArray(data.branches) ? (data.branches as Branch[]) : [];
+  const signature = branches.map((b) => String(b.branchId || '')).join('|');
+
+  // Branch count and IDs change the handle layout at runtime.
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, signature, updateNodeInternals]);
+
+  const isUsed = (handleId: string) =>
+    outgoing.some((connection) => connection.sourceHandle === handleId);
+
+  const defaultHandle = 'default';
+
   return (
-    <div className="px-4 py-2 rounded-lg bg-amber-600 border-2 border-amber-400 min-w-[120px]">
-      <Handle type="target" position={Position.Left} />
-      <div className="font-bold text-sm">{String(data.title || 'Decision')}</div>
-      <div className="text-xs opacity-70">if/else</div>
-      <Handle type="source" position={Position.Right} id="true" />
-      <Handle type="source" position={Position.Bottom} id="false" />
-    </div>
+    <NodeShell
+      title={String(data.title || 'Decision')}
+      subtitle="if / else"
+      color="bg-amber-600 border-amber-400"
+      selected={selected}
+    >
+      <PortRow
+        left={{ id: 'in', label: 'In' }}
+        right={{
+          id: defaultHandle,
+          label: 'Default',
+          isConnectable: !isUsed(defaultHandle),
+        }}
+      />
+      {branches.map((branch, index) => {
+        const branchId = String(branch.branchId || `b${index + 1}`);
+        const handleId = `branch-${branchId}`;
+        const label = branch.condition ? String(branch.condition) : `Branch ${index + 1}`;
+        return (
+          <PortRow
+            key={handleId}
+            right={{ id: handleId, label, isConnectable: !isUsed(handleId) }}
+          />
+        );
+      })}
+      {branches.length === 0 && (
+        <div className="px-3 pb-1 text-[10px] text-amber-200">
+          Keine Branches — im Panel anlegen
+        </div>
+      )}
+    </NodeShell>
   );
 }

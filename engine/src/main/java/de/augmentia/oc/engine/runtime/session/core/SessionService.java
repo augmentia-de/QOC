@@ -35,14 +35,7 @@ public final class SessionService {
     }
 
     public SessionId create(Location location, AgentId agent, Option<ModelRef> model, Instant at) {
-        if (location == null || agent == null) {
-            throw new IllegalArgumentException("location and agent must not be null");
-        }
-        SessionId session = SessionId.create();
-        journal.append(new EventDraft(session.value(), 1,
-                new SessionEvent.SessionCreated(session, location, agent,
-                        model == null ? Option.none() : model, at == null ? Instant.EPOCH : at)));
-        return session;
+        return this.create(location, agent, model, at, null);
     }
 
     public AdmissionResult enqueue(SessionId session, InboxId id, InboxItem item) {
@@ -51,5 +44,16 @@ public final class SessionService {
 
     public int deliver(SessionId session) {
         return delivery.deliver(session);
+    }
+
+    public SessionId create(Location location, AgentId agent, Option<ModelRef> model, Instant at, SessionId parent) {
+        if (location == null || agent == null) {
+            throw new IllegalArgumentException("location and agent must not be null");
+        }
+        SessionId session = SessionId.create(parent);
+        journal.append(new EventDraft(session.value(), 1,
+                new SessionEvent.SessionCreated(session, location, agent,
+                        model == null ? Option.none() : model, at == null ? Instant.EPOCH : at)));
+        return session;
     }
 }

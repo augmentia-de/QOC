@@ -67,6 +67,13 @@ public final class EventCodec {
         register(registry, SessionEvent.RevertCommitted.class);
         register(registry, SessionEvent.RetryScheduled.class);
         register(registry, SessionEvent.UsageRecorded.class);
+        register(registry, SessionEvent.WorkflowRunStarted.class);
+        register(registry, SessionEvent.WorkflowNodeStarted.class);
+        register(registry, SessionEvent.WorkflowNodeCompleted.class);
+        register(registry, SessionEvent.WorkflowNodeFailed.class);
+        register(registry, SessionEvent.WorkflowRunResumed.class);
+        register(registry, SessionEvent.WorkflowRunFinished.class);
+        register(registry, SessionEvent.WorkflowRunFailed.class);
         return new EventCodec(registry);
     }
 

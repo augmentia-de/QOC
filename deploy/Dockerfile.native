@@ -1,18 +1,49 @@
 # Native runtime image for the QOC engine.
-# Multi-stage build: first builds the native image, then creates the runtime image.
+#
+# Multi-stage build:
+#   1. build: Mandrel 25 builder image + Maven from the official Maven image.
+#      Quarkus 3.40 requires Mandrel/GraalVM 25; the jdk-21 builder image fails
+#      the version check. The Mandrel builder image ships native-image but no
+#      Maven, so Maven is copied in.
+#   2. runtime: small Debian image with the native runner.
+#
+# Build (from the repository root):
+#   docker build -f deploy/Dockerfile.native -t qoc-engine:native .
+# or via compose:
+#   cd deploy && docker compose --profile native build qoc-native
 
-# Build stage
-FROM quay.io/quarkus/ubi9-quarkus-mandrel-builder-image:jdk-21 AS build
+FROM maven:3.9-eclipse-temurin-21 AS maven
+
+FROM quay.io/quarkus/ubi-quarkus-mandrel-builder-image:jdk-25 AS build
+
+USER root
+
+# git/tar/gzip/unzip: build and worktree helpers.
+RUN microdnf install -y git tar gzip unzip \
+    && microdnf clean all
+
+# The UBI module ships Maven 3.5, which is too old for the Quarkus 3.40 build.
+COPY --from=maven /usr/share/maven /opt/maven
+ENV MAVEN_HOME=/opt/maven
+ENV PATH="/opt/maven/bin:${PATH}"
+ENV MAVEN_OPTS="-Duser.home=/tmp"
+
 WORKDIR /app
 COPY . /app
-RUN mvn -pl quarkus -am quarkus:build -Dquarkus.package.type=native -Dquarkus.native.container-build=false -DskipTests -Dquarkus.arc.exclude-types=org.a2aproject.sdk.** 2>&1 | tail -5
+
+# container-build=false: native-image runs inside this builder image.
+RUN mvn -B -pl quarkus -am package \
+        -DskipTests -Djacoco.skip=true \
+        -Dquarkus.package.type=native \
+        -Dquarkus.native.container-build=false \
+        -Dquarkus.arc.exclude-types=org.a2aproject.sdk.**
 
 # Runtime stage
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates git util-linux bubblewrap && \
-    rm -rf /var/lib/apt/lists/*
+      ca-certificates git util-linux bubblewrap \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -r qoc && useradd -r -g qoc -d /data/home -s /sbin/nologin qoc
 
@@ -36,13 +67,16 @@ ENV ENGINE_WORKSPACE=/data/workspace
 ENV LOG_DIR=/data/log
 ENV QUARKUS_OTEL_ENABLED=false
 ENV QUARKUS_LOG_FILE_ENABLED=true
-ENV QUARKUS_LOG_LEVEL=INFO
+ENV QUARKUS_LOG_LEVEL=DEBUG
 ENV QUARKUS_LOG_CONSOLE_LEVEL=INFO
-ENV QUARKUS_LOG_FILE_LEVEL=INFO
+ENV QUARKUS_LOG_FILE_LEVEL=DEBUG
 ENV QUARKUS_LOG_FILE_PATH=/data/log/qoc.log
 
 EXPOSE 8080
 
+# Run as dedicated user (not root)
 USER qoc
 
-ENTRYPOINT ["sh", "-c", "mkdir -p \"$HOME/.opencode/plan\" && exec /app/qoc-runner"]
+# The bind mount on /data hides the build-time /data/home, so create it again
+# at startup. HOME must be writable by the runtime user (see compose user:).
+ENTRYPOINT ["sh", "-c", "mkdir -p \"$ENGINE_WORKSPACE/plans\" && exec /app/qoc-runner"]

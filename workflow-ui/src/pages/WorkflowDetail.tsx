@@ -92,13 +92,42 @@ export default function WorkflowDetail() {
   if (!workflow) return <div className="p-8 text-red-400">Workflow nicht gefunden.</div>;
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-4">
-        <div>
-          <h1 className="text-2xl font-bold">{workflow.name}</h1>
-          <p className="text-gray-400 text-sm font-mono">{workflow.id}</p>
+    <div className="flex flex-col h-[calc(100vh-64px)] p-4 gap-3">
+      <div className="flex items-center gap-4">
+        <div className="shrink-0">
+          <h1 className="text-xl font-bold leading-tight">{workflow.name}</h1>
+          <p className="text-gray-400 text-xs font-mono">{workflow.id}</p>
         </div>
-        <div className="flex gap-2">
+
+        <div className="flex gap-1 shrink-0">
+          <button
+            onClick={() => setTab('graph')}
+            className={`px-3 py-1.5 rounded text-sm ${tab === 'graph' ? 'bg-blue-600' : 'bg-gray-700'}`}
+          >
+            Graph
+          </button>
+          <button
+            onClick={() => setTab('json')}
+            className={`px-3 py-1.5 rounded text-sm ${tab === 'json' ? 'bg-blue-600' : 'bg-gray-700'}`}
+          >
+            JSON
+          </button>
+        </div>
+
+        <div className="flex-1 min-w-0 flex justify-center">
+          {validation && (validation.valid ? (
+            <div className="px-3 py-1.5 rounded bg-green-900/50 text-green-400 text-xs truncate">
+              ✓ gültig — {validation.summary}
+            </div>
+          ) : (
+            <div className="px-3 py-1.5 rounded bg-red-900/50 text-red-300 text-xs max-w-2xl max-h-16 overflow-auto">
+              <span className="font-bold text-red-400">Ungültig: </span>
+              {validation.errors.join(' · ')}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2 shrink-0">
           <button onClick={validate} disabled={validating} className="px-4 py-2 bg-gray-700 rounded text-sm">
             {validating ? 'Validiere...' : 'Validieren'}
           </button>
@@ -111,38 +140,8 @@ export default function WorkflowDetail() {
         </div>
       </div>
 
-      {validation && (
-        <div className={`mb-4 p-3 rounded ${validation.valid ? 'bg-green-900/50' : 'bg-red-900/50'}`}>
-          {validation.valid ? (
-            <p className="text-green-400">✓ gültig — {validation.summary}</p>
-          ) : (
-            <div>
-              <p className="text-red-400 font-bold">Ungültig:</p>
-              <ul className="list-disc list-inside text-red-300 text-sm">
-                {validation.errors.map((e, i) => <li key={i}>{e}</li>)}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="flex gap-2 mb-4">
-        <button
-          onClick={() => setTab('graph')}
-          className={`px-4 py-2 rounded text-sm ${tab === 'graph' ? 'bg-blue-600' : 'bg-gray-700'}`}
-        >
-          Graph
-        </button>
-        <button
-          onClick={() => setTab('json')}
-          className={`px-4 py-2 rounded text-sm ${tab === 'json' ? 'bg-blue-600' : 'bg-gray-700'}`}
-        >
-          JSON
-        </button>
-      </div>
-
       {tab === 'graph' ? (
-        <div className="h-[600px] border border-gray-700 rounded">
+        <div className="flex-1 min-h-0 border border-gray-700 rounded overflow-hidden">
           <GraphEditor
             nodesJson={workflow.nodes}
             workflowId={workflow.id}
@@ -159,7 +158,7 @@ export default function WorkflowDetail() {
         <textarea
           value={jsonText}
           onChange={(e) => setJsonText(e.target.value)}
-          className="w-full h-[600px] bg-gray-900 text-green-400 font-mono text-sm p-4 rounded border border-gray-700"
+          className="flex-1 min-h-0 w-full bg-gray-900 text-green-400 font-mono text-sm p-4 rounded border border-gray-700"
           spellCheck={false}
         />
       )}

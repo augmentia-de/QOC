@@ -9,7 +9,14 @@ import java.util.regex.Pattern;
  */
 public final class SessionId {
 
-    private static final Pattern PATTERN = Pattern.compile("ses_[0-9a-f]{64}");
+    /**
+     * Current session IDs use 16 or 32 random bytes. A child ID carries its
+     * parent ID followed by the child suffix, e.g.
+     * {@code ses_ses_<parentHex>_<childHex>}. Keep the parser aligned with
+     * the factories below.
+     */
+    private static final Pattern PATTERN =
+            Pattern.compile("ses_(?:ses_)*[0-9a-f]+(?:_[0-9a-f]+)*");
 
     private final String value;
 
@@ -18,9 +25,18 @@ public final class SessionId {
     }
 
     public static SessionId create() {
-        byte[] bytes = new byte[32];
+        byte[] bytes = new byte[16];
         new SecureRandom().nextBytes(bytes);
         return new SessionId("ses_" + HexFormat.of().formatHex(bytes));
+    }
+
+    public static SessionId create(SessionId parent) {
+        if (parent == null) {
+            return create();
+        }
+        byte[] bytes = new byte[8];
+        new SecureRandom().nextBytes(bytes);
+        return new SessionId("ses_" + parent.value + "_" + HexFormat.of().formatHex(bytes));
     }
 
     public static SessionId parse(String raw) {

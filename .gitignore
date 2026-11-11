@@ -33,3 +33,7 @@ deploy/docker-*/workspace/**
 /workflow-ui/dist/
 /wf-data/
 /.home/
+
+# maven-shade-plugin output (generated)
+dependency-reduced-pom.xml
+/workflow-runner/workflow-runner.log

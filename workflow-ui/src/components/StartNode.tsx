@@ -1,10 +1,15 @@
-import { Handle, Position } from '@xyflow/react';
+import type { NodeProps } from '@xyflow/react';
+import { NodeShell, PortRow } from './NodeShell';
 
-export function StartNode({ data }: { data: Record<string, unknown> }) {
+export function StartNode({ data, selected }: NodeProps) {
   return (
-    <div className="px-4 py-2 rounded-full bg-green-600 border-2 border-green-400 min-w-[80px] text-center">
-      <div className="font-bold text-sm">{String(data.title || 'Start')}</div>
-      <Handle type="source" position={Position.Right} />
-    </div>
+    <NodeShell
+      title={String(data.title || 'Start')}
+      color="bg-green-600 border-green-400"
+      selected={selected}
+      shape="full"
+    >
+      <PortRow right={{ id: 'out', label: 'Out' }} />
+    </NodeShell>
   );
 }

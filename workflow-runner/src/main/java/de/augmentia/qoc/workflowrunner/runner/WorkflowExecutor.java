@@ -1,95 +1,185 @@
 package de.augmentia.qoc.workflowrunner.runner;
 
 import de.augmentia.oc.engine.core.model.EngineResult;
+import de.augmentia.oc.engine.core.model.Option;
+import de.augmentia.oc.engine.core.model.Principal;
+import de.augmentia.oc.engine.core.model.SessionError;
+import de.augmentia.oc.engine.core.model.SessionId;
 import de.augmentia.oc.engine.runtime.QocEngine;
+import de.augmentia.oc.engine.runtime.tool.mcp.McpServerManager;
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition;
-import de.augmentia.qoc.workflowrunner.store.WorkflowStore;
+import de.augmentia.qoc.workflowrunner.store.WorkflowDefinitionStore;
+import de.augmentia.qoc.workflowrunner.store.WorkflowJson;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.List;
 
 /**
  * Executes a ReactFlow-based workflow definition.
  * Ported from agentflow's DeclarativeAgentWorkflow, adapted for ReactFlow format (edges instead of dependsOn).
  *
- * Agent names are prefixed with "wf:Name:Version" to avoid conflicts with QOC-internal agents.
- * Agent config is passed to QocEngine.runPrompt(name, prompt, config).
+ * <p>Agent names are prefixed with {@code wf:Name:Version} to avoid conflicts
+ * with QOC-internal agents.</p>
  *
- * Uses WorkflowContext for state management (structured outputs, global state).
+ * <p>Execution state lives in the engine journal. The workflow itself is
+ * persisted as a specification plus an immutable snapshot of the expanded
+ * graph; a retry therefore replays exactly the graph that was started.</p>
  */
 public class WorkflowExecutor {
 
     private static final Logger LOG = LoggerFactory.getLogger(WorkflowExecutor.class);
 
     private final QocEngine engine;
-    private final WorkflowStore store;
+    private final WorkflowDefinitionStore store;
+    private final McpServerManager mcpManager;
+    private final de.augmentia.qoc.workflowrunner.store.AgentStore agentStore;
 
-    public WorkflowExecutor(QocEngine engine, WorkflowStore store) {
+    public WorkflowExecutor(QocEngine engine, WorkflowDefinitionStore store) {
+        this(engine, store, null, null);
+    }
+
+    public WorkflowExecutor(QocEngine engine, WorkflowDefinitionStore store, McpServerManager mcpManager) {
+        this(engine, store, mcpManager, null);
+    }
+
+    public WorkflowExecutor(QocEngine engine, WorkflowDefinitionStore store,
+                            McpServerManager mcpManager,
+                            de.augmentia.qoc.workflowrunner.store.AgentStore agentStore) {
         this.engine = engine;
         this.store = store;
+        this.mcpManager = mcpManager;
+        this.agentStore = agentStore;
     }
 
     /**
-     * Executes a workflow and returns the result.
+     * Executes a workflow and returns the result text.
+     *
+     * @deprecated use {@link #executeRun(WorkflowDefinition, String)} when the
+     *             caller needs the run/session ID for status or resume.
      */
+    @Deprecated
     public String execute(WorkflowDefinition def, String input) {
-        LOG.debug("Executing workflow: {} (input: {})", def.id(), input);
-        // Expand sub-workflows first
-        WorkflowDefinition expanded = new SubWorkflowExpander(store).expand(def);
-        LOG.debug("Expanded workflow: {} nodes, {} edges", expanded.nodes().size(), expanded.edges().size());
+        return executeRun(def, input).result();
+    }
+
+    /**
+     * Starts a workflow run and returns its identity plus the engine result.
+     */
+    public WorkflowExecution executeRun(WorkflowDefinition def, String input) {
+        String workflowId = def.id();
+        if (workflowId == null || workflowId.isBlank()) {
+            throw new IllegalArgumentException("Workflow ID must not be blank");
+        }
+
+        WorkflowDefinition persisted = store.save(workflowId, def);
+        WorkflowDefinition expanded = new SubWorkflowExpander(store).expand(persisted);
+        String definitionVersion = WorkflowJson.versionId();
+        String contentHash = WorkflowJson.contentHash(expanded);
+        store.snapshot(workflowId, definitionVersion, expanded);
+
+        SessionId session = engine.createSession("workflow:" + workflowId, "workflow", "workspace");
+        String runId = session.value();
+        JournalWorkflowEventSink sink = new JournalWorkflowEventSink(
+                engine.stores().journal(), session, runId, engine.clock());
+
+        String context = input == null ? "" : input;
+        WorkflowContext ctx = new WorkflowContext();
+        ctx.setState("lastResult", context);
+        sink.runStarted(workflowId, definitionVersion, contentHash, context);
+
+        return run(session, runId, expanded, ctx, context, sink, true);
+    }
+
+    /**
+     * Resumes an unfinished run from the last durable node completion.
+     */
+    public WorkflowExecution resume(String runId) {
+        SessionId session;
+        try {
+            session = SessionId.parse(runId);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid workflow run id: " + runId, e);
+        }
+
+        WorkflowRunJournal journal = new WorkflowRunJournal(engine);
+        WorkflowRunSnapshot snapshot = journal.load(session)
+                .orElseThrow(() -> new IllegalArgumentException("Workflow run not found: " + runId));
+        if (snapshot.active()) {
+            throw new IllegalStateException("Workflow run is still active: " + runId);
+        }
+        if ("COMPLETED".equalsIgnoreCase(snapshot.status())) {
+            throw new IllegalStateException("Workflow run is already completed: " + runId);
+        }
+
+        WorkflowDefinition definition = loadDefinition(snapshot);
+        if (definition == null) {
+            throw new IllegalStateException("Workflow definition not found for run: " + runId);
+        }
 
         WorkflowContext ctx = new WorkflowContext();
-        String context = input == null ? "" : input;
-        ctx.setState("lastResult", context);
+        ctx.restore(snapshot.nodeOutputs(), snapshot.workflowState(), snapshot.currentNodeId());
 
-        // Create NodeDispatcher and WorkflowStepProvider
-        NodeDispatcher dispatcher = new DefaultNodeDispatcher(engine, store);
-        WorkflowStepProviderImpl provider = new WorkflowStepProviderImpl(expanded, dispatcher);
+        // A crashed process leaves a claim behind. It is released here because
+        // the journal proved that no coordinator is active for this session.
+        engine.stores().claims().release(session);
 
-        // Delegate to QocEngine's workflow-mode loop
-        LOG.debug("Delegating to QocEngine workflow-mode loop");
-        EngineResult result = engine.runPrompt(
-                null, "workflow:" + def.id(), context,
-                new QocEngine.AgentConfig("workflow:" + def.id(), null, 0.3, 4096, 1.0, null,
-                        List.of(), List.of(), List.of(), List.of(), false),
-                true, provider, ctx, de.augmentia.oc.engine.core.model.Principal.anonymous());
+        JournalWorkflowEventSink sink = new JournalWorkflowEventSink(
+                engine.stores().journal(), session, runId, engine.clock());
+        sink.runResumed(snapshot.resumeCount() + 1);
 
-        LOG.debug("Workflow completed: {}", result.text());
-        return result.text();
+        LOG.info("Resuming workflow run {} at node {} (attempt {})",
+                runId, snapshot.currentNodeId(), snapshot.resumeCount() + 1);
+        return run(session, runId, definition, ctx, snapshot.input(), sink, false);
     }
 
-    /**
-     * Creates a prefixed agent name: wf:Name:Version
-     */
-    private String prefixedName(WorkflowDefinition.Agent a, String fallback) {
-        if (a == null) return "wf:" + (fallback == null ? "unknown" : fallback) + ":1.0.0";
-        String name = a.name() == null || a.name().isBlank() ? a.id() : a.name();
-        String version = a.version() == null || a.version().isBlank() ? "1.0.0" : a.version();
-        return "wf:" + name + ":" + version;
-    }
+    private WorkflowExecution run(SessionId session, String runId, WorkflowDefinition definition,
+                                  WorkflowContext ctx, String input,
+                                  WorkflowEventSink sink, boolean storePrompt) {
+        NodeDispatcher dispatcher = new DefaultNodeDispatcher(engine, store, mcpManager, agentStore);
+        WorkflowStepProviderImpl provider = new WorkflowStepProviderImpl(definition, dispatcher, sink);
 
-    /**
-     * Converts a workflow Agent to QocEngine.AgentConfig with prefixed name.
-     */
-    private QocEngine.AgentConfig toAgentConfig(WorkflowDefinition.Agent a, String prefixedName) {
-        if (a == null) {
-            return new QocEngine.AgentConfig(prefixedName, null, 0.3, 4096, 1.0, null,
-                    List.of(), List.of(), List.of(), List.of(), false);
+        try {
+            EngineResult result = engine.runPrompt(
+                    session, "workflow:" + definition.id(), input,
+                    workflowConfig(definition), storePrompt, provider, ctx, Principal.anonymous());
+
+            if (result.failed()) {
+                sink.runFailed(new SessionError.Unknown("workflow",
+                        result.errorMessage() == null ? "workflow failed" : result.errorMessage()));
+                return new WorkflowExecution(runId, session.value(), result.text(), result.finish(),
+                        true, false, result.errorMessage());
+            }
+            if (result.paused()) {
+                sink.runFinished("PAUSED");
+                return new WorkflowExecution(runId, session.value(), result.text(), "PAUSED",
+                        false, true, null);
+            }
+            sink.runFinished("COMPLETED");
+            return new WorkflowExecution(runId, session.value(), result.text(), result.finish(),
+                    false, false, null);
+        } catch (RuntimeException e) {
+            sink.runFailed(new SessionError.Unknown("workflow", e.getMessage()));
+            return new WorkflowExecution(runId, session.value(), "", "FAILED",
+                    true, false, e.getMessage());
         }
-        return new QocEngine.AgentConfig(
-            prefixedName,
-            a.model(),
-            a.temperature(),
-            a.maxTokens(),
-            a.topP(),
-            a.systemPrompt(),
-            a.tools(),
-            a.guardrailsInput(),
-            a.guardrailsOutput(),
-            a.hooks(),
-            a.jsonOutput()
-        );
+    }
+
+    private WorkflowDefinition loadDefinition(WorkflowRunSnapshot snapshot) {
+        WorkflowDefinition definition = store.version(snapshot.workflowId(), snapshot.definitionVersion());
+        if (definition == null) {
+            definition = store.findByHash(snapshot.workflowId(), snapshot.contentHash());
+        }
+        if (definition == null) {
+            definition = store.get(snapshot.workflowId());
+        }
+        return definition;
+    }
+
+    private QocEngine.AgentConfig workflowConfig(WorkflowDefinition definition) {
+        String name = "workflow:" + definition.id();
+        return new QocEngine.AgentConfig(name, null, 0.3, 4096, 1.0, null,
+                List.of(), List.of(), List.of(), List.of(), false, Option.none());
     }
 }

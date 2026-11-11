@@ -135,6 +135,18 @@ class EventCodecTest {
                 new SessionEvent.RevertCommitted(session, Option.some(message)),
                 new SessionEvent.RetryScheduled(session, message, 2, Instant.EPOCH,
                         new SessionError.Unknown("retry", "again")),
-                new SessionEvent.UsageRecorded(session, Money.of("0.5"), TokenCount.of(1, 1)));
+                new SessionEvent.UsageRecorded(session, Money.of("0.5"), TokenCount.of(1, 1)),
+                new SessionEvent.WorkflowRunStarted(session, "run-1", "wf-1", "v1", "hash",
+                        "hello", Instant.EPOCH),
+                new SessionEvent.WorkflowNodeStarted(session, "run-1", "node-1", 1, Instant.EPOCH),
+                new SessionEvent.WorkflowNodeCompleted(session, "run-1", "node-1", "COMPLETED",
+                        "result", Map.of("status", "ok", "count", 2L), "ses-child",
+                        Map.of("lastResult", "result"), Instant.EPOCH),
+                new SessionEvent.WorkflowNodeFailed(session, "run-1", "node-2",
+                        new SessionError.Unknown("node", "boom"), 2, Instant.EPOCH),
+                new SessionEvent.WorkflowRunResumed(session, "run-1", 1, Instant.EPOCH),
+                new SessionEvent.WorkflowRunFinished(session, "run-1", "COMPLETED", Instant.EPOCH),
+                new SessionEvent.WorkflowRunFailed(session, "run-1",
+                        new SessionError.Unknown("workflow", "boom"), Instant.EPOCH));
     }
 }

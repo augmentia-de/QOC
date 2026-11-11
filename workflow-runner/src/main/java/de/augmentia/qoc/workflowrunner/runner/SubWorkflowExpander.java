@@ -1,7 +1,7 @@
 package de.augmentia.qoc.workflowrunner.runner;
 
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition;
-import de.augmentia.qoc.workflowrunner.store.WorkflowStore;
+import de.augmentia.qoc.workflowrunner.store.WorkflowDefinitionStore;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,9 +19,9 @@ public class SubWorkflowExpander {
 
     private static final int MAX_DEPTH = 5;
 
-    private final WorkflowStore store;
+    private final WorkflowDefinitionStore store;
 
-    public SubWorkflowExpander(WorkflowStore store) {
+    public SubWorkflowExpander(WorkflowDefinitionStore store) {
         this.store = store;
     }
 
@@ -38,7 +38,9 @@ public class SubWorkflowExpander {
         for (WorkflowDefinition.Edge e : flatEdges) {
             String src = resolve(e.source(), alias);
             String tgt = resolve(e.target(), alias);
-            rewrittenEdges.add(new WorkflowDefinition.Edge(e.id(), src, tgt, e.type(), e.condition()));
+            rewrittenEdges.add(new WorkflowDefinition.Edge(
+                    e.id(), src, tgt, e.type(), e.condition(),
+                    e.sourceHandle(), e.targetHandle()));
         }
 
         // Deduplicate agents by id
@@ -84,7 +86,9 @@ public class SubWorkflowExpander {
                             id + "/" + e.source(),
                             id + "/" + e.target(),
                             e.type(),
-                            e.condition()));
+                            e.condition(),
+                            e.sourceHandle(),
+                            e.targetHandle()));
                 }
                 continue;
             }
@@ -97,7 +101,9 @@ public class SubWorkflowExpander {
         for (WorkflowDefinition.Edge e : wf.edges()) {
             String src = prefix.isEmpty() ? e.source() : prefix + "/" + e.source();
             String tgt = prefix.isEmpty() ? e.target() : prefix + "/" + e.target();
-            outEdges.add(new WorkflowDefinition.Edge(e.id(), src, tgt, e.type(), e.condition()));
+            outEdges.add(new WorkflowDefinition.Edge(
+                    e.id(), src, tgt, e.type(), e.condition(),
+                    e.sourceHandle(), e.targetHandle()));
         }
     }
 

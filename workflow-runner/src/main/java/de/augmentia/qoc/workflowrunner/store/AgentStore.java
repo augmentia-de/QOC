@@ -75,7 +75,7 @@ public class AgentStore {
                 agent = new Agent(id, agent.name(), agent.version(), agent.category(), agent.model(),
                         agent.temperature(), agent.maxTokens(), agent.topP(), agent.tools(),
                         agent.guardrailsInput(), agent.guardrailsOutput(), agent.hooks(),
-                        agent.jsonOutput(), agent.active(), agent.systemPrompt());
+                        agent.jsonOutput(), agent.active(), agent.systemPrompt(), agent.responseSchema());
             }
             mapper.writeValue(file.toFile(), agent);
             cache.put(id, agent);
@@ -89,7 +89,7 @@ public class AgentStore {
         String id = name.toLowerCase().replaceAll("[^a-z0-9-]", "-");
         if (id.isBlank()) id = "agent-" + System.currentTimeMillis();
         Agent agent = new Agent(id, name, "1.0.0", "", "deepseek-v4.1-flash", 0.3, 4096, 1.0,
-                List.of(), List.of(), List.of(), List.of(), false, true, "");
+                List.of(), List.of(), List.of(), List.of(), false, true, "", null);
         return save(id, agent);
     }
 

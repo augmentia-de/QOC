@@ -1,12 +1,52 @@
-import { Handle, Position } from '@xyflow/react';
+import { useEffect } from 'react';
+import {
+  useNodeConnections,
+  useUpdateNodeInternals,
+  type NodeProps,
+} from '@xyflow/react';
+import { NodeShell, PortRow } from './NodeShell';
 
-export function ForkNode({ data }: { data: Record<string, unknown> }) {
+export function ForkNode({ id, data, selected }: NodeProps) {
+  const updateNodeInternals = useUpdateNodeInternals();
+  const outgoing = useNodeConnections({ handleType: 'source' });
+
+  // Keep at least one free output so the user can add another branch by
+  // dragging from the "+" handle.
+  const maxIndex = outgoing.reduce((max, connection) => {
+    const match = /^out-(\d+)$/.exec(connection.sourceHandle || '');
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, -1);
+  const handleCount = Math.max(1, maxIndex + 2);
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, handleCount, updateNodeInternals]);
+
+  const targetFor = (handleId: string) =>
+    outgoing.find((connection) => connection.sourceHandle === handleId)?.target;
+
   return (
-    <div className="px-4 py-2 rounded-lg bg-cyan-600 border-2 border-cyan-400 min-w-[80px] text-center">
-      <Handle type="target" position={Position.Left} />
-      <div className="font-bold text-sm">{String(data.title || 'Fork')}</div>
-      <div className="text-xs opacity-70">∥ parallel</div>
-      <Handle type="source" position={Position.Right} />
-    </div>
+    <NodeShell
+      title={String(data.title || 'Fork')}
+      subtitle="parallel split"
+      color="bg-cyan-600 border-cyan-400"
+      selected={selected}
+    >
+      <PortRow left={{ id: 'in', label: 'In' }} />
+      {Array.from({ length: handleCount }, (_, index) => {
+        const handleId = `out-${index}`;
+        const target = targetFor(handleId);
+        return (
+          <PortRow
+            key={handleId}
+            right={{
+              id: handleId,
+              label: target ? `→ ${target}` : `Out ${index + 1} +`,
+              isConnectable: !target,
+            }}
+          />
+        );
+      })}
+    </NodeShell>
   );
 }

@@ -1,0 +1,25 @@
+# Build context for deploy/Dockerfile.native (BuildKit uses this file for
+# builds that specify -f deploy/Dockerfile.native).
+#
+# The native image is compiled inside the builder stage from source, so local
+# build outputs, data volumes and the UI's node_modules are not needed.
+
+.git
+.gitignore
+**/log/
+**/sessions/
+**/*.log
+**/.env
+**/.idea/
+**/.vscode/
+**/node_modules/
+**/target/
+data/
+log/
+worker-data/
+wf-data/
+deploy/docker-dev/data/
+deploy/docker-dev/workspace/
+deploy/docker-dev-native/data/
+deploy/docker-dev-native/workspace/
+deploy/docker-dev-native/log/

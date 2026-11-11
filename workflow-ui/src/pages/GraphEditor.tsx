@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -22,10 +22,22 @@ import { JoinNode } from '../components/JoinNode';
 import { LoopNode } from '../components/LoopNode';
 import { EndNode } from '../components/EndNode';
 import { LlmEvalNode, LlmSummarizeNode } from '../components/LlmEvalNode';
+import { McpCallNode } from '../components/McpCallNode';
+import { AgentApi } from '../services/api';
 import { PropertyPanel } from '../components/PropertyPanel';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import type { WorkflowDefinition } from '../types/workflow';
 import { WorkflowApi } from '../services/api';
+import {
+  clearDecisionTargets,
+  decorateEdges,
+  normalizeEdgeHandles,
+  reconcileDecisionEdges,
+  syncDecisionTarget,
+  toDefinitionGraph,
+  toFlowEdges,
+  toFlowNodes,
+} from '../lib/workflowGraph';
+import { isValidConnection } from '../lib/connectionRules';
 
 const nodeTypes: NodeTypes = {
   agent: AgentNode,
@@ -39,6 +51,7 @@ const nodeTypes: NodeTypes = {
   end: EndNode,
   llm_eval: LlmEvalNode,
   llm_summarize: LlmSummarizeNode,
+  mcp_call: McpCallNode,
 };
 
 const elk = new ELK();
@@ -48,60 +61,6 @@ interface GraphEditorProps {
   workflowId?: string;
   agents?: any[];
   onGraphChange?: (data: { nodes: any[]; edges: any[] }) => void;
-}
-
-// Convert backend workflow to ReactFlow nodes/edges
-function toReactFlow(def: WorkflowDefinition | null): { nodes: Node[]; edges: Edge[] } {
-  if (!def) return { nodes: [], edges: [] };
-  const nodes: Node[] = (def.nodes || []).map((n) => ({
-    id: n.id,
-    type: ['end', 'start', 'decision', 'hitl', 'subworkflow', 'fork', 'join', 'loop', 'llm_eval', 'llm_summarize'].includes(n.type || '') ? n.type! : 'agent',
-    position: n.position || { x: 0, y: 0 },
-    data: {
-      title: n.data?.title || n.id,
-      agentRef: n.data?.agentRef || '',
-      requiresHumanApproval: n.data?.requiresHumanApproval || false,
-    },
-  }));
-  const edges: Edge[] = (def.edges || []).map((e) => ({
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    data: { condition: (e as any).condition || '' },
-  }));
-  return { nodes, edges };
-}
-
-// Convert ReactFlow nodes/edges back to backend format
-function toBackend(nodes: Node[], edges: Edge[], agents: { id: string; name?: string }[]): { nodes: any[]; edges: any[] } {
-  return {
-    nodes: nodes.map((n) => ({
-    id: n.id,
-    type: ['end', 'start', 'decision', 'hitl', 'subworkflow', 'fork', 'join', 'loop', 'llm_eval', 'llm_summarize'].includes(n.type || '') ? n.type! : 'agent',
-    position: n.position,
-    data: {
-      title: String(n.data?.title || n.id),
-      agentRef: String(n.data?.agentRef || ''),
-      requiresHumanApproval: Boolean(n.data?.requiresHumanApproval),
-      assignee: 'human',
-      maxIterations: 3,
-      exitCondition: '',
-      bodySteps: [],
-      joinType: 'all',
-      joinN: null,
-      branches: [],
-      defaultTarget: '',
-      workflowRef: '',
-    },
-  })),
-  edges: edges.map((e) => ({
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    type: e.type || 'default',
-    condition: (e.data as any)?.condition || (e as any).condition || '',
-  })),
-  };
 }
 
 async function autoLayout(nodes: Node[], edges: Edge[]): Promise<{ nodes: Node[]; edges: Edge[] }> {
@@ -119,23 +78,23 @@ async function autoLayout(nodes: Node[], edges: Edge[]): Promise<{ nodes: Node[]
   };
 }
 
-const DEFAULT_AGENTS = [
-  { id: 'build', name: 'Build Agent', version: '1.0.0', category: 'core', model: 'deepseek-v4.1-flash', temperature: 0.3, maxTokens: 4096, topP: 1.0, tools: [], guardrailsInput: [], guardrailsOutput: [], hooks: [], jsonOutput: false, active: true, systemPrompt: 'You are a helpful build agent. Reply concisely.' },
-];
-
 export default function GraphEditor({ nodesJson, workflowId, agents = [], onGraphChange }: GraphEditorProps) {
-  // Ensure build agent is always available
-  const allAgents = [...agents];
-  if (!allAgents.some((a: any) => a.id === 'build')) {
-    allAgents.unshift({ ...DEFAULT_AGENTS[0] });
-  }
-  if (allAgents.length === 0) {
-    allAgents.push({ ...DEFAULT_AGENTS[0] });
-  }
+  // Agents live in the global agent store (Option B). Load them here as well so
+  // the standalone editor (/editor) offers the same list as the workflow detail.
+  const [storeAgents, setStoreAgents] = useState<any[]>([]);
+  useEffect(() => {
+    AgentApi.list()
+      .then((res) => setStoreAgents(res.data.agents || []))
+      .catch((e) => console.error('Agent list failed', e));
+  }, []);
+  const allAgents = storeAgents.length > 0 ? storeAgents : agents;
   const [nodes, setNodes, onNodesChangeInternalRaw] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChangeInternalRaw] = useEdgesState<Edge>([]);
-  const edgesRef = useRef(edges);
+  const nodesRef = useRef<Node[]>(nodes);
+  const edgesRef = useRef<Edge[]>(edges);
+  nodesRef.current = nodes;
   edgesRef.current = edges;
+  const displayEdges = useMemo(() => decorateEdges(nodes, edges), [nodes, edges]);
 
   const onNodesChangeInternal = useCallback((changes: any) => {
     onNodesChangeInternalRaw(changes);
@@ -170,21 +129,10 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
       WorkflowApi.get(workflowId).then((res) => {
         const def = res.data;
         if (def.nodes && Array.isArray(def.nodes) && def.nodes.length > 0) {
-          const rfNodes: Node[] = def.nodes.map((n: any) => ({
-            id: n.id,
-            type: ['end', 'start', 'decision', 'hitl', 'subworkflow', 'fork', 'join', 'loop', 'llm_eval', 'llm_summarize'].includes(n.type || '') ? n.type! : 'agent',
-            position: n.position || { x: 0, y: 0 },
-            data: {
-              title: n.data?.title || n.id,
-              agentRef: n.data?.agentRef || '',
-              requiresHumanApproval: n.data?.requiresHumanApproval || false,
-            },
-          }));
-          const rfEdges: Edge[] = (def.edges || []).map((e: any) => ({
-            id: e.id,
-            source: e.source,
-            target: e.target,
-          }));
+          const rfNodes = toFlowNodes(def.nodes);
+          const rfEdges = normalizeEdgeHandles(rfNodes, toFlowEdges(def.edges || []));
+          nodesRef.current = rfNodes;
+          edgesRef.current = rfEdges;
           setNodes(rfNodes);
           setEdges(rfEdges);
         }
@@ -197,16 +145,20 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
     prevNodesJson.current = jsonStr;
     if (nodesJson && Array.isArray(nodesJson) && nodesJson.length > 0) {
       const n = nodesJson as any[];
-      const rfNodes: Node[] = n.map((node) => ({
-        id: node.id,
-        type: ['end', 'start', 'decision', 'hitl', 'subworkflow', 'fork', 'join', 'loop', 'llm_eval', 'llm_summarize'].includes(node.type || '') ? node.type! : 'agent',
-        position: node.position || { x: 0, y: 0 },
+      // Legacy nodes may keep title/agentRef/requiresHumanApproval outside
+      // of `data`. Normalise them without dropping any other field.
+      const normalised = n.map((node) => ({
+        ...node,
+        type: node.type || 'agent',
         data: {
+          ...(node.data ?? {}),
           title: node.data?.title || node.title || node.id,
           agentRef: node.data?.agentRef || node.agent?.ref || '',
-          requiresHumanApproval: node.data?.requiresHumanApproval || node.requiresHumanApproval || false,
+          requiresHumanApproval:
+            node.data?.requiresHumanApproval ?? node.requiresHumanApproval ?? false,
         },
       }));
+      const rfNodes = toFlowNodes(normalised as any);
       // Build edges from dependsOn if no explicit edges
       const rfEdges: Edge[] = [];
       n.forEach((node) => {
@@ -215,32 +167,81 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
           rfEdges.push({ id: `${dep}->${node.id}`, source: dep, target: node.id });
         });
       });
+      const normalisedEdges = normalizeEdgeHandles(rfNodes, rfEdges);
+      nodesRef.current = rfNodes;
+      edgesRef.current = normalisedEdges;
       setNodes(rfNodes);
-      setEdges(rfEdges);
+      setEdges(normalisedEdges);
       setLoading(false);
     } else {
       // Default
-      setNodes([
+      const defaultNodes: Node[] = [
         { id: 'start', type: 'agent', position: { x: 0, y: 0 }, data: { title: 'Start', agentRef: 'build' } },
         { id: 'end', type: 'end', position: { x: 300, y: 0 }, data: { title: 'Done' } },
+      ];
+      const defaultEdges: Edge[] = normalizeEdgeHandles(defaultNodes, [
+        { id: 'e1', source: 'start', target: 'end' },
       ]);
-      setEdges([{ id: 'e1', source: 'start', target: 'end' }]);
+      nodesRef.current = defaultNodes;
+      edgesRef.current = defaultEdges;
+      setNodes(defaultNodes);
+      setEdges(defaultEdges);
       setLoading(false);
     }
-  }, [nodesJson]);
+  }, [nodesJson, workflowId]);
 
   const onConnect = useCallback(
     (params: Connection) => {
-      setEdges((eds) => {
-        const newEdges = addEdge(params, eds);
-        if (onGraphChange) {
-          isUpdating.current = true;
-          onGraphChange({ nodes, edges: newEdges });
+      const targetId = params.target || '';
+      let updatedNodes = nodesRef.current;
+      if (params.source && params.sourceHandle) {
+        updatedNodes = syncDecisionTarget(
+          updatedNodes,
+          params.source,
+          params.sourceHandle,
+          targetId,
+        );
+      }
+
+      let newEdges = addEdge(params, edgesRef.current);
+      const sourceNode = updatedNodes.find((node) => node.id === params.source);
+      if (sourceNode?.type === 'decision' && params.sourceHandle?.startsWith('branch-')) {
+        const branchId = params.sourceHandle.slice('branch-'.length);
+        const branches = Array.isArray(sourceNode.data.branches)
+          ? (sourceNode.data.branches as any[])
+          : [];
+        const branch = branches.find(
+          (candidate) => String(candidate.branchId || '') === branchId,
+        );
+        newEdges = newEdges.map((edge) =>
+          edge.source === params.source &&
+          edge.target === params.target &&
+          (edge.sourceHandle || '') === (params.sourceHandle || '')
+            ? {
+                ...edge,
+                data: { ...(edge.data ?? {}), condition: String(branch?.condition || '') },
+              }
+            : edge,
+        );
+      }
+      newEdges = normalizeEdgeHandles(updatedNodes, newEdges);
+
+      nodesRef.current = updatedNodes;
+      edgesRef.current = newEdges;
+      setNodes(updatedNodes);
+      setEdges(newEdges);
+      if (selectedNode && params.source && selectedNode.id === params.source) {
+        const updatedSource = updatedNodes.find((node) => node.id === params.source);
+        if (updatedSource) {
+          setSelectedNode((prev) => (prev ? { ...prev, data: updatedSource.data } : prev));
         }
-        return newEdges;
-      });
+      }
+      if (onGraphChange) {
+        isUpdating.current = true;
+        onGraphChange(toDefinitionGraph(updatedNodes, newEdges));
+      }
     },
-    [setEdges, nodes, onGraphChange]
+    [setNodes, setEdges, onGraphChange, selectedNode],
   );
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: { id: string; type?: string; data: Record<string, unknown> }) => {
@@ -248,200 +249,267 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
   }, []);
 
   const updateNodeData = useCallback((nodeId: string, data: Record<string, unknown>) => {
-    setNodes((nds) =>
-      nds.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n))
+    const updatedNodes = nodesRef.current.map((n) =>
+      n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n
     );
+    const updatedNode = updatedNodes.find((node) => node.id === nodeId);
+    let updatedEdges = edgesRef.current;
+    if (updatedNode?.type === 'decision') {
+      updatedEdges = reconcileDecisionEdges(updatedNode, updatedEdges);
+    }
+    updatedEdges = normalizeEdgeHandles(updatedNodes, updatedEdges);
+
+    nodesRef.current = updatedNodes;
+    edgesRef.current = updatedEdges;
+    setNodes(updatedNodes);
+    setEdges(updatedEdges);
     setSelectedNode((prev) =>
-      prev && prev.id === nodeId ? { ...prev, data: { ...prev.data, ...data } } : prev
+      prev && prev.id === nodeId
+        ? { ...prev, data: updatedNode?.data ?? { ...prev.data, ...data } }
+        : prev,
     );
-    // Emit changes
+    // Emit the complete graph so node-specific fields (branches, loop
+    // settings, MCP config, ...) survive the save round-trip.
     if (onGraphChange) {
       isUpdating.current = true;
-      const updated = nodes.map((n) =>
-        n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n
-      );
-      onGraphChange(toBackend(updated, edges, agents) as any);
+      onGraphChange(toDefinitionGraph(updatedNodes, updatedEdges));
     }
-  }, [setNodes, nodes, edges, agents, onGraphChange]);
+  }, [setNodes, setEdges, onGraphChange]);
 
   const handleAutoLayout = useCallback(async () => {
-    const result = await autoLayout(nodes, edges);
+    const result = await autoLayout(nodesRef.current, edgesRef.current);
+    nodesRef.current = result.nodes;
+    edgesRef.current = result.edges;
     setNodes(result.nodes);
     setEdges(result.edges);
     if (onGraphChange) {
       isUpdating.current = true;
-      onGraphChange(toBackend(result.nodes, result.edges, agents) as any);
+      onGraphChange(toDefinitionGraph(result.nodes, result.edges));
     }
-  }, [nodes, edges, setNodes, setEdges, agents, onGraphChange]);
+  }, [setNodes, setEdges, onGraphChange]);
 
   const undo = useCallback(() => {
     if (historyIndex <= 0) return;
     const prev = history[historyIndex - 1];
+    nodesRef.current = prev.nodes;
+    edgesRef.current = prev.edges;
     setNodes(prev.nodes);
     setEdges(prev.edges);
     setHistoryIndex((i) => i - 1);
-  }, [history, historyIndex, setNodes, setEdges]);
+    if (onGraphChange) {
+      isUpdating.current = true;
+      onGraphChange(toDefinitionGraph(prev.nodes, prev.edges));
+    }
+  }, [history, historyIndex, setNodes, setEdges, onGraphChange]);
 
   const redo = useCallback(() => {
     if (historyIndex >= history.length - 1) return;
     const next = history[historyIndex + 1];
+    nodesRef.current = next.nodes;
+    edgesRef.current = next.edges;
     setNodes(next.nodes);
     setEdges(next.edges);
     setHistoryIndex((i) => i + 1);
-  }, [history, historyIndex, setNodes, setEdges]);
-
-  const addNode = useCallback(() => {
-    const id = `node-${nodes.length + 1}`;
-    const newNode: Node = { id, type: 'agent', position: { x: 100, y: 100 }, data: { title: id, agentRef: '' } };
-    const updatedNodes = [...nodes, newNode];
-    setNodes(updatedNodes);
-    pushHistory(updatedNodes, edges);
     if (onGraphChange) {
       isUpdating.current = true;
-      onGraphChange(toBackend(updatedNodes, edges, agents) as any);
+      onGraphChange(toDefinitionGraph(next.nodes, next.edges));
     }
-  }, [nodes, edges, agents, setNodes, onGraphChange, pushHistory]);
+  }, [history, historyIndex, setNodes, setEdges, onGraphChange]);
+
+  const addNodeOfType = useCallback((type: string, data: Record<string, unknown>) => {
+    const id = `${type}-${Date.now()}`;
+    const newNode: Node = {
+      id,
+      type,
+      position: { x: 120, y: 120 },
+      data: { title: id, ...data },
+    };
+    const updatedNodes = [...nodesRef.current, newNode];
+    nodesRef.current = updatedNodes;
+    setNodes(updatedNodes);
+    pushHistory(updatedNodes, edgesRef.current);
+    if (onGraphChange) {
+      isUpdating.current = true;
+      onGraphChange(toDefinitionGraph(updatedNodes, edgesRef.current));
+    }
+  }, [setNodes, onGraphChange, pushHistory]);
 
   if (loading) return <div className="flex items-center justify-center h-full text-gray-400">Lade...</div>;
 
+  const saveAgentConfig = async (agent: any) => {
+    try {
+      const exists = Boolean(agent.id) && allAgents.some((a: any) => a.id === agent.id);
+      if (exists) {
+        await AgentApi.save(agent.id, agent);
+      } else {
+        // New agent: let the backend derive the id from the name.
+        const created = await AgentApi.create({ ...agent, id: '' });
+        if (selectedNode) {
+          updateNodeData(selectedNode.id, { agentRef: created.data.id });
+        }
+      }
+      const res = await AgentApi.list();
+      setStoreAgents(res.data.agents || []);
+    } catch (e) {
+      console.error('Agent config save failed', e);
+      alert('Agent-Config konnte nicht gespeichert werden');
+    }
+  };
+
+  const palette = [
+    { label: '+ Agent', type: 'agent', color: 'bg-blue-600', data: { title: 'Agent', agentRef: '' } },
+    { label: '+ Start', type: 'start', color: 'bg-green-600', data: { title: 'Start' } },
+    { label: '+ Decision', type: 'decision', color: 'bg-amber-600', data: { title: 'Decision', branches: [], defaultTarget: '' } },
+    { label: '+ HITL', type: 'hitl', color: 'bg-purple-600', data: { title: 'HITL', requiresHumanApproval: true } },
+    { label: '+ SubWF', type: 'subworkflow', color: 'bg-indigo-600', data: { title: 'Sub-Workflow', workflowRef: '' } },
+    { label: '+ Fork', type: 'fork', color: 'bg-cyan-600', data: { title: 'Fork' } },
+    { label: '+ Join', type: 'join', color: 'bg-teal-600', data: { title: 'Join', joinType: 'all' } },
+    { label: '+ Loop', type: 'loop', color: 'bg-orange-600', data: { title: 'Loop', maxIterations: 3, exitCondition: '' } },
+    { label: '+ LLM Eval', type: 'llm_eval', color: 'bg-purple-700', data: { title: 'LLM Eval', jsonOutput: true } },
+    { label: '+ LLM Sum', type: 'llm_summarize', color: 'bg-indigo-700', data: { title: 'LLM Summarize', defaultTarget: '' } },
+    { label: '+ MCP Call', type: 'mcp_call', color: 'bg-fuchsia-700', data: { title: 'MCP Call', mcpServer: '', mcpTool: '', mcpArgs: {} } },
+    { label: '+ End', type: 'end', color: 'bg-gray-600', data: { title: 'End' } },
+  ];
+
+  const saveWorkflow = async () => {
+    const id = workflowId || prompt('Workflow ID eingeben:');
+    if (!id) return;
+    try {
+      let wf;
+      try { wf = await WorkflowApi.get(id); } catch { wf = await WorkflowApi.create(id); }
+      const converted = toDefinitionGraph(nodesRef.current, edgesRef.current);
+      const updated = { ...wf.data, nodes: converted.nodes, edges: converted.edges };
+      await WorkflowApi.save(id, updated as any);
+      alert('Gespeichert: ' + id);
+    } catch (e) { console.error(e); alert('Speichern fehlgeschlagen'); }
+  };
+
+  const runWorkflow = async () => {
+    const id = workflowId || prompt('Workflow ID eingeben:');
+    if (!id) return;
+    try {
+      let wf;
+      try { wf = await WorkflowApi.get(id); } catch { wf = await WorkflowApi.create(id); }
+      const converted = toDefinitionGraph(nodesRef.current, edgesRef.current);
+      const updated = { ...wf.data, nodes: converted.nodes, edges: converted.edges };
+      await WorkflowApi.save(id, updated as any);
+      const res = await WorkflowApi.run(updated as any, 'Hello');
+      alert('Ergebnis: ' + res.data.result);
+    } catch (e) { console.error(e); alert('Ausführung fehlgeschlagen'); }
+  };
+
   return (
-    <div className="flex h-[calc(100vh-64px)]">
-      <div className="flex-1">
-        <div className="bg-gray-800 border-b border-gray-700">
-          <div className="p-2 flex gap-2 flex-wrap">
-            <span className="text-xs text-gray-400 self-center mr-1">Nodes:</span>
-            <button onClick={addNode} className="px-2 py-1 bg-blue-600 rounded text-xs">+ Agent</button>
-            <button onClick={() => {
-            const id = `start-${Date.now()}`;
-            const newNode: Node = { id, type: 'start', position: { x: 100, y: 100 }, data: { title: 'Start' } };
-            const updated = [...nodes, newNode];
-            setNodes(updated); pushHistory(updated, edges);
-            if (onGraphChange) { isUpdating.current = true; onGraphChange(toBackend(updated, edges, agents) as any); }
-          }} className="px-2 py-1 bg-green-600 rounded text-xs">+ Start</button>
-            <button onClick={() => {
-            const id = `decision-${Date.now()}`;
-            const n: Node = { id, type: 'decision', position: { x: 100, y: 100 }, data: { title: 'Decision', branches: [], defaultTarget: '' } };
-            const u = [...nodes, n]; setNodes(u); pushHistory(u, edges);
-            if (onGraphChange) { isUpdating.current = true; onGraphChange(toBackend(u, edges, agents) as any); }
-          }} className="px-2 py-1 bg-amber-600 rounded text-xs">+ Decision</button>
-            <button onClick={() => {
-            const id = `hitl-${Date.now()}`;
-            const n: Node = { id, type: 'hitl', position: { x: 100, y: 100 }, data: { title: 'HITL', requiresHumanApproval: true } };
-            const u = [...nodes, n]; setNodes(u); pushHistory(u, edges);
-            if (onGraphChange) { isUpdating.current = true; onGraphChange(toBackend(u, edges, agents) as any); }
-          }} className="px-2 py-1 bg-purple-600 rounded text-xs">+ HITL</button>
-            <button onClick={() => {
-            const id = `subwf-${Date.now()}`;
-            const n: Node = { id, type: 'subworkflow', position: { x: 100, y: 100 }, data: { title: 'Sub-Workflow', workflowRef: '' } };
-            const u = [...nodes, n]; setNodes(u); pushHistory(u, edges);
-            if (onGraphChange) { isUpdating.current = true; onGraphChange(toBackend(u, edges, agents) as any); }
-          }} className="px-2 py-1 bg-indigo-600 rounded text-xs">+ SubWF</button>
-            <button onClick={() => {
-            const id = `fork-${Date.now()}`;
-            const n: Node = { id, type: 'fork', position: { x: 100, y: 100 }, data: { title: 'Fork' } };
-            const u = [...nodes, n]; setNodes(u); pushHistory(u, edges);
-            if (onGraphChange) { isUpdating.current = true; onGraphChange(toBackend(u, edges, agents) as any); }
-          }} className="px-2 py-1 bg-cyan-600 rounded text-xs">+ Fork</button>
-            <button onClick={() => {
-            const id = `join-${Date.now()}`;
-            const n: Node = { id, type: 'join', position: { x: 100, y: 100 }, data: { title: 'Join', joinType: 'all' } };
-            const u = [...nodes, n]; setNodes(u); pushHistory(u, edges);
-            if (onGraphChange) { isUpdating.current = true; onGraphChange(toBackend(u, edges, agents) as any); }
-          }} className="px-2 py-1 bg-teal-600 rounded text-xs">+ Join</button>
-            <button onClick={() => {
-            const id = `loop-${Date.now()}`;
-            const n: Node = { id, type: 'loop', position: { x: 100, y: 100 }, data: { title: 'Loop', maxIterations: 3, exitCondition: '' } };
-            const u = [...nodes, n]; setNodes(u); pushHistory(u, edges);
-            if (onGraphChange) { isUpdating.current = true; onGraphChange(toBackend(u, edges, agents) as any); }
-          }} className="px-2 py-1 bg-orange-600 rounded text-xs">+ Loop</button>
-            <button onClick={() => {
-            const id = `end-${Date.now()}`;
-            const n: Node = { id, type: 'end', position: { x: 100, y: 100 }, data: { title: 'End' } };
-            const u = [...nodes, n]; setNodes(u); pushHistory(u, edges);
-            if (onGraphChange) { isUpdating.current = true; onGraphChange(toBackend(u, edges, agents) as any); }
-          }} className="px-2 py-1 bg-gray-600 rounded text-xs">+ End</button>
-          </div>
-          <div className="p-2 flex gap-2 border-t border-gray-700">
-            <span className="text-xs text-gray-400 self-center mr-1">Actions:</span>
-            <button onClick={async () => {
-              const id = workflowId || prompt('Workflow ID eingeben:');
-              if (!id) return;
-              try {
-                let wf;
-                try { wf = await WorkflowApi.get(id); } catch { wf = await WorkflowApi.create(id); }
-                const converted = toBackend(nodes, edges, agents);
-                const updated = { ...wf.data, nodes: converted.nodes, edges: converted.edges };
-                await WorkflowApi.save(id, updated as any);
-                alert('Gespeichert: ' + id);
-              } catch (e) { console.error(e); alert('Speichern fehlgeschlagen'); }
-            }} className="px-3 py-1 bg-green-600 rounded text-sm font-bold">💾 Speichern</button>
-            <button onClick={async () => {
-              const id = workflowId || prompt('Workflow ID eingeben:');
-              if (!id) return;
-              try {
-                let wf;
-                try { wf = await WorkflowApi.get(id); } catch { wf = await WorkflowApi.create(id); }
-                const converted = toBackend(nodes, edges, agents);
-                const updated = { ...wf.data, nodes: converted.nodes, edges: converted.edges };
-                await WorkflowApi.save(id, updated as any);
-                const res = await WorkflowApi.run(updated as any, 'Hello');
-                alert('Ergebnis: ' + res.data.result);
-              } catch (e) { console.error(e); alert('Ausführung fehlgeschlagen'); }
-            }} className="px-3 py-1 bg-blue-600 rounded text-sm font-bold">▶ Ausführen</button>
-            <button onClick={handleAutoLayout} className="px-3 py-1 bg-gray-600 rounded text-sm">Auto-Layout</button>
-            <button onClick={undo} className="px-3 py-1 bg-gray-600 rounded text-sm" disabled={historyIndex <= 0}>Undo</button>
-            <button onClick={redo} className="px-3 py-1 bg-gray-600 rounded text-sm" disabled={historyIndex >= history.length - 1}>Redo</button>
-          </div>
+    <div className="flex h-full min-h-0">
+      <aside className="w-40 shrink-0 bg-gray-800 border-r border-gray-700 overflow-y-auto">
+        <div className="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wide border-b border-gray-700">
+          Nodes
         </div>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChangeInternal}
-          onEdgesChange={onEdgesChangeInternal}
-          onConnect={onConnect}
-          onNodeDragStop={() => {
-            if (onGraphChange) {
-              isUpdating.current = true;
-              onGraphChange({ nodes, edges });
+        <div className="p-2 flex flex-col gap-1">
+          {palette.map((n) => (
+            <button
+              key={n.label}
+              onClick={() => addNodeOfType(n.type, n.data)}
+              className={`w-full text-left px-2 py-1 rounded text-xs ${n.color}`}
+            >
+              {n.label}
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="p-2 flex flex-wrap items-center gap-2 bg-gray-800 border-b border-gray-700">
+          <span className="text-xs text-gray-400 mr-1">Actions:</span>
+          <button onClick={saveWorkflow} className="px-3 py-1 bg-green-600 rounded text-sm font-bold">💾 Speichern</button>
+          <button onClick={runWorkflow} className="px-3 py-1 bg-blue-600 rounded text-sm font-bold">▶ Ausführen</button>
+          <button onClick={handleAutoLayout} className="px-3 py-1 bg-gray-600 rounded text-sm">Auto-Layout</button>
+          <button onClick={undo} className="px-3 py-1 bg-gray-600 rounded text-sm" disabled={historyIndex <= 0}>Undo</button>
+          <button onClick={redo} className="px-3 py-1 bg-gray-600 rounded text-sm" disabled={historyIndex >= history.length - 1}>Redo</button>
+        </div>
+
+        <div className="flex-1 min-h-0 bg-gray-900">
+          <ReactFlow
+            nodes={nodes}
+            edges={displayEdges}
+            onNodesChange={onNodesChangeInternal}
+            onEdgesChange={onEdgesChangeInternal}
+            onConnect={onConnect}
+            isValidConnection={(connection) =>
+              isValidConnection(connection, nodesRef.current, edgesRef.current)
             }
-          }}
-          onNodeClick={onNodeClick}
-          nodeTypes={nodeTypes}
-          fitView
-          multiSelectionKeyCode="Shift"
-          selectionKeyCode="Shift"
-          deleteKeyCode="Delete"
-          onEdgesDelete={(deleted) => {
-            const deletedIds = new Set(deleted.map((e) => e.id));
-            const remaining = edges.filter((e) => !deletedIds.has(e.id));
-            setEdges(remaining);
-            if (onGraphChange) { isUpdating.current = true; onGraphChange({ nodes, edges: remaining }); }
-          }}
-          onNodesDelete={(deleted) => {
-            const deletedIds = new Set(deleted.map((n) => n.id));
-            const remaining = nodes.filter((n) => !deletedIds.has(n.id));
-            setNodes(remaining);
-            setEdges(edges.filter((e) => !deletedIds.has(e.source) && !deletedIds.has(e.target)));
-            pushHistory(remaining, edges.filter((e) => !deletedIds.has(e.source) && !deletedIds.has(e.target)));
-            if (onGraphChange) {
-              onGraphChange(toBackend(remaining, edges.filter((e) => !deletedIds.has(e.source) && !deletedIds.has(e.target)), agents));
-            }
-          }}
-        >
-          <Controls />
-          <Background />
-        </ReactFlow>
+            onNodeDragStop={(_event, _node, draggedNodes) => {
+              if (onGraphChange) {
+                // The third argument contains the final positions. Using it
+                // avoids emitting stale positions before the next render.
+                const currentNodes = draggedNodes ?? nodesRef.current;
+                nodesRef.current = currentNodes;
+                isUpdating.current = true;
+                onGraphChange(toDefinitionGraph(currentNodes, edgesRef.current));
+              }
+            }}
+            onNodeClick={onNodeClick}
+            nodeTypes={nodeTypes}
+            fitView
+            multiSelectionKeyCode="Shift"
+            selectionKeyCode="Shift"
+            deleteKeyCode="Delete"
+            style={{ background: '#111827' }}
+            onEdgesDelete={(deleted) => {
+              const deletedEdges = deleted as Edge[];
+              const deletedIds = new Set(deletedEdges.map((e) => e.id));
+              const remaining = edgesRef.current.filter((e) => !deletedIds.has(e.id));
+              const updatedNodes = clearDecisionTargets(nodesRef.current, deletedEdges);
+              nodesRef.current = updatedNodes;
+              edgesRef.current = remaining;
+              setNodes(updatedNodes);
+              setEdges(remaining);
+              if (selectedNode) {
+                const updatedSelected = updatedNodes.find((node) => node.id === selectedNode.id);
+                if (updatedSelected) {
+                  setSelectedNode((prev) =>
+                    prev ? { ...prev, data: updatedSelected.data } : prev,
+                  );
+                }
+              }
+              if (onGraphChange) {
+                isUpdating.current = true;
+                onGraphChange(toDefinitionGraph(updatedNodes, remaining));
+              }
+            }}
+            onNodesDelete={(deleted) => {
+              const deletedIds = new Set(deleted.map((n) => n.id));
+              const remainingNodes = nodesRef.current.filter((n) => !deletedIds.has(n.id));
+              const remainingEdges = edgesRef.current.filter(
+                (e) => !deletedIds.has(e.source) && !deletedIds.has(e.target),
+              );
+              nodesRef.current = remainingNodes;
+              edgesRef.current = remainingEdges;
+              setNodes(remainingNodes);
+              setEdges(remainingEdges);
+              pushHistory(remainingNodes, remainingEdges);
+              if (onGraphChange) {
+                isUpdating.current = true;
+                onGraphChange(toDefinitionGraph(remainingNodes, remainingEdges));
+              }
+            }}
+          >
+            <Controls />
+            <Background color="#4b5563" gap={16} />
+          </ReactFlow>
+        </div>
       </div>
+
       <PropertyPanel
         selectedNode={selectedNode}
         onUpdate={updateNodeData}
+        nodes={nodes.map((node) => ({
+          id: node.id,
+          type: node.type || 'agent',
+          data: node.data as Record<string, unknown>,
+        }))}
+        edges={edges}
         agents={allAgents as any}
-        onAgentChange={(agent) => {
-          // Update workflow agents list
-          if (onGraphChange) {
-            // Emit agent change via nodes change (simplified)
-          }
-        }}
+        onAgentChange={saveAgentConfig}
         onCopyConfig={(agent) => {
           console.log('Copied agent config:', agent);
         }}

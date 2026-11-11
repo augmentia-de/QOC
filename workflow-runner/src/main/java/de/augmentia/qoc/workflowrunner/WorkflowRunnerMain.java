@@ -61,6 +61,12 @@ public final class WorkflowRunnerMain {
         Stores stores = StorageFactory.create(config, memory, null,
                 new SystemClock(), new de.augmentia.oc.engine.adapter.fs.NioFileSystem(Path.of(".")));
         QocEngine engine = QocEngine.create(stores, config, new SystemClock(), false);
+        engine.setWorkflowMaxSteps(100);
+        engine.setPreflightContext(new de.augmentia.oc.engine.runtime.resilience.PreflightChecker.PreflightContext(
+                null,
+                System.getenv().getOrDefault("OPENAI_API_KEY", "demo-key"),
+                () -> true,
+                Path.of(".").toAbsolutePath().normalize()));
 
         WorkflowStore store = new WorkflowStore(storageDir);
         AgentStore agentStore = new AgentStore(Paths.get(storageDir));

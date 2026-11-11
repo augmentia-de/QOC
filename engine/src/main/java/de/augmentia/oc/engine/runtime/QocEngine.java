@@ -117,6 +117,8 @@ public static record EngineConfig(
     private final de.augmentia.oc.engine.runtime.workflow.WorkflowStepProvider workflowStepProvider;
     private final de.augmentia.oc.engine.core.contract.tool.ToolSnapshot toolSnapshot;
     private final de.augmentia.oc.engine.core.contract.provider.ModelInfo modelInfo;
+    private int workflowMaxSteps = 100;
+    private de.augmentia.oc.engine.runtime.resilience.PreflightChecker.PreflightContext preflightContext;
 
     private QocEngine(Stores stores, StorageConfig storageConfig, Clock clock,
                       SessionService sessionService, Coordinator coordinator,
@@ -324,6 +326,11 @@ public static record EngineConfig(
         registry.register(de.augmentia.oc.engine.runtime.tool.skill.SkillTool.definition(emptySkillCatalog, skillRules));
         registry.register(de.augmentia.oc.engine.runtime.tool.skill.SkillTool.listDefinition(emptySkillCatalog, skillRules));
 
+        // Allow external callers to register additional tools (e.g. MCP tools) before snapshot.
+        if (toolDeps != null && toolDeps.toolRegistrar() != null) {
+            toolDeps.toolRegistrar().accept(registry);
+        }
+
         java.util.List<de.augmentia.oc.engine.core.model.Rule> allowAll = java.util.List.of(
                 new de.augmentia.oc.engine.core.model.Rule("*", "*", de.augmentia.oc.engine.core.model.Effect.ALLOW));
         de.augmentia.oc.engine.core.contract.tool.ToolSnapshot ts = registry.snapshot(allowAll);
@@ -370,6 +377,26 @@ public static record EngineConfig(
     }
 
     // --- Public API ---
+
+    /** Configures the step budget for workflow-mode loops. */
+    public void setWorkflowMaxSteps(int workflowMaxSteps) {
+        this.workflowMaxSteps = Math.max(1, workflowMaxSteps);
+    }
+
+    /**
+     * Supplies the provider/database context for pre-flight checks. The outer
+     * Quarkus engine owns the settings; a standalone engine keeps the neutral
+     * fallback context.
+     */
+    public void setPreflightContext(
+            de.augmentia.oc.engine.runtime.resilience.PreflightChecker.PreflightContext preflightContext) {
+        this.preflightContext = preflightContext;
+    }
+
+    /** True while this JVM is actively executing the session. */
+    public boolean isActive(SessionId session) {
+        return session != null && coordinator.active(session);
+    }
 
     public Stores stores() { return stores; }
     public StorageConfig storageConfig() { return storageConfig; }
@@ -447,6 +474,13 @@ public static record EngineConfig(
             for (de.augmentia.oc.engine.core.model.Claim claim : stores.claims().open()) {
                 de.augmentia.oc.engine.core.model.SessionId sessionId = claim.sessionId();
                 if (coordinator.active(sessionId)) continue;
+                if (isWorkflowSession(sessionId)) {
+                    // Workflow runs are resumed by the workflow recovery
+                    // service, which rebuilds the workflow context from the
+                    // journal instead of starting a plain "build" prompt.
+                    log.fine("Skipping workflow session during generic recovery: " + sessionId.value());
+                    continue;
+                }
                 if (claim.resumeAttempts() >= de.augmentia.oc.engine.runtime.execution.Recovery.MAX_RESUME_ATTEMPTS) {
                     try {
                         stores.journal().append(new de.augmentia.oc.engine.core.model.EventDraft(
@@ -482,6 +516,36 @@ public static record EngineConfig(
         }
     }
     /**
+     * A workflow session owns its recovery: the workflow runner replays
+     * {@code WorkflowRun*} events and resumes with the right definition and
+     * context. The generic recovery must not turn it into a normal prompt.
+     */
+    private boolean isWorkflowSession(de.augmentia.oc.engine.core.model.SessionId sessionId) {
+        try {
+            return !stores.journal()
+                    .historyOfType(sessionId.value(), "WorkflowRunStarted",
+                            de.augmentia.oc.engine.core.model.Seq.zero())
+                    .isEmpty();
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Prepared execution components from the outer engine. Quarkus owns the
+     * real tool snapshot, permission gate, skill catalogue and model info; the
+     * core engine must use those instead of building a reduced parallel set.
+     */
+    public record ExecutionOverrides(
+            de.augmentia.oc.engine.runtime.context.AgentProfile agentProfile,
+            de.augmentia.oc.engine.core.contract.provider.ModelInfo modelInfo,
+            de.augmentia.oc.engine.runtime.step.Step step,
+            de.augmentia.oc.engine.core.contract.tool.ToolSnapshot toolSnapshot,
+            de.augmentia.oc.engine.runtime.context.ContextBuilder contextBuilder,
+            de.augmentia.oc.engine.runtime.skill.SkillSelection skillSelection
+    ) {}
+
+    /**
      * Agent configuration passed from workflow definitions.
      * Stored in {@link #agentRegistry} by prefixed name ({@code wf:Name:Version}).
      */
@@ -496,7 +560,8 @@ public static record EngineConfig(
             java.util.List<String> guardrailsInput,
             java.util.List<String> guardrailsOutput,
             java.util.List<String> hooks,
-            boolean jsonOutput
+            boolean jsonOutput,
+            de.augmentia.oc.engine.core.model.Option<de.augmentia.oc.engine.core.json.Schema> responseSchema
     ) {
         public AgentConfig {
             if (name == null) name = "wf:default:1.0.0";
@@ -505,6 +570,7 @@ public static record EngineConfig(
             if (guardrailsInput == null) guardrailsInput = java.util.List.of();
             if (guardrailsOutput == null) guardrailsOutput = java.util.List.of();
             if (hooks == null) hooks = java.util.List.of();
+            if (responseSchema == null) responseSchema = de.augmentia.oc.engine.core.model.Option.none();
         }
     }
 
@@ -521,7 +587,8 @@ public static record EngineConfig(
             return config;
         }
         AgentConfig defaultConfig = new AgentConfig(name, null, 0.3, 4096, 1.0, null,
-                java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), false);
+                java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), false,
+                de.augmentia.oc.engine.core.model.Option.none());
         agentRegistry.put(name, defaultConfig);
         return defaultConfig;
     }
@@ -547,9 +614,32 @@ public static record EngineConfig(
             de.augmentia.oc.engine.runtime.workflow.WorkflowStepProvider workflowStepProvider,
             Object workflowContext,
             de.augmentia.oc.engine.core.model.Principal principal) {
+        return runPrompt(existingSession, agentName, prompt, config, storePrompt,
+                workflowStepProvider, workflowContext, principal, null);
+    }
+
+    /**
+     * Same as above, but lets the outer engine supply its prepared agent
+     * profile, model info, step, tool snapshot and context builder.
+     */
+    public de.augmentia.oc.engine.core.model.EngineResult runPrompt(
+            de.augmentia.oc.engine.core.model.SessionId existingSession,
+            String agentName, String prompt, AgentConfig config,
+            boolean storePrompt,
+            de.augmentia.oc.engine.runtime.workflow.WorkflowStepProvider workflowStepProvider,
+            Object workflowContext,
+            de.augmentia.oc.engine.core.model.Principal principal,
+            ExecutionOverrides overrides) {
         String name = (agentName == null || agentName.isBlank()) ? "build" : agentName;
         if (principal == null) principal = de.augmentia.oc.engine.core.model.Principal.anonymous();
         AgentConfig resolved = resolveAgentConfig(name, config);
+
+        de.augmentia.oc.engine.core.model.Option<de.augmentia.oc.engine.core.json.Schema> responseSchema =
+                resolved.responseSchema() == null
+                        ? de.augmentia.oc.engine.core.model.Option.none()
+                        : resolved.responseSchema();
+        de.augmentia.oc.engine.core.model.Option<de.augmentia.oc.engine.core.json.JsonValue> structured =
+                de.augmentia.oc.engine.core.model.Option.none();
 
         String normalizedPrompt = prompt == null ? "" : prompt;
         de.augmentia.oc.engine.core.model.SessionId session;
@@ -568,10 +658,13 @@ public static record EngineConfig(
                     "session is already being executed: " + session.value(), false);
         }
         boolean workflowMode = (workflowStepProvider != null && workflowContext != null);
-        // Preflight checks (skip in workflow mode)
-        if (!workflowMode && engineConfig.preflightEnabled() && preflightChecker != null) {
-            var preflightCtx = new de.augmentia.oc.engine.runtime.resilience.PreflightChecker.PreflightContext(
-                    null, null, () -> true, java.nio.file.Path.of("."));
+        boolean overridesPreflight = overrides != null && overrides.step() != null;
+        // Preflight checks (skip in workflow mode and when the outer engine
+        // already ran them with its full provider context)
+        if (!workflowMode && !overridesPreflight && engineConfig.preflightEnabled() && preflightChecker != null) {
+            var preflightCtx = preflightContext != null ? preflightContext
+                    : new de.augmentia.oc.engine.runtime.resilience.PreflightChecker.PreflightContext(
+                            null, null, () -> true, java.nio.file.Path.of("."));
             var preflightResult = preflightChecker.check(preflightCtx);
             if (!preflightResult.passed()) {
                 StringBuilder msg = new StringBuilder("Pre-flight checks failed:\n");
@@ -609,6 +702,40 @@ public static record EngineConfig(
                     "Session " + session.value() + " created. Prompt queued (no provider wired): " + normalizedPrompt,
                     "COMPLETED", 0, 0);
         }
+        // Schema-aware step/snapshot (structured output via submit_result tool).
+        de.augmentia.oc.engine.runtime.step.Step runStep =
+                overrides != null && overrides.step() != null ? overrides.step() : step;
+        de.augmentia.oc.engine.core.contract.tool.ToolSnapshot runSnapshot =
+                overrides != null && overrides.toolSnapshot() != null
+                        ? overrides.toolSnapshot() : toolSnapshot;
+        de.augmentia.oc.engine.runtime.context.ContextBuilder activeContextBuilder =
+                overrides != null && overrides.contextBuilder() != null
+                        ? overrides.contextBuilder() : contextBuilder;
+        if ((overrides == null || overrides.step() == null)
+                && !workflowMode && responseSchema.isPresent() && provider != null) {
+            de.augmentia.oc.engine.core.contract.tool.ToolSnapshot base = toolSnapshot == null
+                    ? new de.augmentia.oc.engine.core.contract.tool.ToolSnapshot(java.util.Map.of())
+                    : toolSnapshot;
+            de.augmentia.oc.engine.core.contract.tool.ToolSnapshot withSchema =
+                    de.augmentia.oc.engine.runtime.tool.structured.SubmitResult.withTool(base, responseSchema.orElseThrow());
+            de.augmentia.oc.engine.core.contract.tool.Hooks noopHooks = new de.augmentia.oc.engine.core.contract.tool.Hooks() {
+                public de.augmentia.oc.engine.core.contract.tool.ToolCall beforeToolCall(
+                        de.augmentia.oc.engine.core.contract.tool.ToolContext context,
+                        de.augmentia.oc.engine.core.contract.tool.ToolCall call) { return call; }
+                public de.augmentia.oc.engine.core.contract.tool.ToolResult afterToolCall(
+                        de.augmentia.oc.engine.core.contract.tool.ToolContext context,
+                        de.augmentia.oc.engine.core.contract.tool.ToolResult result) { return result; }
+            };
+            de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime schemaRuntime =
+                    new de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime(
+                            withSchema, de.augmentia.oc.engine.runtime.tool.runtime.ToolAuthorizer.defaultAuthorizer(),
+                            request -> { /* no-op permission gate: submit_result allowed */ },
+                            noopHooks, stores.toolOutputs(), stores.toolCache(),
+                            (int) Math.max(1, engineConfig.stepTimeoutSeconds()));
+            runStep = new de.augmentia.oc.engine.runtime.step.Step(provider, schemaRuntime);
+            runSnapshot = withSchema;
+        }
+
         // Full LLM execution with resolved agent config
         try {
             stores.journal().append(new de.augmentia.oc.engine.core.model.EventDraft(
@@ -622,16 +749,21 @@ public static record EngineConfig(
                 agentId = AgentId.create();
             }
             de.augmentia.oc.engine.runtime.context.AgentProfile agent =
-                    new de.augmentia.oc.engine.runtime.context.AgentProfile(
-                            agentId,
-                            resolved.systemPrompt() != null ? Option.some(resolved.systemPrompt()) : Option.none(),
-                            10, java.util.List.of());
+                    overrides != null && overrides.agentProfile() != null
+                            ? overrides.agentProfile()
+                            : new de.augmentia.oc.engine.runtime.context.AgentProfile(
+                                    agentId,
+                                    resolved.systemPrompt() != null ? Option.some(resolved.systemPrompt()) : Option.none(),
+                                    10, java.util.List.of());
 
-            de.augmentia.oc.engine.core.contract.provider.ModelInfo model = buildModelInfo(resolved);
+            de.augmentia.oc.engine.core.contract.provider.ModelInfo model =
+                    overrides != null && overrides.modelInfo() != null
+                            ? overrides.modelInfo()
+                            : buildModelInfo(resolved);
 
             int stepNo = 1;
             StringBuilder sb = new StringBuilder();
-            int maxSteps = 10; // prevent infinite loop
+            int maxSteps = workflowMode ? Math.max(1, workflowMaxSteps) : 10; // prevent infinite loop
             int retryAttempts = 0;
             int maxRetries = 2;
             int totalToolCalls = 0;
@@ -650,8 +782,14 @@ public static record EngineConfig(
                     java.util.logging.Logger.getLogger(QocEngine.class.getName()).fine("Workflow mode: step=" + stepNo);
                     result = workflowStepProvider.provideStep(stepNo, workflowContext);
                 } else {
-                    de.augmentia.oc.engine.runtime.context.Prepared prepared =
-                            contextBuilder.prepare(info, agent, model, toolSnapshot,
+                    de.augmentia.oc.engine.runtime.skill.SkillSelection selection =
+                            overrides == null ? null : overrides.skillSelection();
+                    de.augmentia.oc.engine.runtime.context.Prepared prepared = selection != null
+                            ? activeContextBuilder.prepare(info, agent, model, runSnapshot,
+                                    de.augmentia.oc.engine.core.model.Seq.zero(), stepNo,
+                                    de.augmentia.oc.engine.core.model.Option.none(),
+                                    de.augmentia.oc.engine.core.model.Option.none(), selection)
+                            : activeContextBuilder.prepare(info, agent, model, runSnapshot,
                                     de.augmentia.oc.engine.core.model.Seq.zero(), stepNo);
 
                     de.augmentia.oc.engine.core.contract.tool.ToolContext toolContext =
@@ -661,7 +799,7 @@ public static record EngineConfig(
                                     de.augmentia.oc.engine.core.model.CallId.create(),
                                     null, principal, toolTokenService);
 
-                    result = step.run(prepared, toolContext);
+                    result = runStep.run(prepared, toolContext);
                 }
 
                 if (!workflowMode && result instanceof de.augmentia.oc.engine.runtime.step.StepResult.NeedsCompaction) {
@@ -675,8 +813,14 @@ public static record EngineConfig(
                     } catch (RuntimeException e) {
                         // Compaction failed — continue anyway
                     }
-                    de.augmentia.oc.engine.runtime.context.Prepared prepared =
-                            contextBuilder.prepare(info, agent, model, toolSnapshot,
+                    de.augmentia.oc.engine.runtime.skill.SkillSelection selection =
+                            overrides == null ? null : overrides.skillSelection();
+                    de.augmentia.oc.engine.runtime.context.Prepared prepared = selection != null
+                            ? activeContextBuilder.prepare(info, agent, model, runSnapshot,
+                                    de.augmentia.oc.engine.core.model.Seq.zero(), stepNo,
+                                    de.augmentia.oc.engine.core.model.Option.none(),
+                                    de.augmentia.oc.engine.core.model.Option.none(), selection)
+                            : activeContextBuilder.prepare(info, agent, model, runSnapshot,
                                     de.augmentia.oc.engine.core.model.Seq.zero(), stepNo);
                     de.augmentia.oc.engine.core.contract.tool.ToolContext toolContext =
                             new de.augmentia.oc.engine.core.contract.tool.ToolContext(
@@ -684,7 +828,7 @@ public static record EngineConfig(
                                     de.augmentia.oc.engine.core.model.MessageId.create(),
                                     de.augmentia.oc.engine.core.model.CallId.create(),
                                     null, principal, toolTokenService);
-                    result = step.run(prepared, toolContext);
+                    result = runStep.run(prepared, toolContext);
                 }
 
                 if (result instanceof de.augmentia.oc.engine.runtime.step.StepResult.Paused paused) {
@@ -783,6 +927,14 @@ public static record EngineConfig(
                         eventPublisher.publishToolResult(session.value(), call.id().value(), resultText);
                     }
 
+                    // Extract structured result from submit_result tool call (if any).
+                    for (de.augmentia.oc.engine.runtime.step.StepResult.ToolCallOutcome sco : finished.toolCalls()) {
+                        if (sco.call().name().value().equals("submit_result")
+                                && sco.outcome() instanceof de.augmentia.oc.engine.core.contract.tool.ToolOutcome.Ok ok) {
+                            structured = de.augmentia.oc.engine.core.model.Option.some(sco.call().input());
+                        }
+                    }
+
                     // Persist assistant turn in conversation
                     java.util.List<de.augmentia.oc.engine.core.model.Content> assistantContent = new java.util.ArrayList<>();
                     String stepText = "";
@@ -821,6 +973,24 @@ public static record EngineConfig(
                             // Conversation store may not support insert — continue
                         }
                     }
+
+                    // Structured output is terminal: the reserved tool carries
+                    // the final result and must not be treated as a loop.
+                    boolean submitted = false;
+                    for (de.augmentia.oc.engine.runtime.step.StepResult.ToolCallOutcome outcome : finished.toolCalls()) {
+                        if (de.augmentia.oc.engine.runtime.tool.structured.SubmitResult.TOOL_NAME
+                                .equals(outcome.call().name().value())) {
+                            if (outcome.outcome() instanceof de.augmentia.oc.engine.core.contract.tool.ToolOutcome.Ok ok) {
+                                structured = ok.result().output();
+                                submitted = true;
+                            } else if (outcome.outcome() instanceof de.augmentia.oc.engine.core.contract.tool.ToolOutcome.Failed failed) {
+                                return de.augmentia.oc.engine.core.model.EngineResult.failed(
+                                        "Session " + session.value() + " — submit_result failed: "
+                                                + failed.error(), false);
+                            }
+                        }
+                    }
+                    if (submitted) break;
 
                     // Loop detection
                     for (de.augmentia.oc.engine.runtime.step.StepResult.ToolCallOutcome outcome : finished.toolCalls()) {
@@ -870,7 +1040,7 @@ public static record EngineConfig(
             }
             return de.augmentia.oc.engine.core.model.EngineResult.completed(
                     "Session " + session.value() + " — LLM response: " + answer,
-                    "COMPLETED", 0, (long) totalTokens);
+                    "COMPLETED", 0, (long) totalTokens, structured);
         } catch (RuntimeException e) {
             try {
                 stores.journal().append(new de.augmentia.oc.engine.core.model.EventDraft(

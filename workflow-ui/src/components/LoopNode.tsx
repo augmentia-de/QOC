@@ -1,12 +1,20 @@
-import { Handle, Position } from '@xyflow/react';
+import type { NodeProps } from '@xyflow/react';
+import { NodeShell, PortRow } from './NodeShell';
 
-export function LoopNode({ data }: { data: Record<string, unknown> }) {
+export function LoopNode({ data, selected }: NodeProps) {
   return (
-    <div className="px-4 py-2 rounded-lg bg-orange-600 border-2 border-orange-400 min-w-[100px]">
-      <Handle type="target" position={Position.Left} />
-      <div className="font-bold text-sm">{String(data.title || 'Loop')}</div>
-      <div className="text-xs opacity-70">max: {String(data.maxIterations || 3)}</div>
-      <Handle type="source" position={Position.Right} />
-    </div>
+    <NodeShell
+      title={String(data.title || 'Loop')}
+      subtitle={`max: ${String(data.maxIterations || 3)}`}
+      color="bg-orange-600 border-orange-400"
+      selected={selected}
+    >
+      <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
+      {Boolean(data.exitCondition) && (
+        <div className="truncate px-3 pb-1 text-[10px] text-orange-100/80" title={String(data.exitCondition)}>
+          exit: {String(data.exitCondition)}
+        </div>
+      )}
+    </NodeShell>
   );
 }

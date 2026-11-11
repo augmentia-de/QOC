@@ -40,6 +40,17 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>de.augmentia.qoc</groupId>
+            <artifactId>workflow-runner</artifactId>
+            <version>${project.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc</artifactId>
         </dependency>

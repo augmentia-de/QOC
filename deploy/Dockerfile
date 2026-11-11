@@ -19,9 +19,9 @@ VOLUME ["/data"]
 # Create data directories and set ownership.
 # /data/home is the process HOME: plan files (~/.opencode/plan) land in the
 # persistent volume instead of the container root or the workspace.
-RUN mkdir -p /data/workspace /data/log /data/home/.opencode/plan /var/lib/qoc && \
+RUN mkdir -p /data/workspace /data/wf /data/log /data/home/.opencode/plan /var/lib/qoc && \
     chown -R qoc:qoc /data /var/lib/qoc && \
-    chmod 750 /data /data/workspace /data/log /var/lib/qoc && \
+    chmod 750 /data /data/workspace /data/wf /data/log /var/lib/qoc && \
     chmod 700 /data/home
 
 ENV HOME=/data/home

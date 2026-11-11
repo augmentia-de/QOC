@@ -25,8 +25,13 @@ public record EngineResult(
     }
 
     public static EngineResult completed(String text, String finish, long inputTokens, long outputTokens) {
-        return new EngineResult(text, finish, inputTokens, outputTokens, false, null, false, false, null,
-                de.augmentia.oc.engine.core.model.Option.none());
+        return completed(text, finish, inputTokens, outputTokens, de.augmentia.oc.engine.core.model.Option.none());
+    }
+
+    public static EngineResult completed(String text, String finish, long inputTokens, long outputTokens,
+                                       de.augmentia.oc.engine.core.model.Option<de.augmentia.oc.engine.core.json.JsonValue> structured) {
+        if (structured == null) structured = de.augmentia.oc.engine.core.model.Option.none();
+        return new EngineResult(text, finish, inputTokens, outputTokens, false, null, false, false, null, structured);
     }
 
     public static EngineResult failed(String errorMessage, boolean retryable) {
