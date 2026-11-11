@@ -32,3 +32,4 @@ deploy/docker-*/workspace/**
 /workflow-ui/node_modules/
 /workflow-ui/dist/
 /wf-data/
+/.home/
