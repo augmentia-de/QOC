@@ -1883,7 +1883,7 @@ commandLoader = new CommandLoader(workspacePath,
         }
 
         de.augmentia.oc.engine.core.model.EngineResult qocResult =
-                qocEngine.runPrompt(id, agentName == null ? "build" : agentName, text, qocConfig, false);
+                qocEngine.runPrompt(id, agentName == null ? "build" : agentName, text, qocConfig, false, null, null);
 
         // Map EngineResult to Quarkus types
         String qocFinalText = qocResult.text();

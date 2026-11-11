@@ -15,9 +15,7 @@
         <module>engine</module>
         <module>quarkus</module>
         <module>cli</module>
-        <module>temporal</module>
         <module>workflow-runner</module>
-        <module>temporal-ui</module>
     </modules>
 
     <properties>

@@ -13,9 +13,6 @@
     <artifactId>workflow-runner</artifactId>
     <name>workflow-runner</name>
 
-    <properties>
-        <temporal.version>1.40.0</temporal.version>
-    </properties>
     <description>Workflow runner using ReactFlow format (Nodes + Edges) with QOC Engine</description>
 
     <dependencies>

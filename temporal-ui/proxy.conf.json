@@ -1,4 +1,0 @@
-{
-  "/run": { "target": "http://localhost:8096", "secure": false, "changeOrigin": true },
-  "/health": { "target": "http://localhost:8096", "secure": false, "changeOrigin": true }
-}

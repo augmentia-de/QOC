@@ -1,11 +1,10 @@
-# Workflow Stack: Temporal + workflow-runner + workflow-ui
+# Workflow Stack: workflow-runner + workflow-ui
 #
 # Start:
 #   cd deploy
 #   docker compose -f docker-compose.workflow.yml up -d
 #
 # URLs:
-#   Temporal UI:      http://localhost:8233
 #   workflow-runner:  http://localhost:8097
 #   workflow-ui:      http://localhost:5173
 #   QOC Engine:       http://localhost:8080 (separate, via qoc-memory oder qoc-local)
@@ -14,27 +13,7 @@ name: qoc-workflow
 
 services:
 
-  # Temporal dev server (gRPC 7233, Web UI 8233)
-  temporal:
-    image: temporalio/auto-setup:latest
-    container_name: qoc-temporal
-    restart: unless-stopped
-    environment:
-      - DB=sqlite
-      - SQLITE_PRAGMA_journal_mode=WAL
-    ports:
-      - "7233:7233"
-      - "8233:8233"
-    volumes:
-      - temporal-data:/var/lib/temporal
-    healthcheck:
-      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "localhost:7233"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
-  # workflow-runner (Java, Temporal worker + REST API)
+  # workflow-runner (Java, REST API)
   workflow-runner:
     build:
       context: ..
@@ -50,9 +29,6 @@ services:
       - "8097:8097"
     volumes:
       - ../wf-data:/data/wf
-    depends_on:
-      temporal:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8097/health"]
       interval: 10s
@@ -73,5 +49,3 @@ services:
     depends_on:
       - workflow-runner
 
-volumes:
-  temporal-data:

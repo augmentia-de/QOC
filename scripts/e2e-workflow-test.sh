@@ -26,8 +26,6 @@ mkdir -p "$QOC_DIR/wf-e2e-data"
 
 # Start server
 echo "Starting server on port $PORT..."
-echo "NOTE: WorkflowRunnerServer was removed (temporal part). E2E test may not work."
-echo "      workflow-runner is now a library module only."
 export $(grep -v '^#' .env | xargs) 2>/dev/null || true
 java -jar workflow-runner/target/workflow-runner-1.0.0-SNAPSHOT.jar "$QOC_DIR/wf-e2e-data" > /tmp/e2e.log 2>&1 &
 SERVER_PID=$!
