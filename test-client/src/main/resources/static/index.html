@@ -6,8 +6,10 @@
   <style>
     body { font-family: sans-serif; max-width: 900px; margin: 2rem auto; }
     label { display: block; margin: .5rem 0; }
-    textarea { width: 100%; min-height: 120px; }
+    textarea { width: 100%; min-height: 120px; font-family: monospace; }
     pre { background: #f4f4f4; padding: 1rem; white-space: pre-wrap; }
+    .row { display: flex; gap: .5rem; align-items: center; }
+    .hint { color: #666; font-size: .85rem; }
   </style>
 </head>
 <body>
@@ -20,13 +22,26 @@
   </label>
   <label>Agent
     <select id="agent">
-      <option value="reviewer">reviewer</option>
-      <option value="researcher">researcher</option>
-      <option value="refactorer">refactorer</option>
+      <option value="build">build</option>
+      <option value="plan">plan</option>
     </select>
   </label>
   <label>Prompt
-    <textarea id="prompt">Explain OrderService.totalFor in java-sample.</textarea>
+    <textarea id="prompt">Give me a short greeting for a developer named Ada, including a mood.</textarea>
+  </label>
+  <label>
+    <input type="checkbox" id="useStructured"> Use structured output
+  </label>
+  <label>Structured output schema (JSON Schema)
+    <textarea id="schema" style="min-height:160px;">{
+  "type": "object",
+  "properties": {
+    "greeting": { "type": "string" },
+    "mood": { "type": "string" }
+  },
+  "required": ["greeting", "mood"]
+}</textarea>
+    <span class="hint">Sample: asks the agent to return a greeting + mood as JSON.</span>
   </label>
   <button id="run">Run</button>
   <h2>Result</h2>
@@ -39,6 +54,15 @@
         agent: document.getElementById('agent').value,
         prompt: document.getElementById('prompt').value
       };
+      if (document.getElementById('useStructured').checked) {
+        const raw = document.getElementById('schema').value.trim();
+        try {
+          body.structuredOutput = JSON.parse(raw);
+        } catch (e) {
+          document.getElementById('result').textContent = 'Invalid JSON in schema: ' + e.message;
+          return;
+        }
+      }
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
