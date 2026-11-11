@@ -34,7 +34,7 @@
             <configuration>
               <transformers>
                 <transformer>
-                  <mainClass>de.augmentia.qoc.workflowrunner.WorkflowRunnerServer</mainClass>
+                  <mainClass>de.augmentia.qoc.workflowrunner.WorkflowRunnerMain</mainClass>
                 </transformer>
                 <transformer />
               </transformers>
