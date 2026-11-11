@@ -21,6 +21,7 @@ import { ForkNode } from '../components/ForkNode';
 import { JoinNode } from '../components/JoinNode';
 import { LoopNode } from '../components/LoopNode';
 import { EndNode } from '../components/EndNode';
+import { LlmEvalNode, LlmSummarizeNode } from '../components/LlmEvalNode';
 import { PropertyPanel } from '../components/PropertyPanel';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import type { WorkflowDefinition } from '../types/workflow';
@@ -36,6 +37,8 @@ const nodeTypes: NodeTypes = {
   join: JoinNode,
   loop: LoopNode,
   end: EndNode,
+  llm_eval: LlmEvalNode,
+  llm_summarize: LlmSummarizeNode,
 };
 
 const elk = new ELK();

@@ -245,12 +245,34 @@ export function PropertyPanel({ selectedNode, onUpdate, agents = [], onAgentChan
 
             <div className="mb-3">
               <label className="block text-sm text-gray-400 mb-1">System Prompt</label>
-              <textarea value={systemPrompt} onChange={(e) => setSystemPrompt(e.target.value)} className="w-full px-2 py-1 bg-gray-700 rounded text-sm h-24" />
+              <textarea value={systemPrompt} onChange={(e) => setSystemPrompt(e.target.value)} className="w-full px-2 py-1 bg-gray-700 rounded text-sm h-24" placeholder="You are a helpful agent. Use ${node_1.output.field} for data-piping." />
+              <p className="text-xs text-gray-500 mt-1">Data-Piping: $&#123;node_id.output.field&#125; für Werte aus Vorgänger-Nodes</p>
             </div>
 
             <div className="mb-3">
-              <label className="block text-sm text-gray-400 mb-1">Tools (comma-separated)</label>
-              <input value={tools} onChange={(e) => setTools(e.target.value)} className="w-full px-2 py-1 bg-gray-700 rounded text-sm" placeholder="Read, Write, Edit, Glob, Grep" />
+              <label className="block text-sm text-gray-400 mb-1">Tools</label>
+              <div className="flex flex-wrap gap-2">
+                {['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Patch', 'WebFetch', 'Shell'].map((t) => (
+                  <label key={t} className="flex items-center gap-1 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={tools.split(',').map((s) => s.trim()).includes(t)}
+                      onChange={(e) => {
+                        const current = tools.split(',').map((s) => s.trim()).filter(Boolean);
+                        if (e.target.checked) {
+                          if (!current.includes(t)) current.push(t);
+                        } else {
+                          const idx = current.indexOf(t);
+                          if (idx >= 0) current.splice(idx, 1);
+                        }
+                        setTools(current.join(', '));
+                      }}
+                    />
+                    {t}
+                  </label>
+                ))}
+              </div>
+              <input value={tools} onChange={(e) => setTools(e.target.value)} className="w-full px-2 py-1 bg-gray-700 rounded text-sm mt-1" placeholder="Read, Write, Edit, ... (or type custom)" />
             </div>
 
             <div className="mb-3">
