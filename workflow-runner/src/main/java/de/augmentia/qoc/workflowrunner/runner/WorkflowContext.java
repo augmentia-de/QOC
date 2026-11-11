@@ -1,5 +1,9 @@
 package de.augmentia.qoc.workflowrunner.runner;
 
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -11,6 +15,9 @@ import java.util.Map;
  * die wird von QocEngine.runPrompt() intern über ConversationStore verwaltet.</p>
  */
 public class WorkflowContext {
+
+    private static final Logger LOG = LoggerFactory.getLogger(WorkflowContext.class);
+
 
     /** Strukturierte Outputs pro Node-ID (für Data-Piping und Conditions). */
     private final Map<String, Object> nodeOutputs = new HashMap<>();

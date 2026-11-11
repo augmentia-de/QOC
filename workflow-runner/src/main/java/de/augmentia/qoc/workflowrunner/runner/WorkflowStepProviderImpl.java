@@ -1,5 +1,9 @@
 package de.augmentia.qoc.workflowrunner.runner;
 
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import de.augmentia.oc.engine.core.contract.tool.ToolCall;
 import de.augmentia.oc.engine.core.contract.tool.ToolContext;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
@@ -22,6 +26,9 @@ import java.util.Map;
  */
 public class WorkflowStepProviderImpl implements WorkflowStepProvider {
 
+    private static final Logger LOG = LoggerFactory.getLogger(WorkflowStepProviderImpl.class);
+
+
     private final WorkflowDefinition def;
     private final NodeDispatcher dispatcher;
 
@@ -32,6 +39,7 @@ public class WorkflowStepProviderImpl implements WorkflowStepProvider {
 
     @Override
     public StepResult provideStep(int stepNo, Object workflowContext) {
+        LOG.debug("provideStep: stepNo={}, currentNode={}", stepNo, ((WorkflowContext) workflowContext).getCurrentNodeId());
         WorkflowContext ctx = (WorkflowContext) workflowContext;
 
         String nodeId = getNextNodeId(def, ctx);
@@ -68,6 +76,7 @@ public class WorkflowStepProviderImpl implements WorkflowStepProvider {
     }
 
     public String getNextNodeId(WorkflowDefinition def, WorkflowContext ctx) {
+        LOG.debug("getNextNodeId: currentNode={}", ctx.getCurrentNodeId());
         String currentId = ctx.getCurrentNodeId();
 
         if (currentId == null) {
@@ -81,7 +90,7 @@ public class WorkflowStepProviderImpl implements WorkflowStepProvider {
             if (e.source().equals(currentId)) outgoing.add(e);
         }
 
-        if (outgoing.isEmpty()) return "DONE";
+        if (outgoing.isEmpty()) { LOG.debug("No outgoing edges -> DONE"); return "DONE"; }
 
         if (outgoing.size() == 1) {
             String target = outgoing.get(0).target();

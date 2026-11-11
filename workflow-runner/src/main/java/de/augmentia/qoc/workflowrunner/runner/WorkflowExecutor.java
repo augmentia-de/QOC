@@ -5,6 +5,9 @@ import de.augmentia.oc.engine.runtime.QocEngine;
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition;
 import de.augmentia.qoc.workflowrunner.store.WorkflowStore;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.*;
 
 /**
@@ -18,6 +21,8 @@ import java.util.*;
  */
 public class WorkflowExecutor {
 
+    private static final Logger LOG = LoggerFactory.getLogger(WorkflowExecutor.class);
+
     private final QocEngine engine;
     private final WorkflowStore store;
 
@@ -30,8 +35,10 @@ public class WorkflowExecutor {
      * Executes a workflow and returns the result.
      */
     public String execute(WorkflowDefinition def, String input) {
+        LOG.debug("Executing workflow: {} (input: {})", def.id(), input);
         // Expand sub-workflows first
         WorkflowDefinition expanded = new SubWorkflowExpander(store).expand(def);
+        LOG.debug("Expanded workflow: {} nodes, {} edges", expanded.nodes().size(), expanded.edges().size());
 
         WorkflowContext ctx = new WorkflowContext();
         String context = input == null ? "" : input;
@@ -42,12 +49,14 @@ public class WorkflowExecutor {
         WorkflowStepProviderImpl provider = new WorkflowStepProviderImpl(expanded, dispatcher);
 
         // Delegate to QocEngine's workflow-mode loop
+        LOG.debug("Delegating to QocEngine workflow-mode loop");
         EngineResult result = engine.runPrompt(
                 null, "workflow:" + def.id(), context,
                 new QocEngine.AgentConfig("workflow:" + def.id(), null, 0.3, 4096, 1.0, null,
                         List.of(), List.of(), List.of(), List.of(), false),
                 true, provider, ctx);
 
+        LOG.debug("Workflow completed: {}", result.text());
         return result.text();
     }
 

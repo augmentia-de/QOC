@@ -2,11 +2,16 @@ package de.augmentia.qoc.workflowrunner.runner;
 
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Minimal, deterministic condition language used by decision branches and loop
  * exit conditions. (Ported from agentflow ConditionEvaluator.)
  */
 public final class ConditionEvaluator {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ConditionEvaluator.class);
 
     private ConditionEvaluator() {}
 
@@ -51,7 +56,9 @@ public final class ConditionEvaluator {
 
             if (left.equals("status") || left.equals("lastStatus")) {
                 Object val = ctx.getState("lastStatus");
-                return right.equals(String.valueOf(val));
+                boolean result = right.equals(String.valueOf(val));
+                LOG.debug("Condition result: {}", result);
+                return result;
             }
 
             // Node-Output-basiert: "node_1.output.classification == 'VIP_ORDER'"

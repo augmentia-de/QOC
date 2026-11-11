@@ -1,5 +1,9 @@
 package de.augmentia.qoc.workflowrunner.runner;
 
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -9,6 +13,9 @@ import java.util.regex.Pattern;
  * against a WorkflowContext.
  */
 public final class TemplateResolver {
+
+    private static final Logger LOG = LoggerFactory.getLogger(TemplateResolver.class);
+
 
     private static final Pattern TEMPLATE_PATTERN =
             Pattern.compile("\\$\\{([a-zA-Z0-9_]+)\\.output(\\.([a-zA-Z0-9_.]+))?\\}");
@@ -21,6 +28,7 @@ public final class TemplateResolver {
      * If a referenced node output is null, returns null.
      */
     public static String resolve(String template, WorkflowContext ctx) {
+        LOG.debug("Resolving template: {}", template);
         if (template == null || !template.contains("${")) return template;
 
         Matcher matcher = TEMPLATE_PATTERN.matcher(template);
@@ -49,6 +57,7 @@ public final class TemplateResolver {
             matcher.appendReplacement(sb, replacement);
         }
         matcher.appendTail(sb);
+        LOG.debug("Resolved: {} -> {}", template, sb.toString());
         return sb.toString();
     }
 

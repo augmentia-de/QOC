@@ -1,5 +1,9 @@
 package de.augmentia.qoc.workflowrunner.store;
 
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.augmentia.qoc.workflowrunner.runner.WorkflowContext;
 
@@ -13,6 +17,9 @@ import java.util.Map;
  * Saves/restores WorkflowContext after each node execution.
  */
 public class CheckpointStore {
+
+    private static final Logger LOG = LoggerFactory.getLogger(CheckpointStore.class);
+
 
     private final Path checkpointDir;
     private final ObjectMapper mapper;
@@ -31,6 +38,7 @@ public class CheckpointStore {
      * Saves a checkpoint for the given run.
      */
     public void save(String runId, String currentNodeId, WorkflowContext ctx) {
+        LOG.debug("Saving checkpoint: runId={}, currentNode={}", runId, currentNodeId);
         try {
             Map<String, Object> data = new java.util.HashMap<>();
             data.put("runId", runId);
@@ -50,6 +58,7 @@ public class CheckpointStore {
      */
     @SuppressWarnings("unchecked")
     public WorkflowContext load(String runId) {
+        LOG.debug("Loading checkpoint: runId={}", runId);
         Path file = checkpointDir.resolve(runId + ".json");
         if (!Files.exists(file)) return null;
         try {

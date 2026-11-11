@@ -641,6 +641,7 @@ public static record EngineConfig(
             while (stepNo <= maxSteps) {
                 de.augmentia.oc.engine.runtime.step.StepResult result;
                 if (workflowMode) {
+                    java.util.logging.Logger.getLogger(QocEngine.class.getName()).fine("Workflow mode: step=" + stepNo);
                     result = workflowStepProvider.provideStep(stepNo, workflowContext);
                 } else {
                     de.augmentia.oc.engine.runtime.context.Prepared prepared =

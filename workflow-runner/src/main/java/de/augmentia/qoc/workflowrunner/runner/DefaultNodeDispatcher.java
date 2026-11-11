@@ -1,5 +1,9 @@
 package de.augmentia.qoc.workflowrunner.runner;
 
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import de.augmentia.oc.engine.core.model.EngineResult;
 import de.augmentia.oc.engine.runtime.QocEngine;
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition;
@@ -12,6 +16,9 @@ import java.util.*;
  * Handles all node types: agent, decision, start, hitl, subworkflow, fork, join, loop, end, llm_eval, llm_summarize.
  */
 public class DefaultNodeDispatcher implements NodeDispatcher {
+
+    private static final Logger LOG = LoggerFactory.getLogger(DefaultNodeDispatcher.class);
+
 
     private final QocEngine engine;
     private final WorkflowStore store;
@@ -26,6 +33,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     @Override
     public NodeResult dispatch(WorkflowDefinition.Node node, WorkflowDefinition def,
                               WorkflowContext ctx, String input) {
+        LOG.debug("Dispatching node: {} (type: {})", node.id(), node.type());
         String type = node.type();
         switch (type) {
             case "agent" -> {
@@ -201,6 +209,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     }
 
     private WorkflowDefinition.Node findNode(WorkflowDefinition def, String id) {
+        LOG.debug("Finding node: {}", id);
         for (WorkflowDefinition.Node n : def.nodes()) {
             if (n.id().equals(id)) return n;
         }

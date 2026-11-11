@@ -1,5 +1,9 @@
 package de.augmentia.qoc.workflowrunner.runner;
 
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.model.EngineResult;
 import de.augmentia.oc.engine.core.model.Option;
@@ -15,6 +19,9 @@ import java.util.Map;
  * {@code Map<String, Object>} für den {@link WorkflowContext}.
  */
 public final class StructuredOutputConverter {
+
+    private static final Logger LOG = LoggerFactory.getLogger(StructuredOutputConverter.class);
+
 
     private StructuredOutputConverter() {}
 
