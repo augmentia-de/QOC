@@ -831,8 +831,15 @@ public static record EngineConfig(
                     // Turn policy
                     totalToolCalls += finished.toolCalls().size();
                     totalTokens += finished.usage().total();
-                    if (!hasToolCalls) {
-                        break;
+                    if (workflowMode) {
+                        // In workflow mode: continue if events present (node executed), break if empty (DONE)
+                        if (finished.events().isEmpty()) {
+                            break;
+                        }
+                    } else {
+                        if (!hasToolCalls) {
+                            break;
+                        }
                     }
                     de.augmentia.oc.engine.core.eval.TurnPolicy.Decision decision =
                             turnPolicy.decide(stepNo, totalToolCalls,
