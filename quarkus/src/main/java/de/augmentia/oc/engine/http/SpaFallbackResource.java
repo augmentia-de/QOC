@@ -25,6 +25,11 @@ public class SpaFallbackResource {
     @Path("{path:.*}")
     @Produces(MediaType.TEXT_HTML)
     public Response spa(@PathParam("path") String path) {
+        // Let Quarkus serve static assets (js/css/fonts) from
+        // META-INF/resources/workflow/ with their proper MIME types.
+        if (path != null && path.contains(".")) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
         return serveIndex();
     }
 
