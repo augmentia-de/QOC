@@ -25,17 +25,22 @@ public class QuarkusEventPublisher implements EventPublisher {
 
     @Override
     public void publishToolResult(String sessionId, String toolCallId, String resultText) {
-        if (eventBus != null) {
-            try {
-                java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
-                map.put("type", "tool_result");
-                map.put("toolCallId", toolCallId);
-                map.put("result", resultText);
-                String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(map);
-                eventBus.publishLive(sessionId, json);
-            } catch (Exception e) {
-                // Ignore
-            }
+        if (eventBus == null) return;
+        try {
+            // Same shape as a ModelEvent.ToolResultProvided so the UI renders
+            // tool calls and their results through one code path.
+            Map<String, Object> outcome = new LinkedHashMap<>();
+            outcome.put("_type", "Text");
+            outcome.put("text", resultText == null ? "" : resultText);
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("_type", "ToolResultProvided");
+            map.put("callId", toolCallId);
+            map.put("outcome", outcome);
+            map.put("providerExecuted", false);
+            String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(map);
+            eventBus.publishLive(sessionId, json);
+        } catch (Exception e) {
+            // Ignore
         }
     }
 }

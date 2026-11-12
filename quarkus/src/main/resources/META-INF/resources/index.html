@@ -160,7 +160,7 @@
     <option value="a2a">A2A</option>
     <option value="workspace">Workspace wechseln</option>
   </select>
-  <label class="details-toggle"><input type="checkbox" id="showDetails"> Tools</label>
+  <label class="details-toggle"><input type="checkbox" id="showDetails"> Details</label>
   <label class="details-toggle"><input type="checkbox" id="showLlm"> LLM</label>
   <span id="status" style="display:none">bereit</span>
 <span id="fallbackBanner" style="display:none;background:#3a2f1f;border:1px solid #5a4f1f;color:#ffd9a0;border-radius:6px;padding:.2rem .5rem;font-size:.75rem">Orchestrator nicht verbunden – Freigaben/Fragen werden hier angezeigt.</span>
@@ -298,6 +298,24 @@ const AUTH = {
   logoutEndpoint: ''
 };
 const nativeFetch = window.fetch.bind(window);
+// Attach the OIDC bearer token to every same-origin request. Some UI code
+// still uses plain fetch(); on deployments that protect /api/* (OIDC) those
+// calls would otherwise fail with 401. apiFetch/nativeFetch are unaffected
+// because they use nativeFetch directly (no duplicate Authorization header).
+window.fetch = function (input, init) {
+  try {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const sameOrigin = url.startsWith('/') || url.startsWith(location.origin);
+    if (sameOrigin && AUTH.token) {
+      const opts = Object.assign({}, init || {});
+      const headers = new Headers(opts.headers || {});
+      if (!headers.has('Authorization')) headers.set('Authorization', 'Bearer ' + AUTH.token);
+      opts.headers = headers;
+      return nativeFetch(input, opts);
+    }
+  } catch (e) { /* fall through to plain fetch */ }
+  return nativeFetch(input, init);
+};
 let oidcDiscoveryPromise = null;
 
 function oidcIssuerBase() {
@@ -642,6 +660,7 @@ function updateFallbackBanner() {
 }
 let es = null;
 let currentAssistant = null;
+let sawStreamedText = false;
 let currentFile = null;
 let currentFileContent = '';
 let currentDir = '.';
@@ -668,9 +687,9 @@ function updateLlmPanel() {
     if (showLlm.checked) panelLlm.classList.remove('collapsed');
     else panelLlm.classList.add('collapsed');
   }
-  if (showLlm.checked) loadLlmTrace();
+  if (showLlm.checked) loadLlmTrace(true);
 }
-if (refreshLlm) refreshLlm.addEventListener('click', loadLlmTrace);
+if (refreshLlm) refreshLlm.addEventListener('click', () => loadLlmTrace(true));
 showLlm.addEventListener('change', updateLlmPanel);
 // Collapsible side panels
 document.querySelectorAll('.panel').forEach(panel => {
@@ -693,44 +712,31 @@ document.querySelectorAll('.panel').forEach(panel => {
     try { localStorage.setItem(key, panel.classList.contains('collapsed') ? '1' : '0'); } catch (e) {}
   });
 });
-const llmState = { start: 0, total: 0, loading: false };
+const llmState = { loaded: 0, total: 0, loading: false };
 updateLlmPanel();
 async function loadLlmTrace(reset) {
   if (!showLlm.checked || !llmTrace) return;
   if (llmState.loading) return;
   llmState.loading = true;
   try {
-    if (reset) {
-      const r0 = await fetch('/api/llm/trace?offset=0&limit=1', {headers: authHeaders()});
-      const d0 = await r0.json();
-      llmState.total = (d0 && typeof d0.total === 'number') ? d0.total : 0;
-      llmState.start = Math.max(0, llmState.total - 50000);
-      llmTrace.innerHTML = '';
-    }
-    if (llmState.start < 0) llmState.start = 0;
-    const res = await fetch('/api/llm/trace?offset=' + llmState.start + '&limit=50000', {headers: authHeaders()});
+    // Always load the newest chunk. "Older" widens the tail instead of
+    // walking from offset 0 (which used to show stale, rotated logs).
+    const limit = reset ? 50000 : Math.min(500000, llmState.loaded + 50000);
+    const res = await fetch('/api/llm/trace?tail=' + limit + '&limit=' + limit, {headers: authHeaders()});
     const data = await res.json();
     const raw = (data && data.data) ? data.data : '';
     llmState.total = (data && typeof data.total === 'number') ? data.total : llmState.total;
-    let aligned = raw;
-    if (llmState.start === 0) aligned = raw.replace(/^[\s\S]*?(===== )/, '$1');
-    const blocks = aligned.split(/(?===== )/).filter(b => b.trim());
+    const blocks = raw.split(/(?===== )/).filter(b => b.trim());
     const html = blocks.map(b => {
       const isIn = /REQUEST/.test(b);
       const cls = isIn ? 'llm-in' : 'llm-out';
       const txt = escapeHtml(b.trim().slice(0, 800));
       return '<div class="msg ' + cls + '" style="margin:4px 0;padding:4px 6px;">' + txt + '</div>';
     }).join('');
-    const btn = document.getElementById('llmLoadMore');
-    if (btn) btn.remove();
-    if (reset) {
-      llmTrace.innerHTML = html;
-      llmTrace.scrollTop = llmTrace.scrollHeight;
-    } else {
-      llmTrace.insertAdjacentHTML('afterbegin', html);
-    }
-    const hasMoreBack = llmState.start > 0;
-    llmState.start = Math.max(0, llmState.start - 50000);
+    llmTrace.innerHTML = html;
+    llmTrace.scrollTop = llmTrace.scrollHeight;
+    llmState.loaded = raw.length;
+    const hasMoreBack = !!(data && data.hasMore);
     if (hasMoreBack) {
       let more = document.getElementById('llmLoadMore');
       if (!more) {
@@ -739,8 +745,8 @@ async function loadLlmTrace(reset) {
         more.textContent = 'Ältere laden…';
         more.style.cssText = 'margin:8px auto;display:block;padding:4px 12px;font-size:.8rem;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer';
         more.onclick = () => { more.remove(); loadLlmTrace(false); };
-        llmTrace.insertBefore(more, llmTrace.firstChild);
       }
+      llmTrace.insertBefore(more, llmTrace.firstChild);
     }
   } catch (e) { llmTrace.textContent = 'Fehler: ' + e.message; }
   finally { llmState.loading = false; }
@@ -1121,6 +1127,10 @@ async function init() {
       sessionId = targetSession;
       sessionsSel.value = sessionId;
       if (es) es.close();
+      messages.innerHTML = '';
+      currentAssistant = null;
+      sawStreamedText = false;
+      await loadSessionMessages(sessionId);
       connectSSE();
       await loadFiles('.');
       const hasRunning = await loadTasks(sessionId);
@@ -1336,6 +1346,27 @@ async function startTaskPoll(id) {
   }, 5000);
 }
 
+async function loadSessionMessages(id) {
+  try {
+    const res = await fetch('/api/session/' + id + '/messages', {headers: authHeaders()});
+    const data = await res.json();
+    (data.data || []).forEach(m => {
+      const type = (m.type || '').toLowerCase();
+      const role = type.includes('user') ? 'user'
+        : type.includes('assistant') ? 'assistant' : 'tool';
+      addMessage(role, m.text || '', '', m.time);
+      if (Array.isArray(m.tools)) {
+        m.tools.forEach(tc => {
+          addMessage('tool', '🔧 ' + (tc.name || '') + '(' + (tc.input || '') + ')', 'tool-in', m.time);
+          addMessage('tool', '↳ ' + (tc.result || '(kein Ergebnis)'), 'tool-out', m.time);
+        });
+      }
+    });
+  } catch (e) {
+    logEvent('Fehler beim Laden: ' + e.message);
+  }
+}
+
 async function switchSession(id) {
   if (!id || id === sessionId) return;
   if (taskPoll) { clearInterval(taskPoll); taskPoll = null; }
@@ -1353,6 +1384,7 @@ async function switchSession(id) {
   }
   messages.innerHTML = '';
   currentAssistant = null;
+  sawStreamedText = false;
   // load title + bind file browser to session directory
   let sessionDir = '';
   try {
@@ -1378,21 +1410,7 @@ async function switchSession(id) {
     }
   } catch (e) {}
   // load messages
-  try {
-    const res = await fetch('/api/session/' + id + '/messages');
-    const data = await res.json();
-    (data.data||[]).forEach(m => {
-      const role = (m.type||'').toLowerCase().includes('user') ? 'user'
-        : (m.type||'').toLowerCase().includes('assistant') ? 'assistant' : 'tool';
-      addMessage(role, m.text || '', '', m.time);
-      if (Array.isArray(m.tools)) {
-        m.tools.forEach(tc => {
-          addMessage('tool', '🔧 ' + (tc.name||'') + '(' + (tc.input||'') + ')', 'tool-in', m.time);
-          addMessage('tool', '↳ ' + (tc.result || '(kein Ergebnis)'), 'tool-out', m.time);
-        });
-      }
-    });
-  } catch (e) { logEvent('Fehler beim Laden: ' + e.message); }
+  await loadSessionMessages(id);
   if (es) es.close();
   connectSSE();
   status.textContent = 'Session ' + id.slice(0,12) + '…';
@@ -1529,6 +1547,7 @@ async function deleteCurrentSession() {
     if (es) { es.close(); es = null; }
     sessionId = null;
     currentAssistant = null;
+    sawStreamedText = false;
     messages.innerHTML = '';
     await loadSessions();
     const next = sessionsSel.value;
@@ -1546,26 +1565,36 @@ function handleSseEvent(ev) {
   if (ev._type) {
     switch (ev._type) {
       case 'TextStarted':
-        if (!showDetails.checked) return;
         currentAssistant = addMessage('assistant', '');
+        sawStreamedText = true;
         break;
       case 'TextDelta':
-        if (!showDetails.checked || !currentAssistant) return;
-        currentAssistant.textContent += ev.text; currentAssistant.innerHTML = renderMarkdown(currentAssistant.textContent); messages.scrollTop = messages.scrollHeight;
+        if (!currentAssistant) { currentAssistant = addMessage('assistant', ''); }
+        sawStreamedText = true;
+        currentAssistant.textContent += ev.text;
+        currentAssistant.innerHTML = renderMarkdown(currentAssistant.textContent);
+        messages.scrollTop = messages.scrollHeight;
         break;
       case 'TextEnded':
-        if (!showDetails.checked) { currentAssistant = null; return; }
-        if (currentAssistant && !currentAssistant.textContent) currentAssistant.innerHTML = renderMarkdown(ev.text);
+        if (currentAssistant && !currentAssistant.textContent && ev.text) {
+          currentAssistant.innerHTML = renderMarkdown(ev.text);
+        }
         currentAssistant = null;
         break;
-      case 'ToolCallRequested':
-        if (!showDetails.checked) return;
-        addMessage('tool', '🔧 ' + ev.name + '(' + JSON.stringify(ev.input) + ')', 'tool-in');
+      case 'ToolCallRequested': {
+        sawStreamedText = true;
+        const tname = (ev.name && typeof ev.name === 'object' && ev.name.value) ? ev.name.value : ev.name;
+        let tinput;
+        try { tinput = typeof ev.input === 'string' ? ev.input : JSON.stringify(ev.input); }
+        catch (e) { tinput = String(ev.input); }
+        if (tinput && tinput.length > 1500) tinput = tinput.slice(0, 1500) + '…';
+        addMessage('tool', '🔧 ' + tname + '(' + tinput + ')', 'tool-in');
         break;
+      }
       case 'ToolResultProvided': {
-        if (!showDetails.checked) return;
+        sawStreamedText = true;
         const t = (ev.outcome && (ev.outcome.text || (ev.outcome.value ? JSON.stringify(ev.outcome.value) : ''))) || '';
-        const trimmed = String(t).slice(0, 800);
+        const trimmed = String(t).slice(0, 4000);
         addMessage('tool', '↳ ' + (trimmed || '(kein Ergebnis)'), 'tool-out');
         break;
       }
@@ -1573,7 +1602,7 @@ function handleSseEvent(ev) {
       case 'LlmResponse':
         // LLM-Kommunikation nur im Side-Panel (LLM-Trace), nicht im Chat,
         // um Tool-Aufrufe und -Ergebnisse nicht zu ueberlagern.
-        if (showLlm.checked) loadLlmTrace();
+        if (showLlm.checked) loadLlmTrace(true);
         break;
       case 'ToolFailed':
         addMessage('error', '⚠ ' + ev.message);
@@ -1602,9 +1631,6 @@ function handleSseEvent(ev) {
         if (!stillRunning2 && taskPoll) { clearInterval(taskPoll); taskPoll = null; }
         break;
       }
-        loadFiles(currentDir);
-        if (showLlm.checked) loadLlmTrace();
-        break;
       case 'ProviderFailed':
         addMessage('error', 'Provider-Fehler: ' + ev.message);
         break;
@@ -1615,6 +1641,11 @@ function handleSseEvent(ev) {
       }
     }
   } else if (ev.type) {
+    if (ev.type === 'tool_result') {
+      const trimmed = String(ev.result || '').slice(0, 4000);
+      addMessage('tool', '↳ ' + (trimmed || '(kein Ergebnis)'), 'tool-out');
+      return;
+    }
     logEvent(ev.type + (ev.data && ev.data.text ? ': ' + ev.data.text.slice(0,80) : ''));
   }
 }
@@ -1751,9 +1782,10 @@ async function send() {
   if (questionPoll) clearInterval(questionPoll);
   questionPoll = setInterval(checkQuestions, 700);
   currentAssistant = null;
+  sawStreamedText = false;
   try {
     const res = await fetch('/api/session/' + sessionId + '/prompt', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', headers: authHeaders({'Content-Type':'application/json'}),
       body: JSON.stringify({text})
     });
     if (!res.ok) {
@@ -1761,7 +1793,7 @@ async function send() {
       addMessage('error', 'Fehler: ' + (err.message || err.error || res.status));
     } else {
       const data = await res.json();
-      if (data.text && !currentAssistant) addMessage('assistant', data.text);
+      if (data.text && !sawStreamedText) addMessage('assistant', data.text);
     }
   } catch (e) {
     addMessage('error', 'Netzwerkfehler: ' + e.message);

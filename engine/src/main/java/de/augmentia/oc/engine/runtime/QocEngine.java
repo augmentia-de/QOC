@@ -906,18 +906,9 @@ public static record EngineConfig(
                 }
 
                 if (result instanceof de.augmentia.oc.engine.runtime.step.StepResult.Finished finished) {
-                    // Stream model events (text deltas, tool calls, tool results) to
-                    // the UI via the live event bus, mirroring the Quarkus loop.
-                    for (de.augmentia.oc.engine.core.contract.provider.ModelEvent liveEvent : finished.events()) {
-                        try {
-                            eventPublisher.publishLive(session.value(),
-                                    de.augmentia.oc.engine.core.json.Json.encode(
-                                            de.augmentia.oc.engine.core.event.ContractCodec.encode(
-                                                    liveEvent, de.augmentia.oc.engine.core.contract.provider.ModelEvent.class)));
-                        } catch (RuntimeException ignored) {
-                            // best-effort; do not fail the turn
-                        }
-                    }
+                    // Text deltas and tool calls are already streamed to the UI
+                    // exactly once via the live sink passed to Step.run; do not
+                    // re-publish finished.events() here (that duplicated them).
                     boolean hasToolCalls = finished.toolCalls() != null && !finished.toolCalls().isEmpty();
                     for (de.augmentia.oc.engine.core.contract.provider.ModelEvent event : finished.events()) {
                         if (event instanceof de.augmentia.oc.engine.core.contract.provider.ModelEvent.TextDelta d) {
