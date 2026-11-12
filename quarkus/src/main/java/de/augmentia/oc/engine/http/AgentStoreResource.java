@@ -29,6 +29,7 @@ import java.util.regex.Pattern;
 @Path("/api/agents")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
+@jakarta.annotation.security.RolesAllowed({"user", "admin", "system", "viewer"})
 public class AgentStoreResource {
 
     /** File names are derived from the id; keep it a plain slug. */
@@ -36,6 +37,9 @@ public class AgentStoreResource {
 
     @Inject
     AgentStore store;
+
+    @Inject
+    SessionAccessGuard accessGuard;
 
     @GET
     public Response list() {
@@ -59,7 +63,9 @@ public class AgentStoreResource {
         String id = body.id();
         if (id == null || id.isBlank()) id = slug(body.name());
         if (!valid(id)) return badRequest("invalid agent id");
-        return Response.status(Response.Status.CREATED).entity(store.save(id, withId(body, id))).build();
+        String owner = accessGuard == null ? null : accessGuard.currentUser();
+        Agent saved = store.save(id, withId(body, id, owner));
+        return Response.status(Response.Status.CREATED).entity(saved).build();
     }
 
     @PUT
@@ -96,10 +102,15 @@ public class AgentStoreResource {
     }
 
     private static Agent withId(Agent a, String id) {
+        return withId(a, id, a.ownerId());
+    }
+
+    private static Agent withId(Agent a, String id, String owner) {
+        String ownerId = (owner == null || owner.isBlank()) ? a.ownerId() : owner;
         return new Agent(id, a.name(), a.version(), a.category(), a.model(), a.temperature(),
                 a.maxTokens(), a.topP(), a.tools(), a.guardrailsInput(), a.guardrailsOutput(),
                 a.hooks(), a.jsonOutput(), a.active(), a.systemPrompt(), a.responseSchema(),
-                a.ownerId(), a.rolesAllowed());
+                ownerId == null ? "" : ownerId, a.rolesAllowed());
     }
 
     private static Response badRequest(String message) {

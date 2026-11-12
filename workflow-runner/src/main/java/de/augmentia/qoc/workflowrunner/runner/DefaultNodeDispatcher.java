@@ -30,22 +30,30 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     private final SubWorkflowExpander expander;
     private final McpServerManager mcpManager;
     private final AgentStore agentStore;
+    private final de.augmentia.oc.engine.core.model.Principal principal;
 
     public DefaultNodeDispatcher(QocEngine engine, WorkflowDefinitionStore store) {
-        this(engine, store, null, null);
+        this(engine, store, null, null, de.augmentia.oc.engine.core.model.Principal.anonymous());
     }
 
     public DefaultNodeDispatcher(QocEngine engine, WorkflowDefinitionStore store, McpServerManager mcpManager) {
-        this(engine, store, mcpManager, null);
+        this(engine, store, mcpManager, null, de.augmentia.oc.engine.core.model.Principal.anonymous());
     }
 
     public DefaultNodeDispatcher(QocEngine engine, WorkflowDefinitionStore store,
                                  McpServerManager mcpManager, AgentStore agentStore) {
+        this(engine, store, mcpManager, agentStore, de.augmentia.oc.engine.core.model.Principal.anonymous());
+    }
+
+    public DefaultNodeDispatcher(QocEngine engine, WorkflowDefinitionStore store,
+                                 McpServerManager mcpManager, AgentStore agentStore,
+                                 de.augmentia.oc.engine.core.model.Principal principal) {
         this.engine = engine;
         this.store = store;
         this.expander = store != null ? new SubWorkflowExpander(store) : null;
         this.mcpManager = mcpManager;
         this.agentStore = agentStore;
+        this.principal = principal == null ? de.augmentia.oc.engine.core.model.Principal.anonymous() : principal;
     }
 
     @Override
@@ -70,7 +78,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 }
                 nodeInput = TemplateResolver.resolve(nodeInput, ctx);
 
-                return runAgent(node, prefixedName, nodeInput, config, ctx);
+                return runAgent(node, prefixedName, nodeInput, config, ctx, principal);
             }
             case "decision" -> {
                 List<WorkflowDefinition.Branch> branches = node.data().branches();
@@ -157,7 +165,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                         "You are an evaluation assistant. Respond with valid JSON.",
                         List.of(), List.of(), List.of(), List.of(), structuredOutput,
                         de.augmentia.oc.engine.core.model.Option.none());
-                return runAgent(node, prefixedName, prompt, config, ctx);
+                return runAgent(node, prefixedName, prompt, config, ctx, principal);
             }
             case "llm_summarize" -> {
                 String inputData;
@@ -173,7 +181,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                         prefixedName, null, 0.3, 4096, 1.0, "You are a summarization assistant.",
                         List.of(), List.of(), List.of(), List.of(), false,
                         de.augmentia.oc.engine.core.model.Option.none());
-                return runAgent(node, prefixedName, prompt, config, ctx);
+                return runAgent(node, prefixedName, prompt, config, ctx, principal);
             }
             case "mcp_call" -> {
                 String server = node.data().mcpServer();
@@ -216,11 +224,13 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     }
 
     private NodeResult runAgent(WorkflowDefinition.Node node, String prefixedName, String prompt,
-                                QocEngine.AgentConfig config, WorkflowContext ctx) {
+                                QocEngine.AgentConfig config, WorkflowContext ctx,
+                                de.augmentia.oc.engine.core.model.Principal principal) {
+        if (principal == null) principal = de.augmentia.oc.engine.core.model.Principal.anonymous();
         // Keep the child session so the parent run journal can link to it.
-        SessionId child = engine.createSession(prefixedName, "workflow", "workspace");
+        SessionId child = engine.createSession(prefixedName, principal.id(), "workspace");
         EngineResult result = engine.runPrompt(child, prefixedName, prompt, config, true,
-                null, null, Principal.anonymous());
+                null, null, principal);
         if (result.failed()) {
             throw new IllegalStateException("Agent node " + node.id() + " failed: "
                     + (result.errorMessage() == null ? "unknown" : result.errorMessage()));

@@ -36,7 +36,7 @@ public class BasicAuthFilter implements ContainerRequestFilter {
     PrincipalContext principalContext;
 
     @jakarta.inject.Inject
-    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "engine.system.token", defaultValue = "")
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "engine.system.token", defaultValue = "disabled")
     String systemToken;
 
     @jakarta.inject.Inject
@@ -57,6 +57,7 @@ public class BasicAuthFilter implements ContainerRequestFilter {
         String systemTokenHeader = request.getHeaderString("X-System-Token");
         if (systemTokenHeader != null && !systemTokenHeader.isBlank()
                 && systemToken != null && !systemToken.isBlank()
+                && !"disabled".equalsIgnoreCase(systemToken.trim())
                 && systemTokenHeader.trim().equals(systemToken.trim())) {
             List<String> roles = List.of(systemRoles.split(","));
             List<String> cleaned = new java.util.ArrayList<>();

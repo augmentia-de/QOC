@@ -23,6 +23,7 @@ import java.util.Optional;
 @Path("/api")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
+@jakarta.annotation.security.RolesAllowed({"user", "admin", "system", "viewer"})
 public class WorkflowResource {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -35,6 +36,9 @@ public class WorkflowResource {
 
     @Inject
     de.augmentia.qoc.workflowrunner.store.AgentStore agentStore;
+
+    @Inject
+    SessionAccessGuard accessGuard;
 
     @GET
     @Path("/workflows")
@@ -95,7 +99,8 @@ public class WorkflowResource {
 
     @POST
     @Path("/workflows/run")
-    public Response run(Map<String, Object> request) {
+    public Response run(Map<String, Object> request,
+                        @HeaderParam("X-QOC-User") String user) {
         try {
             WorkflowDefinition def = MAPPER.convertValue(request.get("workflow"), WorkflowDefinition.class);
             String input = request == null ? "" : String.valueOf(request.getOrDefault("input", ""));
@@ -104,8 +109,14 @@ public class WorkflowResource {
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity(Map.of("valid", false, "errors", validation.errors())).build();
             }
+            String principalUser = user;
+            if (principalUser == null || principalUser.isBlank()) {
+                principalUser = accessGuard == null ? null : accessGuard.currentUser();
+            }
             WorkflowExecutor executor = executor();
-            WorkflowExecution execution = executor.executeRun(def, input);
+            WorkflowExecution execution = principalUser == null || principalUser.isBlank()
+                    ? executor.executeRun(def, input)
+                    : executor.executeRun(def, input, principalUser);
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("result", execution.result());
             body.put("valid", true);
