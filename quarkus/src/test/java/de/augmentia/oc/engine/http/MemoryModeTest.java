@@ -53,6 +53,7 @@ class MemoryModeTest {
             overrides.put("engine.storage", "memory");
             overrides.put("engine.recovery.enabled", "false");
             overrides.put("engine.provider.scripted", "true");
+            overrides.put("engine.preflight.enabled", "false");
             overrides.put("engine.workspace", WORKSPACE.toString());
             overrides.put("engine.instructions.enabled", "true");
             overrides.put("engine.revert.snapshot.enabled", "true");
