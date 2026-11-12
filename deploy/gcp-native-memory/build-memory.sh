@@ -17,6 +17,7 @@ export QUARKUS_FLYWAY_ENABLED="${QUARKUS_FLYWAY_ENABLED:-false}"
 mvn -o -pl quarkus -am clean package \
   -Dquarkus.package.type=native \
   -Dquarkus.profile=prod,native \
+  -Dquarkus.arc.exclude-types='org.a2aproject.sdk.**' \
   -DskipTests -Djacoco.skip=true
 
 echo "Native binary: $REPO_ROOT/quarkus/target/*-runner"

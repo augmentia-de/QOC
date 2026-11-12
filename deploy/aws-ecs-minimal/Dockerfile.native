@@ -1,0 +1,56 @@
+# Runtime-only image for the QOC native runner (memory mode) on ECS Fargate.
+#
+# Build from the repository root after the native binary has been produced:
+#   ./deploy/gcp-native-memory/build-memory.sh
+#   docker build -f deploy/aws-ecs-minimal/Dockerfile.native -t qoc-native .
+#
+# The native binary requires glibc 2.34 or newer; Debian bookworm (2.36) and
+# the Ubuntu build host both satisfy that.
+
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      git \
+      libstdc++6 \
+      passwd \
+      util-linux \
+      zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1000 qoc && \
+    useradd -u 1000 -g qoc -d /mnt/workspace/.home -s /bin/sh qoc
+
+WORKDIR /app
+COPY quarkus/target/*-runner /app/qoc-runner
+COPY deploy/AGENTS.native.md /app/AGENTS.native.md
+COPY deploy/aws-ecs-minimal/entrypoint-native.sh /app/entrypoint.sh
+RUN chmod 0755 /app/qoc-runner /app/entrypoint.sh
+
+# --- Engine: in-memory, no database, file-based workflow definitions -------
+ENV ENGINE_STORAGE=memory \
+    ENGINE_RECOVERY_ENABLED=false \
+    ENGINE_WORKFLOW_STORAGE=file \
+    ENGINE_WORKFLOW_STORAGE_DIR=/mnt/workspace/wf \
+    ENGINE_WORKFLOW_RECOVERY_ENABLED=false \
+    ENGINE_MEMORY_MAX_BYTES=536870912 \
+    QUARKUS_FLYWAY_ENABLED=false \
+    QUARKUS_DATASOURCE_JDBC_URL=
+
+# --- Runtime layout --------------------------------------------------------
+ENV ENGINE_WORKSPACE=/mnt/workspace \
+    HOME=/mnt/workspace/.home \
+    LOG_DIR=/tmp/log \
+    QUARKUS_HTTP_HOST=0.0.0.0 \
+    QUARKUS_HTTP_PORT=8080 \
+    QUARKUS_OTEL_ENABLED=false \
+    QUARKUS_LOG_FILE_ENABLED=true \
+    QUARKUS_LOG_FILE_PATH=/tmp/qoc.log
+
+# ECS runs the container as 1000:1000 (EFS access point POSIX user).
+USER 1000:1000
+EXPOSE 8080
+
+ENTRYPOINT ["/app/entrypoint.sh"]

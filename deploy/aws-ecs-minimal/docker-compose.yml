@@ -1,0 +1,49 @@
+# Lokale Emulation des AWS ECS Fargate Stacks (Neon oder lokales Postgres)
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: qoc
+      POSTGRES_USER: qoc
+      POSTGRES_PASSWORD: ${QUARKUS_DATASOURCE_PASSWORD:-change-me}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qoc"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes: [redisdata:/data]
+    ports: ["6379:6379"]
+
+  qoc:
+    build:
+      context: ../..
+      dockerfile: deploy/aws-ecs-minimal/Dockerfile.jvm
+    env_file: .env
+    environment:
+      QUARKUS_HTTP_HOST: 0.0.0.0
+      QUARKUS_HTTP_PORT: "8080"
+      ENGINE_WORKSPACE: /data/workspace
+      HOME: /data/home
+      LOG_DIR: /data/log
+      QUARKUS_LOG_FILE_PATH: /tmp/qoc.log
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports: ["8080:8080"]
+    volumes:
+      - qocdata:/data
+      - ./workspace:/data/workspace
+    user: "1000:1000"
+
+volumes:
+  pgdata:
+  redisdata:
+  qocdata:
