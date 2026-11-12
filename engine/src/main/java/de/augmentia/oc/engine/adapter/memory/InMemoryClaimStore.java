@@ -19,7 +19,7 @@ public final class InMemoryClaimStore implements ClaimStore {
     private final RuntimeState state;
 
     public InMemoryClaimStore(RuntimeState state) {
-        this.state = state == null ? new RuntimeState(new MemoryBudget(1L << 30)) : state;
+        this.state = state == null ? new RuntimeState() : state;
     }
 
     @Override

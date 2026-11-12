@@ -1,0 +1,36 @@
+# Native dev container for QOC.
+# Run via: ./deploy/docker-dev-native/deploy.sh up
+services:
+  qoc-dev-native:
+    image: qoc-engine:dev-native
+    container_name: qoc-dev-native
+    working_dir: /app
+    command: ["/usr/local/bin/entrypoint-dev-native.sh"]
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      HOME: /data/home
+      QUARKUS_TEST_CONTINUOUS_TESTING: disabled
+      ENGINE_MODEL_ID: glm-5.3-flash
+      ENGINE_PERMISSION_DEFAULT: allow-all
+      ENGINE_PERMISSION_ASK_MODE: interactive
+      MAVEN_CONFIG: /home/qoc/.m2
+      MAVEN_OPTS: -Duser.home=/home/qoc
+      MAVEN_REPO: /home/qoc/.m2
+      DEV_NATIVE_REBUILD: "${DEV_NATIVE_REBUILD:-auto}"
+      DEV_NATIVE_OIDC: "${DEV_NATIVE_OIDC:-false}"
+    volumes:
+      - ../..:/app
+      - ${HOME}/.m2:/home/qoc/.m2
+      - ./data/home:/data/home
+      - ../../data/workspace:/data/workspace
+      - ./log:/data/log
+      - ./entrypoint-dev-native.sh:/usr/local/bin/entrypoint-dev-native.sh:ro
+    ports:
+      - "8081:8080"
+    user: "${UID:-1000}:${GID:-1000}"
+    group_add:
+      - "${DOCKER_GID:-983}"

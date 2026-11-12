@@ -178,6 +178,9 @@ kein Restart-Recovery, minimale Angriffsfläche, Shell isoliert).
 
 ```properties
 # --- Storage: In-Memory (kein DB, kein Netzwerk) ---
+# Minimal-Modus: nur Session/Conversation/Journal/Claim/Workspace/ToolOutput
+# werden gehalten; Snapshots, Approvals, Instructions, Credentials und
+# Tool-Result-Cache sind No-Ops.
 engine.storage=memory                            # memory | postgres | sqlite | auto
 # engine.db.kind wird ignoriert
 engine.recovery.enabled=false                    # kein Crash-Recovery

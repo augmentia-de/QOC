@@ -37,7 +37,7 @@ class QocEngineTest {
     }
 
     private static Stores stores(FixedClock clock) {
-        return MemoryStores.create(new RuntimeState(new MemoryBudget(1 << 20)), clock, null);
+        return MemoryStores.create(new RuntimeState(), clock, null);
     }
 
     private static QocEngine engine(QocEngine.EngineConfig cfg) {

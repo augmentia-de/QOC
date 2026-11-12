@@ -5,7 +5,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import de.augmentia.oc.engine.adapter.StorageFactory;
 import de.augmentia.oc.engine.adapter.memory.RuntimeState;
-import de.augmentia.oc.engine.adapter.memory.MemoryBudget;
+
 import de.augmentia.oc.engine.adapter.time.SystemClock;
 import de.augmentia.oc.engine.core.wiring.StorageConfig;
 import de.augmentia.oc.engine.core.wiring.StorageKind;
@@ -57,7 +57,7 @@ public final class WorkflowRunnerMain {
 
         // Create QocEngine (in-memory)
         StorageConfig config = new StorageConfig(StorageKind.MEMORY);
-        RuntimeState memory = new RuntimeState(new MemoryBudget(1L << 30));
+        RuntimeState memory = new RuntimeState();
         Stores stores = StorageFactory.create(config, memory, null,
                 new SystemClock(), new de.augmentia.oc.engine.adapter.fs.NioFileSystem(Path.of(".")));
         QocEngine engine = QocEngine.create(stores, config, new SystemClock(), false);

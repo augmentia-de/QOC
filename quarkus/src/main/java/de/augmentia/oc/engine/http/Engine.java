@@ -526,7 +526,7 @@ public class Engine {
     @ConfigProperty(name = "engine.turn.max.wall-minutes", defaultValue = "30")
     long maxTurnWallMinutes;
 
-    @ConfigProperty(name = "engine.memory.max-bytes", defaultValue = "1073741824")
+    @ConfigProperty(name = "engine.memory.max-bytes", defaultValue = "314572800")
     long memoryMaxBytes;
 
     @ConfigProperty(name = "engine.workflow.max-steps", defaultValue = "100")
@@ -566,11 +566,11 @@ public class Engine {
         }
         if (kind == de.augmentia.oc.engine.core.wiring.StorageKind.SQLITE) Sqlite.enableWal(dataSource);
 
-        // Shared RuntimeState for in-memory adapters (null for DB backends)
+        // Shared RuntimeState for in-memory adapters (null for DB backends).
+        // Minimal mode: only direct-execution state is kept; optional stores are no-ops.
         de.augmentia.oc.engine.adapter.memory.RuntimeState memoryState = null;
         if (kind == de.augmentia.oc.engine.core.wiring.StorageKind.MEMORY) {
-            memoryState = new de.augmentia.oc.engine.adapter.memory.RuntimeState(
-                    new de.augmentia.oc.engine.adapter.memory.MemoryBudget(memoryMaxBytes));
+            memoryState = new de.augmentia.oc.engine.adapter.memory.RuntimeState();
         }
 
         de.augmentia.oc.engine.core.wiring.StorageConfig storageConfig =

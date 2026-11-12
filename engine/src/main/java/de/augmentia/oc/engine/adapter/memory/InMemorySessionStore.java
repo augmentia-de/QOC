@@ -24,7 +24,7 @@ public final class InMemorySessionStore implements SessionStore, SessionWorkspac
     private final RuntimeState state;
 
     public InMemorySessionStore(RuntimeState state) {
-        this.state = state == null ? new RuntimeState(new MemoryBudget(1L << 30)) : state;
+        this.state = state == null ? new RuntimeState() : state;
     }
 
     // --- SessionReader ---
@@ -142,7 +142,7 @@ public final class InMemorySessionStore implements SessionStore, SessionWorkspac
             state.conversations.remove(session);
             state.claims.remove(session);
             state.workspaces.remove(session);
-            state.instructions.remove(session);
+            // instructions are served by a no-op adapter in minimal mode
             state.locks.remove(session);
             return true;
         } finally {

@@ -56,6 +56,23 @@ export GCP_VM=quad-e2micro
 ./deploy/gcp-native-memory/deploy.sh
 ```
 
+### 4. OIDC (Auth0) aktivieren (optional, empfohlen)
+Die native Binary wurde mit `QUARKUS_OIDC_ENABLED=true` gebaut. Die Laufzeit-Konfiguration
+schreibt `deploy/gcp-vm/gcp-auth0.sh`:
+
+```bash
+cd qoc
+cp deploy/gcp-vm/gcp-auth0.env.example deploy/gcp-vm/gcp-auth0.env
+# Werte in gcp-auth0.env prüfen, dann:
+set -a; . deploy/gcp-vm/gcp-auth0.env; set +a
+./deploy/gcp-vm/gcp-auth0.sh check
+./deploy/gcp-vm/gcp-auth0.sh apply
+```
+
+Hinweis: `gcp-auth0.sh apply` prüft Health ohne Token; im OIDC-Modus liefert `/api/health/live`
+`401` (erwartet, da geschützt). Der Exit-Code ist dann nicht 0, die Konfiguration wird aber geschrieben.
+Prüfung manuell: `curl -sk https://<domain>/api/health/live` liefert `401` (nicht 5xx).
+
 ### 4. Verifikation
 ```bash
 gcloud compute ssh quad-e2micro --zone=us-central1-a -- \

@@ -16,7 +16,12 @@ import de.augmentia.oc.engine.core.port.store.ToolResultCache;
 import de.augmentia.oc.engine.core.port.world.FileSystem;
 
 /**
- * Factory for all in-memory storage adapters over a shared {@link RuntimeState}.
+ * Factory for the minimal in-memory storage set.
+ *
+ * <p>In-memory mode is intentionally minimal: only the state required for
+ * direct execution (sessions, conversations, claims, journal, tool outputs) is
+ * kept. Snapshots, approvals, instructions, credentials and the tool-result
+ * cache are served by no-op adapters.</p>
  */
 public final class MemoryStores {
 
@@ -28,7 +33,7 @@ public final class MemoryStores {
 
     public static de.augmentia.oc.engine.core.wiring.Stores create(RuntimeState state, Clock clock,
                                                               FileSystem fileSystem) {
-        RuntimeState s = state == null ? new RuntimeState(new MemoryBudget(1L << 30)) : state;
+        RuntimeState s = state == null ? new RuntimeState() : state;
         Clock c = clock == null ? new de.augmentia.oc.engine.adapter.time.SystemClock() : clock;
 
         InMemorySessionStore sessionStore = new InMemorySessionStore(s);
@@ -38,13 +43,13 @@ public final class MemoryStores {
             new InMemoryConversationStore(s),       // conversation
             new InMemoryJournal(s, c),             // journal
             new InMemoryClaimStore(s),             // claims
-            new InMemoryApprovalStore(s),          // approvals
-            new InMemoryInstructionStore(s),       // instructions
+            new NoOpApprovalStore(),              // approvals (no-op)
+            new NoOpInstructionStore(),           // instructions (no-op)
             sessionStore,                          // workspaces (same as sessions)
-            new InMemoryCredentialStore(s),        // credentials
-            new InMemorySnapshotStore(s),          // snapshots
-            new InMemoryToolOutputStore(s),        // toolOutputs
-            new InMemoryToolResultCache(s)         // toolCache
+            new NoOpCredentialStore(),            // credentials (no-op)
+            new NoOpSnapshotStore(),              // snapshots (no-op)
+            new InMemoryToolOutputStore(s),        // toolOutputs (kept, LRU-capped)
+            new NoOpToolResultCache()             // toolCache (no-op)
         );
     }
 }

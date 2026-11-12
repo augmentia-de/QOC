@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class InMemoryStoresTest {
 
     private static RuntimeState state() {
-        return new RuntimeState(new MemoryBudget(1 << 20));
+        return new RuntimeState();
     }
 
     private static SessionInfo sessionInfo(SessionId id) {
@@ -80,10 +80,9 @@ class InMemoryStoresTest {
 
     @Test
     void runtimeStateDefaultsBudgetAndReturnsStableLocks() {
-        RuntimeState state = new RuntimeState(null);
+        RuntimeState state = new RuntimeState();
         SessionId id = SessionId.create();
 
-        assertThat(state.budget).isNotNull();
         assertThat(state.lock(id)).isSameAs(state.lock(id));
     }
 
@@ -309,92 +308,6 @@ class InMemoryStoresTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
-    // --- InMemoryApprovalStore ---
-
-    @Test
-    void approvalsAreListedPerProjectAndRemovable() {
-        InMemoryApprovalStore store = new InMemoryApprovalStore(state());
-        ProjectId project = ProjectId.create();
-
-        assertThat(store.list(project)).isEmpty();
-        store.add(project, "read", "*.txt");
-        store.add(project, "write", "*.md");
-        assertThat(store.list(project)).hasSize(2);
-        assertThat(store.list(ProjectId.create())).isEmpty();
-
-        store.remove(project, "read", "*.txt");
-        assertThat(store.list(project))
-                .extracting(a -> a.action())
-                .containsExactly("write");
-    }
-
-    // --- InMemoryInstructionStore ---
-
-    @Test
-    void instructionStoreRoundTripsStateEntriesAndBlobs() {
-        InMemoryInstructionStore store = new InMemoryInstructionStore(state());
-        SessionId id = SessionId.create();
-
-        assertThat(store.state(id).isEmpty()).isTrue();
-        assertThat(store.entries(id)).isEmpty();
-        assertThat(store.entries(null)).isEmpty();
-        assertThat(store.state(null).isEmpty()).isTrue();
-
-        InstructionState state = new InstructionState(Seq.of(1), Seq.of(2),
-                Map.of("a", "1"), Map.of("a", "2"));
-        store.putState(id, state);
-        assertThat(store.state(id).orElseThrow()).isEqualTo(state);
-
-        store.putEntry(id, new InstructionEntry("a", "one", "h1"));
-        store.putEntry(id, new InstructionEntry("a", "two", "h2"));
-        store.putEntry(id, new InstructionEntry("b", "three", "h3"));
-        assertThat(store.entries(id)).extracting(InstructionEntry::value)
-                .containsExactlyInAnyOrder("two", "three");
-
-        store.removeEntry(id, "a");
-        store.removeEntry(null, null);
-        store.removeEntry(id, "missing");
-        assertThat(store.entries(id)).extracting(InstructionEntry::key).containsExactly("b");
-
-        assertThat(store.blob("h1").isEmpty()).isTrue();
-        assertThat(store.blob(null).isEmpty()).isTrue();
-        assertThat(store.blob(" ").isEmpty()).isTrue();
-        store.putBlob("h1", "content");
-        assertThat(store.blob("h1").orElseThrow()).isEqualTo("content");
-
-        assertThatThrownBy(() -> store.putState(null, state)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> store.putEntry(id, null)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> store.putBlob(" ", "x")).isInstanceOf(IllegalArgumentException.class);
-    }
-
-    // --- InMemoryCredentialStore ---
-
-    @Test
-    void credentialStoreCreatesFindsAndRemoves() {
-        InMemoryCredentialStore store = new InMemoryCredentialStore(state());
-
-        assertThat(store.saved(null)).isEmpty();
-        assertThat(store.saved(" ")).isEmpty();
-        assertThat(store.get(null).isEmpty()).isTrue();
-        assertThat(store.get(" ").isEmpty()).isTrue();
-
-        var created = store.create(new CredentialStore.CredentialInput("openai", "key", "secret"));
-        assertThat(created.integration()).isEqualTo("openai");
-        assertThat(created.active()).isFalse();
-        assertThat(store.saved("openai")).containsExactly(created);
-        assertThat(store.get(created.id()).orElseThrow()).isEqualTo(created);
-
-        store.activate(created.id());
-        store.activate("unknown");
-        store.remove(created.id());
-        store.remove(null);
-        store.remove(" ");
-        assertThat(store.saved("openai")).isEmpty();
-        assertThat(store.get(created.id()).isEmpty()).isTrue();
-
-        assertThatThrownBy(() -> store.create(null)).isInstanceOf(IllegalArgumentException.class);
-    }
-
     // --- InMemoryToolOutputStore ---
 
     @Test
@@ -426,29 +339,4 @@ class InMemoryStoresTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
-    // --- InMemoryToolResultCache ---
-
-    @Test
-    void toolResultCacheStoresAndDeletes() {
-        InMemoryToolResultCache cache = new InMemoryToolResultCache(state());
-        de.augmentia.oc.engine.core.model.IdempotencyKey key =
-                new de.augmentia.oc.engine.core.model.IdempotencyKey("idem_test");
-
-        assertThat(cache.find(null)).isEmpty();
-        assertThat(cache.find(key)).isEmpty();
-        cache.store(key, "s1", "tool", JsonValue.of("result"));
-        assertThat(cache.find(key)).contains(JsonValue.of("result"));
-        cache.delete(key);
-        cache.delete(null);
-        assertThat(cache.find(key)).isEmpty();
-
-        cache.store(key, "s1", "tool", JsonValue.of("result"));
-        cache.deleteBySession("s1");
-        assertThat(cache.deleteCreatedBefore(Instant.now())).isZero();
-        // the in-memory cache keeps entries without timestamps
-        assertThat(cache.find(key)).isPresent();
-
-        assertThatThrownBy(() -> cache.store(null, "s", "t", JsonValue.of("x")))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
 }

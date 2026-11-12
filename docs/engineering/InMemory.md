@@ -91,6 +91,14 @@ gibt es zusätzlich Fake-Adapter (Record/Replay, `FixedClock`, Stub-Provider).
 
 ## 4. Port → In-Memory-Adapter
 
+> **Hinweis (Minimal-Modus):** Der In-Memory-Modus ist fest auf das Minimum
+> gekürzt. Nur die für direkte Ausführung nötigen Ports haben echte Adapter:
+> `SessionStore`/`SessionReader`, `ConversationStore`, `Journal`, `ClaimStore`,
+> `SessionWorkspaceStore` (in `SessionStore` gefaltet) und `ToolOutputStore`
+> (LRU-begrenzt). Alle übrigen Ports (`ApprovalStore`, `InstructionStore`,
+> `CredentialStore`, `SnapshotStore`, `ToolResultCache`) werden durch No-Op-Adapter
+> bedient und halten keinen Zustand. `MemoryBudget` wird nicht mehr verwendet.
+
 ### 4.1 Storage-Ports
 
 | Port | Adapter | Datenstruktur | Hinweise |
@@ -99,13 +107,13 @@ gibt es zusätzlich Fake-Adapter (Record/Replay, `FixedClock`, Stub-Provider).
 | `ConversationStore` / `Conversation` | `InMemoryConversationStore` | pro Session `ArrayList<StoredMessage>` + `AtomicLong seq` | `nextSeq` = `incrementAndGet`; `deleteFrom` = Truncate unter Lock |
 | `Journal` | `InMemoryJournal` | pro Aggregat `ArrayList<StoredEvent>` + `AtomicLong seq`; optional Ringbuffer | `append` unter Lock; `history` immutable; Retention per Ring/Konfiguration |
 | `ClaimStore` | `InMemoryClaimStore` | `ConcurrentHashMap<SessionId, Claim>` | `acquire` = `putIfAbsent`; `release` = `remove`; optional Lease-Timestamp |
-| `ApprovalStore` | `InMemoryApprovalStore` | `Map<ProjectId, Set<SavedApproval>>` | Copy-on-Write für Reader |
-| `InstructionStore` | `InMemoryInstructionStore` | `Map<SessionId, InstructionState>`, `Map<Hash, String> blobs`, `Map<SessionId, Map<Key, Entry>>` | Blobs content-addressed |
-| `SessionWorkspaceStore` | `InMemorySessionWorkspaceStore` | `Map<SessionId, WorkspaceState>` | klein, unkritisch |
-| `CredentialStore` | `InMemoryCredentialStore` | `Map<String, Credential>` | Secrets aus ENV/Secret-Manager; nie loggen |
-| `SnapshotStore` | `InMemorySnapshotStore` | `Map<SnapshotId, Map<Path, byte[]>>` | **größter Speicherfresser**; hart limitieren |
-| `ToolOutputStore` | `InMemoryToolOutputStore` | `Map<String, byte[]>` (content-addressed) + LRU | Limit pro Blob und global |
-| `ToolResultCache` | `InMemoryToolResultCache` | Caffeine/LRU oder `LinkedHashMap` mit Cap | reiner Cache, kein Durability |
+| `ApprovalStore` | `NoOpApprovalStore` | – | No-Op in Minimal-Modus |
+| `InstructionStore` | `NoOpInstructionStore` | – | No-Op in Minimal-Modus |
+| `SessionWorkspaceStore` | `InMemorySessionStore` (gefällt) | `Map<SessionId, WorkspaceState>` | klein, unkritisch |
+| `CredentialStore` | `NoOpCredentialStore` | – | No-Op in Minimal-Modus |
+| `SnapshotStore` | `NoOpSnapshotStore` | – | No-Op in Minimal-Modus (kein Revert) |
+| `ToolOutputStore` | `InMemoryToolOutputStore` | `Map<String, byte[]>` (content-addressed) + LRU (max 256) | Limit pro Blob und global |
+| `ToolResultCache` | `NoOpToolResultCache` | – | No-Op in Minimal-Modus |
 
 ### 4.2 Runtime-/Human-Ports
 

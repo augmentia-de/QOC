@@ -30,7 +30,7 @@ class WorkflowRunJournalTest {
     @BeforeEach
     void setUp() {
         StorageConfig config = new StorageConfig(StorageKind.MEMORY);
-        RuntimeState memory = new RuntimeState(new MemoryBudget(1L << 30));
+        RuntimeState memory = new RuntimeState();
         Stores stores = StorageFactory.create(config, memory, null, new SystemClock(),
                 new NioFileSystem(Path.of(".")));
         engine = QocEngine.create(stores, config, new SystemClock(), false);

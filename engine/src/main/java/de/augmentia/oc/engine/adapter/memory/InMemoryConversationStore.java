@@ -27,7 +27,7 @@ public final class InMemoryConversationStore implements ConversationStore {
     }
 
     public InMemoryConversationStore(RuntimeState state) {
-        this.state = state == null ? new RuntimeState(new MemoryBudget(1L << 30)) : state;
+        this.state = state == null ? new RuntimeState() : state;
     }
 
     private ConvoLog log(SessionId session) {

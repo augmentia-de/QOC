@@ -29,7 +29,7 @@ public final class InMemoryJournal implements Journal {
     }
 
     public InMemoryJournal(RuntimeState state, de.augmentia.oc.engine.core.port.runtime.Clock clock) {
-        this.state = state == null ? new RuntimeState(new MemoryBudget(1L << 30)) : state;
+        this.state = state == null ? new RuntimeState() : state;
         this.clock = clock == null ? new de.augmentia.oc.engine.adapter.time.SystemClock() : clock;
     }
 

@@ -123,7 +123,7 @@ public final class StorageFactory {
     private static ApprovalStore approvalStore(StorageKind kind, RuntimeState memory,
                                               DataSource dataSource) {
         return switch (kind) {
-            case MEMORY -> new de.augmentia.oc.engine.adapter.memory.InMemoryApprovalStore(memory);
+            case MEMORY -> new de.augmentia.oc.engine.adapter.memory.NoOpApprovalStore();
             case SQLITE -> new SqliteApprovals(dataSource);
             case POSTGRES -> new SqlApprovals(dataSource);
         };
@@ -132,7 +132,7 @@ public final class StorageFactory {
     private static InstructionStore instructionStore(StorageKind kind, RuntimeState memory,
                                                     DataSource dataSource) {
         return switch (kind) {
-            case MEMORY -> new de.augmentia.oc.engine.adapter.memory.InMemoryInstructionStore(memory);
+            case MEMORY -> new de.augmentia.oc.engine.adapter.memory.NoOpInstructionStore();
             case SQLITE -> new SqliteInstructions(dataSource);
             case POSTGRES -> new SqlInstructions(dataSource);
         };
@@ -150,7 +150,7 @@ public final class StorageFactory {
     private static CredentialStore credentialStore(StorageKind kind, RuntimeState memory,
                                                   DataSource dataSource) {
         return switch (kind) {
-            case MEMORY -> new de.augmentia.oc.engine.adapter.memory.InMemoryCredentialStore(memory);
+            case MEMORY -> new de.augmentia.oc.engine.adapter.memory.NoOpCredentialStore();
             case SQLITE -> new SqliteCredentials(dataSource);
             case POSTGRES -> new SqlCredentials(dataSource);
         };
@@ -162,7 +162,7 @@ public final class StorageFactory {
                 ? new de.augmentia.oc.engine.adapter.fs.NioFileSystem(java.nio.file.Path.of("."))
                 : fileSystem;
         return switch (kind) {
-            case MEMORY -> new de.augmentia.oc.engine.adapter.memory.InMemorySnapshotStore(memory);
+            case MEMORY -> new de.augmentia.oc.engine.adapter.memory.NoOpSnapshotStore();
             case SQLITE -> new SqliteSnapshots(dataSource, fs);
             case POSTGRES -> new SqlSnapshots(dataSource, fs);
         };
@@ -180,7 +180,7 @@ public final class StorageFactory {
     private static ToolResultCache toolResultCache(StorageKind kind, RuntimeState memory,
                                                   DataSource dataSource) {
         return switch (kind) {
-            case MEMORY -> new de.augmentia.oc.engine.adapter.memory.InMemoryToolResultCache(memory);
+            case MEMORY -> new de.augmentia.oc.engine.adapter.memory.NoOpToolResultCache();
             case SQLITE -> new SqliteToolResultCache(dataSource);
             case POSTGRES -> new SqlToolResultCache(dataSource);
         };

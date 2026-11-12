@@ -10,14 +10,21 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * In-memory tool output store: content-addressed blobs per session.
+ * In-memory tool output store with a bounded entry count (minimal mode).
+ *
+ * <p>Only the most recent {@link #MAX_ENTRIES} blobs are retained; when the
+ * cap is exceeded the oldest entries (by insertion order of the underlying
+ * concurrent map's key set) are evicted to keep the memory footprint bounded.</p>
  */
 public final class InMemoryToolOutputStore implements ToolOutputStore {
+
+    /** Maximum number of stored tool-output blobs. */
+    public static final int MAX_ENTRIES = 256;
 
     private final RuntimeState state;
 
     public InMemoryToolOutputStore(RuntimeState state) {
-        this.state = state == null ? new RuntimeState(new MemoryBudget(1L << 30)) : state;
+        this.state = state == null ? new RuntimeState() : state;
     }
 
     @Override
@@ -25,8 +32,10 @@ public final class InMemoryToolOutputStore implements ToolOutputStore {
         if (session == null) throw new IllegalArgumentException("session must not be null");
         String id = (suffix == null ? "out" : suffix) + "_" + java.util.UUID.randomUUID().toString().substring(0, 8);
         String key = session.value() + ":" + id;
-        state.toolOutputs.put(key, bytes == null ? new byte[0] : bytes);
-        return new ArtifactRef(session, id, "application/octet-stream", "sha256-placeholder", bytes == null ? 0 : bytes.length);
+        byte[] payload = bytes == null ? new byte[0] : bytes;
+        state.toolOutputs.put(key, payload);
+        evictIfNeeded();
+        return new ArtifactRef(session, id, "application/octet-stream", "sha256-placeholder", payload.length);
     }
 
     @Override
@@ -48,5 +57,18 @@ public final class InMemoryToolOutputStore implements ToolOutputStore {
     @Override
     public void sweep(Instant olderThan) {
         // In-memory: no-op (no timestamps stored)
+    }
+
+    private void evictIfNeeded() {
+        Map<String, byte[]> m = state.toolOutputs;
+        if (m.size() <= MAX_ENTRIES) return;
+        int toRemove = m.size() - MAX_ENTRIES;
+        java.util.Iterator<String> it = m.keySet().iterator();
+        int removed = 0;
+        while (it.hasNext() && removed < toRemove) {
+            it.next();
+            it.remove();
+            removed++;
+        }
     }
 }
