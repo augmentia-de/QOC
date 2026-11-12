@@ -776,6 +776,18 @@ public static record EngineConfig(
                     Math.max(1, engineConfig.maxTurnToolCalls()), Math.max(0, (int) engineConfig.maxTurnTokens()),
                     java.time.Duration.ofMinutes(Math.max(1, engineConfig.maxTurnWallMinutes())));
 
+            java.util.function.Consumer<de.augmentia.oc.engine.core.contract.provider.ModelEvent> liveSink =
+                    event -> {
+                        try {
+                            eventPublisher.publishLive(session.value(),
+                                    de.augmentia.oc.engine.core.json.Json.encode(
+                                            de.augmentia.oc.engine.core.event.ContractCodec.encode(
+                                                    event, de.augmentia.oc.engine.core.contract.provider.ModelEvent.class)));
+                        } catch (RuntimeException ignored) {
+                            // best-effort live streaming; do not fail the turn
+                        }
+                    };
+
             while (stepNo <= maxSteps) {
                 de.augmentia.oc.engine.runtime.step.StepResult result;
                 if (workflowMode) {
@@ -799,7 +811,7 @@ public static record EngineConfig(
                                     de.augmentia.oc.engine.core.model.CallId.create(),
                                     null, principal, toolTokenService);
 
-                    result = runStep.run(prepared, toolContext);
+                    result = runStep.run(prepared, toolContext, liveSink);
                 }
 
                 if (!workflowMode && result instanceof de.augmentia.oc.engine.runtime.step.StepResult.NeedsCompaction) {
@@ -828,7 +840,7 @@ public static record EngineConfig(
                                     de.augmentia.oc.engine.core.model.MessageId.create(),
                                     de.augmentia.oc.engine.core.model.CallId.create(),
                                     null, principal, toolTokenService);
-                    result = runStep.run(prepared, toolContext);
+                    result = runStep.run(prepared, toolContext, liveSink);
                 }
 
                 if (result instanceof de.augmentia.oc.engine.runtime.step.StepResult.Paused paused) {
@@ -894,6 +906,18 @@ public static record EngineConfig(
                 }
 
                 if (result instanceof de.augmentia.oc.engine.runtime.step.StepResult.Finished finished) {
+                    // Stream model events (text deltas, tool calls, tool results) to
+                    // the UI via the live event bus, mirroring the Quarkus loop.
+                    for (de.augmentia.oc.engine.core.contract.provider.ModelEvent liveEvent : finished.events()) {
+                        try {
+                            eventPublisher.publishLive(session.value(),
+                                    de.augmentia.oc.engine.core.json.Json.encode(
+                                            de.augmentia.oc.engine.core.event.ContractCodec.encode(
+                                                    liveEvent, de.augmentia.oc.engine.core.contract.provider.ModelEvent.class)));
+                        } catch (RuntimeException ignored) {
+                            // best-effort; do not fail the turn
+                        }
+                    }
                     boolean hasToolCalls = finished.toolCalls() != null && !finished.toolCalls().isEmpty();
                     for (de.augmentia.oc.engine.core.contract.provider.ModelEvent event : finished.events()) {
                         if (event instanceof de.augmentia.oc.engine.core.contract.provider.ModelEvent.TextDelta d) {
