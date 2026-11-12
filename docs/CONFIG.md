@@ -250,6 +250,11 @@ engine.email.attachments-enabled=false
 
 # --- Agent-Authoring / Settings: AUS ---
 engine.settings.workspace-enabled=false
+
+# --- Systemuser (Service-Account) ---
+ENGINE_SYSTEM_TOKEN=${ENGINE_SYSTEM_TOKEN:}        # Service-Token (leer = deaktiviert)
+ENGINE_SYSTEM_ROLES=${ENGINE_SYSTEM_ROLES:system}  # Rollen (kommasepariert)
+ENGINE_SYSTEM_OWNERSHIP=${ENGINE_SYSTEM_OWNERSHIP:system}  # system | caller
 # ENGINE_AGENT_AUTHORING_ENABLED=false
 
 # --- A2A-Server: AUS (Default) ---
