@@ -59,7 +59,7 @@ public class WorkflowBeans {
                     "", 0.3, 4096, 1.0,
                     java.util.List.of(), java.util.List.of(), java.util.List.of(),
                     java.util.List.of(), false, true,
-                    "You are a helpful build agent. Reply concisely.", null));
+                    "You are a helpful build agent. Reply concisely.", null, "", java.util.List.of("*")));
         }
         LOG.infof("Agent store: %s", store.list().size());
         return store;

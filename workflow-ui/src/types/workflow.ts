@@ -60,6 +60,8 @@ export interface Agent {
   active: boolean;
   systemPrompt: string;
   responseSchema?: Record<string, unknown> | null;
+  ownerId?: string | null;
+  rolesAllowed?: string[];
 }
 
 export interface WorkflowDefinition {

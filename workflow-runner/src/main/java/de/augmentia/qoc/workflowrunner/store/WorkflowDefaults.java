@@ -22,7 +22,7 @@ public final class WorkflowDefaults {
                 new WorkflowDefinition.NodeData("Done", "", false, "human", 3, "",
                         List.of(), "all", null, List.of(), "", "", null, "", "", Map.of(), null));
         return new WorkflowDefinition(id, title, "1.0.0", "draft",
-                List.of(start, end), List.of(), List.of());
+                List.of(start, end), List.of(), List.of(), "");
     }
 
     /** Ensures the stored definition carries the ID used as its key. */
@@ -31,7 +31,7 @@ public final class WorkflowDefaults {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("id must not be blank");
         if (id.equals(definition.id())) return definition;
         return new WorkflowDefinition(id, definition.name(), definition.version(), definition.status(),
-                definition.nodes(), definition.edges(), definition.agents());
+                definition.nodes(), definition.edges(), definition.agents(), definition.ownerId());
     }
 
     private static String idFor(String name) {

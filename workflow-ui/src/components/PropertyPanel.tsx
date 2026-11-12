@@ -20,6 +20,8 @@ interface AgentConfig {
   active: boolean;
   systemPrompt: string;
   responseSchema?: Record<string, unknown> | null;
+  ownerId?: string | null;
+  rolesAllowed?: string[];
 }
 
 interface NodeOption {
@@ -59,6 +61,8 @@ const BUILD_AGENT: AgentConfig = {
   active: true,
   systemPrompt: 'You are a helpful build agent. Reply concisely.',
   responseSchema: null,
+  ownerId: '',
+  rolesAllowed: ['*'],
 };
 
 interface PropertyPanelProps {

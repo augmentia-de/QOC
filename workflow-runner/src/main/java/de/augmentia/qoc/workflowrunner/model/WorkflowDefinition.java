@@ -18,7 +18,8 @@ public record WorkflowDefinition(
         String status,
         List<Node> nodes,
         List<Edge> edges,
-        List<Agent> agents
+        List<Agent> agents,
+        String ownerId
 ) {
     public WorkflowDefinition {
         if (id == null) id = "";
@@ -28,6 +29,7 @@ public record WorkflowDefinition(
         if (nodes == null) nodes = List.of();
         if (edges == null) edges = List.of();
         if (agents == null) agents = List.of();
+        if (ownerId == null) ownerId = "";
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -138,7 +140,9 @@ public record WorkflowDefinition(
             boolean jsonOutput,
             boolean active,
             String systemPrompt,
-            Map<String, Object> responseSchema
+            Map<String, Object> responseSchema,
+            String ownerId,
+            List<String> rolesAllowed
     ) {
         public Agent {
             if (id == null) id = "";
@@ -152,6 +156,9 @@ public record WorkflowDefinition(
             if (hooks == null) hooks = List.of();
             if (systemPrompt == null) systemPrompt = "";
             // responseSchema may be null (no structured output)
+            if (ownerId == null) ownerId = "";
+            if (rolesAllowed == null || rolesAllowed.isEmpty()) rolesAllowed = List.of("*");
+            else rolesAllowed = List.copyOf(rolesAllowed);
         }
     }
 }

@@ -35,6 +35,14 @@ public class BasicAuthFilter implements ContainerRequestFilter {
     @Inject
     PrincipalContext principalContext;
 
+    @jakarta.inject.Inject
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "engine.system.token", defaultValue = "")
+    String systemToken;
+
+    @jakarta.inject.Inject
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "engine.system.roles", defaultValue = "system")
+    String systemRoles;
+
     @Override
     public void filter(ContainerRequestContext request) {
         String path = request.getUriInfo().getPath();
@@ -44,6 +52,24 @@ public class BasicAuthFilter implements ContainerRequestFilter {
         // getPath() may include a leading slash or the /api prefix, so match
         // the suffix to be safe.
         if (path != null && path.endsWith("config.js")) return;
+
+        // System-token auth: service accounts (background jobs, automation).
+        String systemTokenHeader = request.getHeaderString("X-System-Token");
+        if (systemTokenHeader != null && !systemTokenHeader.isBlank()
+                && systemToken != null && !systemToken.isBlank()
+                && systemTokenHeader.trim().equals(systemToken.trim())) {
+            List<String> roles = List.of(systemRoles.split(","));
+            List<String> cleaned = new java.util.ArrayList<>();
+            for (String r : roles) {
+                String t = r.trim();
+                if (!t.isBlank()) cleaned.add(t);
+            }
+            if (cleaned.isEmpty()) cleaned = List.of("system");
+            principalContext.set(new Principal("system", "system", cleaned, List.of(),
+                    AuthMode.NONE, "system", Map.of()));
+            LOG.log(Level.FINE, "security.system_token_success");
+            return;
+        }
 
         AuthMode mode = securityConfig == null ? AuthMode.NONE : securityConfig.mode();
         if (mode == AuthMode.NONE) {

@@ -98,7 +98,8 @@ public class AgentStoreResource {
     private static Agent withId(Agent a, String id) {
         return new Agent(id, a.name(), a.version(), a.category(), a.model(), a.temperature(),
                 a.maxTokens(), a.topP(), a.tools(), a.guardrailsInput(), a.guardrailsOutput(),
-                a.hooks(), a.jsonOutput(), a.active(), a.systemPrompt(), a.responseSchema());
+                a.hooks(), a.jsonOutput(), a.active(), a.systemPrompt(), a.responseSchema(),
+                a.ownerId(), a.rolesAllowed());
     }
 
     private static Response badRequest(String message) {

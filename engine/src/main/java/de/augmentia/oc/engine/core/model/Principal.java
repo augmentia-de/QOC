@@ -33,6 +33,11 @@ public record Principal(
         return new Principal("local", "local", List.of("admin"), List.of(), Map.of(), null);
     }
 
+    /** Service-account principal for background jobs and automation. */
+    public static Principal system() {
+        return new Principal("system", "system", List.of("system"), List.of(), Map.of(), null);
+    }
+
     public boolean isAdmin() {
         return roles != null && roles.stream().anyMatch(r -> "admin".equalsIgnoreCase(r));
     }
