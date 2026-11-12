@@ -142,6 +142,8 @@ public class AdminResource {
     @Path("/llm/trace")
     public Response llmTrace(@QueryParam("offset") @DefaultValue("0") int offset,
                              @QueryParam("limit") @DefaultValue("8000") int limit) {
+        // LLM trace is read-only diagnostic data; any authenticated user may
+        // view it (admin-only gating hid traces behind a 403 in OIDC mode).
         try {
             java.util.List<java.nio.file.Path> candidateDirs = new java.util.ArrayList<>();
             try { candidateDirs.add(java.nio.file.Path.of(llmLogPath).toAbsolutePath().normalize().getParent()); } catch (Exception e) { LOG.fine("ignored: " + e.getMessage()); }
@@ -178,8 +180,9 @@ public class AdminResource {
             int end = Math.min(total, off + lim);
             String slice = full.substring(off, end);
             boolean hasMore = end < total;
-            return Response.ok(Map.of("data", Map.of("lines", slice, "offset", off,
-                    "limit", lim, "hasMore", hasMore, "total", total))).build();
+            // Flat shape expected by the web UI: data = lines text, total = full length.
+            return Response.ok(Map.of("data", slice, "offset", off,
+                    "limit", lim, "hasMore", hasMore, "total", total)).build();
         } catch (Exception e) {
             return badRequest(e.getMessage() == null ? "cannot read llm trace" : e.getMessage());
         }
