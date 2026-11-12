@@ -12,6 +12,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Shared JSON/hash helpers for workflow specifications.
@@ -26,6 +27,16 @@ public final class WorkflowJson {
 
     private static final DateTimeFormatter VERSION_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS").withZone(ZoneOffset.UTC);
+
+    /** Process-local tag keeps IDs distinct when several writers snapshot at once. */
+    private static final String PROCESS_TAG =
+            String.format("%04x", ThreadLocalRandom.current().nextInt(0x10000));
+
+    /**
+     * Monotonic sequence for snapshots in the same millisecond. The old random
+     * suffix alone did not preserve creation order for equal timestamps.
+     */
+    private static final AtomicLong VERSION_SEQUENCE = new AtomicLong();
 
     private WorkflowJson() {}
 
@@ -62,10 +73,14 @@ public final class WorkflowJson {
         return hash(write(definition));
     }
 
-    /** Generates a sortable, collision-resistant version ID. */
+    /**
+     * Generates a sortable, collision-resistant version ID. The monotonic
+     * sequence keeps snapshots created within the same millisecond in creation
+     * order; the process tag prevents collisions between concurrent writers.
+     */
     public static String versionId() {
         String ts = VERSION_FORMAT.format(Instant.now());
-        int suffix = ThreadLocalRandom.current().nextInt(0x10000);
-        return ts + "-" + String.format("%04x", suffix);
+        long sequence = VERSION_SEQUENCE.getAndIncrement();
+        return ts + "-" + String.format("%08x", sequence) + "-" + PROCESS_TAG;
     }
 }
