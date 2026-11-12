@@ -32,6 +32,7 @@ deploy/docker-*/workspace/**
 /workflow-ui/node_modules/
 /workflow-ui/dist/
 /wf-data/
+**/wf-data/
 /.home/
 
 # maven-shade-plugin output (generated)
