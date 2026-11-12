@@ -72,6 +72,34 @@ public class SessionAccessGuard {
         return engine.isOwner(info, current);
     }
 
+    /** Returns true when the current principal may access the workflow with the given ownerId. */
+    public boolean isWorkflowOwner(String ownerId, String current) {
+        if (isAdmin()) return true;
+        if (current == null || current.isBlank()) return false;
+        if (ownerId == null || ownerId.isBlank()) return true; // shared
+        return ownerId.equals(current);
+    }
+
+    /** Returns a 403 response when the current principal may not access the workflow. */
+    public Response requireWorkflowAccess(String ownerId) {
+        String current = currentUser();
+        if (isWorkflowOwner(ownerId, current)) return null;
+        LOG.warning("workflow access denied owner=" + ownerId + " user=" + current);
+        return Response.status(Response.Status.FORBIDDEN)
+                .entity(Map.of("_tag", "Forbidden", "message", "not workflow owner"))
+                .build();
+    }
+
+    /** Returns a 403 response when the current principal may not access the agent. */
+    public Response requireAgentAccess(String ownerId) {
+        String current = currentUser();
+        if (isWorkflowOwner(ownerId, current)) return null;
+        LOG.warning("agent access denied owner=" + ownerId + " user=" + current);
+        return Response.status(Response.Status.FORBIDDEN)
+                .entity(Map.of("_tag", "Forbidden", "message", "not agent owner"))
+                .build();
+    }
+
     /**
      * Returns a 403 response when the current principal may not access the
      * session, otherwise {@code null}. Unknown sessions and malformed ids are

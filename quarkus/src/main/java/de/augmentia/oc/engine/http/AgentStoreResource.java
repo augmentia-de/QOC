@@ -29,7 +29,7 @@ import java.util.regex.Pattern;
 @Path("/api/agents")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-@jakarta.annotation.security.RolesAllowed({"user", "admin", "system", "viewer"})
+// Authorization is enforced manually via SessionAccessGuard (see AgentResource pattern).
 public class AgentStoreResource {
 
     /** File names are derived from the id; keep it a plain slug. */
@@ -53,10 +53,11 @@ public class AgentStoreResource {
     public Response get(@PathParam("id") String id) {
         if (!valid(id)) return badRequest("invalid agent id");
         Agent agent = store.get(id);
-        return agent == null
-                ? Response.status(Response.Status.NOT_FOUND)
-                        .entity(Map.of("error", "agent not found: " + id)).build()
-                : Response.ok(agent).build();
+        if (agent == null) return Response.status(Response.Status.NOT_FOUND)
+                .entity(Map.of("error", "agent not found: " + id)).build();
+        Response denied = accessGuard == null ? null : accessGuard.requireAgentAccess(agent.ownerId());
+        if (denied != null) return denied;
+        return Response.ok(agent).build();
     }
 
     @POST
@@ -75,6 +76,11 @@ public class AgentStoreResource {
     public Response save(@PathParam("id") String id, Agent body) {
         if (!valid(id)) return badRequest("invalid agent id");
         if (body == null) return badRequest("agent must not be null");
+        Agent existing = store.get(id);
+        if (existing != null) {
+            Response denied = accessGuard == null ? null : accessGuard.requireAgentAccess(existing.ownerId());
+            if (denied != null) return denied;
+        }
         // The edit form exposes the id; a changed id is a rename.
         String target = body.id();
         if (target != null && !target.isBlank() && !target.equals(id)) {
@@ -82,13 +88,19 @@ public class AgentStoreResource {
             store.delete(id);
             return Response.ok(store.save(target, withId(body, target))).build();
         }
-        return Response.ok(store.save(id, withId(body, id))).build();
+        String owner = existing == null ? (accessGuard == null ? null : accessGuard.currentUser()) : null;
+        return Response.ok(store.save(id, withId(body, id, owner))).build();
     }
 
     @DELETE
     @Path("/{id}")
     public Response delete(@PathParam("id") String id) {
         if (!valid(id)) return badRequest("invalid agent id");
+        Agent existing = store.get(id);
+        if (existing != null) {
+            Response denied = accessGuard == null ? null : accessGuard.requireAgentAccess(existing.ownerId());
+            if (denied != null) return denied;
+        }
         return Response.ok(Map.of("deleted", store.delete(id))).build();
     }
 

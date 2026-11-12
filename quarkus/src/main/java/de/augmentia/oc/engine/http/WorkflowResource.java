@@ -24,7 +24,7 @@ import java.util.Optional;
 @Path("/api")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-@jakarta.annotation.security.RolesAllowed({"user", "admin", "system", "viewer"})
+// Authorization is enforced manually via SessionAccessGuard (see AgentResource pattern).
 public class WorkflowResource {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -66,6 +66,12 @@ public class WorkflowResource {
     public Response createWorkflow(Map<String, Object> request) {
         String name = request == null ? "Untitled" : String.valueOf(request.getOrDefault("name", "Untitled"));
         WorkflowDefinition def = store.create(name);
+        String user = accessGuard == null ? null : accessGuard.currentUser();
+        if (def != null && (def.ownerId() == null || def.ownerId().isBlank()) && user != null && !user.isBlank()) {
+            def = new WorkflowDefinition(def.id(), def.name(), def.version(), def.status(),
+                    def.nodes(), def.edges(), def.agents(), user);
+            def = store.save(def.id(), def);
+        }
         return Response.status(Response.Status.CREATED).entity(def).build();
     }
 
@@ -74,12 +80,25 @@ public class WorkflowResource {
     public Response getWorkflow(@PathParam("id") String id) {
         WorkflowDefinition def = store.get(id);
         if (def == null) return Response.status(Response.Status.NOT_FOUND).entity(Map.of("error", "not found")).build();
+        Response denied = accessGuard == null ? null : accessGuard.requireWorkflowAccess(def.ownerId());
+        if (denied != null) return denied;
         return Response.ok(def).build();
     }
 
     @PUT
     @Path("/workflows/{id}")
     public Response saveWorkflow(@PathParam("id") String id, WorkflowDefinition def) {
+        WorkflowDefinition existing = store.get(id);
+        if (existing != null) {
+            Response denied = accessGuard == null ? null : accessGuard.requireWorkflowAccess(existing.ownerId());
+            if (denied != null) return denied;
+        }
+        // Stamp ownerId on save if not set.
+        if (def != null && (def.ownerId() == null || def.ownerId().isBlank())) {
+            String user = accessGuard == null ? null : accessGuard.currentUser();
+            def = new WorkflowDefinition(def.id(), def.name(), def.version(), def.status(),
+                    def.nodes(), def.edges(), def.agents(), user == null ? "" : user);
+        }
         WorkflowDefinition saved = store.save(id, def);
         return Response.ok(saved).build();
     }
@@ -87,6 +106,11 @@ public class WorkflowResource {
     @DELETE
     @Path("/workflows/{id}")
     public Response deleteWorkflow(@PathParam("id") String id) {
+        WorkflowDefinition existing = store.get(id);
+        if (existing != null) {
+            Response denied = accessGuard == null ? null : accessGuard.requireWorkflowAccess(existing.ownerId());
+            if (denied != null) return denied;
+        }
         boolean deleted = store.delete(id);
         return Response.ok(Map.of("deleted", deleted)).build();
     }
