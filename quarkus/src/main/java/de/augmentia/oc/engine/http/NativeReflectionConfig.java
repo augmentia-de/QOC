@@ -383,6 +383,7 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
             "de.augmentia.oc.engine.http.IntegrationDto",
             "de.augmentia.oc.engine.http.MessageDto",
             "de.augmentia.oc.engine.http.ProviderDto",
+            "de.augmentia.oc.engine.http.PromptResponse",
             "de.augmentia.oc.engine.http.SessionDto",
             "de.augmentia.oc.engine.http.ToolCardDto",
             "de.augmentia.oc.engine.http.HttpApi$SwitchAgentRequest",
