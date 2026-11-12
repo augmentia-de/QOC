@@ -693,22 +693,22 @@ document.querySelectorAll('.panel').forEach(panel => {
     try { localStorage.setItem(key, panel.classList.contains('collapsed') ? '1' : '0'); } catch (e) {}
   });
 });
-updateLlmPanel();
 const llmState = { start: 0, total: 0, loading: false };
+updateLlmPanel();
 async function loadLlmTrace(reset) {
   if (!showLlm.checked || !llmTrace) return;
   if (llmState.loading) return;
   llmState.loading = true;
   try {
     if (reset) {
-      const r0 = await fetch('/api/llm/trace?offset=0&limit=1');
+      const r0 = await fetch('/api/llm/trace?offset=0&limit=1', {headers: authHeaders()});
       const d0 = await r0.json();
       llmState.total = (d0 && typeof d0.total === 'number') ? d0.total : 0;
       llmState.start = Math.max(0, llmState.total - 50000);
       llmTrace.innerHTML = '';
     }
     if (llmState.start < 0) llmState.start = 0;
-    const res = await fetch('/api/llm/trace?offset=' + llmState.start + '&limit=50000');
+    const res = await fetch('/api/llm/trace?offset=' + llmState.start + '&limit=50000', {headers: authHeaders()});
     const data = await res.json();
     const raw = (data && data.data) ? data.data : '';
     llmState.total = (data && typeof data.total === 'number') ? data.total : llmState.total;
@@ -749,7 +749,7 @@ async function loadLlmTrace(reset) {
 async function loadLlmChat() {
   if (!showLlm.checked) return;
   try {
-    const res = await fetch('/api/llm/trace?tail=1600');
+    const res = await fetch('/api/llm/trace?tail=1600', {headers: authHeaders()});
     const data = await res.json();
     const raw = (data && data.data) ? data.data : '';
     const blocks = raw.split(/(?===== )/).filter(b => b.trim());
@@ -2361,7 +2361,7 @@ document.getElementById('agent').addEventListener('change', async (e) => {
     document.getElementById('agentModal').style.display = 'block';
     try {
       const [tools, mcp, a2a] = await Promise.all([
-        fetch('/api/tool').then(r=>r.json()).catch(()=>({})),
+        fetch('/api/tool', {headers: authHeaders()}).then(r=>r.json()).catch(()=>({})),
         fetch('/api/mcp').then(r=>r.json()).catch(()=>({})),
         fetch('/api/a2a').then(r=>r.json()).catch(()=>({}))
       ]);
