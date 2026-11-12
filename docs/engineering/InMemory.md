@@ -239,7 +239,7 @@ Dauerhaftigkeit über den Prozess hinaus.**
 # Profil "memory"
 engine.storage=memory
 engine.memory.max-sessions=1000
-engine.memory.max-bytes=1073741824
+engine.memory.max-bytes=314572800
 engine.memory.max-tool-output-bytes=8388608
 engine.memory.max-snapshot-bytes=67108864
 engine.memory.max-messages-per-session=10000

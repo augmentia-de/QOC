@@ -21,7 +21,7 @@ docker compose --profile memory up -d qoc-memory
 - `ENGINE_STORAGE=memory`
 - `ENGINE_RECOVERY_ENABLED=false` – Recovery ist im Memory-Modus nicht verfügbar
 - `ENGINE_REVERT_SNAPSHOT=true` – Snapshots liegen ebenfalls im Heap
-- `ENGINE_MEMORY_MAX_BYTES=1073741824` (1 GiB)
+- `ENGINE_MEMORY_MAX_BYTES=314572800` (300 MiB)
 - `ENGINE_MODE=server`, Agent-Authoring aktiv (kein Serverless-Limit)
 - `ENGINE_SECURITY_MODE=none` – nur für lokale/vertrauenswürdige Nutzung
 - `/data/workspace`, `/data/home`, `/data/log` und `/tmp` sind tmpfs; nach

@@ -1,0 +1,31 @@
+[Unit]
+Description=QOC Engine (native, memory mode)
+After=network.target
+
+[Service]
+Type=simple
+User=qoc
+Group=qoc
+WorkingDirectory=/opt/qoc
+EnvironmentFile=/etc/qoc/env
+Environment=HOME=/data/home
+ExecStartPre=/usr/local/bin/qoc-prepare-memory.sh
+ExecStart=/opt/qoc/qoc-runner
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/data
+PrivateTmp=true
+ProtectHome=true
+PrivateDevices=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=qoc-engine
+
+[Install]
+WantedBy=multi-user.target
