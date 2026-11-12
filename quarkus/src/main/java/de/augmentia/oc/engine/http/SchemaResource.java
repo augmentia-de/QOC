@@ -7,7 +7,9 @@ import de.augmentia.oc.engine.core.json.JsonValues;
 import de.augmentia.oc.engine.core.json.Result;
 import de.augmentia.oc.engine.core.json.Schema;
 import de.augmentia.qoc.workflowrunner.schema.JavaRecordToJsonSchema;
+import de.augmentia.qoc.workflowrunner.schema.JavaSourceToJsonSchema;
 import de.augmentia.qoc.workflowrunner.schema.OpenApiToJsonSchema;
+import de.augmentia.qoc.workflowrunner.schema.YamlToJsonSchema;
 
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -57,6 +59,44 @@ public class SchemaResource {
             }
             Map<String, Object> schema = OpenApiToJsonSchema.fromSpec(spec, name);
             return Response.ok(Map.of("schema", schema)).build();
+        } catch (Exception e) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+    @POST
+    @Path("/from-java")
+    public Response fromJava(Map<String, Object> request) {
+        String source = request == null ? null : String.valueOf(request.get("source"));
+        if (source == null || source.isBlank() || "null".equals(source)) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(Map.of("error", "source required")).build();
+        }
+        if (source.length() > 50_000) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(Map.of("error", "source too large (max 50 KB)")).build();
+        }
+        try {
+            Map<String, Object> schema = JavaSourceToJsonSchema.fromSource(source);
+            String className = JavaSourceToJsonSchema.extractClassName(source);
+            return Response.ok(Map.of("schema", schema, "className", className == null ? "" : className)).build();
+        } catch (Exception e) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+    @POST
+    @Path("/from-yaml")
+    public Response fromYaml(Map<String, Object> request) {
+        String yaml = request == null ? null : String.valueOf(request.get("yaml"));
+        String schemaName = request == null ? null : String.valueOf(request.get("schemaName"));
+        if (yaml == null || yaml.isBlank() || "null".equals(yaml)) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(Map.of("error", "yaml required")).build();
+        }
+        if (yaml.length() > 50_000) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(Map.of("error", "yaml too large (max 50 KB)")).build();
+        }
+        try {
+            Map<String, Object> result = YamlToJsonSchema.fromYaml(yaml, schemaName);
+            return Response.ok(result).build();
         } catch (Exception e) {
             return Response.status(Response.Status.BAD_REQUEST).entity(Map.of("error", e.getMessage())).build();
         }

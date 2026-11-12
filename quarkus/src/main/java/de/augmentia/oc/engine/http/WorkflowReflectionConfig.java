@@ -13,7 +13,11 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
         "de.augmentia.qoc.workflowrunner.model.WorkflowDefinition$Agent",
         "de.augmentia.qoc.workflowrunner.validation.GraphCompiler$ValidationResult",
         "de.augmentia.qoc.workflowrunner.schema.JavaRecordToJsonSchema",
-        "de.augmentia.qoc.workflowrunner.schema.OpenApiToJsonSchema"
+        "de.augmentia.qoc.workflowrunner.schema.OpenApiToJsonSchema",
+        "de.augmentia.qoc.workflowrunner.schema.JavaSourceToJsonSchema",
+        "de.augmentia.qoc.workflowrunner.schema.YamlToJsonSchema",
+        "com.github.javaparser.JavaParser",
+        "com.github.javaparser.ast.CompilationUnit"
 })
 public class WorkflowReflectionConfig {
 }

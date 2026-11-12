@@ -160,11 +160,23 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 prompt = TemplateResolver.resolve(prompt, ctx);
                 String prefixedName = "wf:llm_eval:" + node.id();
                 boolean structuredOutput = node.data().jsonOutput() == null || node.data().jsonOutput();
+                de.augmentia.oc.engine.core.model.Option<de.augmentia.oc.engine.core.json.Schema> schemaOption =
+                        de.augmentia.oc.engine.core.model.Option.none();
+                if (node.data().responseSchema() != null) {
+                    de.augmentia.oc.engine.core.json.Result<de.augmentia.oc.engine.core.json.Schema> parsed =
+                            de.augmentia.oc.engine.core.json.JsonSchema.parse(
+                                    de.augmentia.oc.engine.core.json.JsonValues.fromJava(node.data().responseSchema()));
+                    de.augmentia.oc.engine.core.json.Schema parsedSchema = parsed.valueOrNull();
+                    if (parsedSchema == null) {
+                        throw new IllegalArgumentException("Invalid response schema for node " + node.id());
+                    }
+                    schemaOption = de.augmentia.oc.engine.core.model.Option.some(parsedSchema);
+                }
                 QocEngine.AgentConfig config = new QocEngine.AgentConfig(
                         prefixedName, null, 0.3, 4096, 1.0,
                         "You are an evaluation assistant. Respond with valid JSON.",
                         List.of(), List.of(), List.of(), List.of(), structuredOutput,
-                        de.augmentia.oc.engine.core.model.Option.none());
+                        schemaOption);
                 return runAgent(node, prefixedName, prompt, config, ctx, principal);
             }
             case "llm_summarize" -> {

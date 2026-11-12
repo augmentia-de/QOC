@@ -69,4 +69,15 @@ export const AgentApi = {
   delete: (id: string) => api.delete<{ deleted: boolean }>(`/agents/${id}`),
 };
 
+export const SchemaApi = {
+  fromJava: (source: string) =>
+    api.post<{ schema: Record<string, unknown>; className: string }>('/schema/from-java', { source }),
+  fromOpenApi: (spec: string, schemaName?: string) =>
+    api.post<{ schema?: Record<string, unknown>; schemas?: string[] }>('/schema/from-openapi', { spec, schemaName }),
+  fromYaml: (yaml: string, schemaName?: string) =>
+    api.post<{ schema?: Record<string, unknown>; schemas?: string[] }>('/schema/from-yaml', { yaml, schemaName }),
+  validate: (schema: unknown) =>
+    api.post<{ valid: boolean; path?: string; message?: string; error?: string }>('/schema/validate', { schema }),
+};
+
 export default api;

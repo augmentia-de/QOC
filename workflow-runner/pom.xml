@@ -37,6 +37,34 @@
             <version>2.1.22</version>
         </dependency>
 
+        <!-- Java source parsing (for schema import from .java files) -->
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>3.28.0</version>
+        </dependency>
+
+        <!-- YAML parsing (for schema import from .yaml/.yml files) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+            <version>2.18.2</version>
+        </dependency>
+
+        <!-- Java source parsing (for schema import from .java files) -->
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>3.28.0</version>
+        </dependency>
+
+        <!-- YAML parsing (for schema import from .yaml/.yml files) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+            <version>2.18.2</version>
+        </dependency>
+
         <!-- Logging API only.
              The binding is supplied by the host (Quarkus/JBoss LogManager).
              A bundled binding such as slf4j-simple breaks native images: its

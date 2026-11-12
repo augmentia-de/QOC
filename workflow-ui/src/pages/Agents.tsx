@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AgentApi } from '../services/api';
+import { SchemaSource } from '../components/SchemaSource';
 import type { Agent } from '../types/workflow';
 
 export default function Agents() {
@@ -101,11 +102,11 @@ export default function Agents() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-gray-400 mb-1">ID</label>
-              <input value={editing.id} onChange={(e) => setEditing({ ...editing, id: e.target.value })} className="w-full px-2 py-1 bg-gray-700 rounded text-sm" />
+              <input value={editing.id} onChange={(e) => setEditing((prev) => (prev ? { ...prev, id: e.target.value } : prev))} className="w-full px-2 py-1 bg-gray-700 rounded text-sm" />
             </div>
             <div>
               <label className="block text-xs text-gray-400 mb-1">Name</label>
-              <input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} className="w-full px-2 py-1 bg-gray-700 rounded text-sm" />
+              <input value={editing.name} onChange={(e) => setEditing((prev) => (prev ? { ...prev, name: e.target.value } : prev))} className="w-full px-2 py-1 bg-gray-700 rounded text-sm" />
             </div>
             <div>
               <label className="block text-xs text-gray-400 mb-1">Model</label>
@@ -139,12 +140,10 @@ export default function Agents() {
             </label>
           </div>
           <div className="mt-3">
-            <label className="block text-xs text-gray-400 mb-1">Response Schema (JSON Schema, optional)</label>
-            <textarea value={editing.responseSchema ? JSON.stringify(editing.responseSchema, null, 2) : ''} onChange={(e) => {
-              const v = e.target.value.trim();
-              try { setEditing({ ...editing, responseSchema: v ? JSON.parse(v) : null }); } catch { /* keep raw? */ }
-            }} className="w-full px-2 py-1 bg-gray-700 rounded text-sm h-32 font-mono" placeholder='{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}' />
-            <p className="text-xs text-gray-500 mt-1">Leer = keine strukturierte Ausgabe. Import via /api/schema/* möglich.</p>
+            <SchemaSource
+              value={(editing.responseSchema as Record<string, unknown> | null) ?? null}
+              onChange={(schema) => setEditing((prev) => (prev ? { ...prev, responseSchema: schema } : prev))}
+            />
           </div>
           <div className="flex gap-2 mt-4">
             <button onClick={handleSave} className="px-4 py-2 bg-blue-600 rounded text-sm font-bold">Speichern</button>

@@ -3,6 +3,13 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Assets and routes are served under /workflow/ (Vite base). Rewrite to
+    # the document root so static files resolve correctly.
+    location /workflow/ {
+        rewrite ^/workflow/(.*)$ /$1 break;
+        try_files $uri $uri/ /index.html;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }

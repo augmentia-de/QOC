@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { McpClientApi, ToolApi, WorkflowApi } from '../services/api';
+import { SchemaSource } from './SchemaSource';
 import type { McpServerInfo, McpToolInfo } from '../services/api';
 import type { Branch } from '../types/workflow';
 
@@ -402,7 +403,7 @@ export function PropertyPanel({
   const [topP, setTopP] = useState(1.0);
   const [systemPrompt, setSystemPrompt] = useState('');
   const [jsonOutput, setJsonOutput] = useState(false);
-  const [responseSchemaText, setResponseSchemaText] = useState('');
+  const [responseSchema, setResponseSchema] = useState<Record<string, unknown> | null>(null);
   const [active, setActive] = useState(true);
   const [tools, setTools] = useState('');
   const [guardrailsInput, setGuardrailsInput] = useState('');
@@ -447,7 +448,7 @@ export function PropertyPanel({
       setTopP(agent.topP);
       setSystemPrompt(agent.systemPrompt);
       setJsonOutput(agent.jsonOutput);
-      setResponseSchemaText(agent.responseSchema ? JSON.stringify(agent.responseSchema, null, 2) : '');
+      setResponseSchema(agent.responseSchema ?? null);
       setActive(agent.active);
       setTools(agent.tools.join(', '));
       setGuardrailsInput(agent.guardrailsInput.join(', '));
@@ -464,7 +465,7 @@ export function PropertyPanel({
     setTopP(1.0);
     setSystemPrompt('');
     setJsonOutput(false);
-    setResponseSchemaText('');
+    setResponseSchema(null);
     setActive(true);
     setTools('');
     setGuardrailsInput('');
@@ -549,15 +550,7 @@ export function PropertyPanel({
     jsonOutput,
     active,
     systemPrompt,
-    responseSchema: responseSchemaText.trim()
-      ? (() => {
-          try {
-            return JSON.parse(responseSchemaText);
-          } catch {
-            return null;
-          }
-        })()
-      : null,
+    responseSchema,
   });
 
   const handleSave = async () => {
@@ -847,19 +840,13 @@ export function PropertyPanel({
               </label>
             </div>
             <div className="mb-3">
-              <FieldLabel>Response Schema (JSON Schema)</FieldLabel>
-              <textarea
-                value={responseSchemaText}
-                onChange={(event) => {
-                  setResponseSchemaText(event.target.value);
+              <SchemaSource
+                value={responseSchema}
+                onChange={(schema) => {
+                  setResponseSchema(schema);
                   markDirty();
                 }}
-                className="h-32 w-full rounded bg-gray-700 px-2 py-1 font-mono text-sm"
-                placeholder='{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}'
               />
-              <p className="mt-1 text-xs text-gray-500">
-                Strukturierte Ausgabe des Agents. Leer = keine.
-              </p>
             </div>
             <div className="mb-3">
               <label className="flex items-center gap-2 text-sm">
@@ -1061,6 +1048,13 @@ export function PropertyPanel({
               />
               JSON Output (structured)
             </label>
+          </div>
+          <div className="mb-3">
+            <SchemaSource
+              value={(draft.responseSchema as Record<string, unknown> | null) ?? null}
+              onChange={(schema) => updateField('responseSchema', schema)}
+              disabled={false}
+            />
           </div>
         </div>
       )}
