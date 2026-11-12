@@ -104,7 +104,7 @@ public class WorkflowExecutor {
         SessionId session = engine.createSession("workflow:" + workflowId, user, "workspace");
         String runId = session.value();
         JournalWorkflowEventSink sink = new JournalWorkflowEventSink(
-                engine.stores().journal(), session, runId, engine.clock());
+                engine.stores().journal(), session, runId, engine.clock(), ownerId);
 
         String context = input == null ? "" : input;
         WorkflowContext ctx = new WorkflowContext();
@@ -147,8 +147,14 @@ public class WorkflowExecutor {
         // the journal proved that no coordinator is active for this session.
         engine.stores().claims().release(session);
 
+        String resumeOwner = snapshot == null ? "" : "";
+        try {
+            de.augmentia.oc.engine.core.model.SessionInfo info = engine.session(session).orElse(null);
+            if (info != null && info.ownerId() != null) resumeOwner = info.ownerId();
+        } catch (RuntimeException ignored) {
+        }
         JournalWorkflowEventSink sink = new JournalWorkflowEventSink(
-                engine.stores().journal(), session, runId, engine.clock());
+                engine.stores().journal(), session, runId, engine.clock(), resumeOwner);
         sink.runResumed(snapshot.resumeCount() + 1);
 
         LOG.info("Resuming workflow run {} at node {} (attempt {})",

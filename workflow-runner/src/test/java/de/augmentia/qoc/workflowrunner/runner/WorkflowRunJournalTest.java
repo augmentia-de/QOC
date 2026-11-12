@@ -40,7 +40,7 @@ class WorkflowRunJournalTest {
     void replaysCompletedNodesAndOutputs() {
         SessionId session = engine.createSession("workflow:demo", "tester", "workspace");
         append(session, new SessionEvent.WorkflowRunStarted(session, session.value(), "demo",
-                "v1", "hash", "hello", Instant.EPOCH));
+                "v1", "hash", "hello", "tester", Instant.EPOCH));
         append(session, new SessionEvent.WorkflowNodeStarted(session, session.value(), "start", 1, Instant.EPOCH));
         append(session, new SessionEvent.WorkflowNodeCompleted(session, session.value(), "start",
                 "COMPLETED", "started", "started", "ses-child-start", Map.of("lastResult", "started"), Instant.EPOCH));
@@ -67,7 +67,7 @@ class WorkflowRunJournalTest {
     void unfinishedRunIsResumable() {
         SessionId session = engine.createSession("workflow:demo", "tester", "workspace");
         append(session, new SessionEvent.WorkflowRunStarted(session, session.value(), "demo",
-                "v1", "hash", "hello", Instant.EPOCH));
+                "v1", "hash", "hello", "tester", Instant.EPOCH));
         append(session, new SessionEvent.WorkflowNodeStarted(session, session.value(), "start", 1, Instant.EPOCH));
         append(session, new SessionEvent.WorkflowNodeCompleted(session, session.value(), "start",
                 "COMPLETED", "started", "started", "ses-child-start", Map.of("lastResult", "started"), Instant.EPOCH));
@@ -85,7 +85,7 @@ class WorkflowRunJournalTest {
     void failedRunKeepsErrorAndLastCompletedNode() {
         SessionId session = engine.createSession("workflow:demo", "tester", "workspace");
         append(session, new SessionEvent.WorkflowRunStarted(session, session.value(), "demo",
-                "v1", "hash", "hello", Instant.EPOCH));
+                "v1", "hash", "hello", "tester", Instant.EPOCH));
         append(session, new SessionEvent.WorkflowNodeFailed(session, session.value(), "start",
                 new SessionError.Unknown("node", "boom"), 1, Instant.EPOCH));
         append(session, new SessionEvent.WorkflowRunFailed(session, session.value(),
@@ -104,7 +104,7 @@ class WorkflowRunJournalTest {
     void scanFindsWorkflowSessionsOnly() {
         SessionId workflow = engine.createSession("workflow:demo", "tester", "workspace");
         append(workflow, new SessionEvent.WorkflowRunStarted(workflow, workflow.value(), "demo",
-                "v1", "hash", "hello", Instant.EPOCH));
+                "v1", "hash", "hello", "tester", Instant.EPOCH));
         engine.createSession("build", "tester", "workspace");
 
         List<WorkflowRunSnapshot> runs = new WorkflowRunJournal(engine).scan(10);

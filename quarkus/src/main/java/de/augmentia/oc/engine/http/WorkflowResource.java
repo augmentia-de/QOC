@@ -15,6 +15,7 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +44,21 @@ public class WorkflowResource {
     @GET
     @Path("/workflows")
     public Response listWorkflows() {
-        return Response.ok(Map.of("workflows", store.list())).build();
+        String user = accessGuard == null ? null : accessGuard.currentUser();
+        boolean admin = accessGuard != null && accessGuard.isAdmin();
+        List<String> all = store.list();
+        if (admin || user == null || user.isBlank()) {
+            return Response.ok(Map.of("workflows", all)).build();
+        }
+        List<String> filtered = new ArrayList<>();
+        for (String id : all) {
+            WorkflowDefinition def = store.get(id);
+            String owner = def == null ? "" : def.ownerId();
+            if (owner == null || owner.isBlank() || owner.equals(user)) {
+                filtered.add(id);
+            }
+        }
+        return Response.ok(Map.of("workflows", filtered)).build();
     }
 
     @POST

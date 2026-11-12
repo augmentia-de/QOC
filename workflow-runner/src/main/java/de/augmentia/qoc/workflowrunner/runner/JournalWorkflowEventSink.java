@@ -16,8 +16,13 @@ public final class JournalWorkflowEventSink implements WorkflowEventSink {
     private final SessionId session;
     private final String runId;
     private final Clock clock;
+    private final String ownerId;
 
     public JournalWorkflowEventSink(Journal journal, SessionId session, String runId, Clock clock) {
+        this(journal, session, runId, clock, "");
+    }
+
+    public JournalWorkflowEventSink(Journal journal, SessionId session, String runId, Clock clock, String ownerId) {
         if (journal == null) throw new IllegalArgumentException("journal must not be null");
         if (session == null) throw new IllegalArgumentException("session must not be null");
         if (runId == null || runId.isBlank()) throw new IllegalArgumentException("runId must not be blank");
@@ -26,12 +31,13 @@ public final class JournalWorkflowEventSink implements WorkflowEventSink {
         this.session = session;
         this.runId = runId;
         this.clock = clock;
+        this.ownerId = ownerId == null ? "" : ownerId;
     }
 
     @Override
     public void runStarted(String workflowId, String definitionVersion, String contentHash, String input) {
         append(new SessionEvent.WorkflowRunStarted(session, runId, workflowId,
-                definitionVersion, contentHash, input, clock.now()));
+                definitionVersion, contentHash, input, ownerId, clock.now()));
     }
 
     @Override

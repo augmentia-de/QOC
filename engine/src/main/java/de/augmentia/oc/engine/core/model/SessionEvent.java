@@ -131,13 +131,14 @@ public sealed interface SessionEvent extends Payload {
 
     record WorkflowRunStarted(SessionId sessionId, String runId, String workflowId,
                               String definitionVersion, String contentHash, String input,
-                              Instant time) implements SessionEvent {
+                              String ownerId, Instant time) implements SessionEvent {
         public WorkflowRunStarted {
             if (runId == null || runId.isBlank()) throw new IllegalArgumentException("runId must not be blank");
             if (workflowId == null || workflowId.isBlank()) throw new IllegalArgumentException("workflowId must not be blank");
             if (definitionVersion == null) definitionVersion = "";
             if (contentHash == null) contentHash = "";
             if (input == null) input = "";
+            if (ownerId == null) ownerId = "";
             if (time == null) time = Instant.EPOCH;
         }
     }

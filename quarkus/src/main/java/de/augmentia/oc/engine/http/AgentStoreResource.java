@@ -43,7 +43,9 @@ public class AgentStoreResource {
 
     @GET
     public Response list() {
-        return Response.ok(Map.of("agents", store.listAll())).build();
+        String user = accessGuard == null ? null : accessGuard.currentUser();
+        boolean admin = accessGuard != null && accessGuard.isAdmin();
+        return Response.ok(Map.of("agents", store.listAll(user, admin))).build();
     }
 
     @GET

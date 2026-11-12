@@ -59,10 +59,22 @@ public class AgentStore {
     }
 
     public List<Agent> listAll() {
+        return listAll(null, true);
+    }
+
+    public List<Agent> listAll(String userId, boolean isAdmin) {
         List<Agent> agents = new ArrayList<>();
         for (String id : list()) {
             Agent a = get(id);
-            if (a != null) agents.add(a);
+            if (a == null) continue;
+            if (isAdmin || userId == null || userId.isBlank()) {
+                agents.add(a);
+            } else {
+                String owner = a.ownerId();
+                if (owner == null || owner.isBlank() || owner.equals(userId)) {
+                    agents.add(a);
+                }
+            }
         }
         return agents;
     }
