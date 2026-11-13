@@ -28,6 +28,7 @@ const SINGLE_SOURCE_HANDLES: Record<string, string> = {
   llm_summarize: 'out',
   compact: 'out',
   mcp_call: 'out',
+  rest_call: 'out',
   join: 'out',
 };
 
@@ -42,6 +43,7 @@ const SINGLE_TARGET_HANDLES: Record<string, string> = {
   llm_summarize: 'in',
   compact: 'in',
   mcp_call: 'in',
+  rest_call: 'in',
   decision: 'in',
   fork: 'in',
 };

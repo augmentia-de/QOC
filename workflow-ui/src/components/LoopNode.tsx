@@ -10,6 +10,7 @@ export function LoopNode({ data, selected }: NodeProps) {
       selected={selected}
     >
       <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
+      <PortRow left={{ id: 'end', label: 'End' }} right={{ id: 'start', label: 'Start' }} />
       {Boolean(data.exitCondition) && (
         <div className="truncate px-3 pb-1 text-[10px] text-orange-100/80" title={String(data.exitCondition)}>
           exit: {String(data.exitCondition)}

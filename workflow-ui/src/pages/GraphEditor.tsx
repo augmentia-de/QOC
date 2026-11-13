@@ -55,6 +55,7 @@ const nodeTypes: NodeTypes = {
   llm_summarize: LlmSummarizeNode,
   compact: CompactNode,
   mcp_call: McpCallNode,
+  rest_call: McpCallNode,
 };
 
 const elk = new ELK();
@@ -131,6 +132,7 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
     if (workflowId) {
       WorkflowApi.get(workflowId).then((res) => {
         const def = res.data;
+        try { localStorage.setItem('qoc:lastWorkflowId', workflowId); } catch {}
         if (def.nodes && Array.isArray(def.nodes) && def.nodes.length > 0) {
           const rfNodes = toFlowNodes(def.nodes);
           const rfEdges = normalizeEdgeHandles(rfNodes, toFlowEdges(def.edges || []));
@@ -142,6 +144,26 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
         setLoading(false);
       }).catch(() => setLoading(false));
       return;
+    }
+    // Standalone editor: reopen the last workflow instead of showing an empty graph.
+    if (!workflowId && (!nodesJson || !Array.isArray(nodesJson) || nodesJson.length === 0)) {
+      let remembered = null;
+      try { remembered = localStorage.getItem('qoc:lastWorkflowId'); } catch {}
+      if (remembered) {
+        WorkflowApi.get(remembered).then((res) => {
+          const def = res.data;
+          if (def.nodes && Array.isArray(def.nodes) && def.nodes.length > 0) {
+            const rfNodes = toFlowNodes(def.nodes);
+            const rfEdges = normalizeEdgeHandles(rfNodes, toFlowEdges(def.edges || []));
+            nodesRef.current = rfNodes;
+            edgesRef.current = rfEdges;
+            setNodes(rfNodes);
+            setEdges(rfEdges);
+          }
+          setLoading(false);
+        }).catch(() => setLoading(false));
+        return;
+      }
     }
     const jsonStr = JSON.stringify(nodesJson);
     if (jsonStr === prevNodesJson.current) return;
@@ -373,6 +395,7 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
     { label: '+ LLM Sum', type: 'llm_summarize', color: 'bg-indigo-700', data: { title: 'LLM Summarize', defaultTarget: '' } },
     { label: '+ Compact', type: 'compact', color: 'bg-emerald-700', data: { title: 'Compact', defaultTarget: '', mcpArgs: { mode: 'truncate', maxChars: 4000 } } },
     { label: '+ MCP Call', type: 'mcp_call', color: 'bg-fuchsia-700', data: { title: 'MCP Call', mcpServer: '', mcpTool: '', mcpArgs: {} } },
+    { label: '+ REST Call', type: 'rest_call', color: 'bg-cyan-700', data: { title: 'REST Call', mcpArgs: { url: '', method: 'GET', headers: {}, body: null } } },
     { label: '+ End', type: 'end', color: 'bg-gray-600', data: { title: 'End' } },
   ];
 
@@ -382,7 +405,7 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
     try {
       let wf;
       try { wf = await WorkflowApi.get(id); } catch { wf = await WorkflowApi.create(id); }
-      const converted = toDefinitionGraph(nodesRef.current, edgesRef.current);
+      const converted = toDefinitionGraph(nodes, edges);
       const updated = { ...wf.data, nodes: converted.nodes, edges: converted.edges };
       await WorkflowApi.save(id, updated as any);
       alert('Gespeichert: ' + id);
@@ -395,7 +418,7 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
     try {
       let wf;
       try { wf = await WorkflowApi.get(id); } catch { wf = await WorkflowApi.create(id); }
-      const converted = toDefinitionGraph(nodesRef.current, edgesRef.current);
+      const converted = toDefinitionGraph(nodes, edges);
       const updated = { ...wf.data, nodes: converted.nodes, edges: converted.edges };
       await WorkflowApi.save(id, updated as any);
       const res = await WorkflowApi.run(updated as any, 'Hello');

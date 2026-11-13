@@ -448,6 +448,8 @@ export function PropertyPanel({
   };
 
   const mcpServer = draftString('mcpServer');
+  const mcpTool = draftString('mcpTool');
+  const selectedMcpTool = mcpTools.find((t) => t.name === mcpTool);
   const mcpArgsValid = useMemo(() => {
     try {
       JSON.parse(mcpArgsText.trim() || '{}');
@@ -577,11 +579,11 @@ export function PropertyPanel({
     if (!selectedNode) return;
 
     let mcpArgs = draft.mcpArgs;
-    if (selectedNode.type === 'mcp_call') {
+    if (selectedNode.type === 'mcp_call' || selectedNode.type === 'rest_call') {
       try {
         mcpArgs = mcpArgsText.trim() ? JSON.parse(mcpArgsText) : {};
       } catch {
-        alert('MCP Args ist kein gültiges JSON.');
+        alert('Args ist kein gültiges JSON.');
         return;
       }
     }
@@ -592,7 +594,7 @@ export function PropertyPanel({
       agentRef,
       requiresHumanApproval: requiresHITL,
     };
-    if (selectedNode.type === 'mcp_call') nodeData.mcpArgs = mcpArgs;
+    if (selectedNode.type === 'mcp_call' || selectedNode.type === 'rest_call') nodeData.mcpArgs = mcpArgs;
 
     onUpdate(selectedNode.id, nodeData);
     if (selectedNode.type === 'agent' && onAgentChange) {
@@ -956,6 +958,26 @@ export function PropertyPanel({
             emptyLabel="– Workflow –"
             hint={workflows.length === 0 ? 'Keine Workflows geladen.' : undefined}
           />
+          <div className="mb-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={Boolean(draft.jsonOutput ?? false)}
+                onChange={(event) => {
+                  updateField('jsonOutput', event.target.checked);
+                  markDirty();
+                }}
+              />
+              JSON Output (structured)
+            </label>
+          </div>
+          <div className="mb-3">
+            <SchemaSource
+              value={(draft.responseSchema as Record<string, unknown> | null) ?? null}
+              onChange={(schema) => updateField('responseSchema', schema)}
+              disabled={false}
+            />
+          </div>
         </div>
       )}
 
@@ -983,16 +1005,6 @@ export function PropertyPanel({
               placeholder="contains:done oder status == 'SUCCESS'"
             />
           </div>
-          <CheckboxList
-            label="Body Steps"
-            options={nodeOptions.map((node) => ({
-              value: node.id,
-              label: `${node.id} (${node.type})`,
-            }))}
-            values={draftList('bodySteps').map(String)}
-            onChange={(values) => updateField('bodySteps', values)}
-            hint="Die Nodes werden pro Iteration in dieser Reihenfolge ausgeführt."
-          />
         </div>
       )}
 
@@ -1140,6 +1152,26 @@ export function PropertyPanel({
               }}
               className="h-16 w-full rounded bg-gray-700 px-2 py-1 text-sm"
               placeholder="Summarize the following:"
+            />
+          </div>
+          <div className="mb-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={Boolean(draft.jsonOutput ?? true)}
+                onChange={(event) => {
+                  updateField('jsonOutput', event.target.checked);
+                  markDirty();
+                }}
+              />
+              JSON Output (structured)
+            </label>
+          </div>
+          <div className="mb-3">
+            <SchemaSource
+              value={(draft.responseSchema as Record<string, unknown> | null) ?? null}
+              onChange={(schema) => updateField('responseSchema', schema)}
+              disabled={false}
             />
           </div>
         </div>
@@ -1313,6 +1345,37 @@ export function PropertyPanel({
                 : undefined
             }
           />
+          {selectedMcpTool?.inputSchema && (
+            <div className="mb-3 rounded bg-gray-800 p-2 text-xs">
+              <div className="mb-1 font-semibold text-gray-300">
+                Schema: {selectedMcpTool.name}
+              </div>
+              <pre className="overflow-auto text-gray-400">
+                {JSON.stringify(selectedMcpTool.inputSchema, null, 2)}
+              </pre>
+              <button
+                type="button"
+                className="mt-2 rounded bg-gray-600 px-2 py-1 text-xs"
+                onClick={() => {
+                  const schema = selectedMcpTool.inputSchema as Record<string, unknown>;
+                  const props = (schema?.properties ?? {}) as Record<string, unknown>;
+                  const template: Record<string, unknown> = {};
+                  for (const key of Object.keys(props)) {
+                    const p = props[key] as Record<string, unknown>;
+                    if (p?.type === 'string') template[key] = `\${node_1.output.${key}}`;
+                    else if (p?.type === 'number' || p?.type === 'integer') template[key] = 0;
+                    else if (p?.type === 'boolean') template[key] = false;
+                    else if (p?.type === 'array') template[key] = [];
+                    else if (p?.type === 'object') template[key] = {};
+                    else template[key] = null;
+                  }
+                  handleMcpArgsChange(JSON.stringify(template, null, 2));
+                }}
+              >
+                Template aus Schema generieren
+              </button>
+            </div>
+          )}
           <div className="mb-3">
             <FieldLabel>Args (JSON)</FieldLabel>
             <textarea
@@ -1328,6 +1391,30 @@ export function PropertyPanel({
             )}
             <p className="mt-1 text-xs text-gray-500">
               Data-Piping: ${'node_id.output.field'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {selectedNode.type === 'rest_call' && (
+        <div className="mb-4 border-t border-gray-700 pt-4">
+          <h4 className="mb-2 text-sm font-semibold">REST Call Config</h4>
+          <div className="mb-3">
+            <FieldLabel>Config (JSON)</FieldLabel>
+            <textarea
+              value={mcpArgsText}
+              onChange={(event) => handleMcpArgsChange(event.target.value)}
+              className={`h-32 w-full rounded bg-gray-700 px-2 py-1 font-mono text-sm ${
+                mcpArgsValid ? '' : 'border-2 border-red-500'
+              }`}
+              placeholder='{"url": "https://api.example.com/items/${node_1.output.id}", "method": "GET", "headers": {"Authorization": "Bearer ${token}"}, "body": {"name": "${node_1.output.name}"}}'
+            />
+            {!mcpArgsValid && (
+              <p className="mt-1 text-xs text-red-400">Ungültiges JSON — Speichern ist blockiert.</p>
+            )}
+            <p className="mt-1 text-xs text-gray-500">
+              Felder: url, method (GET/POST/PUT/PATCH/DELETE), headers (Objekt), body (Objekt/String).
+              Data-Piping: ${'node_id.output.field'}, ${'lastResult'}, ${'state.key'}
             </p>
           </div>
         </div>

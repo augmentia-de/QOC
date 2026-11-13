@@ -13,7 +13,7 @@ public class GraphCompiler {
 
     private static final Set<String> VALID_NODE_TYPES = Set.of(
             "agent", "start", "decision", "loop", "fork", "join", "hitl", "subworkflow", "end",
-            "llm_eval", "llm_summarize", "mcp_call", "context_agent_executor", "compact",
+            "llm_eval", "llm_summarize", "mcp_call", "rest_call", "context_agent_executor", "compact",
             "guard", "inject");
 
     /** Knotentypen, die einen Agenten (agentRef) benötigen. */
@@ -91,12 +91,8 @@ public class GraphCompiler {
             }
         }
 
-        // Check for cycles
-        try {
-            TopologicalSort.sort(def);
-        } catch (IllegalStateException e) {
-            errors.add("Cycle detected in workflow graph");
-        }
+        // Zyklen sind fuer edge-basierte Loops erlaubt; die Ausfuehrung wird
+        // durch das globale Step-Limit und den Circuit-Breaker begrenzt.
 
         // Check for exactly one end node
         long endCount = def.nodes().stream().filter(n -> "end".equals(n.type())).count();

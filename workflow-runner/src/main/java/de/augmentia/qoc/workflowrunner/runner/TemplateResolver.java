@@ -18,7 +18,7 @@ public final class TemplateResolver {
 
 
     private static final Pattern TEMPLATE_PATTERN =
-            Pattern.compile("\\$\\{([a-zA-Z0-9_]+)\\.output(\\.([a-zA-Z0-9_.]+))?\\}");
+            Pattern.compile("\\$\\{([a-zA-Z0-9_]+)(?:\\.output(\\.([a-zA-Z0-9_.]+))?)?\\}");
 
     private TemplateResolver() {}
 
@@ -35,20 +35,25 @@ public final class TemplateResolver {
         StringBuffer sb = new StringBuffer();
 
         while (matcher.find()) {
-            String targetNodeId = matcher.group(1);
+            String target = matcher.group(1);
             String propertyPath = matcher.group(3);
-            Object previousOutput = ctx.getNodeOutput(targetNodeId);
-
-            if (previousOutput == null) {
-                matcher.appendReplacement(sb, "null");
-                continue;
-            }
 
             Object resolved;
-            if (propertyPath == null || propertyPath.isEmpty()) {
-                resolved = previousOutput;
+            if ("lastResult".equals(target)) {
+                resolved = ctx.getState("lastResult");
+            } else if ("state".equals(target) && propertyPath != null && !propertyPath.isEmpty()) {
+                resolved = ctx.getState(propertyPath);
             } else {
-                resolved = resolveNestedProperty(previousOutput, propertyPath);
+                Object previousOutput = ctx.getNodeOutput(target);
+                if (previousOutput == null) {
+                    matcher.appendReplacement(sb, "null");
+                    continue;
+                }
+                if (propertyPath == null || propertyPath.isEmpty()) {
+                    resolved = previousOutput;
+                } else {
+                    resolved = resolveNestedProperty(previousOutput, propertyPath);
+                }
             }
 
             String replacement = resolved != null ? resolved.toString() : "null";
@@ -88,9 +93,15 @@ public final class TemplateResolver {
         if (template == null) return null;
         Matcher matcher = TEMPLATE_PATTERN.matcher(template.trim());
         if (matcher.matches()) {
-            String targetNodeId = matcher.group(1);
+            String target = matcher.group(1);
             String propertyPath = matcher.group(3);
-            Object previousOutput = ctx.getNodeOutput(targetNodeId);
+            if ("lastResult".equals(target)) {
+                return ctx.getState("lastResult");
+            }
+            if ("state".equals(target) && propertyPath != null && !propertyPath.isEmpty()) {
+                return ctx.getState(propertyPath);
+            }
+            Object previousOutput = ctx.getNodeOutput(target);
             if (previousOutput == null) return null;
             if (propertyPath == null || propertyPath.isEmpty()) return previousOutput;
             return resolveNestedProperty(previousOutput, propertyPath);

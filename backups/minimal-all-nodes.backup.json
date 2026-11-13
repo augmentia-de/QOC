@@ -1,0 +1,888 @@
+{
+  "id": "minimal-all-nodes",
+  "name": "Minimal All Node Types",
+  "version": "1.0.0",
+  "status": "draft",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "title": "Start",
+        "agentRef": "",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": null,
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "plan-1",
+      "type": "agent",
+      "position": {
+        "x": 200,
+        "y": 0
+      },
+      "data": {
+        "title": "Plan Agent",
+        "agentRef": "plan",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "OK",
+                "NEEDS_WORK"
+              ]
+            },
+            "summary": {
+              "type": "string"
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "number": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "status",
+            "summary"
+          ]
+        },
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": true
+      }
+    },
+    {
+      "id": "ctx-1",
+      "type": "context_agent_executor",
+      "position": {
+        "x": 400,
+        "y": 0
+      },
+      "data": {
+        "title": "Context Agent",
+        "agentRef": "plan",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "OK",
+                "NEEDS_WORK"
+              ]
+            },
+            "summary": {
+              "type": "string"
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "number": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "status",
+            "summary"
+          ]
+        },
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {
+          "contextMode": "focused",
+          "contextRefs": [
+            "plan-1"
+          ]
+        },
+        "jsonOutput": true
+      }
+    },
+    {
+      "id": "decision-1",
+      "type": "decision",
+      "position": {
+        "x": 600,
+        "y": 0
+      },
+      "data": {
+        "title": "Decision",
+        "agentRef": "",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [
+          {
+            "branchId": "ok",
+            "condition": "status == 'OK'",
+            "target": "fork-1"
+          },
+          {
+            "branchId": "work",
+            "condition": "status == 'NEEDS_WORK'",
+            "target": "hitl-1"
+          }
+        ],
+        "defaultTarget": "fork-1",
+        "workflowRef": "",
+        "responseSchema": null,
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "hitl-1",
+      "type": "hitl",
+      "position": {
+        "x": 800,
+        "y": 120
+      },
+      "data": {
+        "title": "HITL Review",
+        "agentRef": "",
+        "requiresHumanApproval": true,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": null,
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "fork-1",
+      "type": "fork",
+      "position": {
+        "x": 800,
+        "y": 0
+      },
+      "data": {
+        "title": "Fork",
+        "agentRef": "",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": null,
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "worker-a",
+      "type": "agent",
+      "position": {
+        "x": 1000,
+        "y": -100
+      },
+      "data": {
+        "title": "Worker A",
+        "agentRef": "simple-number",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "number"
+          ]
+        },
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": true
+      }
+    },
+    {
+      "id": "worker-b",
+      "type": "agent",
+      "position": {
+        "x": 1000,
+        "y": 100
+      },
+      "data": {
+        "title": "Worker B",
+        "agentRef": "simple-number",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "number"
+          ]
+        },
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": true
+      }
+    },
+    {
+      "id": "join-1",
+      "type": "join",
+      "position": {
+        "x": 1200,
+        "y": 0
+      },
+      "data": {
+        "title": "Join",
+        "agentRef": "",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": null,
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "loop-1",
+      "type": "loop",
+      "position": {
+        "x": 1400,
+        "y": 0
+      },
+      "data": {
+        "title": "Loop",
+        "agentRef": "",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 2,
+        "exitCondition": "status == 'OK'",
+        "bodySteps": [
+          "loop-step-1",
+          "loop-step-2"
+        ],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": null,
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "worker-loop",
+      "type": "agent",
+      "position": {
+        "x": 1400,
+        "y": 120
+      },
+      "data": {
+        "title": "Loop Worker",
+        "agentRef": "simple-number",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "number"
+          ]
+        },
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": true
+      }
+    },
+    {
+      "id": "llm-eval-1",
+      "type": "llm_eval",
+      "position": {
+        "x": 1600,
+        "y": 0
+      },
+      "data": {
+        "title": "Evaluate: {{lastResult}}",
+        "agentRef": "",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "OK",
+                "NEEDS_WORK"
+              ]
+            },
+            "summary": {
+              "type": "string"
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "number": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "status",
+            "summary"
+          ]
+        },
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "llm-sum-1",
+      "type": "llm_summarize",
+      "position": {
+        "x": 1800,
+        "y": 0
+      },
+      "data": {
+        "title": "Summarize: {{lastResult}}",
+        "agentRef": "",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": null,
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "compact-1",
+      "type": "compact",
+      "position": {
+        "x": 2000,
+        "y": 0
+      },
+      "data": {
+        "title": "Compact",
+        "agentRef": "",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": null,
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "mcp-1",
+      "type": "mcp_call",
+      "position": {
+        "x": 2200,
+        "y": 0
+      },
+      "data": {
+        "title": "MCP Call",
+        "agentRef": "",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": null,
+        "mcpServer": "demo",
+        "mcpTool": "ping",
+        "mcpArgs": {
+          "x": 1
+        },
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "rest-1",
+      "type": "rest_call",
+      "position": {
+        "x": 2400,
+        "y": 0
+      },
+      "data": {
+        "title": "REST Call",
+        "agentRef": "",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": null,
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {
+          "url": "https://example.com",
+          "method": "GET"
+        },
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "subwf-1",
+      "type": "subworkflow",
+      "position": {
+        "x": 2600,
+        "y": 0
+      },
+      "data": {
+        "title": "Subworkflow",
+        "agentRef": "",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": null,
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "position": {
+        "x": 2800,
+        "y": 0
+      },
+      "data": {
+        "title": "End",
+        "agentRef": "",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": null,
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": null
+      }
+    },
+    {
+      "id": "loop-step-1",
+      "type": "agent",
+      "position": {
+        "x": 1400,
+        "y": 220
+      },
+      "data": {
+        "title": "Loop Step 1",
+        "agentRef": "simple-number",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "number"
+          ]
+        },
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": true
+      }
+    },
+    {
+      "id": "loop-step-2",
+      "type": "agent",
+      "position": {
+        "x": 1580,
+        "y": 220
+      },
+      "data": {
+        "title": "Loop Step 2",
+        "agentRef": "simple-number",
+        "requiresHumanApproval": false,
+        "assignee": "human",
+        "maxIterations": 3,
+        "exitCondition": "",
+        "bodySteps": [],
+        "joinType": "all",
+        "joinN": null,
+        "branches": [],
+        "defaultTarget": "",
+        "workflowRef": "",
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "number"
+          ]
+        },
+        "mcpServer": "",
+        "mcpTool": "",
+        "mcpArgs": {},
+        "jsonOutput": true
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "plan-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e2",
+      "source": "plan-1",
+      "target": "ctx-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e3",
+      "source": "ctx-1",
+      "target": "decision-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e4",
+      "source": "decision-1",
+      "target": "fork-1",
+      "type": "default",
+      "condition": "status == 'OK'",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e5",
+      "source": "decision-1",
+      "target": "hitl-1",
+      "type": "default",
+      "condition": "status == 'NEEDS_WORK'",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e6",
+      "source": "hitl-1",
+      "target": "end",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e7",
+      "source": "fork-1",
+      "target": "worker-a",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e8",
+      "source": "fork-1",
+      "target": "worker-b",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e9",
+      "source": "worker-a",
+      "target": "join-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e10",
+      "source": "worker-b",
+      "target": "join-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e11",
+      "source": "join-1",
+      "target": "loop-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e12",
+      "source": "loop-1",
+      "target": "llm-eval-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e13",
+      "source": "llm-eval-1",
+      "target": "llm-sum-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e14",
+      "source": "llm-sum-1",
+      "target": "compact-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e15",
+      "source": "compact-1",
+      "target": "mcp-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e16",
+      "source": "mcp-1",
+      "target": "rest-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e17",
+      "source": "rest-1",
+      "target": "subwf-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "e18",
+      "source": "subwf-1",
+      "target": "end",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    },
+    {
+      "id": "eL1",
+      "source": "loop-1",
+      "target": "loop-step-1",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "loop",
+      "targetHandle": ""
+    },
+    {
+      "id": "eL2",
+      "source": "loop-step-1",
+      "target": "loop-step-2",
+      "type": "default",
+      "condition": "",
+      "sourceHandle": "",
+      "targetHandle": ""
+    }
+  ],
+  "agents": [],
+  "ownerId": "local",
+  "systemPrompt": "Meaningful example covering all UI node types."
+}

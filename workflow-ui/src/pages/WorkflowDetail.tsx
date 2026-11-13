@@ -142,19 +142,30 @@ export default function WorkflowDetail() {
 
       {tab === 'graph' && (
         <div className="shrink-0 rounded border border-gray-700 bg-gray-800 p-3">
-          <label className="mb-1 block text-xs font-semibold text-gray-400">
-            Workflow-Systemprompt (shared, cache-stabil)
+          <label className="mb-2 flex items-center gap-2 text-xs font-semibold text-gray-400">
+            <input
+              type="checkbox"
+              checked={!!(workflow.systemPrompt ?? '')}
+              onChange={(e) => {
+                const updated = { ...workflow, systemPrompt: e.target.checked ? (workflow.systemPrompt ?? '') : '' };
+                setWorkflow(updated as any);
+                setJsonText(JSON.stringify(updated, null, 2));
+              }}
+            />
+            Workflow-Systemprompt aktivieren (optional, shared, cache-stabil)
           </label>
-          <textarea
-            value={workflow.systemPrompt ?? ''}
-            onChange={(e) => {
-              const updated = { ...workflow, systemPrompt: e.target.value };
-              setWorkflow(updated as any);
-              setJsonText(JSON.stringify(updated, null, 2));
-            }}
-            className="h-24 w-full rounded bg-gray-900 p-2 font-mono text-xs"
-            placeholder="Optional: gemeinsamer Systemprompt für alle context_agent_executor-Knoten"
-          />
+          {!!(workflow.systemPrompt ?? '') && (
+            <textarea
+              value={workflow.systemPrompt ?? ''}
+              onChange={(e) => {
+                const updated = { ...workflow, systemPrompt: e.target.value };
+                setWorkflow(updated as any);
+                setJsonText(JSON.stringify(updated, null, 2));
+              }}
+              className="h-24 w-full rounded bg-gray-900 p-2 font-mono text-xs"
+              placeholder="Optional: gemeinsamer Systemprompt für alle context_agent_executor-Knoten"
+            />
+          )}
         </div>
       )}
 

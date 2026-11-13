@@ -17,6 +17,7 @@ const SINGLE_INCOMING = new Set([
   'llm_eval',
   'llm_summarize',
   'mcp_call',
+  'rest_call',
   'decision',
   'fork',
 ]);
@@ -31,6 +32,7 @@ const SINGLE_OUTGOING = new Set([
   'llm_eval',
   'llm_summarize',
   'mcp_call',
+  'rest_call',
   'join',
 ]);
 

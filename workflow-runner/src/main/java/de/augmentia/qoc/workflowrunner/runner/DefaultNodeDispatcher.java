@@ -207,26 +207,44 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 return new NodeResult("joined", merged);
             }
             case "loop" -> {
-                int maxIter = node.data().maxIterations();
-                String exitCond = node.data().exitCondition();
-                List<String> body = node.data().bodySteps();
-                for (int i = 0; i < maxIter; i++) {
-                    for (String bodyNodeId : body) {
-                        WorkflowDefinition.Node bodyNode = findNode(def, bodyNodeId);
-                        if (bodyNode != null) {
-                            dispatch(bodyNode, def, ctx, input);
-                        }
-                    }
-                    if (exitCond != null && !exitCond.isBlank() && ConditionEvaluator.matches(exitCond, ctx)) {
-                        break;
+                // Edge-basierter Loop: der Zaehler wird bei jedem Durchlauf erhoeht
+                // und als State an alle folgenden Nodes weitergegeben.
+                int maxIter = Math.max(1, node.data().maxIterations());
+                String counterKey = "loopCounter:" + node.id();
+                int counter = 0;
+                Object current = ctx.getState(counterKey);
+                if (current instanceof Number n) counter = n.intValue();
+                counter++;
+                ctx.setState(counterKey, counter);
+                ctx.setState("loopCounter", counter);
+
+                String startTarget = null;
+                String exitTarget = null;
+                for (WorkflowDefinition.Edge e : def.edges()) {
+                    if (!node.id().equals(e.source())) continue;
+                    String handle = e.sourceHandle() == null ? "" : e.sourceHandle();
+                    if ("start".equalsIgnoreCase(handle)) {
+                        startTarget = e.target();
+                    } else if ("out".equalsIgnoreCase(handle) || handle.isBlank()) {
+                        if (exitTarget == null) exitTarget = e.target();
                     }
                 }
-                // A body step (or its postGuard) may have left a dynamic nextNode
-                // override behind; the loop itself must not leak that override,
-                // otherwise the run can jump back into the loop forever.
-                ctx.setState("nextNode", null);
-                ctx.setNodeOutput(node.id(), "loop completed");
-                return new NodeResult("loop completed", null);
+                if (exitTarget == null) {
+                    for (WorkflowDefinition.Edge e : def.edges()) {
+                        if (node.id().equals(e.source())) { exitTarget = e.target(); break; }
+                    }
+                }
+
+                boolean canLoop = counter <= maxIter && startTarget != null && !startTarget.isBlank();
+                if (canLoop && (node.data().exitCondition() == null || node.data().exitCondition().isBlank()
+                        || !ConditionEvaluator.matches(node.data().exitCondition(), ctx))) {
+                    ctx.setState("nextNode", startTarget);
+                } else if (exitTarget != null && !exitTarget.isBlank()) {
+                    ctx.setState("nextNode", exitTarget);
+                }
+
+                ctx.setNodeOutput(node.id(), "loop " + counter + "/" + maxIter);
+                return new NodeResult("loop " + counter + "/" + maxIter, Map.of("counter", counter));
             }
             case "compact" -> {
                 return dispatchCompact(node, def, ctx, principal);
@@ -326,8 +344,10 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 // Resolve template strings in args
                 Map<String, Object> resolvedArgs = new HashMap<>();
                 for (Map.Entry<String, Object> e : args.entrySet()) {
-                    if (e.getValue() instanceof String s) {
-                        resolvedArgs.put(e.getKey(), TemplateResolver.resolve(s, ctx));
+                    if (e.getValue() instanceof String s && s.contains("${")) {
+                        // Preserve the original type when the whole value is a single placeholder.
+                        Object resolved = TemplateResolver.resolveToObject(s, ctx);
+                        resolvedArgs.put(e.getKey(), resolved != null ? resolved : TemplateResolver.resolve(s, ctx));
                     } else {
                         resolvedArgs.put(e.getKey(), e.getValue());
                     }
@@ -346,6 +366,52 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 Object result = de.augmentia.oc.engine.core.json.JsonValues.toJava(jsonResult);
                 ctx.setNodeOutput(node.id(), result);
                 return new NodeResult(jsonResult.toString(), result instanceof Map ? (Map<String, Object>) result : null);
+            }
+            case "rest_call" -> {
+                Map<String, Object> opts = node.data().mcpArgs() == null ? Map.of() : node.data().mcpArgs();
+                String url = str(opts.get("url"), "");
+                String method = str(opts.get("method"), "GET").toUpperCase(java.util.Locale.ROOT);
+                Map<String, Object> headers = mapOpt(opts.get("headers"));
+                Object body = opts.get("body");
+                // Template-Resolution
+                url = TemplateResolver.resolve(url, ctx);
+                Map<String, String> resolvedHeaders = new java.util.LinkedHashMap<>();
+                for (Map.Entry<String, Object> h : headers.entrySet()) {
+                    Object v = h.getValue();
+                    resolvedHeaders.put(h.getKey(), v instanceof String str ? TemplateResolver.resolve(str, ctx) : String.valueOf(v));
+                }
+                Object resolvedBody = body;
+                if (body instanceof String bstr) resolvedBody = TemplateResolver.resolve(bstr, ctx);
+
+                if (url == null || url.isBlank()) {
+                    ctx.setNodeOutput(node.id(), "rest_call: no url");
+                    return new NodeResult("rest_call: no url", null);
+                }
+                try {
+                    java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+                    java.net.http.HttpRequest.Builder rb = java.net.http.HttpRequest.newBuilder(java.net.URI.create(url));
+                    for (Map.Entry<String, String> h : resolvedHeaders.entrySet()) {
+                        rb.header(h.getKey(), h.getValue());
+                    }
+                    java.net.http.HttpRequest request;
+                    if ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method)) {
+                        String bodyStr = resolvedBody == null ? "" : (resolvedBody instanceof String s ? s : toJson(resolvedBody));
+                        rb.method(method, java.net.http.HttpRequest.BodyPublishers.ofString(bodyStr));
+                        if (!resolvedHeaders.containsKey("Content-Type")) rb.header("Content-Type", "application/json");
+                    } else {
+                        rb.method(method, java.net.http.HttpRequest.BodyPublishers.noBody());
+                    }
+                    java.net.http.HttpResponse<String> resp = client.send(rb.build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+                    Object parsed = tryParseJson(resp.body());
+                    Map<String, Object> result = new java.util.LinkedHashMap<>();
+                    result.put("status", resp.statusCode());
+                    result.put("body", parsed != null ? parsed : resp.body());
+                    ctx.setNodeOutput(node.id(), result);
+                    return new NodeResult("rest_call " + resp.statusCode(), result);
+                } catch (Exception e) {
+                    ctx.setNodeOutput(node.id(), "rest_call error: " + e.getMessage());
+                    return new NodeResult("rest_call error: " + e.getMessage(), null);
+                }
             }
             case "end" -> {
                 ctx.setNodeOutput(node.id(), "done");
@@ -845,5 +911,25 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
             return Arrays.stream(s.split(",")).map(String::trim).filter(t -> !t.isEmpty()).toList();
         }
         return List.of();
+    }
+
+    private static String toJson(Object o) {
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(o);
+        } catch (Exception e) {
+            return String.valueOf(o);
+        }
+    }
+
+    private static Object tryParseJson(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        if (t.isEmpty()) return null;
+        if (!(t.startsWith("{") || t.startsWith("["))) return null;
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().readValue(t, Object.class);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
