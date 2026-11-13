@@ -148,6 +148,14 @@ public final class ContextBuilder {
                             ToolSnapshot tools, Seq afterSeq, int step,
                             Option<Choice> forcedChoice, Option<String> query,
                             SkillSelection selection) {
+        return prepare(session, agent, model, tools, afterSeq, step, forcedChoice, query, selection,
+                Option.none());
+    }
+
+    public Prepared prepare(SessionInfo session, AgentProfile agent, ModelInfo model,
+                            ToolSnapshot tools, Seq afterSeq, int step,
+                            Option<Choice> forcedChoice, Option<String> query,
+                            SkillSelection selection, Option<String> promptCacheKey) {
         if (session == null || agent == null || model == null || tools == null) {
             throw new IllegalArgumentException("context inputs must not be null");
         }
@@ -189,7 +197,9 @@ public final class ContextBuilder {
             toolChoice = Option.some(new Choice.None());
         }
 
-        String affinity = CacheAffinity.affinity(session.id(), Option.none(), Option.none());
+        String affinity = (promptCacheKey != null && promptCacheKey.isPresent() && !promptCacheKey.orElseThrow().isBlank())
+                ? promptCacheKey.orElseThrow()
+                : CacheAffinity.affinity(session.id(), Option.none(), Option.none());
         Map<String, String> headers = new LinkedHashMap<>(CacheAffinity.headers(affinity));
         headers.put("X-Project-Id", session.projectId().value());
 

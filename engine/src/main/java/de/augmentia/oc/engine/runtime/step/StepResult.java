@@ -41,6 +41,9 @@ public sealed interface StepResult {
         }
     }
 
+    /** Explicit completion of a workflow run. Replaces the implicit empty-events signal. */
+    record WorkflowDone() implements StepResult {}
+
     record ToolCallOutcome(ToolCall call, ToolOutcome outcome) {
         public ToolCallOutcome {
             if (call == null || outcome == null) {

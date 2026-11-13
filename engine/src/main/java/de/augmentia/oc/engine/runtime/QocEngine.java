@@ -120,6 +120,9 @@ public static record EngineConfig(
     private int workflowMaxSteps = 100;
     private de.augmentia.oc.engine.runtime.resilience.PreflightChecker.PreflightContext preflightContext;
 
+    /** Loop mode of a single {@link #runPrompt} invocation. */
+    private enum LoopMode { AGENT, WORKFLOW }
+
     /**
      * Hook for interactive turn boundaries: asks the user a yes/no question
      * ("continue working?") and returns the answer. Implemented by the outer
@@ -568,9 +571,14 @@ public static record EngineConfig(
             de.augmentia.oc.engine.core.contract.tool.ToolSnapshot toolSnapshot,
             de.augmentia.oc.engine.runtime.context.ContextBuilder contextBuilder,
             de.augmentia.oc.engine.runtime.skill.SkillSelection skillSelection,
-            boolean compactionEnabled
+            boolean compactionEnabled,
+            de.augmentia.oc.engine.core.model.Option<String> promptCacheKey
     ) {
-        /** Backwards-compatible: compaction enabled by default. */
+        public ExecutionOverrides {
+            if (promptCacheKey == null) promptCacheKey = de.augmentia.oc.engine.core.model.Option.none();
+        }
+
+        /** Backwards-compatible: compaction enabled by default, no cache key. */
         public ExecutionOverrides(
                 de.augmentia.oc.engine.runtime.context.AgentProfile agentProfile,
                 de.augmentia.oc.engine.core.contract.provider.ModelInfo modelInfo,
@@ -579,7 +587,20 @@ public static record EngineConfig(
                 de.augmentia.oc.engine.runtime.context.ContextBuilder contextBuilder,
                 de.augmentia.oc.engine.runtime.skill.SkillSelection skillSelection) {
             this(agentProfile, modelInfo, step, toolSnapshot, contextBuilder,
-                 skillSelection, true);
+                 skillSelection, true, de.augmentia.oc.engine.core.model.Option.none());
+        }
+
+        /** Backwards-compatible: explicit compaction flag, no cache key. */
+        public ExecutionOverrides(
+                de.augmentia.oc.engine.runtime.context.AgentProfile agentProfile,
+                de.augmentia.oc.engine.core.contract.provider.ModelInfo modelInfo,
+                de.augmentia.oc.engine.runtime.step.Step step,
+                de.augmentia.oc.engine.core.contract.tool.ToolSnapshot toolSnapshot,
+                de.augmentia.oc.engine.runtime.context.ContextBuilder contextBuilder,
+                de.augmentia.oc.engine.runtime.skill.SkillSelection skillSelection,
+                boolean compactionEnabled) {
+            this(agentProfile, modelInfo, step, toolSnapshot, contextBuilder,
+                 skillSelection, compactionEnabled, de.augmentia.oc.engine.core.model.Option.none());
         }
     }
 
@@ -695,7 +716,14 @@ public static record EngineConfig(
             return de.augmentia.oc.engine.core.model.EngineResult.failed(
                     "session is already being executed: " + session.value(), false);
         }
-        boolean workflowMode = (workflowStepProvider != null && workflowContext != null);
+        if ((workflowStepProvider == null) != (workflowContext == null)) {
+            stores.claims().release(session);
+            return de.augmentia.oc.engine.core.model.EngineResult.failed(
+                    "workflowStepProvider and workflowContext must be provided together", false);
+        }
+        LoopMode loopMode = (workflowStepProvider != null && workflowContext != null)
+                ? LoopMode.WORKFLOW : LoopMode.AGENT;
+        boolean workflowMode = loopMode == LoopMode.WORKFLOW;
         boolean overridesPreflight = overrides != null && overrides.step() != null;
         // Preflight checks (skip in workflow mode and when the outer engine
         // already ran them with its full provider context)
@@ -819,6 +847,7 @@ public static record EngineConfig(
             int maxRetries = 2;
             int totalToolCalls = 0;
             long totalTokens = 0;
+            boolean workflowDone = false;
             java.time.Instant turnStarted = clock.now();
             java.util.List<de.augmentia.oc.engine.core.contract.tool.ToolCall> recentToolCalls = new java.util.ArrayList<>();
             de.augmentia.oc.engine.runtime.resilience.LoopDetector loopDetector = new de.augmentia.oc.engine.runtime.resilience.LoopDetector.Default();
@@ -876,9 +905,13 @@ public static record EngineConfig(
                             ? activeContextBuilder.prepare(info, agent, model, runSnapshot,
                                     de.augmentia.oc.engine.core.model.Seq.zero(), stepNo,
                                     de.augmentia.oc.engine.core.model.Option.none(),
-                                    de.augmentia.oc.engine.core.model.Option.none(), selection)
+                                    de.augmentia.oc.engine.core.model.Option.none(), selection,
+                                    overrides == null ? de.augmentia.oc.engine.core.model.Option.none() : overrides.promptCacheKey())
                             : activeContextBuilder.prepare(info, agent, model, runSnapshot,
-                                    de.augmentia.oc.engine.core.model.Seq.zero(), stepNo);
+                                    de.augmentia.oc.engine.core.model.Seq.zero(), stepNo,
+                                    de.augmentia.oc.engine.core.model.Option.none(),
+                                    de.augmentia.oc.engine.core.model.Option.none(), null,
+                                    overrides == null ? de.augmentia.oc.engine.core.model.Option.none() : overrides.promptCacheKey());
 
                     de.augmentia.oc.engine.core.contract.tool.ToolContext toolContext =
                             new de.augmentia.oc.engine.core.contract.tool.ToolContext(
@@ -909,9 +942,13 @@ public static record EngineConfig(
                             ? activeContextBuilder.prepare(info, agent, model, runSnapshot,
                                     de.augmentia.oc.engine.core.model.Seq.zero(), stepNo,
                                     de.augmentia.oc.engine.core.model.Option.none(),
-                                    de.augmentia.oc.engine.core.model.Option.none(), selection)
+                                    de.augmentia.oc.engine.core.model.Option.none(), selection,
+                                    overrides == null ? de.augmentia.oc.engine.core.model.Option.none() : overrides.promptCacheKey())
                             : activeContextBuilder.prepare(info, agent, model, runSnapshot,
-                                    de.augmentia.oc.engine.core.model.Seq.zero(), stepNo);
+                                    de.augmentia.oc.engine.core.model.Seq.zero(), stepNo,
+                                    de.augmentia.oc.engine.core.model.Option.none(),
+                                    de.augmentia.oc.engine.core.model.Option.none(), null,
+                                    overrides == null ? de.augmentia.oc.engine.core.model.Option.none() : overrides.promptCacheKey());
                     de.augmentia.oc.engine.core.contract.tool.ToolContext toolContext =
                             new de.augmentia.oc.engine.core.contract.tool.ToolContext(
                                     session, info.agent(),
@@ -919,6 +956,17 @@ public static record EngineConfig(
                                     de.augmentia.oc.engine.core.model.CallId.create(),
                                     null, principal, toolTokenService);
                     result = runStep.run(prepared, toolContext, liveSink);
+                }
+
+                if (result instanceof de.augmentia.oc.engine.runtime.step.StepResult.WorkflowDone) {
+                    workflowDone = true;
+                    break;
+                }
+                if (workflowMode && result instanceof de.augmentia.oc.engine.runtime.step.StepResult.NeedsCompaction) {
+                    stores.claims().release(session);
+                    return de.augmentia.oc.engine.core.model.EngineResult.failed(
+                            "Workflow step requested compaction; insert a compact node before the context agent",
+                            false);
                 }
 
                 if (result instanceof de.augmentia.oc.engine.runtime.step.StepResult.Paused paused) {
@@ -1105,10 +1153,9 @@ public static record EngineConfig(
                     totalToolCalls += finished.toolCalls().size();
                     totalTokens += finished.usage().total();
                     if (workflowMode) {
-                        // In workflow mode: continue if events present (node executed), break if empty (DONE)
-                        if (finished.events().isEmpty()) {
-                            break;
-                        }
+                        // Workflow mode never runs TurnPolicy or a forced final LLM step.
+                        stepNo++;
+                        continue;
                     } else {
                         if (!hasToolCalls) {
                             break;
@@ -1146,11 +1193,14 @@ public static record EngineConfig(
                                     de.augmentia.oc.engine.core.model.Seq.zero(), stepNo,
                                     de.augmentia.oc.engine.core.model.Option.some(
                                             new de.augmentia.oc.engine.core.contract.provider.Choice.None()),
-                                    de.augmentia.oc.engine.core.model.Option.none(), selection)
+                                    de.augmentia.oc.engine.core.model.Option.none(), selection,
+                                    overrides == null ? de.augmentia.oc.engine.core.model.Option.none() : overrides.promptCacheKey())
                             : activeContextBuilder.prepare(info, agent, model, runSnapshot,
                                     de.augmentia.oc.engine.core.model.Seq.zero(), stepNo,
                                     de.augmentia.oc.engine.core.model.Option.some(
-                                            new de.augmentia.oc.engine.core.contract.provider.Choice.None()));
+                                            new de.augmentia.oc.engine.core.contract.provider.Choice.None()),
+                                    de.augmentia.oc.engine.core.model.Option.none(), null,
+                                    overrides == null ? de.augmentia.oc.engine.core.model.Option.none() : overrides.promptCacheKey());
                     de.augmentia.oc.engine.core.contract.tool.ToolContext finalToolContext =
                             new de.augmentia.oc.engine.core.contract.tool.ToolContext(
                                     session, info.agent(),
@@ -1222,6 +1272,12 @@ public static record EngineConfig(
                 }
             }
 
+            if (workflowMode && !workflowDone) {
+                stores.claims().release(session);
+                return de.augmentia.oc.engine.core.model.EngineResult.failed(
+                        "Workflow exceeded max steps (" + workflowMaxSteps + ") without WorkflowDone", false);
+            }
+
             String answer = sb.toString();
             if (answer.isBlank()) answer = "(no response)";
             try {
@@ -1249,6 +1305,10 @@ public static record EngineConfig(
         } finally {
             stores.claims().release(session);
         }
+    }
+
+    public de.augmentia.oc.engine.core.contract.provider.ModelInfo resolveModelInfo(AgentConfig config) {
+        return buildModelInfo(config);
     }
 
     private de.augmentia.oc.engine.core.contract.provider.ModelInfo buildModelInfo(AgentConfig config) {
