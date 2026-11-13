@@ -151,7 +151,9 @@ public record WorkflowDefinition(
             String systemPrompt,
             Map<String, Object> responseSchema,
             String ownerId,
-            List<String> rolesAllowed
+            List<String> rolesAllowed,
+            String mode,
+            List<String> skills
     ) {
         public Agent {
             if (id == null) id = "";
@@ -168,6 +170,9 @@ public record WorkflowDefinition(
             if (ownerId == null) ownerId = "";
             if (rolesAllowed == null || rolesAllowed.isEmpty()) rolesAllowed = List.of("*");
             else rolesAllowed = List.copyOf(rolesAllowed);
+            if (mode == null || mode.isBlank()) mode = "all";
+            if (skills == null) skills = List.of();
+            else skills = List.copyOf(skills);
         }
     }
 }

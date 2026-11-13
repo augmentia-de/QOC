@@ -28,6 +28,8 @@ export default function Agents() {
     responseSchema: null,
     ownerId: '',
     rolesAllowed: ['*'],
+    mode: 'all',
+    skills: [],
   };
 
   const load = async () => {

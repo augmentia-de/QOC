@@ -160,6 +160,9 @@ public class Engine {
     AgentCatalogue agentCatalogue;
 
     @Inject
+    jakarta.enterprise.inject.Instance<WorkflowRecovery> workflowRecoveryInstance;
+
+    @Inject
     de.augmentia.oc.engine.http.security.PrincipalContext principalContext;
 
     private static final Logger LOG = Logger.getLogger(Engine.class);
@@ -824,9 +827,13 @@ commandLoader = new CommandLoader(workspacePath,
                     public de.augmentia.oc.engine.runtime.QocEngine.AgentConfig config(String name) {
                         EngineConfig.AgentConfig cfg = agentCatalogue.config(name);
                         if (cfg == null) return null;
+                        java.util.List<String> tools = (cfg.toolAllow() == null || cfg.toolAllow().contains("*"))
+                                ? java.util.List.of() : java.util.List.copyOf(cfg.toolAllow());
                         return new de.augmentia.oc.engine.runtime.QocEngine.AgentConfig(
-                                name, cfg.model(), 0.3, 4096, 1.0, null,
-                                java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), false,
+                                name, cfg.model(), 0.3, 4096, 1.0,
+                                cfg.system() == null ? "" : cfg.system(),
+                                tools,
+                                java.util.List.of(), java.util.List.of(), java.util.List.of(), false,
                                 de.augmentia.oc.engine.core.model.Option.none());
                     }
                 },
@@ -2394,6 +2401,14 @@ commandLoader = new CommandLoader(workspacePath,
                 ContextBuilder.leastPrivilegeDefaults());
         LOG.infof("reloaded config: %d agent(s), %d skill(s)",
                 agentCatalogue.list().size(), skillCatalog.all().size());
+        // SSOT: re-import QOC agents into the unified store after reload.
+        if (workflowRecoveryInstance != null && workflowRecoveryInstance.isResolvable()) {
+            try {
+                workflowRecoveryInstance.get().importQocAgents();
+            } catch (RuntimeException e) {
+                LOG.warnf("agent store re-import failed: %s", e.getMessage());
+            }
+        }
     }
 
     public synchronized void reloadWorkspace(String newWorkspace, String user, boolean isAdmin) {

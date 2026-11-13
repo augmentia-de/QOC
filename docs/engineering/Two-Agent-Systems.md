@@ -246,7 +246,70 @@ würde dann Option A auslösen.
 
 ---
 
-## 9. Fazit
+## 9. SSOT-Unification (implementiert)
+
+Agenten haben jetzt eine **Single Source of Truth**:
+
+- **AgentStorePort** (Interface) mit Implementierungen: `AgentStore` (File),
+  `InMemoryAgentStore`, `SqliteAgentStore`, `PostgresAgentStore`.
+- **AgentStoreFactory** wählt das Backend analog zu `WorkflowStoreFactory`
+  (auto/memory/sqlite/postgres/file).
+- **DB-Schema**: `agent_definition`-Tabelle (V11-Migration) speichert Agenten
+  als JSON.
+- **WorkflowBeans** nutzt jetzt `AgentStoreFactory` statt `new AgentStore(dir)`.
+- **AgentStoreResource** und **WorkflowResource** nutzen `AgentStorePort`.
+
+### Format
+
+- **On-Disk (OpenCode-kompatibel)**: Markdown-Dateien mit YAML-Frontmatter
+  (`~/.config/opencode/agents/`, `<workspace>/agents/`).
+- **In DB/File (SSOT)**: JSON (`WorkflowDefinition.Agent`-Format mit
+  `ownerId`, `rolesAllowed`, `responseSchema`).
+- **Workflows**: JSON in DB (bereits vorhanden via `WorkflowStoreFactory`).
+
+### Umgesetzt (SSOT-Infrastruktur)
+
+- `AgentStorePort` (Interface) mit Implementierungen: `AgentStore` (File),
+  `InMemoryAgentStore`, `SqliteAgentStore`, `PostgresAgentStore`.
+- `AgentStoreFactory` wählt das Backend analog zu `WorkflowStoreFactory`.
+- DB-Schema: `agent_definition`-Tabelle (V11-Migration).
+- `WorkflowBeans` nutzt `AgentStoreFactory` statt `new AgentStore(dir)`.
+- `AgentStoreResource`, `WorkflowResource` nutzen `AgentStorePort`.
+- `QocAgentConverter.fromQoc()` konvertiert `EngineConfig.AgentConfig` →
+  `WorkflowDefinition.Agent`.
+- `WorkflowRecovery.importQocAgents()` importiert QOC-Agenten (Config +
+  Markdown global) beim Start in den unified Store.
+
+### Umgesetzt (SSOT-Integration)
+
+- `Engine.config()` (Quarkus) überträgt jetzt `system`, `tools` (aus
+  `toolAllow`) in den Runtime-`QocEngine.AgentConfig` (vorher verloren).
+- `DefaultNodeDispatcher.findAgent()` (Option B): QOC-Agenten, die nicht im
+  Store liegen, werden on-the-fly aus dem Engine-`AgentResolver` konvertiert
+  (`fromQocRuntime`) und in den Store geschrieben (Caching).
+- `WorkflowRecovery.importQocAgents()` importiert beim Start (und bei
+  `Engine.reloadConfig()`):
+  1. Config-Agenten (settings.json / application.properties).
+  2. Markdown-Agenten (global: `~/.config/opencode/agents/`).
+  3. Markdown-Agenten (projekt-level, wenn `workspaceSettingsEnabled`).
+- Projekt-Level Markdown-Agenten (`projectAgentDirs`) werden jetzt importiert.
+
+### Verbleibende Arbeit (QOC-Seite)
+
+- QOC Engine lädt Agenten derzeit noch aus `EngineConfig` (settings.json/Markdown)
+  zusätzlich zum Store. Für volle SSOT: EngineConfig sollte Agenten aus
+  `AgentStorePort` laden (oder EngineConfig.agents() aus dem Store befüllen).
+- Markdown → JSON Import: implementiert (WorkflowRecovery.importQocAgents).
+- JSON → Markdown Export: implementiert (AgentMarkdownExporter, best-effort
+  beim create/save in AgentStoreResource).
+- Verbleibend: EngineConfig.agents() liest noch aus settings.json/Markdown;
+  für volle SSOT sollte EngineConfig Agenten aus AgentStorePort laden (oder
+  agents() aus dem Store befüllen). Reihenfolge (Store-Population vor
+  EngineConfig-Load) muss angepasst werden.
+- RBAC (`rolesAllowed`) wird jetzt im Workflow-Runner geprüft
+  (`DefaultNodeDispatcher.agentAllowed`); '*' = alle, admin/system immer erlaubt.
+
+## 10. Fazit
 
 Aktuell **keine** Nutzung von QOC-Agenten in Workflows möglich (außer
 Namenskollision mit Verlust der Konfiguration). Für echte Nutzung ist ein
@@ -254,6 +317,6 @@ Namenskollision mit Verlust der Konfiguration). Für echte Nutzung ist ein
 `EngineConfig.AgentConfig → WorkflowDefinition.Agent` nötig, sowie die
 Behandlung von Tools/Skills/Permissions im Workflow-Modus.
 
-**Empfohlener nächster Schritt:** Option A (Import-Endpoint) implementieren,
-da sie die UI-Integration (Agents-Seite) am einfachsten ermöglicht und
-keine Laufzeit-Konvertierung erfordert.
+Die SSOT-Infrastruktur (DB-Backend, Factory, Migration) ist jetzt vorhanden.
+Der nächste Schritt ist die QOC-seitige Integration (Agenten aus Store laden
+oder Markdown importieren).

@@ -3,7 +3,7 @@ package de.augmentia.oc.engine.http;
 import de.augmentia.qoc.workflowrunner.runner.WorkflowExecutor;
 import de.augmentia.qoc.workflowrunner.runner.WorkflowRunJournal;
 import de.augmentia.qoc.workflowrunner.runner.WorkflowRunSnapshot;
-import de.augmentia.qoc.workflowrunner.store.AgentStore;
+import de.augmentia.qoc.workflowrunner.store.AgentStorePort;
 import de.augmentia.qoc.workflowrunner.store.WorkflowDefinitionStore;
 
 import io.quarkus.runtime.StartupEvent;
@@ -38,7 +38,10 @@ public class WorkflowRecovery {
     WorkflowDefinitionStore store;
 
     @Inject
-    AgentStore agentStore;
+    AgentStorePort agentStore;
+
+    @Inject
+    EngineConfig engineConfig;
 
     @ConfigProperty(name = "engine.workflow.recovery.enabled", defaultValue = "true")
     boolean enabled;
@@ -61,7 +64,61 @@ public class WorkflowRecovery {
             LOG.warnf("Workflow recovery skipped: migration failed: %s", e.getMessage());
             return;
         }
+        // SSOT: import QOC agents (config + Markdown) into the unified agent store.
+        importQocAgents();
         Thread.startVirtualThread(this::recover);
+    }
+
+    public void importQocAgents() {
+        if (agentStore == null || engineConfig == null) return;
+        int imported = 0;
+        try {
+            // 1. Config agents (settings.json / application.properties)
+            for (EngineConfig.AgentConfig cfg : engineConfig.agents()) {
+                if (agentStore.get(cfg.name()) == null) {
+                    de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent converted =
+                            QocAgentConverter.fromQoc(cfg);
+                    if (converted != null) {
+                        agentStore.save(converted.id(), converted);
+                        imported++;
+                    }
+                }
+            }
+            // 2. Markdown agents (global)
+            for (EngineConfig.AgentConfig cfg : AgentMarkdownLoader.loadDirectory(AgentMarkdownLoader.globalAgentDir())) {
+                if (agentStore.get(cfg.name()) == null) {
+                    de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent converted =
+                            QocAgentConverter.fromQoc(cfg);
+                    if (converted != null) {
+                        agentStore.save(converted.id(), converted);
+                        imported++;
+                    }
+                }
+            }
+            // 3. Markdown agents (project-level, only if workspace settings enabled)
+            if (engineConfig.workspaceSettingsEnabled()) {
+                try {
+                    java.nio.file.Path ws = java.nio.file.Path.of(engineConfig.workspace());
+                    for (java.nio.file.Path dir : AgentMarkdownLoader.projectAgentDirs(ws)) {
+                        for (EngineConfig.AgentConfig cfg : AgentMarkdownLoader.loadDirectory(dir)) {
+                            if (agentStore.get(cfg.name()) == null) {
+                                de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent converted =
+                                        QocAgentConverter.fromQoc(cfg);
+                                if (converted != null) {
+                                    agentStore.save(converted.id(), converted);
+                                    imported++;
+                                }
+                            }
+                        }
+                    }
+                } catch (RuntimeException e) {
+                    LOG.warnf("project agent import failed: %s", e.getMessage());
+                }
+            }
+            LOG.infof("Imported %d QOC agents into unified agent store", imported);
+        } catch (RuntimeException e) {
+            LOG.warnf("QOC agent import failed: %s", e.getMessage());
+        }
     }
 
     private void recover() {

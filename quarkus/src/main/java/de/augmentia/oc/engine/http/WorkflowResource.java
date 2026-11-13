@@ -36,7 +36,7 @@ public class WorkflowResource {
     WorkflowDefinitionStore store;
 
     @Inject
-    de.augmentia.qoc.workflowrunner.store.AgentStore agentStore;
+    de.augmentia.qoc.workflowrunner.store.AgentStorePort agentStore;
 
     @Inject
     SessionAccessGuard accessGuard;

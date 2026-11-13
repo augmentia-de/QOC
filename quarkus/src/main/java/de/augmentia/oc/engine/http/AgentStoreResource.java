@@ -1,7 +1,7 @@
 package de.augmentia.oc.engine.http;
 
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent;
-import de.augmentia.qoc.workflowrunner.store.AgentStore;
+import de.augmentia.qoc.workflowrunner.store.AgentStorePort;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -36,10 +36,13 @@ public class AgentStoreResource {
     private static final Pattern ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]*");
 
     @Inject
-    AgentStore store;
+    AgentStorePort store;
 
     @Inject
     SessionAccessGuard accessGuard;
+
+    @Inject
+    jakarta.enterprise.inject.Instance<Engine> engineInstance;
 
     @GET
     public Response list() {
@@ -68,6 +71,12 @@ public class AgentStoreResource {
         if (!valid(id)) return badRequest("invalid agent id");
         String owner = accessGuard == null ? null : accessGuard.currentUser();
         Agent saved = store.save(id, withId(body, id, owner));
+        // SSOT: best-effort export to OpenCode-compatible Markdown.
+        try { AgentMarkdownExporter.write(AgentMarkdownLoader.globalAgentDir(), saved); }
+        catch (RuntimeException ignored) {}
+        // SSOT: propagate to QOC engine (best-effort).
+        try { if (engineInstance != null && engineInstance.isResolvable()) engineInstance.get().reloadConfig(); }
+        catch (RuntimeException ignored) {}
         return Response.status(Response.Status.CREATED).entity(saved).build();
     }
 
@@ -86,10 +95,22 @@ public class AgentStoreResource {
         if (target != null && !target.isBlank() && !target.equals(id)) {
             if (!valid(target)) return badRequest("invalid agent id");
             store.delete(id);
-            return Response.ok(store.save(target, withId(body, target))).build();
+            Agent saved = store.save(target, withId(body, target));
+            try { AgentMarkdownExporter.write(AgentMarkdownLoader.globalAgentDir(), saved); }
+            catch (RuntimeException ignored) {}
+            try { if (engineInstance != null && engineInstance.isResolvable()) engineInstance.get().reloadConfig(); }
+            catch (RuntimeException ignored) {}
+            return Response.ok(saved).build();
         }
         String owner = existing == null ? (accessGuard == null ? null : accessGuard.currentUser()) : null;
-        return Response.ok(store.save(id, withId(body, id, owner))).build();
+        Agent saved = store.save(id, withId(body, id, owner));
+        // SSOT: best-effort export to OpenCode-compatible Markdown.
+        try { AgentMarkdownExporter.write(AgentMarkdownLoader.globalAgentDir(), saved); }
+        catch (RuntimeException ignored) {}
+        // SSOT: propagate to QOC engine (best-effort).
+        try { if (engineInstance != null && engineInstance.isResolvable()) engineInstance.get().reloadConfig(); }
+        catch (RuntimeException ignored) {}
+        return Response.ok(saved).build();
     }
 
     @DELETE
@@ -124,7 +145,9 @@ public class AgentStoreResource {
         return new Agent(id, a.name(), a.version(), a.category(), a.model(), a.temperature(),
                 a.maxTokens(), a.topP(), a.tools(), a.guardrailsInput(), a.guardrailsOutput(),
                 a.hooks(), a.jsonOutput(), a.active(), a.systemPrompt(), a.responseSchema(),
-                ownerId == null ? "" : ownerId, a.rolesAllowed());
+                ownerId == null ? "" : ownerId, a.rolesAllowed(),
+                a.mode() == null ? "all" : a.mode(),
+                a.skills() == null ? java.util.List.of() : a.skills());
     }
 
     private static Response badRequest(String message) {

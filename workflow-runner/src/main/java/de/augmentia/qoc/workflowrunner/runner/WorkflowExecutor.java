@@ -34,7 +34,7 @@ public class WorkflowExecutor {
     private final QocEngine engine;
     private final WorkflowDefinitionStore store;
     private final McpServerManager mcpManager;
-    private final de.augmentia.qoc.workflowrunner.store.AgentStore agentStore;
+    private final de.augmentia.qoc.workflowrunner.store.AgentStorePort agentStore;
 
     public WorkflowExecutor(QocEngine engine, WorkflowDefinitionStore store) {
         this(engine, store, null, null);
@@ -46,7 +46,7 @@ public class WorkflowExecutor {
 
     public WorkflowExecutor(QocEngine engine, WorkflowDefinitionStore store,
                             McpServerManager mcpManager,
-                            de.augmentia.qoc.workflowrunner.store.AgentStore agentStore) {
+                            de.augmentia.qoc.workflowrunner.store.AgentStorePort agentStore) {
         this.engine = engine;
         this.store = store;
         this.mcpManager = mcpManager;

@@ -1,7 +1,8 @@
 package de.augmentia.oc.engine.http;
 
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent;
-import de.augmentia.qoc.workflowrunner.store.AgentStore;
+import de.augmentia.qoc.workflowrunner.store.AgentStoreFactory;
+import de.augmentia.qoc.workflowrunner.store.AgentStorePort;
 import de.augmentia.qoc.workflowrunner.store.WorkflowDefinitionStore;
 import de.augmentia.qoc.workflowrunner.store.WorkflowStoreFactory;
 
@@ -13,6 +14,7 @@ import jakarta.inject.Inject;
 import javax.sql.DataSource;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
@@ -42,26 +44,30 @@ public class WorkflowBeans {
         return store;
     }
 
-    /**
-     * Global agent store (Option B). Agents live next to the workflow
-     * definitions and are referenced by id from workflow nodes.
-     */
     @Produces
     @ApplicationScoped
-    public AgentStore agentStore(
-            @ConfigProperty(name = "engine.workflow.storage-dir", defaultValue = "./wf-data") String dir) {
-        AgentStore store = new AgentStore(Path.of(dir));
-        // Built-in default so the starter graph (agentRef="build") is valid.
-        // Users may override or delete it like any other stored agent.
+    public AgentStorePort agentStore(
+            @ConfigProperty(name = "engine.workflow.storage", defaultValue = "auto") String storageKind,
+            @ConfigProperty(name = "engine.workflow.storage-dir", defaultValue = "./wf-data") String dir,
+            @ConfigProperty(name = "engine.storage", defaultValue = "postgres") String engineStorage,
+            @ConfigProperty(name = "engine.db.kind", defaultValue = "postgresql") String databaseKind) {
+        String resolvedKind = AgentStoreFactory.resolve(storageKind, engineStorage, databaseKind);
+        DataSource resolved = ("sqlite".equals(resolvedKind) || "postgres".equals(resolvedKind))
+                ? (dataSource.isResolvable() ? dataSource.get() : null)
+                : null;
+        AgentStorePort store = AgentStoreFactory.create(
+                resolvedKind, engineStorage, databaseKind, dir, resolved);
         if (store.get("build") == null) {
-            store.save("build", new Agent("build", "Build Agent", "1.0.0", "core",
-                    // Empty model = follow the engine's configured model.
+            java.util.List<String> empty = java.util.List.of();
+            java.util.List<String> star = java.util.List.of("*");
+            Agent a = new Agent("build", "Build Agent", "1.0.0", "core",
                     "", 0.3, 4096, 1.0,
-                    java.util.List.of(), java.util.List.of(), java.util.List.of(),
-                    java.util.List.of(), false, true,
-                    "You are a helpful build agent. Reply concisely.", null, "", java.util.List.of("*")));
+                    empty, empty, empty, empty, false, true,
+                    "You are a helpful build agent. Reply concisely.", null, "", star,
+                    "all", empty);
+            store.save("build", a);
         }
-        LOG.infof("Agent store: %s", store.list().size());
+        LOG.infof("Agent store (%s): %s", store.getClass().getSimpleName(), store.list().size());
         return store;
     }
 }

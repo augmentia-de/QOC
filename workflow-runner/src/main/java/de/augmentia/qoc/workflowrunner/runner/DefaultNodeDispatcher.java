@@ -11,7 +11,7 @@ import de.augmentia.oc.engine.runtime.QocEngine;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpClient;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpServerManager;
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition;
-import de.augmentia.qoc.workflowrunner.store.AgentStore;
+import de.augmentia.qoc.workflowrunner.store.AgentStorePort;
 import de.augmentia.qoc.workflowrunner.store.WorkflowDefinitionStore;
 import de.augmentia.qoc.workflowrunner.store.WorkflowJson;
 
@@ -30,7 +30,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     private final WorkflowDefinitionStore store;
     private final SubWorkflowExpander expander;
     private final McpServerManager mcpManager;
-    private final AgentStore agentStore;
+    private final AgentStorePort agentStore;
     private final de.augmentia.oc.engine.core.model.Principal principal;
 
     public DefaultNodeDispatcher(QocEngine engine, WorkflowDefinitionStore store) {
@@ -42,12 +42,12 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     }
 
     public DefaultNodeDispatcher(QocEngine engine, WorkflowDefinitionStore store,
-                                 McpServerManager mcpManager, AgentStore agentStore) {
+                                 McpServerManager mcpManager, AgentStorePort agentStore) {
         this(engine, store, mcpManager, agentStore, de.augmentia.oc.engine.core.model.Principal.anonymous());
     }
 
     public DefaultNodeDispatcher(QocEngine engine, WorkflowDefinitionStore store,
-                                 McpServerManager mcpManager, AgentStore agentStore,
+                                 McpServerManager mcpManager, AgentStorePort agentStore,
                                  de.augmentia.oc.engine.core.model.Principal principal) {
         this.engine = engine;
         this.store = store;
@@ -66,6 +66,9 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
             case "agent" -> {
                 String agentRef = node.data().agentRef();
                 WorkflowDefinition.Agent agentDef = findAgent(def, agentRef);
+                if (agentDef != null && !agentAllowed(agentDef, principal)) {
+                    return new NodeResult("Agent access denied: " + agentRef, null);
+                }
                 String prefixedName = prefixedName(agentDef, agentRef);
                 QocEngine.AgentConfig config = toAgentConfig(agentDef, prefixedName);
 
@@ -84,6 +87,9 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
             case "context_agent_executor" -> {
                 String agentRef = node.data().agentRef();
                 WorkflowDefinition.Agent agentDef = findAgent(def, agentRef);
+                if (agentDef != null && !agentAllowed(agentDef, principal)) {
+                    return new NodeResult("Agent access denied: " + agentRef, null);
+                }
 
                 // Eigener Registry-Name pro Knoten, damit der Systemprompt dieses
                 // Knotens nicht durch eine bereits registrierte Agent-Config
@@ -358,13 +364,69 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
         );
     }
 
+    /** RBAC: principal may use the agent? '*' in rolesAllowed means everyone. */
+    private static boolean agentAllowed(WorkflowDefinition.Agent a, Principal p) {
+        if (a == null) return true;
+        List<String> allowed = a.rolesAllowed();
+        if (allowed == null || allowed.isEmpty() || allowed.contains("*")) return true;
+        if (p == null) return false;
+        if (p.isAdmin()) return true;
+        List<String> roles = p.roles();
+        if (roles == null) return false;
+        for (String r : roles) {
+            if (allowed.stream().anyMatch(x -> x.equalsIgnoreCase(r))) return true;
+        }
+        return false;
+    }
+
     private WorkflowDefinition.Agent findAgent(WorkflowDefinition def, String agentRef) {
         if (agentRef == null || agentRef.isBlank()) return null;
         for (WorkflowDefinition.Agent a : def.agents()) {
-            if (a.id().equals(agentRef)) return a;
+            if (a.id().equals(agentRef) || a.name().equalsIgnoreCase(agentRef)) return a;
         }
-        // Option B: agents are stored globally and referenced by id.
-        return agentStore == null ? null : agentStore.get(agentRef);
+        // Option B: agents are stored globally and referenced by id/name.
+        if (agentStore != null) {
+            WorkflowDefinition.Agent stored = agentStore.get(agentRef);
+            if (stored != null) return stored;
+            // case-insensitive name lookup
+            for (WorkflowDefinition.Agent a : agentStore.listAll()) {
+                if (a.name().equalsIgnoreCase(agentRef) || a.id().equalsIgnoreCase(agentRef)) return a;
+            }
+        }
+        // Option B fallback: QOC agent not in store -> convert on the fly.
+        if (engine != null) {
+            try {
+                de.augmentia.oc.engine.runtime.callback.AgentResolver resolver = engine.agentResolver();
+                de.augmentia.oc.engine.runtime.QocEngine.AgentConfig cfg = resolver == null ? null : resolver.config(agentRef);
+                if (cfg != null) {
+                    WorkflowDefinition.Agent converted = fromQocRuntime(cfg);
+                    if (converted != null && agentStore != null) {
+                        try { agentStore.save(converted.id(), converted); } catch (RuntimeException ignored) {}
+                    }
+                    return converted;
+                }
+            } catch (RuntimeException ignored) {}
+        }
+        return null;
+    }
+
+    private static WorkflowDefinition.Agent fromQocRuntime(de.augmentia.oc.engine.runtime.QocEngine.AgentConfig cfg) {
+        if (cfg == null) return null;
+        String name = cfg.name() == null || cfg.name().isBlank() ? "agent" : cfg.name();
+        String id = name.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9-]", "-");
+        if (id.isBlank()) id = "agent-" + System.currentTimeMillis();
+        return new WorkflowDefinition.Agent(
+                id, name, "1.0.0", "", cfg.model() == null ? "" : cfg.model(),
+                cfg.temperature(), cfg.maxTokens(), cfg.topP(),
+                cfg.tools() == null ? java.util.List.of() : java.util.List.copyOf(cfg.tools()),
+                cfg.guardrailsInput() == null ? java.util.List.of() : java.util.List.copyOf(cfg.guardrailsInput()),
+                cfg.guardrailsOutput() == null ? java.util.List.of() : java.util.List.copyOf(cfg.guardrailsOutput()),
+                cfg.hooks() == null ? java.util.List.of() : java.util.List.copyOf(cfg.hooks()),
+                cfg.jsonOutput(), true,
+                cfg.systemPrompt() == null ? "" : cfg.systemPrompt(),
+                null,
+                "", java.util.List.of("*"),
+                "all", java.util.List.of());
     }
 
     private WorkflowDefinition.Node findNode(WorkflowDefinition def, String id) {

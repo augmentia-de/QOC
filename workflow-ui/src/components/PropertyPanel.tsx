@@ -23,6 +23,8 @@ interface AgentConfig {
   responseSchema?: Record<string, unknown> | null;
   ownerId?: string | null;
   rolesAllowed?: string[];
+  mode?: string;
+  skills?: string[];
 }
 
 interface NodeOption {
@@ -64,6 +66,8 @@ const BUILD_AGENT: AgentConfig = {
   responseSchema: null,
   ownerId: '',
   rolesAllowed: ['*'],
+  mode: 'all',
+  skills: [],
 };
 
 interface PropertyPanelProps {

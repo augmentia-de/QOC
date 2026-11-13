@@ -62,6 +62,8 @@ export interface Agent {
   responseSchema?: Record<string, unknown> | null;
   ownerId?: string | null;
   rolesAllowed?: string[];
+  mode?: string;
+  skills?: string[];
 }
 
 export interface WorkflowDefinition {
