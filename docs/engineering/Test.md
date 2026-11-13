@@ -750,3 +750,116 @@ Ein Durchlauf gilt als bestanden, wenn:
 | Agent-Registry | [`guides/Agent-Registry.md`](../guides/Agent-Registry.md) |
 | Skills | [`skill-loading.md`](../skill-loading.md) |
 | Betrieb/HTTP/SSE | [`spec/betrieb/01-http-streaming.md`](../spec/betrieb/01-http-streaming.md) |
+
+---
+
+## 12. Aktualisierungen (2026-11)
+
+Dieser Abschnitt ergänzt den manuellen Testplan um die seit 2026-11
+hinzugekommenen Funktionen. Die bestehenden Abschnitte 1–11 bleiben
+unverändert gültig.
+
+### 12.1 Workflow-UI (GraphEditor, Agents, Runs, Testbench, McpServers)
+
+- **GraphEditor** (`/workflows/:id`):
+  - Node erstellen (Agent, Decision, Fork, Join, Loop, HITL, MCP-Call,
+    Subworkflow, Start, End), Edges verbinden (Click-to-Connect).
+  - Property Panel pro Typ: Agent-Ref (Dropdown), Decision-Branches (JSON),
+    Loop (Max Iterations, Exit Condition), Fork/Join, HITL (Assignee),
+    MCP-Call (Server, Tool, Args), Subworkflow (Ref).
+  - Save/Load, Validierung (GraphCompiler), Auto-Layout (elkjs).
+- **Agents** (`/agents`):
+  - CRUD, Model, Temperature, MaxTokens, TopP, System-Prompt, Tools,
+    Guardrails, Hooks, JSON-Output, Active.
+  - Response Schema (JSON Schema Textarea).
+  - Import via `/api/schema/from-class`, `/from-openapi`, `/validate`.
+- **Runs** (`/runs`): Workflow starten (Input), Run-Status, Ergebnis,
+  Live SSE Streaming (Text-Deltas, Tool-Calls/Results).
+- **Testbench** (`/testbench`): Workflow mit Test-Input ausführen, Ergebnis
+  prüfen.
+- **McpServers** (`/mcp-servers`): Server hinzufügen/entfernen, Tools
+  anzeigen, Reload.
+
+### 12.2 Structured Output (responseSchema)
+
+- Agent mit `responseSchema` erstellen (Agents-Seite).
+- Workflow mit Agent-Node + `responseSchema` ausführen (Runs/Testbench).
+- Ergebnis: strukturiertes JSON (nicht nur Text).
+- Ungültiges Schema → Fehlermeldung (Server: `JsonSchema.parse` → `Result.Err`).
+- Converter testen: `JavaRecordToJsonSchema`, `OpenApiToJsonSchema`
+  (`POST /api/schema/from-class`, `/from-openapi`, `/validate`).
+
+### 12.3 RBAC / Ownership (Proxy-Modus)
+
+- Als User A Workflow/Agent erstellen → als User B → 403 auf
+  get/save/delete/run.
+- Admin sieht alle Workflows/Agents.
+- Shared Workflows (ownerId=null) für alle lesbar.
+- System-Token: `curl -H "X-System-Token: <token>"` → Principal.system().
+- OIDC: Login via Keycloak/Auth0, Rollen aus JWT.
+
+### 12.4 In-Memory-Modus
+
+- `ENGINE_STORAGE=memory` setzen.
+- Kein DB, kein Restart-Recovery.
+- Sessions/Workflows flüchtig (nach Neustart weg).
+- Memory-Budget (300 MiB) bei Snapshots.
+- No-Op-Adapter für Snapshots, Approvals, Instructions, Credentials,
+  Tool-Result-Cache.
+
+### 12.5 Native Image / Docker
+
+- `docker compose --profile native up -d` (Port 8077).
+- Health-Check: `GET /api/health` → `{"status":"ok"}`.
+- Workflow-UI via nginx (Port 5174, `/api` → Engine).
+- SQLite-Alternative: `build-image-sqlite.sh`.
+
+### 12.6 Context Caching (Provider-Level)
+
+- Prompt-Caching-Rabatt messen (OpenAI/Anthropic Dashboard).
+- Stabile System-Prompt-Prefixes (keine Zeitstempel).
+- Subagent-Isolation (keine Context Pollution).
+
+### 12.7 Workflow-Resume
+
+- `POST /api/workflows/runs/{runId}/resume`.
+- Checkpoint-Replay nach Crash.
+- `max-resume-attempts` (Default 10).
+
+### 12.8 Revert-Snapshots
+
+- `ENGINE_REVERT_SNAPSHOT=true` (Dev) / `false` (Prod).
+- `POST /api/session/{id}/revert` (API).
+- Performance: Snapshots schreiben alle Workspace-Dateien in DB.
+
+### 12.9 Aktualisierungen bestehender Abschnitte
+
+- **Abschnitt 1 (Geltungsbereich)**: Workflow-UI, RBAC, Structured Output,
+  In-Memory, Native Image ergänzen.
+- **Abschnitt 2 (Stufen)**: Neue Stufe "Workflow-UI" und "RBAC/Proxy".
+- **Abschnitt 3 (Umgebungen)**: `qoc-memory` (8082), `qoc-native` (8077),
+  `qoc-native-ui` (5174) ergänzen.
+- **Abschnitt 4 (Health/UI/Auth)**: Proxy-Modus mit Trusted-Proxies ergänzen.
+- **Abschnitt 5 (Sessions/Prompts/Streaming)**: Live SSE, Tool-Calls/Results.
+- **Abschnitt 6 (Datei/Shell-Tools)**: Sandbox-Modi (workspace-write/full-access),
+  Seccomp.
+- **Abschnitt 7 (Permissions/Fragen)**: Least-Privilege als Default, Ask-Mode.
+- **Abschnitt 8 (Workspace/Agents/Skills)**: Agent-Store (global + user-scoped),
+  Response Schema.
+- **Abschnitt 9 (Subagents/Background)**: Rekursionstiefe (max 2), Semaphore,
+  Background-Tasks.
+- **Abschnitt 10 (Compaction/Revert/Fork/Move)**: Compaction-Trigger,
+  Revert-Snapshot-Performance.
+- **Abschnitt 11 (Grenzfälle)**: In-Memory (kein Recovery), Native Image
+  (kein Dev-Services), OIDC (fail-closed).
+
+### 12.10 Test-Matrix (automatisiert vs. manuell)
+
+| Bereich | Automatisiert (Unit/Integration) | Manuell (UI/API) |
+|---|---|---|
+| Agent-Loop | `QocEngineTest`, `ContextBuilderTest` | Chat, Tool-Calls |
+| Workflow-Loop | `WorkflowRunJournalTest`, `WorkflowStoreContractTest` | GraphEditor, Runs |
+| Security | `AuthTest`, `AgentVisibilityTest`, `WorkflowOwnershipTest` | Proxy/OIDC-Login |
+| Storage | `InMemoryStoresTest`, `SqlAdaptersTest` | — |
+| Tools | `ToolRuntimeTest`, `ReadTool`, `GrepTool` | Datei/Shell/Web |
+| Schema/Converter | `JavaRecordToJsonSchemaTest`, `SchemaParseCompatTest` | Agents-UI, `/api/schema/*` |
