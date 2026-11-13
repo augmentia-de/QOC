@@ -35,6 +35,7 @@ public class WorkflowExecutor {
     private final WorkflowDefinitionStore store;
     private final McpServerManager mcpManager;
     private final de.augmentia.qoc.workflowrunner.store.AgentStorePort agentStore;
+    private final int maxNodeRepetitions;
 
     public WorkflowExecutor(QocEngine engine, WorkflowDefinitionStore store) {
         this(engine, store, null, null);
@@ -47,10 +48,18 @@ public class WorkflowExecutor {
     public WorkflowExecutor(QocEngine engine, WorkflowDefinitionStore store,
                             McpServerManager mcpManager,
                             de.augmentia.qoc.workflowrunner.store.AgentStorePort agentStore) {
+        this(engine, store, mcpManager, agentStore, 5);
+    }
+
+    public WorkflowExecutor(QocEngine engine, WorkflowDefinitionStore store,
+                            McpServerManager mcpManager,
+                            de.augmentia.qoc.workflowrunner.store.AgentStorePort agentStore,
+                            int maxNodeRepetitions) {
         this.engine = engine;
         this.store = store;
         this.mcpManager = mcpManager;
         this.agentStore = agentStore;
+        this.maxNodeRepetitions = Math.max(1, maxNodeRepetitions);
     }
 
     /**
@@ -186,8 +195,8 @@ public class WorkflowExecutor {
                                   de.augmentia.oc.engine.core.model.Principal principal) {
         if (principal == null) principal = de.augmentia.oc.engine.core.model.Principal.anonymous();
         ctx.setInitialPrompt(input == null ? "" : input);
-        NodeDispatcher dispatcher = new DefaultNodeDispatcher(engine, store, mcpManager, agentStore, principal);
-        WorkflowStepProviderImpl provider = new WorkflowStepProviderImpl(definition, dispatcher, sink);
+        NodeDispatcher dispatcher = new DefaultNodeDispatcher(engine, store, mcpManager, agentStore, principal, session.value());
+        WorkflowStepProviderImpl provider = new WorkflowStepProviderImpl(definition, dispatcher, sink, maxNodeRepetitions);
 
         try {
             EngineResult result = engine.runPrompt(
@@ -203,7 +212,7 @@ public class WorkflowExecutor {
             if (result.paused()) {
                 sink.runFinished("PAUSED");
                 return new WorkflowExecution(runId, session.value(), result.text(), "PAUSED",
-                        false, true, null);
+                        false, true, null, result.approvalId(), "");
             }
             sink.runFinished("COMPLETED");
             return new WorkflowExecution(runId, session.value(), result.text(), result.finish(),

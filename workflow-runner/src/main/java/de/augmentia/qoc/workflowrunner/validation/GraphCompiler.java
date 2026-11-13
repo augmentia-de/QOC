@@ -13,7 +13,8 @@ public class GraphCompiler {
 
     private static final Set<String> VALID_NODE_TYPES = Set.of(
             "agent", "start", "decision", "loop", "fork", "join", "hitl", "subworkflow", "end",
-            "llm_eval", "llm_summarize", "mcp_call", "context_agent_executor", "compact");
+            "llm_eval", "llm_summarize", "mcp_call", "context_agent_executor", "compact",
+            "guard", "inject");
 
     /** Knotentypen, die einen Agenten (agentRef) benötigen. */
     private static final Set<String> AGENT_NODE_TYPES =

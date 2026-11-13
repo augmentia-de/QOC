@@ -206,7 +206,8 @@ public class WorkflowResource {
     }
 
     private WorkflowExecutor executor() {
-        return new WorkflowExecutor(engine.qocEngine(), store, engine.mcp().manager(), agentStore);
+        return new WorkflowExecutor(engine.qocEngine(), store, engine.mcp().manager(), agentStore,
+                engine.qocEngine().workflowNodeMaxRepetitions());
     }
 
     /** Global agents may be referenced from workflow nodes (Option B). */

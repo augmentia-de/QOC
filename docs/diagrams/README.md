@@ -43,6 +43,7 @@ Important for the classification:
 | [`09-persistence.md`](./09-persistence.md) | Which tables, events, and transaction boundaries exist? |
 | [`10-deployment.md`](./10-deployment.md) | JVM, Native, Docker, and GCP operation without Git. |
 | [`11-security-and-mcp.md`](./11-security-and-mcp.md) | Security, MCP server mode, OAuth, user access and guardrails. |
+| [`12-workflow-mode-and-subagent.md`](./12-workflow-mode-and-subagent.md) | Workflow-Modus mit `context_agent_executor` vs. vollständiger Subagent-Lauf mit eigenen Subagenten und Tools. |
 
 ## Deterministic parts at a glance
 

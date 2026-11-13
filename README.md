@@ -95,6 +95,29 @@ permissions:
 
 ---
 
+## Workflow Mode (Hybrid Runtime)
+
+QOC can run declarative React-Flow workflows on top of the normal agent loop.
+Workflow nodes may be agents, context agents, guards, loops, or mock/tool nodes.
+
+Safety limits:
+
+- `engine.workflow.max-steps` (default `100`): maximum number of workflow steps per run.
+- `engine.workflow.node-max-repetitions` (default `5`): circuit breaker for repeated
+  nodes; prevents endless loops such as `guard -> loop -> guard`.
+- Loop nodes use their own `maxIterations` (default `3` in the RFP demo).
+- Guards prefer structured `status` values (`STATUS: OK`, `STATUS: LOW_MARGIN`)
+  instead of loose substring matching where possible.
+
+Example:
+
+```bash
+ENGINE_WORKFLOW_MAX_STEPS=50
+ENGINE_WORKFLOW_NODE_MAX_REPETITIONS=3
+```
+
+---
+
 ## Architecture
 
 ```

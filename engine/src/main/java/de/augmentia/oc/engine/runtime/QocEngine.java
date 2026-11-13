@@ -118,6 +118,7 @@ public static record EngineConfig(
     private final de.augmentia.oc.engine.core.contract.tool.ToolSnapshot toolSnapshot;
     private final de.augmentia.oc.engine.core.contract.provider.ModelInfo modelInfo;
     private int workflowMaxSteps = 100;
+    private int workflowNodeMaxRepetitions = 5;
     private de.augmentia.oc.engine.runtime.resilience.PreflightChecker.PreflightContext preflightContext;
 
     /** Loop mode of a single {@link #runPrompt} invocation. */
@@ -409,6 +410,14 @@ public static record EngineConfig(
     /** Configures the step budget for workflow-mode loops. */
     public void setWorkflowMaxSteps(int workflowMaxSteps) {
         this.workflowMaxSteps = Math.max(1, workflowMaxSteps);
+    }
+
+    public int workflowNodeMaxRepetitions() {
+        return workflowNodeMaxRepetitions;
+    }
+
+    public void setWorkflowNodeMaxRepetitions(int workflowNodeMaxRepetitions) {
+        this.workflowNodeMaxRepetitions = Math.max(1, workflowNodeMaxRepetitions);
     }
 
     /**

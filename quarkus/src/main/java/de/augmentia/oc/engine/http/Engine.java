@@ -535,6 +535,9 @@ public class Engine {
     @ConfigProperty(name = "engine.workflow.max-steps", defaultValue = "100")
     int workflowMaxSteps;
 
+    @ConfigProperty(name = "engine.workflow.node-max-repetitions", defaultValue = "5")
+    int workflowNodeMaxRepetitions;
+
     @PostConstruct
     void wire() {
         effectiveAuthorizer = new SkillAuthorizer(toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer);
@@ -873,6 +876,7 @@ commandLoader = new CommandLoader(workspacePath,
             qocEngine.toolTokenService = new de.augmentia.oc.engine.adapter.security.HmacToolTokenService(toolTokenSigningKey);
         }
         qocEngine.setWorkflowMaxSteps(workflowMaxSteps);
+        qocEngine.setWorkflowNodeMaxRepetitions(workflowNodeMaxRepetitions);
         // Interactive turn boundary: route the "continue?" question through
         // the same durable question tool the agent itself uses, so the answer
         // can arrive via web UI or email reply.

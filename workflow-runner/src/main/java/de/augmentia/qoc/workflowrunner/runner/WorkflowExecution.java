@@ -12,12 +12,22 @@ public record WorkflowExecution(
         String finish,
         boolean failed,
         boolean paused,
-        String error
+        String error,
+        String approvalId,
+        String approvalUrl
 ) {
     public WorkflowExecution {
         if (runId == null) runId = "";
         if (sessionId == null) sessionId = "";
         if (result == null) result = "";
         if (finish == null) finish = "COMPLETED";
+        if (approvalId == null) approvalId = "";
+        if (approvalUrl == null) approvalUrl = "";
+    }
+
+    /** Backward-compatible constructor without approval details. */
+    public WorkflowExecution(String runId, String sessionId, String result, String finish,
+                            boolean failed, boolean paused, String error) {
+        this(runId, sessionId, result, finish, failed, paused, error, "", "");
     }
 }

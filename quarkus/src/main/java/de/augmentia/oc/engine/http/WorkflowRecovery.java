@@ -125,7 +125,8 @@ public class WorkflowRecovery {
         try {
             Engine engineInstance = engine.get();
             WorkflowExecutor executor = new WorkflowExecutor(
-                    engineInstance.qocEngine(), store, engineInstance.mcp().manager(), agentStore);
+                    engineInstance.qocEngine(), store, engineInstance.mcp().manager(), agentStore,
+                    engineInstance.qocEngine().workflowNodeMaxRepetitions());
             WorkflowRunJournal journal = new WorkflowRunJournal(engineInstance.qocEngine());
             for (WorkflowRunSnapshot run : journal.scan(200)) {
                 if (!run.resumable() || run.active()) continue;

@@ -36,16 +36,23 @@ public class WorkflowStepProviderImpl implements WorkflowStepProvider {
     private final NodeDispatcher dispatcher;
     private final WorkflowEventSink sink;
     private final Map<String, Integer> attempts = new HashMap<>();
+    private final int maxNodeRepetitions;
 
     public WorkflowStepProviderImpl(WorkflowDefinition def, NodeDispatcher dispatcher) {
-        this(def, dispatcher, WorkflowEventSink.none());
+        this(def, dispatcher, WorkflowEventSink.none(), 5);
     }
 
     public WorkflowStepProviderImpl(WorkflowDefinition def, NodeDispatcher dispatcher,
                                     WorkflowEventSink sink) {
+        this(def, dispatcher, sink, 5);
+    }
+
+    public WorkflowStepProviderImpl(WorkflowDefinition def, NodeDispatcher dispatcher,
+                                    WorkflowEventSink sink, int maxNodeRepetitions) {
         this.def = def;
         this.dispatcher = dispatcher;
         this.sink = sink == null ? WorkflowEventSink.none() : sink;
+        this.maxNodeRepetitions = Math.max(1, maxNodeRepetitions);
     }
 
     @Override
@@ -55,8 +62,31 @@ public class WorkflowStepProviderImpl implements WorkflowStepProvider {
 
         String nodeId = getNextNodeId(def, ctx);
         if ("DONE".equals(nodeId) || nodeId == null) {
-            return new StepResult.Finished(
-                    FinishReason.NORMAL, TokenCount.zero(), List.of(), List.of());
+            return new StepResult.WorkflowDone();
+        }
+
+        // Dynamic state-machine override.
+        String override = (String) ctx.getState("nextNode");
+        if (override != null && !override.isBlank()) {
+            ctx.setState("nextNode", null);
+            if ("DONE".equalsIgnoreCase(override)) {
+                return new StepResult.WorkflowDone();
+            }
+            nodeId = override;
+        }
+
+        // Circuit-Breaker: endlose Wiederholungen derselben Node abbrechen.
+        int repetitions = ctx.recordNodeExecution(nodeId);
+        if (repetitions > maxNodeRepetitions) {
+            LOG.warn("Circuit breaker tripped for node {} after {} executions (limit {})", nodeId, repetitions, maxNodeRepetitions);
+            sink.nodeFailed(nodeId, new de.augmentia.oc.engine.core.model.SessionError.Unknown(
+                    "workflow-circuit-breaker",
+                    "Node '" + nodeId + "' executed " + repetitions + " times; aborting to prevent an infinite loop"),
+                    repetitions);
+            return new StepResult.Failed(
+                    new de.augmentia.oc.engine.core.contract.provider.FailureKind.InvalidOutput(
+                            de.augmentia.oc.engine.core.contract.provider.InvalidOutputClassification.UNKNOWN),
+                    "Circuit breaker: node '" + nodeId + "' repeated " + repetitions + " times");
         }
 
         WorkflowDefinition.Node node = findNode(def, nodeId);
@@ -76,13 +106,38 @@ public class WorkflowStepProviderImpl implements WorkflowStepProvider {
         try {
             NodeResult result = dispatcher.dispatch(node, def, ctx,
                     ctx.getState("lastResult") != null ? ctx.getState("lastResult").toString() : "");
-            Object output = result.structured() != null
+
+            if (result.status() == NodeResult.Status.PAUSED) {
+                sink.nodeCompleted(nodeId, "PAUSED", "paused", null, result.sessionId(), delta(before, ctx.getWorkflowState()));
+                return new StepResult.Paused(
+                        result.approvalId() == null || result.approvalId().isBlank()
+                                ? java.util.UUID.randomUUID().toString() : result.approvalId(),
+                        result.approvalUrl() == null ? "" : result.approvalUrl());
+            }
+            if (result.status() == NodeResult.Status.FAILED) {
+                SessionError error = new SessionError.Unknown("workflow-node",
+                        result.text().isBlank() ? "node failed" : result.text());
+                sink.nodeFailed(nodeId, error, attempt);
+                return new StepResult.Failed(
+                        new de.augmentia.oc.engine.core.contract.provider.FailureKind.InvalidOutput(
+                                de.augmentia.oc.engine.core.contract.provider.InvalidOutputClassification.UNKNOWN),
+                        result.text().isBlank() ? "Node failed: " + nodeId : "Node failed: " + nodeId + ": " + result.text());
+            }
+
+            Object output = result.structured() != null && !result.structured().isEmpty()
                     ? WorkflowValues.canonical(result.structured())
                     : result.text();
             ctx.setNodeOutput(nodeId, output);
             ctx.setState("lastResult", result.text());
             if (result.structured() != null && result.structured().containsKey("status")) {
                 ctx.setState("lastStatus", result.structured().get("status"));
+            } else if (result.text() != null) {
+                java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("(?i)status\\s*:\\s*([A-Za-z_]+)")
+                        .matcher(result.text());
+                if (m.find()) {
+                    ctx.setState("lastStatus", m.group(1).toUpperCase(java.util.Locale.ROOT));
+                }
             }
             ctx.setCurrentNodeId(nodeId);
 
@@ -91,12 +146,11 @@ public class WorkflowStepProviderImpl implements WorkflowStepProvider {
             sink.nodeCompleted(nodeId, "COMPLETED", outputText, output, result.sessionId(), delta);
             attempts.remove(nodeId);
 
-            // Create a ModelEvent.TextDelta for the node result
             List<de.augmentia.oc.engine.core.contract.provider.ModelEvent> events = new ArrayList<>();
             events.add(new de.augmentia.oc.engine.core.contract.provider.ModelEvent.TextDelta(outputText, outputText));
 
             return new StepResult.Finished(
-                    FinishReason.NORMAL, TokenCount.zero(), events, List.of());
+                    FinishReason.NORMAL, result.usage(), events, List.of());
         } catch (RuntimeException e) {
             SessionError error = new SessionError.Unknown("workflow-node", e.getMessage());
             sink.nodeFailed(nodeId, error, attempt);

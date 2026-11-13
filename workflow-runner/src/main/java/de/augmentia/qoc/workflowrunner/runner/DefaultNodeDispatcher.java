@@ -32,6 +32,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     private final McpServerManager mcpManager;
     private final AgentStorePort agentStore;
     private final de.augmentia.oc.engine.core.model.Principal principal;
+    private final String cacheKey;
 
     public DefaultNodeDispatcher(QocEngine engine, WorkflowDefinitionStore store) {
         this(engine, store, null, null, de.augmentia.oc.engine.core.model.Principal.anonymous());
@@ -49,12 +50,20 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     public DefaultNodeDispatcher(QocEngine engine, WorkflowDefinitionStore store,
                                  McpServerManager mcpManager, AgentStorePort agentStore,
                                  de.augmentia.oc.engine.core.model.Principal principal) {
+        this(engine, store, mcpManager, agentStore, principal, null);
+    }
+
+    public DefaultNodeDispatcher(QocEngine engine, WorkflowDefinitionStore store,
+                                 McpServerManager mcpManager, AgentStorePort agentStore,
+                                 de.augmentia.oc.engine.core.model.Principal principal,
+                                 String cacheKey) {
         this.engine = engine;
         this.store = store;
         this.expander = store != null ? new SubWorkflowExpander(store) : null;
         this.mcpManager = mcpManager;
         this.agentStore = agentStore;
         this.principal = principal == null ? de.augmentia.oc.engine.core.model.Principal.anonymous() : principal;
+        this.cacheKey = cacheKey;
     }
 
     @Override
@@ -82,7 +91,9 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 }
                 nodeInput = TemplateResolver.resolve(nodeInput, ctx);
 
-                return runAgent(node, prefixedName, nodeInput, config, ctx, principal);
+                NodeResult agentResult = runAgent(node, prefixedName, nodeInput, config, ctx, principal);
+                applyPostGuard(node, ctx, agentResult);
+                return agentResult;
             }
             case "context_agent_executor" -> {
                 String agentRef = node.data().agentRef();
@@ -96,7 +107,14 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 // (resolveAgentConfig: first registration wins) überschrieben wird.
                 String prefixedName = "wf:ctx:" + node.id();
 
-                String fullContext = buildFullContext(def, ctx);
+                String mode = str(opt(node, "contextMode"), "focused");
+                ContextAssembler.Policy policy = switch (mode.toLowerCase()) {
+                    case "full" -> ContextAssembler.Policy.FULL;
+                    case "artifacts" -> ContextAssembler.Policy.ARTIFACTS;
+                    case "custom" -> ContextAssembler.Policy.CUSTOM;
+                    default -> ContextAssembler.Policy.FOCUSED;
+                };
+                List<String> customRefs = strList(opt(node, "contextRefs"));
 
                 String systemPrompt = resolveSystemPrompt(def, agentDef);
 
@@ -104,14 +122,23 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 if (task == null || task.isBlank()) task = node.data().defaultTarget();
                 if (task == null || task.isBlank()) task = "Continue with the next step.";
 
+                String fullContext = ContextAssembler.assemble(def, ctx, policy, task, customRefs);
                 String userPrompt = "## Previous context\n" + fullContext
                         + "\n\n## Current task\n" + task;
 
                 QocEngine.AgentConfig config = toAgentConfig(agentDef, prefixedName, systemPrompt);
 
+                // Vorab-Budgetprüfung: harter Fehler statt stiller Überschreitung.
+                de.augmentia.oc.engine.core.contract.provider.ModelInfo modelInfo =
+                        engine.resolveModelInfo(config);
+                ContextBudgetGate.check(node.id(), systemPrompt, userPrompt, agentDef, modelInfo);
+
                 // Kein Runtime-Compaction in diesem Lauf.
                 QocEngine.ExecutionOverrides overrides = new QocEngine.ExecutionOverrides(
-                        null, null, null, null, null, null, false);
+                        null, null, null, null, null, null, false,
+                        cacheKey == null || cacheKey.isBlank()
+                                ? de.augmentia.oc.engine.core.model.Option.none()
+                                : de.augmentia.oc.engine.core.model.Option.some(cacheKey));
 
                 int estimated = estimateTokens(systemPrompt) + estimateTokens(userPrompt);
                 if (estimated > CONTEXT_BUDGET_TOKENS) {
@@ -120,7 +147,9 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                             node.id(), estimated, CONTEXT_BUDGET_TOKENS);
                 }
 
-                return runAgent(node, prefixedName, userPrompt, config, ctx, principal, overrides);
+                NodeResult result = runAgent(node, prefixedName, userPrompt, config, ctx, principal, overrides);
+                applyPostGuard(node, ctx, result);
+                return result;
             }
             case "decision" -> {
                 List<WorkflowDefinition.Branch> branches = node.data().branches();
@@ -139,8 +168,9 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 return new NodeResult("started", null);
             }
             case "hitl" -> {
-                ctx.setNodeOutput(node.id(), "approved");
-                return new NodeResult("approved", null);
+                String approvalId = java.util.UUID.randomUUID().toString();
+                ctx.setNodeOutput(node.id(), "paused");
+                return NodeResult.paused(approvalId, "");
             }
             case "subworkflow" -> {
                 String ref = node.data().workflowRef();
@@ -191,11 +221,55 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                         break;
                     }
                 }
+                // A body step (or its postGuard) may have left a dynamic nextNode
+                // override behind; the loop itself must not leak that override,
+                // otherwise the run can jump back into the loop forever.
+                ctx.setState("nextNode", null);
                 ctx.setNodeOutput(node.id(), "loop completed");
                 return new NodeResult("loop completed", null);
             }
             case "compact" -> {
                 return dispatchCompact(node, def, ctx, principal);
+            }
+            case "guard" -> {
+                Map<String, Object> opts = node.data().mcpArgs() == null ? Map.of() : node.data().mcpArgs();
+                String condition = str(opts.get("condition"), "");
+                boolean matched = condition.isBlank() || ConditionEvaluator.matches(condition, ctx);
+
+                // Begrenze Korrekturrunden: nach MAX_CORRECTION_ROUNDS nicht erneut in den Loop.
+                int maxRounds = Math.max(1, node.data().maxIterations());
+                String condLower = condition.toLowerCase(java.util.Locale.ROOT);
+                if (matched && condLower.contains("low_margin")) {
+                    int rounds = 0;
+                    Object r = ctx.getState("correctionRounds");
+                    if (r instanceof Number n) rounds = n.intValue();
+                    if (rounds >= maxRounds) {
+                        matched = false;
+                    } else {
+                        ctx.setState("correctionRounds", rounds + 1);
+                    }
+                }
+
+                Map<String, Object> updates = mapOpt(opts.get("stateUpdates"));
+                updates.forEach(ctx::setState);
+
+                List<String> inject = strList(opts.get("injectRefs"));
+                inject.forEach(ctx::includeContext);
+
+                String next = matched
+                        ? str(opts.get("onTrue"), node.data().defaultTarget())
+                        : str(opts.get("onFalse"), node.data().defaultTarget());
+                if (next != null && !next.isBlank()) ctx.setState("nextNode", next);
+
+                ctx.setNodeOutput(node.id(), matched ? "true" : "false");
+                return new NodeResult(matched ? "true" : "false", Map.of("matched", matched));
+            }
+            case "inject" -> {
+                Map<String, Object> opts = node.data().mcpArgs() == null ? Map.of() : node.data().mcpArgs();
+                List<String> refs = strList(opts.get("injectRefs"));
+                refs.forEach(ctx::includeContext);
+                ctx.setNodeOutput(node.id(), "injected:" + refs);
+                return new NodeResult("injected:" + refs, Map.of("refs", refs));
             }
             case "llm_eval" -> {
                 String prompt = node.data().title();
@@ -222,7 +296,9 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                         "You are an evaluation assistant. Respond with valid JSON.",
                         List.of(), List.of(), List.of(), List.of(), structuredOutput,
                         schemaOption);
-                return runAgent(node, prefixedName, prompt, config, ctx, principal);
+                NodeResult evalResult = runAgent(node, prefixedName, prompt, config, ctx, principal);
+                applyPostGuard(node, ctx, evalResult);
+                return evalResult;
             }
             case "llm_summarize" -> {
                 String inputData;
@@ -238,7 +314,9 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                         prefixedName, null, 0.3, 4096, 1.0, "You are a summarization assistant.",
                         List.of(), List.of(), List.of(), List.of(), false,
                         de.augmentia.oc.engine.core.model.Option.none());
-                return runAgent(node, prefixedName, prompt, config, ctx, principal);
+                NodeResult summarizeResult = runAgent(node, prefixedName, prompt, config, ctx, principal);
+                applyPostGuard(node, ctx, summarizeResult);
+                return summarizeResult;
             }
             case "mcp_call" -> {
                 String server = node.data().mcpServer();
@@ -300,12 +378,51 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                     + (result.errorMessage() == null ? "unknown" : result.errorMessage()));
         }
         if (result.paused()) {
-            throw new IllegalStateException("Agent node " + node.id()
-                    + " is paused and needs approval before the workflow can continue");
+            String approvalId = result.approvalId() == null || result.approvalId().isBlank()
+                    ? java.util.UUID.randomUUID().toString() : result.approvalId();
+            return NodeResult.paused(approvalId, result.text());
         }
         Map<String, Object> structured = StructuredOutputConverter.toMap(result.structured());
         ctx.setNodeOutput(node.id(), structured != null ? structured : result.text());
-        return new NodeResult(result.text(), structured, child.value());
+        return new NodeResult(result.text(), structured, child.value(), NodeResult.Status.COMPLETED,
+                null, null, de.augmentia.oc.engine.core.model.TokenCount.of(
+                        result.inputTokens(), result.outputTokens()));
+    }
+
+    private void applyPostGuard(WorkflowDefinition.Node node, WorkflowContext ctx, NodeResult result) {
+        if (node == null || ctx == null || result == null) return;
+        Map<String, Object> guard = mapOpt(node.data() == null || node.data().mcpArgs() == null
+                ? null : node.data().mcpArgs().get("postGuard"));
+        if (guard.isEmpty()) return;
+        if (result.structured() != null && !result.structured().isEmpty()) {
+            ctx.setLastStructuredResult(result.structured());
+        } else {
+            ctx.setLastStructuredResult(Map.of("text", result.text()));
+        }
+        String condition = str(guard.get("condition"), "");
+        if (!condition.isBlank() && !ConditionEvaluator.matches(condition, ctx)) {
+            return;
+        }
+        mapOpt(guard.get("stateUpdates")).forEach(ctx::setState);
+        strList(guard.get("injectRefs")).forEach(ctx::includeContext);
+        String next = str(guard.get("nextNode"), null);
+        if (next != null && !next.isBlank()) ctx.setState("nextNode", next);
+    }
+
+    private static Object opt(WorkflowDefinition.Node node, String key) {
+        if (node == null || node.data() == null || node.data().mcpArgs() == null) return null;
+        return node.data().mcpArgs().get(key);
+    }
+
+    private static Map<String, Object> mapOpt(Object o) {
+        if (o instanceof Map<?, ?> m) {
+            Map<String, Object> out = new HashMap<>();
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                if (e.getKey() != null) out.put(String.valueOf(e.getKey()), e.getValue());
+            }
+            return out;
+        }
+        return Map.of();
     }
 
     private String prefixedName(WorkflowDefinition.Agent a, String fallback) {
