@@ -97,7 +97,7 @@ public class WorkflowResource {
         if (def != null && (def.ownerId() == null || def.ownerId().isBlank())) {
             String user = accessGuard == null ? null : accessGuard.currentUser();
             def = new WorkflowDefinition(def.id(), def.name(), def.version(), def.status(),
-                    def.nodes(), def.edges(), def.agents(), user == null ? "" : user);
+                    def.nodes(), def.edges(), def.agents(), user == null ? "" : user, def.systemPrompt());
         }
         WorkflowDefinition saved = store.save(id, def);
         return Response.ok(saved).build();

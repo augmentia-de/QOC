@@ -91,7 +91,7 @@ public class WorkflowExecutor {
         if (ownerId == null || ownerId.isBlank()) {
             ownerId = principal.id();
             def = new WorkflowDefinition(def.id(), def.name(), def.version(), def.status(),
-                    def.nodes(), def.edges(), def.agents(), ownerId);
+                    def.nodes(), def.edges(), def.agents(), ownerId, def.systemPrompt());
         }
 
         WorkflowDefinition persisted = store.save(workflowId, def);
@@ -141,7 +141,8 @@ public class WorkflowExecutor {
         }
 
         WorkflowContext ctx = new WorkflowContext();
-        ctx.restore(snapshot.nodeOutputs(), snapshot.workflowState(), snapshot.currentNodeId());
+        ctx.restore(snapshot.nodeOutputs(), snapshot.workflowState(), snapshot.currentNodeId(),
+                snapshot.input());
 
         // A crashed process leaves a claim behind. It is released here because
         // the journal proved that no coordinator is active for this session.
@@ -184,6 +185,7 @@ public class WorkflowExecutor {
                                   WorkflowEventSink sink, boolean storePrompt,
                                   de.augmentia.oc.engine.core.model.Principal principal) {
         if (principal == null) principal = de.augmentia.oc.engine.core.model.Principal.anonymous();
+        ctx.setInitialPrompt(input == null ? "" : input);
         NodeDispatcher dispatcher = new DefaultNodeDispatcher(engine, store, mcpManager, agentStore, principal);
         WorkflowStepProviderImpl provider = new WorkflowStepProviderImpl(definition, dispatcher, sink);
 

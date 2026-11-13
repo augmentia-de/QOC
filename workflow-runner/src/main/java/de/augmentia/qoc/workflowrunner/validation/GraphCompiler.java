@@ -13,7 +13,11 @@ public class GraphCompiler {
 
     private static final Set<String> VALID_NODE_TYPES = Set.of(
             "agent", "start", "decision", "loop", "fork", "join", "hitl", "subworkflow", "end",
-            "llm_eval", "llm_summarize", "mcp_call");
+            "llm_eval", "llm_summarize", "mcp_call", "context_agent_executor", "compact");
+
+    /** Knotentypen, die einen Agenten (agentRef) benötigen. */
+    private static final Set<String> AGENT_NODE_TYPES =
+            Set.of("agent", "context_agent_executor");
 
     public record ValidationResult(boolean valid, List<String> errors, String summary) {}
 
@@ -53,7 +57,7 @@ public class GraphCompiler {
                 errors.add("Invalid node type '" + n.type() + "' for node " + n.id());
             }
             // Agent nodes must have agentRef
-            if ("agent".equals(n.type())) {
+            if (AGENT_NODE_TYPES.contains(n.type())) {
                 if (n.data() == null || n.data().agentRef() == null || n.data().agentRef().isBlank()) {
                     errors.add("Agent node " + n.id() + " requires agentRef");
                 }
@@ -77,7 +81,8 @@ public class GraphCompiler {
         }
         if (externalAgentIds != null) agentIds.addAll(externalAgentIds);
         for (WorkflowDefinition.Node n : def.nodes()) {
-            if ("agent".equals(n.type()) && n.data() != null && n.data().agentRef() != null
+            if (AGENT_NODE_TYPES.contains(n.type()) && n.data() != null
+                    && n.data().agentRef() != null
                     && !n.data().agentRef().isBlank()) {
                 if (!agentIds.contains(n.data().agentRef())) {
                     errors.add("Agent ref '" + n.data().agentRef() + "' not found in agents[]");

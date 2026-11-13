@@ -45,6 +45,7 @@ public class CheckpointStore {
             data.put("currentNodeId", currentNodeId);
             data.put("nodeOutputs", ctx.getNodeOutputs());
             data.put("workflowState", ctx.getWorkflowState());
+            data.put("initialPrompt", ctx.getInitialPrompt());
             Path file = checkpointDir.resolve(runId + ".json");
             mapper.writeValue(file.toFile(), data);
         } catch (IOException e) {
@@ -64,6 +65,7 @@ public class CheckpointStore {
         try {
             Map<String, Object> data = mapper.readValue(file.toFile(), Map.class);
             WorkflowContext ctx = new WorkflowContext();
+            ctx.setInitialPrompt((String) data.get("initialPrompt"));
             String nodeId = (String) data.get("currentNodeId");
             ctx.setCurrentNodeId(nodeId);
             Map<String, Object> outputs = (Map<String, Object>) data.get("nodeOutputs");

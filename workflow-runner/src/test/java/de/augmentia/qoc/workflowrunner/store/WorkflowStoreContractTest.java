@@ -80,7 +80,7 @@ class WorkflowStoreContractTest {
     }
 
     private static WorkflowDefinition definition(String id, String name, String status) {
-        return new WorkflowDefinition(id, name, "1.0.0", status, List.of(), List.of(), List.of(), "");
+        return new WorkflowDefinition(id, name, "1.0.0", status, List.of(), List.of(), List.of(), "", "");
     }
 
     private static String schema() {

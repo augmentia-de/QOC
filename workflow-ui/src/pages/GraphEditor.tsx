@@ -13,6 +13,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { AgentNode } from '../components/AgentNode';
+import { ContextAgentExecutorNode } from '../components/ContextAgentExecutorNode';
 import { StartNode } from '../components/StartNode';
 import { DecisionNode } from '../components/DecisionNode';
 import { HitlNode } from '../components/HitlNode';
@@ -21,7 +22,7 @@ import { ForkNode } from '../components/ForkNode';
 import { JoinNode } from '../components/JoinNode';
 import { LoopNode } from '../components/LoopNode';
 import { EndNode } from '../components/EndNode';
-import { LlmEvalNode, LlmSummarizeNode } from '../components/LlmEvalNode';
+import { LlmEvalNode, LlmSummarizeNode, CompactNode } from '../components/LlmEvalNode';
 import { McpCallNode } from '../components/McpCallNode';
 import { AgentApi } from '../services/api';
 import { PropertyPanel } from '../components/PropertyPanel';
@@ -41,6 +42,7 @@ import { isValidConnection } from '../lib/connectionRules';
 
 const nodeTypes: NodeTypes = {
   agent: AgentNode,
+  context_agent_executor: ContextAgentExecutorNode,
   start: StartNode,
   decision: DecisionNode,
   hitl: HitlNode,
@@ -51,6 +53,7 @@ const nodeTypes: NodeTypes = {
   end: EndNode,
   llm_eval: LlmEvalNode,
   llm_summarize: LlmSummarizeNode,
+  compact: CompactNode,
   mcp_call: McpCallNode,
 };
 
@@ -358,6 +361,7 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
 
   const palette = [
     { label: '+ Agent', type: 'agent', color: 'bg-blue-600', data: { title: 'Agent', agentRef: '' } },
+    { label: '+ Context Agent', type: 'context_agent_executor', color: 'bg-cyan-700', data: { title: 'Context Agent', agentRef: '' } },
     { label: '+ Start', type: 'start', color: 'bg-green-600', data: { title: 'Start' } },
     { label: '+ Decision', type: 'decision', color: 'bg-amber-600', data: { title: 'Decision', branches: [], defaultTarget: '' } },
     { label: '+ HITL', type: 'hitl', color: 'bg-purple-600', data: { title: 'HITL', requiresHumanApproval: true } },
@@ -367,6 +371,7 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
     { label: '+ Loop', type: 'loop', color: 'bg-orange-600', data: { title: 'Loop', maxIterations: 3, exitCondition: '' } },
     { label: '+ LLM Eval', type: 'llm_eval', color: 'bg-purple-700', data: { title: 'LLM Eval', jsonOutput: true } },
     { label: '+ LLM Sum', type: 'llm_summarize', color: 'bg-indigo-700', data: { title: 'LLM Summarize', defaultTarget: '' } },
+    { label: '+ Compact', type: 'compact', color: 'bg-emerald-700', data: { title: 'Compact', defaultTarget: '', mcpArgs: { mode: 'truncate', maxChars: 4000 } } },
     { label: '+ MCP Call', type: 'mcp_call', color: 'bg-fuchsia-700', data: { title: 'MCP Call', mcpServer: '', mcpTool: '', mcpArgs: {} } },
     { label: '+ End', type: 'end', color: 'bg-gray-600', data: { title: 'End' } },
   ];

@@ -19,7 +19,8 @@ public record WorkflowDefinition(
         List<Node> nodes,
         List<Edge> edges,
         List<Agent> agents,
-        String ownerId
+        String ownerId,
+        String systemPrompt
 ) {
     public WorkflowDefinition {
         if (id == null) id = "";
@@ -30,6 +31,14 @@ public record WorkflowDefinition(
         if (edges == null) edges = List.of();
         if (agents == null) agents = List.of();
         if (ownerId == null) ownerId = "";
+        if (systemPrompt == null) systemPrompt = "";
+    }
+
+    /** Backwards-compatible constructor for callers without a shared system prompt. */
+    public WorkflowDefinition(String id, String name, String version, String status,
+                              List<Node> nodes, List<Edge> edges, List<Agent> agents,
+                              String ownerId) {
+        this(id, name, version, status, nodes, edges, agents, ownerId, "");
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

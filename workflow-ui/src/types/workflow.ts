@@ -72,4 +72,5 @@ export interface WorkflowDefinition {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   agents: Agent[];
+  systemPrompt?: string;   // NEU: gemeinsamer, cache-stabiler Systemprompt
 }

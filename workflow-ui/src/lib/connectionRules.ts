@@ -9,6 +9,7 @@ export interface ConnectionLike {
 
 const SINGLE_INCOMING = new Set([
   'agent',
+  'context_agent_executor',
   'end',
   'hitl',
   'subworkflow',
@@ -23,6 +24,7 @@ const SINGLE_INCOMING = new Set([
 const SINGLE_OUTGOING = new Set([
   'start',
   'agent',
+  'context_agent_executor',
   'hitl',
   'subworkflow',
   'loop',

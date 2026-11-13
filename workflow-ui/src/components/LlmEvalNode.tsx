@@ -27,3 +27,19 @@ export function LlmSummarizeNode({ data, selected }: NodeProps) {
     </NodeShell>
   );
 }
+
+export function CompactNode({ data, selected }: NodeProps) {
+  const args = (data.mcpArgs && typeof data.mcpArgs === 'object'
+    ? data.mcpArgs as Record<string, unknown> : {}) as Record<string, unknown>;
+  const mode = String(args.mode || 'truncate');
+  return (
+    <NodeShell
+      title={String(data.title || 'Compact')}
+      subtitle={`compact: ${mode}`}
+      color="bg-emerald-600 border-emerald-400"
+      selected={selected}
+    >
+      <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
+    </NodeShell>
+  );
+}

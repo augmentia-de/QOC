@@ -32,6 +32,17 @@ public class WorkflowContext {
     /** Aktuelle Position im React-Flow-Graphen. */
     private String currentNodeId;
 
+    /** Ursprüngliche Workflow-Eingabe; enthält die Phaseninformation. */
+    private String initialPrompt;
+
+    public String getInitialPrompt() {
+        return initialPrompt;
+    }
+
+    public void setInitialPrompt(String initialPrompt) {
+        this.initialPrompt = initialPrompt;
+    }
+
     public void setNodeOutput(String nodeId, Object output) {
         nodeOutputs.put(nodeId, WorkflowValues.canonical(output));
     }
@@ -70,5 +81,12 @@ public class WorkflowContext {
         if (nodeOutputs != null) nodeOutputs.forEach(this::setNodeOutput);
         if (workflowState != null) workflowState.forEach(this::setState);
         this.currentNodeId = currentNodeId;
+    }
+
+    /** Neuer Restore-Pfad inkl. Initial-Prompt. */
+    public void restore(Map<String, Object> nodeOutputs, Map<String, Object> workflowState,
+                        String currentNodeId, String initialPrompt) {
+        restore(nodeOutputs, workflowState, currentNodeId);
+        this.initialPrompt = initialPrompt;
     }
 }

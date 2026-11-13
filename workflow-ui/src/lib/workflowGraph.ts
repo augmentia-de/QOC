@@ -20,23 +20,27 @@ import type {
 const SINGLE_SOURCE_HANDLES: Record<string, string> = {
   start: 'out',
   agent: 'out',
+  context_agent_executor: 'out',
   hitl: 'out',
   subworkflow: 'out',
   loop: 'out',
   llm_eval: 'out',
   llm_summarize: 'out',
+  compact: 'out',
   mcp_call: 'out',
   join: 'out',
 };
 
 const SINGLE_TARGET_HANDLES: Record<string, string> = {
   agent: 'in',
+  context_agent_executor: 'in',
   end: 'in',
   hitl: 'in',
   subworkflow: 'in',
   loop: 'in',
   llm_eval: 'in',
   llm_summarize: 'in',
+  compact: 'in',
   mcp_call: 'in',
   decision: 'in',
   fork: 'in',

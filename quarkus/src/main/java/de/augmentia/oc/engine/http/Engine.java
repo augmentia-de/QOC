@@ -866,6 +866,30 @@ commandLoader = new CommandLoader(workspacePath,
             qocEngine.toolTokenService = new de.augmentia.oc.engine.adapter.security.HmacToolTokenService(toolTokenSigningKey);
         }
         qocEngine.setWorkflowMaxSteps(workflowMaxSteps);
+        // Interactive turn boundary: route the "continue?" question through
+        // the same durable question tool the agent itself uses, so the answer
+        // can arrive via web UI or email reply.
+        qocEngine.setQuestionAsker((sessionId, questionText) -> {
+            de.augmentia.oc.engine.core.port.human.QuestionSource.Question question =
+                    new de.augmentia.oc.engine.core.port.human.QuestionSource.Question(
+                            "Step-Limit erreicht",
+                            questionText,
+                            java.util.List.of(
+                                    new de.augmentia.oc.engine.core.port.human.QuestionSource.Option(
+                                            "Ja", "Agent arbeitet mit weiteren Steps weiter"),
+                                    new de.augmentia.oc.engine.core.port.human.QuestionSource.Option(
+                                            "Nein", "Turn wird mit einer Abschlussmeldung beendet")),
+                            false);
+            try {
+                de.augmentia.oc.engine.core.port.human.QuestionSource.Answer answer =
+                        questionSource.ask(sessionId, java.util.List.of(question));
+                String picked = answer.selected().stream().findFirst().orElse("").trim();
+                return picked.equalsIgnoreCase("ja") || picked.equalsIgnoreCase("yes");
+            } catch (RuntimeException e) {
+                LOG.debugf("continue-question failed: %s", e.getMessage());
+                return false;
+            }
+        });
         qocEngine.setPreflightContext(new de.augmentia.oc.engine.runtime.resilience.PreflightChecker.PreflightContext(
                 config == null ? null : config.url(),
                 providerApiKey,

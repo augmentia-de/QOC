@@ -295,5 +295,23 @@ class QocEngineTest {
         assertThat(overrides.toolSnapshot()).isNull();
         assertThat(overrides.contextBuilder()).isNull();
         assertThat(overrides.skillSelection()).isNull();
+        // Rückwärtskompatibel: Compaction standardmäßig aktiv
+        assertThat(overrides.compactionEnabled()).isTrue();
+    }
+
+    @Test
+    void executionOverridesSupportsDisablingCompaction() {
+        QocEngine.ExecutionOverrides overrides = new QocEngine.ExecutionOverrides(
+                null, null, null, null, null, null, false);
+
+        assertThat(overrides.compactionEnabled()).isFalse();
+    }
+
+    @Test
+    void executionOverridesSevenArgEnablesCompactionExplicitly() {
+        QocEngine.ExecutionOverrides overrides = new QocEngine.ExecutionOverrides(
+                null, null, null, null, null, null, true);
+
+        assertThat(overrides.compactionEnabled()).isTrue();
     }
 }

@@ -26,7 +26,7 @@ services:
       - ../..:/app
       - ${HOME}/.m2:/home/qoc/.m2
       - ./data/home:/data/home
-      - ../../data/workspace:/data/workspace
+      - ../../../data/workspace:/data/workspace
       - ./log:/data/log
       - ./entrypoint-dev-native.sh:/usr/local/bin/entrypoint-dev-native.sh:ro
     ports:

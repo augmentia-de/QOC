@@ -140,6 +140,24 @@ export default function WorkflowDetail() {
         </div>
       </div>
 
+      {tab === 'graph' && (
+        <div className="shrink-0 rounded border border-gray-700 bg-gray-800 p-3">
+          <label className="mb-1 block text-xs font-semibold text-gray-400">
+            Workflow-Systemprompt (shared, cache-stabil)
+          </label>
+          <textarea
+            value={workflow.systemPrompt ?? ''}
+            onChange={(e) => {
+              const updated = { ...workflow, systemPrompt: e.target.value };
+              setWorkflow(updated as any);
+              setJsonText(JSON.stringify(updated, null, 2));
+            }}
+            className="h-24 w-full rounded bg-gray-900 p-2 font-mono text-xs"
+            placeholder="Optional: gemeinsamer Systemprompt für alle context_agent_executor-Knoten"
+          />
+        </div>
+      )}
+
       {tab === 'graph' ? (
         <div className="flex-1 min-h-0 border border-gray-700 rounded overflow-hidden">
           <GraphEditor

@@ -52,7 +52,7 @@ public class SubWorkflowExpander {
 
         return new WorkflowDefinition(
                 wf.id(), wf.name(), wf.version(), wf.status(),
-                flatNodes, rewrittenEdges, agents, wf.ownerId()
+                flatNodes, rewrittenEdges, agents, wf.ownerId(), wf.systemPrompt()
         );
     }
 

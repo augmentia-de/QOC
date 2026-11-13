@@ -120,6 +120,31 @@ public static record EngineConfig(
     private int workflowMaxSteps = 100;
     private de.augmentia.oc.engine.runtime.resilience.PreflightChecker.PreflightContext preflightContext;
 
+    /**
+     * Hook for interactive turn boundaries: asks the user a yes/no question
+     * ("continue working?") and returns the answer. Implemented by the outer
+     * engine via the {@code question} tool; never set in framework-neutral
+     * mode, where the soft boundary then simply stops the turn.
+     */
+    private java.util.function.BiFunction<SessionId, String, Boolean> questionAsker;
+
+    /** Registers the interactive continue-question hook. */
+    public void setQuestionAsker(java.util.function.BiFunction<SessionId, String, Boolean> asker) {
+        this.questionAsker = asker;
+    }
+
+    /** Asks the user whether to keep going; defaults to "no" when no hook is wired. */
+    private boolean askContinue(SessionId session, int stepNo) {
+        if (questionAsker == null) return false;
+        try {
+            Boolean answer = questionAsker.apply(session,
+                    "Das Step-Limit (" + stepNo + " Steps) ist erreicht. Soll der Agent weiterarbeiten? (ja/nein)");
+            return Boolean.TRUE.equals(answer);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     private QocEngine(Stores stores, StorageConfig storageConfig, Clock clock,
                       SessionService sessionService, Coordinator coordinator,
                       boolean recoveryEnabled,
@@ -542,8 +567,21 @@ public static record EngineConfig(
             de.augmentia.oc.engine.runtime.step.Step step,
             de.augmentia.oc.engine.core.contract.tool.ToolSnapshot toolSnapshot,
             de.augmentia.oc.engine.runtime.context.ContextBuilder contextBuilder,
-            de.augmentia.oc.engine.runtime.skill.SkillSelection skillSelection
-    ) {}
+            de.augmentia.oc.engine.runtime.skill.SkillSelection skillSelection,
+            boolean compactionEnabled
+    ) {
+        /** Backwards-compatible: compaction enabled by default. */
+        public ExecutionOverrides(
+                de.augmentia.oc.engine.runtime.context.AgentProfile agentProfile,
+                de.augmentia.oc.engine.core.contract.provider.ModelInfo modelInfo,
+                de.augmentia.oc.engine.runtime.step.Step step,
+                de.augmentia.oc.engine.core.contract.tool.ToolSnapshot toolSnapshot,
+                de.augmentia.oc.engine.runtime.context.ContextBuilder contextBuilder,
+                de.augmentia.oc.engine.runtime.skill.SkillSelection skillSelection) {
+            this(agentProfile, modelInfo, step, toolSnapshot, contextBuilder,
+                 skillSelection, true);
+        }
+    }
 
     /**
      * Agent configuration passed from workflow definitions.
@@ -763,7 +801,20 @@ public static record EngineConfig(
 
             int stepNo = 1;
             StringBuilder sb = new StringBuilder();
-            int maxSteps = workflowMode ? Math.max(1, workflowMaxSteps) : 10; // prevent infinite loop
+            // Step budget:
+            //   workflowMode         → workflowMaxSteps (node loop, not agent loop)
+            //   agent.maxSteps() > 0 → that limit, with a status notice and a
+            //                          "continue?" question at the boundary
+            //   otherwise (0)        → unlimited
+            int maxSteps = workflowMode ? Math.max(1, workflowMaxSteps)
+                    : (agent.maxSteps() > 0 ? agent.maxSteps() : 0);
+            // Interactive sessions (ask mode INTERACTIVE, non-subagent) get a
+            // soft boundary with a status message and a yes/no continue question.
+            boolean interactiveTurn = !workflowMode
+                    && agent.askMode() == de.augmentia.oc.engine.core.contract.permission.AskMode.INTERACTIVE
+                    && !"subagent".equalsIgnoreCase(name);
+            int softStepLimit = interactiveTurn ? Math.max(1, maxSteps > 0 ? maxSteps : 100) : 0;
+            boolean continueApproved = false;
             int retryAttempts = 0;
             int maxRetries = 2;
             int totalToolCalls = 0;
@@ -772,9 +823,23 @@ public static record EngineConfig(
             java.util.List<de.augmentia.oc.engine.core.contract.tool.ToolCall> recentToolCalls = new java.util.ArrayList<>();
             de.augmentia.oc.engine.runtime.resilience.LoopDetector loopDetector = new de.augmentia.oc.engine.runtime.resilience.LoopDetector.Default();
             de.augmentia.oc.engine.core.eval.TurnPolicy turnPolicy = new de.augmentia.oc.engine.core.eval.TurnPolicy(
-                    maxSteps + 1,
+                    maxSteps > 0 ? maxSteps + 1 : Integer.MAX_VALUE,
                     Math.max(1, engineConfig.maxTurnToolCalls()), Math.max(0, (int) engineConfig.maxTurnTokens()),
                     java.time.Duration.ofMinutes(Math.max(1, engineConfig.maxTurnWallMinutes())));
+
+            /** Streams a plain status line to the live SSE channel (UI-safe). */
+            java.util.function.Consumer<String> statusSink = message -> {
+                try {
+                    eventPublisher.publishLive(session.value(),
+                            de.augmentia.oc.engine.core.json.Json.encode(
+                                    de.augmentia.oc.engine.core.event.ContractCodec.encode(
+                                            new de.augmentia.oc.engine.core.contract.provider.ModelEvent.TextDelta(
+                                                    "status", message),
+                                            de.augmentia.oc.engine.core.contract.provider.ModelEvent.class)));
+                } catch (RuntimeException ignored) {
+                    // best-effort status streaming; do not fail the turn
+                }
+            };
 
             java.util.function.Consumer<de.augmentia.oc.engine.core.contract.provider.ModelEvent> liveSink =
                     event -> {
@@ -788,7 +853,18 @@ public static record EngineConfig(
                         }
                     };
 
-            while (stepNo <= maxSteps) {
+            while (maxSteps <= 0 || stepNo <= maxSteps) {
+                // Interactive soft boundary: report progress and ask whether to
+                // keep going before running further steps.
+                if (interactiveTurn && softStepLimit > 0 && stepNo > softStepLimit && !continueApproved) {
+                    statusSink.accept("\n\n---\n\n**[Status] Step " + (stepNo - 1) + " von "
+                            + softStepLimit + " erreicht.** Fortsetzung erforderlich.");
+                    boolean proceed = askContinue(session, stepNo);
+                    if (!proceed) break;
+                    continueApproved = true; // one approval extends the whole turn
+                    softStepLimit += Math.max(softStepLimit, 100);
+                }
+
                 de.augmentia.oc.engine.runtime.step.StepResult result;
                 if (workflowMode) {
                     java.util.logging.Logger.getLogger(QocEngine.class.getName()).fine("Workflow mode: step=" + stepNo);
@@ -814,7 +890,9 @@ public static record EngineConfig(
                     result = runStep.run(prepared, toolContext, liveSink);
                 }
 
-                if (!workflowMode && result instanceof de.augmentia.oc.engine.runtime.step.StepResult.NeedsCompaction) {
+                if (!workflowMode
+                        && (overrides == null || overrides.compactionEnabled())
+                        && result instanceof de.augmentia.oc.engine.runtime.step.StepResult.NeedsCompaction) {
                     // Compact and retry
                     if (compactionService != null) try {
                         compactionService.compact(session, de.augmentia.oc.engine.core.model.CompactionReason.OVERFLOW,
@@ -1021,7 +1099,9 @@ public static record EngineConfig(
                         }
                     }
 
-                    // Turn policy
+                    // Turn policy. ANSWER_NOW means "force a final answer
+                    // now" (TurnPolicy reserves headroom for it); the turn
+                    // must not end silently with only tool calls.
                     totalToolCalls += finished.toolCalls().size();
                     totalTokens += finished.usage().total();
                     if (workflowMode) {
@@ -1038,11 +1118,108 @@ public static record EngineConfig(
                             turnPolicy.decide(stepNo, totalToolCalls,
                                     de.augmentia.oc.engine.core.model.TokenCount.of(totalTokens, 0),
                                     java.time.Duration.between(turnStarted, clock.now()));
-                    if (decision != de.augmentia.oc.engine.core.eval.TurnPolicy.Decision.CONTINUE) {
-                        break;
+                    if (decision == de.augmentia.oc.engine.core.eval.TurnPolicy.Decision.CONTINUE) {
+                        stepNo++;
+                        continue;
                     }
+                    // Interactive sessions: the step boundary is soft — report
+                    // status and ask whether to keep going instead of ending
+                    // the turn abruptly.
+                    if (interactiveTurn && softStepLimit > 0 && !continueApproved
+                            && stepNo >= softStepLimit
+                            && decision == de.augmentia.oc.engine.core.eval.TurnPolicy.Decision.ANSWER_NOW) {
+                        statusSink.accept("\n\n---\n\n**[Status] Step " + (stepNo - 1) + " von "
+                                + softStepLimit + " erreicht.** Fortsetzung erforderlich.");
+                        if (askContinue(session, stepNo)) {
+                            continueApproved = true;
+                            softStepLimit += Math.max(softStepLimit, 100);
+                            continue;
+                        }
+                    }
+                    // ANSWER_NOW or FAIL_TURN: run one forced final step with
+                    // tools disabled so the model produces a closing text
+                    // answer instead of the turn ending without a reply.
+                    de.augmentia.oc.engine.runtime.skill.SkillSelection selection =
+                            overrides == null ? null : overrides.skillSelection();
+                    de.augmentia.oc.engine.runtime.context.Prepared finalPrepared = selection != null
+                            ? activeContextBuilder.prepare(info, agent, model, runSnapshot,
+                                    de.augmentia.oc.engine.core.model.Seq.zero(), stepNo,
+                                    de.augmentia.oc.engine.core.model.Option.some(
+                                            new de.augmentia.oc.engine.core.contract.provider.Choice.None()),
+                                    de.augmentia.oc.engine.core.model.Option.none(), selection)
+                            : activeContextBuilder.prepare(info, agent, model, runSnapshot,
+                                    de.augmentia.oc.engine.core.model.Seq.zero(), stepNo,
+                                    de.augmentia.oc.engine.core.model.Option.some(
+                                            new de.augmentia.oc.engine.core.contract.provider.Choice.None()));
+                    de.augmentia.oc.engine.core.contract.tool.ToolContext finalToolContext =
+                            new de.augmentia.oc.engine.core.contract.tool.ToolContext(
+                                    session, info.agent(),
+                                    de.augmentia.oc.engine.core.model.MessageId.create(),
+                                    de.augmentia.oc.engine.core.model.CallId.create(),
+                                    null, principal, toolTokenService);
+                    de.augmentia.oc.engine.runtime.step.StepResult finalResult =
+                            runStep.run(finalPrepared, finalToolContext, liveSink);
+                    if (finalResult instanceof de.augmentia.oc.engine.runtime.step.StepResult.Finished finalFinished) {
+                        for (de.augmentia.oc.engine.core.contract.provider.ModelEvent event : finalFinished.events()) {
+                            if (event instanceof de.augmentia.oc.engine.core.contract.provider.ModelEvent.TextDelta d) {
+                                sb.append(d.text());
+                            } else if (event instanceof de.augmentia.oc.engine.core.contract.provider.ModelEvent.TextEnded e) {
+                                if (sb.length() == 0) sb.append(e.text());
+                            }
+                        }
+                        // Persist the forced final assistant turn (text only).
+                        java.util.List<de.augmentia.oc.engine.core.model.Content> finalContent =
+                                new java.util.ArrayList<>();
+                        if (!sb.isEmpty()) {
+                            finalContent.add(new de.augmentia.oc.engine.core.model.Content.TextContent(
+                                    sb.toString(), clock.now()));
+                        }
+                        // Blocked calls (tools disabled) are persisted so the
+                        // history stays consistent, but they do not count as
+                        // a reason to keep looping.
+                        for (de.augmentia.oc.engine.runtime.step.StepResult.ToolCallOutcome outcome : finalFinished.toolCalls()) {
+                            de.augmentia.oc.engine.core.contract.tool.ToolCall call = outcome.call();
+                            de.augmentia.oc.engine.core.model.ToolState state;
+                            if (outcome.outcome() instanceof de.augmentia.oc.engine.core.contract.tool.ToolOutcome.Ok ok) {
+                                state = new de.augmentia.oc.engine.core.model.ToolState.Completed(
+                                        call.input(), ok.result().content(), ok.result().metadata());
+                            } else if (outcome.outcome() instanceof de.augmentia.oc.engine.core.contract.tool.ToolOutcome.Failed failed) {
+                                state = new de.augmentia.oc.engine.core.model.ToolState.Failed(
+                                        call.input(), failed.error(),
+                                        de.augmentia.oc.engine.core.model.Option.none(), failed.metadata());
+                            } else {
+                                state = new de.augmentia.oc.engine.core.model.ToolState.Completed(
+                                        call.input(), java.util.List.of(), java.util.Map.of());
+                            }
+                            finalContent.add(new de.augmentia.oc.engine.core.model.Content.ToolCardContent(
+                                    new de.augmentia.oc.engine.core.model.ToolCard(
+                                            call.id(), call.name(), call.input(), state, true, clock.now())));
+                        }
+                        if (!finalContent.isEmpty()) {
+                            try {
+                                de.augmentia.oc.engine.core.model.Seq finalSeq =
+                                        stores.conversation().nextSeq(session);
+                                stores.conversation().insert(session, finalSeq,
+                                        new de.augmentia.oc.engine.core.model.Message.AssistantMessage(
+                                                de.augmentia.oc.engine.core.model.MessageId.create(),
+                                                info.agent(),
+                                                info.model().orElse(new de.augmentia.oc.engine.core.model.ModelRef(
+                                                        model.providerId(), model.id())),
+                                                finalContent,
+                                                de.augmentia.oc.engine.core.model.Option.some(finalFinished.reason()),
+                                                de.augmentia.oc.engine.core.model.Option.none(),
+                                                de.augmentia.oc.engine.core.model.Option.none(),
+                                                de.augmentia.oc.engine.core.model.Option.none(),
+                                                de.augmentia.oc.engine.core.model.Money.zero(),
+                                                finalFinished.usage(),
+                                                de.augmentia.oc.engine.core.model.AssistantTime.started(clock.now())));
+                            } catch (RuntimeException e) {
+                                // Conversation store may not support insert — continue
+                            }
+                        }
+                    }
+                    break;
                 }
-                stepNo++;
             }
 
             String answer = sb.toString();
