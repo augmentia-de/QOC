@@ -196,6 +196,12 @@ Client/Orchestrator
 
 ### Tools (Leaf-Profil)
 
+> **Worktrees (opt-in).** `worktree_create`/`worktree_list`/`worktree_remove`
+> sind standardmäßig deaktiviert (`engine.worktree.enabled=false` /
+> `ENGINE_WORKTREE_ENABLED=false`). Aktivierung erfordert zusätzlich `git` und
+> ein Git-Working-Tree in `ENGINE_WORKSPACE`. Siehe
+> `docs/diagrams/10-deployment.md`.
+
 Ziel-Policy:
 
 | Erlaubt | Verboten |

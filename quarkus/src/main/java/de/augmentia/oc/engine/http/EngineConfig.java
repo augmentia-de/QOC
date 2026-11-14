@@ -54,6 +54,10 @@ public class EngineConfig {
     boolean agentAuthoringEnabledProperty;
 
     @Inject
+    @ConfigProperty(name = "engine.worktree.enabled", defaultValue = "false")
+    boolean worktreeEnabledProperty;
+
+    @Inject
     @ConfigProperty(name = "engine.agent.source-token")
     java.util.Optional<String> agentSourceTokenProperty;
 
@@ -98,6 +102,7 @@ public class EngineConfig {
     private String role;
     private String agentSourceUrl;
     private boolean agentAuthoringEnabled;
+    private boolean worktreeEnabled;
     private String agentSourceToken;
     private String provider;
     private String model;
@@ -140,6 +145,7 @@ public class EngineConfig {
         role = roleProperty == null || roleProperty.isBlank() ? "server" : roleProperty.trim().toLowerCase();
         agentSourceUrl = agentSourceUrlProperty.orElse("").trim();
         agentAuthoringEnabled = agentAuthoringEnabledProperty;
+        worktreeEnabled = worktreeEnabledProperty;
         agentSourceToken = agentSourceTokenProperty.orElse("").trim();
         workspace = workspaceProperty;
         sessionTempDir = sessionTempDirProperty;
@@ -309,6 +315,7 @@ public class EngineConfig {
     public boolean isServerlessMode() { return "serverless".equalsIgnoreCase(mode()); }
     public String agentSourceUrl() { return agentSourceUrl == null ? "" : agentSourceUrl; }
     public boolean agentAuthoringEnabled() { return agentAuthoringEnabled; }
+    public boolean worktreeEnabled() { return worktreeEnabled; }
     public String agentSourceToken() { return agentSourceToken == null ? "" : agentSourceToken; }
 public String workspace() { return workspace; }
 

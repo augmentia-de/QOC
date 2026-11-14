@@ -321,8 +321,13 @@ public static record EngineConfig(
             de.augmentia.oc.engine.core.port.world.ProcessRunner processRunner = toolDeps.processRunner();
             registry.register(de.augmentia.oc.engine.runtime.tool.shell.ShellTool.definition(
                     processRunner, workspacePath, workspacePath, null, noOpGate, processRegistry));
-            // Worktree tools (only if git is available)
-            if (de.augmentia.oc.engine.runtime.tool.meta.WorktreeTool.available(processRunner, workspacePath)) {
+            // Worktree tools (opt-in: engine.worktree.enabled=true; additionally
+            // requires git and a git working tree).
+            boolean worktreeEnabled = Boolean.parseBoolean(
+                    System.getProperty("engine.worktree.enabled",
+                            System.getenv().getOrDefault("ENGINE_WORKTREE_ENABLED", "false")));
+            if (worktreeEnabled
+                    && de.augmentia.oc.engine.runtime.tool.meta.WorktreeTool.available(processRunner, workspacePath)) {
                 de.augmentia.oc.engine.runtime.tool.meta.WorktreeTool worktrees =
                         new de.augmentia.oc.engine.runtime.tool.meta.WorktreeTool(processRunner, workspacePath);
                 registry.register(de.augmentia.oc.engine.runtime.tool.meta.WorktreeTool.create(worktrees));

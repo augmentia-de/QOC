@@ -660,6 +660,7 @@ function updateFallbackBanner() {
 }
 let es = null;
 let currentAssistant = null;
+let currentAssistantRaw = '';
 let sawStreamedText = false;
 let currentFile = null;
 let currentFileContent = '';
@@ -1133,11 +1134,9 @@ async function init() {
       await loadSessionMessages(sessionId);
       connectSSE();
       await loadFiles('.');
-      const hasRunning = await loadTasks(sessionId);
-      sendBtn.textContent = hasRunning ? 'Interrupt' : 'Senden';
-      if (hasRunning) status.textContent = 'Läuft…'; else status.textContent = 'bereit';
+      await loadTasks(sessionId);
+      await syncRunningState();
       startTaskPoll(sessionId);
-      updateCancelButton();
       updateBackButton();
       initOrchestratorHeartbeat();
     } else {
@@ -1440,10 +1439,9 @@ async function newSession(agent) {
     if (es) es.close();
     connectSSE();
     await loadFiles('.');
-    const hasRunning2 = await loadTasks(sessionId);
-    sendBtn.textContent = hasRunning2 ? 'Interrupt' : 'Senden';
+    await loadTasks(sessionId);
+    await syncRunningState();
     startTaskPoll(sessionId);
-    updateCancelButton();
   } catch (e) { status.textContent = 'Fehler: ' + e.message; }
 }
 
@@ -1566,22 +1564,26 @@ function handleSseEvent(ev) {
     switch (ev._type) {
       case 'TextStarted':
         currentAssistant = addMessage('assistant', '');
+        currentAssistantRaw = '';
         sawStreamedText = true;
         break;
       case 'TextDelta':
-        if (!currentAssistant) { currentAssistant = addMessage('assistant', ''); }
+        if (!currentAssistant) { currentAssistant = addMessage('assistant', ''); currentAssistantRaw = ''; }
         sawStreamedText = true;
-        currentAssistant.textContent += ev.text;
-        currentAssistant.innerHTML = renderMarkdown(currentAssistant.textContent);
+        currentAssistantRaw += (ev.text || '');
+        currentAssistant.innerHTML = renderMarkdown(currentAssistantRaw);
         messages.scrollTop = messages.scrollHeight;
         break;
       case 'TextEnded':
-        if (currentAssistant && !currentAssistant.textContent && ev.text) {
-          currentAssistant.innerHTML = renderMarkdown(ev.text);
+        if (ev.text && !currentAssistantRaw) currentAssistantRaw = ev.text;
+        if (currentAssistant) {
+          currentAssistant.innerHTML = renderMarkdown(currentAssistantRaw || ev.text || '');
         }
         currentAssistant = null;
+        currentAssistantRaw = '';
         break;
       case 'ToolCallRequested': {
+        if (!showDetails.checked) return;
         sawStreamedText = true;
         const tname = (ev.name && typeof ev.name === 'object' && ev.name.value) ? ev.name.value : ev.name;
         let tinput;
@@ -1592,6 +1594,7 @@ function handleSseEvent(ev) {
         break;
       }
       case 'ToolResultProvided': {
+        if (!showDetails.checked) return;
         sawStreamedText = true;
         const t = (ev.outcome && (ev.outcome.text || (ev.outcome.value ? JSON.stringify(ev.outcome.value) : ''))) || '';
         const trimmed = String(t).slice(0, 4000);
@@ -1714,6 +1717,7 @@ function connectSSE() {
       });
       if (!res.ok || !res.body) throw new Error('SSE HTTP ' + res.status);
       sseRetryCount = 0; // reset on successful connection
+      syncRunningState();
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -2429,6 +2433,28 @@ async function updateCancelButton() {
     hardCancelBtn.disabled = true;
   }
 }
+// Synchronisiert den Interrupt/Senden-Zustand mit dem Server, damit nach
+// Reload, Tab-Wechsel oder SSE-Reconnect der korrekte Button angezeigt wird.
+async function syncRunningState() {
+  if (!sessionId || !sendBtn) return;
+  try {
+    const res = await fetch('/api/session/' + encodeURIComponent(sessionId) + '/running', {headers: authHeaders()});
+    const data = await res.json().catch(() => ({}));
+    const running = !!data.running;
+    sendBtn.textContent = running ? 'Interrupt' : 'Senden';
+    if (status) status.textContent = running ? 'Läuft…' : 'bereit';
+  } catch (e) { /* ignore */ }
+  updateCancelButton();
+}
+// Bei Tab-Wechsel / Fokus zurück synchronisieren, damit der Interrupt-Button
+// nicht fälschlich auf "Senden" springt.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && sessionId) syncRunningState();
+});
+window.addEventListener('focus', () => { if (sessionId) syncRunningState(); });
+// Leichter Dauer-Poll (3s) als Fallback, falls Tab-Throttling den taskPoll stoppt.
+setInterval(() => { if (sessionId) syncRunningState(); }, 3000);
+
 hardCancelBtn.onclick = async () => {
   if (!sessionId || hardCancelBtn.disabled) return;
   if (!confirm('Laufenden Agent abbrechen? (Parent + Subagents)')) return;

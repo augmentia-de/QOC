@@ -753,13 +753,14 @@ commandLoader = new CommandLoader(workspacePath,
         registry.register(SessionTools.rename(sessionControl));
         registry.register(SessionTools.move(sessionControl));
         registry.register(SessionTools.models(sessionControl));
-        if (WorktreeTool.available(processRunner, workspacePath)) {
+        if (config != null && config.worktreeEnabled()
+                && WorktreeTool.available(processRunner, workspacePath)) {
             WorktreeTool worktrees = new WorktreeTool(processRunner, workspacePath);
             registry.register(WorktreeTool.create(worktrees));
             registry.register(WorktreeTool.list(worktrees));
             registry.register(WorktreeTool.remove(worktrees));
         } else {
-            LOG.info("worktree tools disabled: git is not available or the workspace is not a git repository");
+            LOG.info("worktree tools disabled: engine.worktree.enabled=false, or git is not available, or the workspace is not a git repository");
         }
         int qMaxRetries = questionAutoRetry ? questionMaxRetries : 0;
         long qTimeout = questionTimeoutSeconds;
@@ -3138,7 +3139,8 @@ commandLoader = new CommandLoader(workspacePath,
         ProcessRunner processRunner = createProcessRunner(root);
         defs.add(ShellTool.definition(processRunner, root, root, null,
                 permissionGate, processRegistry));
-        if (includeWorktree && WorktreeTool.available(processRunner, root)) {
+        if (includeWorktree && (config == null || config.worktreeEnabled())
+                && WorktreeTool.available(processRunner, root)) {
             WorktreeTool worktrees = new WorktreeTool(processRunner, root);
             defs.add(WorktreeTool.create(worktrees));
             defs.add(WorktreeTool.list(worktrees));

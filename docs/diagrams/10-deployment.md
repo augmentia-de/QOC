@@ -85,7 +85,11 @@ flowchart TB
 - No Git, not even optionally.
 - `WorktreeTool.available(...)` checks `git --version` and
   `git -C <workspace> rev-parse --is-inside-work-tree`.
-- If the check fails, the worktree tools are not registered.
+- Additionally, worktree tools are gated by `engine.worktree.enabled`
+  (`ENGINE_WORKTREE_ENABLED`), default `false` (opt-in). Even when the flag
+  is `true`, the git/repository check above must still pass.
+- If either the flag is off or the check fails, the worktree tools are not
+  registered.
 - `AGENTS.native.md` lies in the image or in the workspace and documents the
   limitations.
 
