@@ -6,6 +6,7 @@ import de.augmentia.oc.engine.core.json.Result;
 import de.augmentia.oc.engine.core.json.Schema;
 import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.SessionId;
+import de.augmentia.qoc.workflowrunner.store.AgentStorePort;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -27,6 +28,9 @@ public class SessionResource {
     @Inject
     SessionAccessGuard accessGuard;
 
+    @Inject
+    AgentStorePort agentStore;
+
     @POST
     @Path("/session")
     public Response createSession(CreateSessionRequest request,
@@ -40,6 +44,45 @@ public class SessionResource {
         String mode = request == null ? null : request.mode();
         boolean retain = request != null && Boolean.TRUE.equals(request.retain());
         String agent = request == null ? null : request.agent();
+        if (agent != null && agent.startsWith("wf:")) {
+            String lookup = agent.substring(3);
+            try {
+                de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent a =
+                        agentStore == null ? null : agentStore.get(lookup);
+                if (a == null && agentStore != null) {
+                    for (de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent cand : agentStore.listAll()) {
+                        if (cand != null && (lookup.equalsIgnoreCase(cand.id())
+                                || lookup.equalsIgnoreCase(cand.name()))) { a = cand; break; }
+                    }
+                }
+                if (a != null && engine.agentCatalogue != null) {
+                    // Register the workflow agent in the QOC catalogue (if not already)
+                    // so the engine can resolve it by name/ID.
+                    if (engine.agentCatalogue.config(a.name()) == null
+                            && engine.agentCatalogue.config(lookup) == null) {
+                        java.util.List<String> tools = a.tools() == null ? java.util.List.of() : a.tools();
+                        de.augmentia.oc.engine.http.EngineConfig.AgentConfig cfg =
+                                new de.augmentia.oc.engine.http.EngineConfig.AgentConfig(
+                                        a.name(),
+                                        a.systemPrompt() == null || a.systemPrompt().isBlank() ? null : a.systemPrompt(),
+                                        !a.active(),
+                                        a.mode() == null ? "all" : a.mode(),
+                                        a.model() == null || a.model().isBlank() ? null : a.model(),
+                                        0,
+                                        a.tools() == null ? java.util.List.of("*") : a.tools(),
+                                        java.util.List.of(),
+                                        java.util.List.of(),
+                                        java.util.List.of("*"),
+                                        a.rolesAllowed() == null ? java.util.List.of("*") : a.rolesAllowed());
+                        engine.agentCatalogue.define(a.name(), cfg, null);
+                    }
+                    de.augmentia.oc.engine.core.model.AgentId resolvedId = engine.agentCatalogue.resolve(a.name());
+                    if (resolvedId != null) {
+                        agent = resolvedId.value();
+                    }
+                }
+            } catch (RuntimeException ignored) {}
+        }
         if (agent != null && !agent.isBlank()) {
             Response agentDenied = accessGuard.requireAgent(agent);
             if (agentDenied != null) return agentDenied;

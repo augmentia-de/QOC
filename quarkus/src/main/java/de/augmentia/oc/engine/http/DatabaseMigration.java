@@ -37,8 +37,8 @@ public class DatabaseMigration {
 
     /** Runs the configured migration. Idempotent; used by startup hooks. */
     public void migrate() {
-        // In-memory mode: no database, no migration, no Flyway.
-        if ("memory".equalsIgnoreCase(storageKind)) {
+        // File/memory mode: no database, no migration, no Flyway.
+        if ("memory".equalsIgnoreCase(storageKind) || "file".equalsIgnoreCase(storageKind)) {
             return;
         }
         if (!dataSource.isResolvable()) {

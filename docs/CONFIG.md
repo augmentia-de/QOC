@@ -80,7 +80,7 @@ minimale Reibung (kein Login, alles erlaubt).
 
 ```properties
 # --- Storage: Postgres (oder SQLite für Single-Node) ---
-engine.storage=postgres                           # postgres | sqlite | memory | auto
+engine.storage=postgres                           # postgres | sqlite | file | memory
 engine.db.kind=postgresql                         # postgresql | sqlite
 engine.db.path=${ENGINE_DB_PATH:./data/qoc.db}    # nur bei sqlite
 quarkus.datasource.db-kind=${engine.db.kind}
@@ -91,7 +91,7 @@ quarkus.datasource.jdbc.url=${QUARKUS_DATASOURCE_JDBC_URL:jdbc:postgresql://loca
 quarkus.flyway.migrate-at-start=false            # Migrationen manuell
 
 # --- Workflow-Storage: folgt Engine (DB) ---
-engine.workflow.storage=auto                      # auto | file | memory | postgres | sqlite
+engine.workflow.storage=auto                      # auto | file | memory | postgres | sqlite  (auto folgt engine.storage)
 engine.workflow.storage-dir=./wf-data
 
 # --- Retention (Dev: kurz halten) ---

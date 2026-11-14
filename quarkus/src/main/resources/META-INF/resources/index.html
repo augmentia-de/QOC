@@ -1928,9 +1928,14 @@ async function loadSelectors() {
     const models = await (await fetch('/api/model')).json();
     const providers = await (await fetch('/api/provider')).json();
     // Merge: workflow agents (DB) override engine agents with same name.
+    // Map workflow agent name -> QOC agent id (agt_...) so the engine can resolve it.
+    const qocByName = new Map((agents.data||[]).map(a => [a.name.toLowerCase(), a.id]));
     const byName = new Map();
     (agents.data||[]).filter(a=>!a.hidden).forEach(a => byName.set(a.name.toLowerCase(), {value:a.id, label:a.name}));
-    (wfAgents.agents||[]).forEach(a => byName.set(a.name.toLowerCase(), {value:'wf:'+a.id, label:a.name + ' (wf)'}));
+    (wfAgents.agents||[]).forEach(a => {
+      const qocId = qocByName.get(a.name.toLowerCase());
+      byName.set(a.name.toLowerCase(), {value: qocId || ('wf:'+a.id), label: a.name + ' (wf)'});
+    });
     fill('agent', Array.from(byName.values()));
     const agentSel = document.getElementById('agent');
     if (agents.canAuthor === true) {

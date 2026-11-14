@@ -12,6 +12,7 @@ import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
 import org.jboss.logging.Logger;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Owns MCP server discovery and A2A tool registration. Extracted from
@@ -32,7 +33,19 @@ public final class McpRegistry {
     public void setup(ToolRegistry registry, EngineConfig config,
                       A2AConfig a2aConfig) {
         for (McpServerConfig server : config.mcpServers()) {
-            mcp.add(server);
+            // Support relative URLs (auto-port): "/api/test/mcp" -> "http://localhost:<port>/api/test/mcp"
+            McpServerConfig resolved = resolveRelativeUrl(server);
+            mcp.add(resolved);
+        }
+        // Load persisted runtime-registered servers (from previous UI registrations).
+        for (McpServerConfig server : McpServerPersistence.load()) {
+            if (!mcp.serverNames().contains(server.name())) {
+                try {
+                    mcp.add(resolveRelativeUrl(server));
+                } catch (RuntimeException e) {
+                    LOG.warnf("Failed to load persisted MCP server '%s': %s", server.name(), e.getMessage());
+                }
+            }
         }
         registry.register(McpResourceTools.list(mcp));
         registry.register(McpResourceTools.read(mcp));
@@ -48,6 +61,17 @@ public final class McpRegistry {
         } catch (RuntimeException e) {
             LOG.warnf("A2A tool registration failed: %s", e.getMessage());
         }
+    }
+
+    /** Resolves relative MCP server URLs to absolute using the runtime port. */
+    private static McpServerConfig resolveRelativeUrl(McpServerConfig server) {
+        if (server instanceof McpServerConfig.Remote r && r.url() != null && r.url().startsWith("/")) {
+            String port = System.getProperty("quarkus.http.port", "8080");
+            String url = "http://localhost:" + port + r.url();
+            return new McpServerConfig.Remote(r.name(), url, r.headers(), r.oauth(),
+                    r.disabled(), r.codemode(), r.startupTimeoutMs(), r.catalogTimeoutMs(), r.executionTimeoutMs());
+        }
+        return server;
     }
 
     public McpServerManager manager() {

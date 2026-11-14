@@ -17,6 +17,9 @@ import de.augmentia.qoc.workflowrunner.store.CheckpointStore;
 import de.augmentia.qoc.workflowrunner.store.AgentStore;
 import de.augmentia.qoc.workflowrunner.store.WorkflowStore;
 import de.augmentia.qoc.workflowrunner.validation.GraphCompiler;
+import de.augmentia.qoc.workflowrunner.generate.GenerateConfig;
+import de.augmentia.qoc.workflowrunner.generate.WorkflowGenerator;
+import de.augmentia.qoc.workflowrunner.store.WorkflowJson;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -181,6 +184,51 @@ public final class WorkflowRunnerMain {
             WorkflowExecutor executor = new WorkflowExecutor(engine, store);
             String result = executor.execute(def, input);
             sendJson(ex, 200, Map.of("result", result, "valid", true));
+        });
+
+        // Generate workflow from prompt
+        server.createContext("/workflows/generate", ex -> {
+            if (!"POST".equals(ex.getRequestMethod())) {
+                sendJson(ex, 405, Map.of("error", "method not allowed"));
+                return;
+            }
+            if (!GenerateConfig.enabled()) {
+                sendJson(ex, 403, Map.of("error", "workflow generation disabled (ENGINE_WORKFLOW_GENERATE_ENABLED=false)"));
+                return;
+            }
+            String body = readBody(ex);
+            Map<String, Object> req;
+            try {
+                req = MAPPER.readValue(body, Map.class);
+            } catch (Exception e) {
+                sendJson(ex, 400, Map.of("error", "invalid JSON body"));
+                return;
+            }
+            String prompt = (String) req.get("prompt");
+            if (prompt == null || prompt.isBlank()) {
+                sendJson(ex, 400, Map.of("error", "prompt is required"));
+                return;
+            }
+            try {
+                WorkflowGenerator generator = new WorkflowGenerator(
+                        p -> {
+                            try {
+                                de.augmentia.oc.engine.core.model.EngineResult r =
+                                        engine.runPrompt(null, "build", p, null, false, null, null,
+                                                de.augmentia.oc.engine.core.model.Principal.anonymous());
+                                return r == null ? "" : (r.text() == null ? "" : r.text());
+                            } catch (Exception e) {
+                                throw new RuntimeException("LLM call failed: " + e.getMessage(), e);
+                            }
+                        },
+                        store, WorkflowJson.mapper());
+                WorkflowDefinition def = generator.generate(prompt);
+                sendJson(ex, 201, def);
+            } catch (IllegalArgumentException e) {
+                sendJson(ex, 422, Map.of("error", e.getMessage()));
+            } catch (Exception e) {
+                sendJson(ex, 500, Map.of("error", "generation failed: " + e.getMessage()));
+            }
         });
 
         server.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(8));

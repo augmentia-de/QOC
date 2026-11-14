@@ -11,12 +11,20 @@ export default function Generate() {
     setGenerating(true);
     setResult(null);
     try {
-      // Use the engine to generate a workflow from a prompt
-      const res = await WorkflowApi.create(prompt.trim().substring(0, 40));
-      setResult(`Workflow erstellt: ${res.data.id}`);
+      const res = await fetch('/workflows/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt.trim() })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+      }
+      const data = await res.json();
+      setResult(`Workflow erstellt: ${data.id}`);
     } catch (e) {
       console.error(e);
-      setResult('Generierung fehlgeschlagen');
+      setResult('Generierung fehlgeschlagen: ' + (e as Error).message);
     } finally {
       setGenerating(false);
     }

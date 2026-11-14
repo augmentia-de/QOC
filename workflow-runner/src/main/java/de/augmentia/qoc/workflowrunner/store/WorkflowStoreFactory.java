@@ -36,6 +36,7 @@ public final class WorkflowStoreFactory {
         }
         String engine = normalize(engineStorage);
         if ("memory".equals(engine)) return "memory";
+        if ("file".equals(engine)) return "file";
         String database = normalize(databaseKind);
         if ("sqlite".equals(engine) || "sqlite".equals(database)) return "sqlite";
         if ("postgres".equals(engine) || "postgresql".equals(database) || "postgres".equals(database)) {

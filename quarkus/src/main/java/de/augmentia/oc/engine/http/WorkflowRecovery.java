@@ -49,11 +49,24 @@ public class WorkflowRecovery {
     @ConfigProperty(name = "engine.storage", defaultValue = "postgres")
     String engineStorage;
 
+    @ConfigProperty(name = "engine.workflow.storage-dir", defaultValue = "./wf-data")
+    String workflowStorageDir;
+
     @ConfigProperty(name = "engine.workflow.max-resume-attempts", defaultValue = "10")
     int maxResumeAttempts;
 
     void onStart(@Observes StartupEvent event) {
-        if (!enabled || "memory".equalsIgnoreCase(engineStorage)) {
+        boolean memoryMode = "memory".equalsIgnoreCase(engineStorage);
+        boolean fileMode = "file".equalsIgnoreCase(engineStorage);
+        // In-memory/file mode: no database, no migration, no journal recovery.
+        // But still import QOC agents (config + Markdown) into the agent store
+        // so file-based agent definitions are available.
+        if (memoryMode || fileMode) {
+            importQocAgents();
+            importFileWorkflows();
+            return;
+        }
+        if (!enabled) {
             return;
         }
         // Workflow tables are part of the same schema; make sure they exist
@@ -66,6 +79,9 @@ public class WorkflowRecovery {
         }
         // SSOT: import QOC agents (config + Markdown) into the unified agent store.
         importQocAgents();
+        // SSOT: import workflow definitions from files (wf-data/) if not already in DB.
+        // File-first: files are seed data; DB takes precedence for existing entries.
+        importFileWorkflows();
         Thread.startVirtualThread(this::recover);
     }
 
@@ -118,6 +134,44 @@ public class WorkflowRecovery {
             LOG.infof("Imported %d QOC agents into unified agent store", imported);
         } catch (RuntimeException e) {
             LOG.warnf("QOC agent import failed: %s", e.getMessage());
+        }
+    }
+
+    public void importFileWorkflows() {
+        if (store == null) return;
+        int imported = 0;
+        try {
+            java.nio.file.Path dir = java.nio.file.Path.of(workflowStorageDir == null || workflowStorageDir.isBlank()
+                    ? "./wf-data" : workflowStorageDir);
+            if (!java.nio.file.Files.isDirectory(dir)) return;
+            try (var stream = java.nio.file.Files.list(dir)) {
+                stream.filter(f -> f.toString().endsWith(".json"))
+                        .forEach(f -> {
+                            try {
+                                String id = f.getFileName().toString().replace(".json", "");
+                                if (store.get(id) != null) return; // DB takes precedence
+                                String json = java.nio.file.Files.readString(f);
+                                de.augmentia.qoc.workflowrunner.model.WorkflowDefinition def =
+                                        de.augmentia.qoc.workflowrunner.store.WorkflowJson.read(json);
+                                if (def != null) {
+                                    try {
+                                        store.save(def.id(), def);
+                                    } catch (RuntimeException e) {
+                                        LOG.warnf("workflow save failed for %s: %s", id, e.getMessage());
+                                    }
+                                }
+                            } catch (RuntimeException e) {
+                                LOG.warnf("workflow file import failed for %s: %s", f, e.getMessage());
+                            } catch (java.io.IOException e) {
+                                LOG.warnf("workflow file read failed for %s: %s", f, e.getMessage());
+                            }
+                        });
+            }
+            LOG.infof("Imported workflow definitions from %s", dir);
+        } catch (RuntimeException e) {
+            LOG.warnf("workflow file import failed: %s", e.getMessage());
+        } catch (java.io.IOException e) {
+            LOG.warnf("workflow file import failed: %s", e.getMessage());
         }
     }
 

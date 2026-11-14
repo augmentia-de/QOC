@@ -209,6 +209,7 @@ public class Engine {
     @ConfigProperty(name = "engine.model.output-limit", defaultValue = "128000")
     int modelOutputLimit;
 
+
     @Inject
     @ConfigProperty(name = "engine.question.timeout-seconds", defaultValue = "300")
     int questionTimeoutSeconds;
@@ -545,7 +546,7 @@ public class Engine {
         promptSlots = new java.util.concurrent.Semaphore(Math.max(1, maxConcurrentPrompts));
 
         // Startup guard: memory mode disables DB and recovery.
-        memoryMode = "memory".equalsIgnoreCase(storageKind);
+        memoryMode = "memory".equalsIgnoreCase(storageKind) || "file".equalsIgnoreCase(storageKind);
         if (memoryMode && recoveryEnabled) {
             throw new IllegalStateException("Recovery is not available in memory mode");
         }
@@ -553,7 +554,11 @@ public class Engine {
             // Do not resolve the datasource at all: Quarkus keeps an inactive
             // synthetic bean whose proxy would only fail on first use.
             dataSource = null;
-            LOG.info("Storage mode: memory (no database, no recovery)");
+            if ("file".equalsIgnoreCase(storageKind)) {
+                LOG.info("Storage mode: file (runtime in-memory, workflows/agents from files; no recovery)");
+            } else {
+                LOG.info("Storage mode: memory (no database, no recovery)");
+            }
         } else {
             dataSource = dataSourceInstance.get();
             if (!de.augmentia.oc.engine.adapter.sql.DbHealthSql.isHealthy(dataSource, 3)) {
@@ -826,19 +831,75 @@ commandLoader = new CommandLoader(workspacePath,
                 new QuarkusEventPublisher(eventBus),
                 new de.augmentia.oc.engine.runtime.callback.AgentResolver() {
                     public String nameOf(de.augmentia.oc.engine.core.model.AgentId agent) {
-                        return agentCatalogue.nameOf(agent);
+                        String n = agentCatalogue.nameOf(agent);
+                        if (n != null) return n;
+                        if (agent != null && agent.value() != null && agent.value().startsWith("wf:")) {
+                            return agent.value().substring(3);
+                        }
+                        return agent == null ? null : agent.value();
                     }
                     public de.augmentia.oc.engine.runtime.QocEngine.AgentConfig config(String name) {
-                        EngineConfig.AgentConfig cfg = agentCatalogue.config(name);
-                        if (cfg == null) return null;
-                        java.util.List<String> tools = (cfg.toolAllow() == null || cfg.toolAllow().contains("*"))
-                                ? java.util.List.of() : java.util.List.copyOf(cfg.toolAllow());
-                        return new de.augmentia.oc.engine.runtime.QocEngine.AgentConfig(
-                                name, cfg.model(), 0.3, 4096, 1.0,
-                                cfg.system() == null ? "" : cfg.system(),
-                                tools,
-                                java.util.List.of(), java.util.List.of(), java.util.List.of(), false,
-                                de.augmentia.oc.engine.core.model.Option.none());
+                        String lookup = name;
+                        if (lookup != null && lookup.startsWith("wf:")) {
+                            lookup = lookup.substring(3);
+                        }
+                        // 1. QOC catalogue (config / Markdown agents).
+                        EngineConfig.AgentConfig cfg = agentCatalogue.config(lookup);
+                        if (cfg != null) {
+                            java.util.List<String> tools = (cfg.toolAllow() == null || cfg.toolAllow().contains("*"))
+                                    ? java.util.List.of() : java.util.List.copyOf(cfg.toolAllow());
+                            return new de.augmentia.oc.engine.runtime.QocEngine.AgentConfig(
+                                    name, cfg.model(), 0.3, 4096, 1.0,
+                                    cfg.system() == null ? "" : cfg.system(),
+                                    tools,
+                                    java.util.List.of(), java.util.List.of(), java.util.List.of(), false,
+                                    de.augmentia.oc.engine.core.model.Option.none());
+                        }
+                        // 2. Workflow agent store (DB) -- workflow-managed agents.
+                        try {
+                            if (workflowRecoveryInstance != null && workflowRecoveryInstance.isResolvable()) {
+                                de.augmentia.qoc.workflowrunner.store.AgentStorePort store =
+                                        workflowRecoveryInstance.get().agentStore;
+                                if (store != null) {
+                                    de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent a = store.get(lookup);
+                                    if (a == null) {
+                                        for (de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent cand : store.listAll()) {
+                                            if (cand != null && (lookup.equalsIgnoreCase(cand.id())
+                                                    || lookup.equalsIgnoreCase(cand.name()))) { a = cand; break; }
+                                        }
+                                    }
+                                    if (a != null) {
+                                        java.util.List<String> tools = a.tools() == null ? java.util.List.of() : a.tools();
+                                        de.augmentia.oc.engine.core.model.Option<de.augmentia.oc.engine.core.json.Schema> schemaOpt =
+                                                de.augmentia.oc.engine.core.model.Option.none();
+                                        if (a.responseSchema() != null && !a.responseSchema().isEmpty()) {
+                                            try {
+                                                de.augmentia.oc.engine.core.json.Result<de.augmentia.oc.engine.core.json.Schema> parsed =
+                                                        de.augmentia.oc.engine.core.json.JsonSchema.parse(
+                                                                de.augmentia.oc.engine.core.json.JsonValues.fromJava(a.responseSchema()));
+                                                if (parsed instanceof de.augmentia.oc.engine.core.json.Result.Ok<de.augmentia.oc.engine.core.json.Schema> ok) {
+                                                    schemaOpt = de.augmentia.oc.engine.core.model.Option.some(ok.value());
+                                                }
+                                            } catch (RuntimeException ignored) {}
+                                        }
+                                        return new de.augmentia.oc.engine.runtime.QocEngine.AgentConfig(
+                                                name,
+                                                a.model() == null || a.model().isBlank() ? null : a.model(),
+                                                a.temperature(),
+                                                a.maxTokens() > 0 ? a.maxTokens() : 4096,
+                                                a.topP() > 0 ? a.topP() : 1.0,
+                                                a.systemPrompt() == null ? "" : a.systemPrompt(),
+                                                tools == null ? java.util.List.of() : tools,
+                                                a.guardrailsInput() == null ? java.util.List.of() : a.guardrailsInput(),
+                                                a.guardrailsOutput() == null ? java.util.List.of() : a.guardrailsOutput(),
+                                                a.hooks() == null ? java.util.List.of() : a.hooks(),
+                                                a.jsonOutput(),
+                                                schemaOpt);
+                                    }
+                                }
+                            }
+                        } catch (RuntimeException ignored) {}
+                        return null;
                     }
                 },
                 new de.augmentia.oc.engine.runtime.callback.TracerProvider() {

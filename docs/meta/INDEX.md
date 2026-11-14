@@ -104,3 +104,4 @@ implementation specification:
 - `analysis/04-change-impact.md`
 - `analysis/flow-db-service/README.md`
 - `memory-use.md` - Memory-Nutzung und DB-/File-Storage waehrend eines Tasks
+- `engineering/Unified-Storage.md` - Einheitliche Speicher-Konfiguration (engine.storage, MCP, Agents, RBAC)

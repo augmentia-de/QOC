@@ -125,6 +125,7 @@ public class McpClientResource {
             config = new McpServerConfig.Remote(name, url, Map.of(), false, false, false, 0, 0, 0);
         }
         manager().add(config);
+        McpServerPersistence.addServer(config);
         McpServerManager mgr = manager();
         return Response.status(Response.Status.CREATED).entity(Map.of(
                 "name", name,
@@ -136,6 +137,7 @@ public class McpClientResource {
     @Path("/servers/{name}")
     public Response removeServer(@PathParam("name") String name) {
         manager().remove(name);
+        McpServerPersistence.removeServer(name);
         return Response.ok(Map.of("deleted", true)).build();
     }
 }
