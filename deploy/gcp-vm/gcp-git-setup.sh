@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# GCP-Git-Setup für QOC (nur lokal, kein GitHub).
-# Einmalig auf der VM als root ausführen:
+# GCP git setup for QOC (local only, no GitHub).
+# Run once on the VM as root:
 #   sudo bash deploy/gcp-vm/gcp-git-setup.sh
 #
 # Umgebungsvariablen:
@@ -72,9 +72,9 @@ echo "=== Git-Setup abgeschlossen ==="
 echo "Projekte: $PROJECTS"
 echo "Workspace: $WORKSPACE_ROOT"
 echo ""
-echo "Nächste Schritte:"
+echo "Next steps:"
 echo "  1. In einem Projekt-Ordner arbeiten: cd $WORKSPACE_ROOT/<projekt>"
-echo "  2. Dateien hinzufügen: git add -A"
+echo "  2. Add files: git add -A"
 echo "  3. Committen: git commit -m '...'"
-echo "  4. (Optional) Remote hinzufügen: git remote add origin <url>"
+echo "  4. (Optional) Add remote: git remote add origin <url>"
 echo "  5. (Optional) Pushen: git push -u origin main"

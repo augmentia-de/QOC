@@ -31,11 +31,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verhaltenstests für parallele Subagent-Aufrufe über den {@link Step}.
+ * Behavioral tests for parallel subagent calls via the {@link Step}.
  *
- * <p>Zeigt, dass zwei {@code subagent}-Tool-Calls in einem Modell-Schritt
- * gleichzeitig laufen und jeweils eine eigene Child-Session erhalten. Das ist
- * die Grundlage für „zwei Research-Subagents gleichzeitig“.</p>
+ * <p>Shows that two {@code subagent} tool calls in one model step
+ * run concurrently and each receive their own child session. This is
+ * the basis for "two research subagents at once".</p>
  */
 class SubagentParallelTest {
 
@@ -128,7 +128,7 @@ class SubagentParallelTest {
 
         assertThat(result.toolCalls()).hasSize(1);
         assertThat(toolText(result, 0)).contains("a:one").contains("b:two");
-        // Das tasks-Array wird bewusst sequentiell abgearbeitet.
+        // The tasks array is intentionally processed sequentially.
         assertThat(maxActive.get()).isEqualTo(1);
         tool.close();
     }

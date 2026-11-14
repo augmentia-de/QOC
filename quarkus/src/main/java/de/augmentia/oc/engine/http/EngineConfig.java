@@ -681,11 +681,11 @@ public String workspace() { return workspace; }
         // least-privilege set would otherwise override allow-all and ask for
         // every shell command.
         List<Rule> rules = new ArrayList<>(ContextBuilder.defaults(permissionDefault));
-        // Build-agent: edit/write/patch erlauben (Least-Privilege: explizit, nicht *:*=ALLOW)
+        // Build agent: allow edit/write/patch (least privilege: explicit, not *:*=ALLOW)
         rules.add(new Rule("edit", "*", Effect.ALLOW));
         rules.add(new Rule("write", "*", Effect.ALLOW));
         rules.add(new Rule("patch", "*", Effect.ALLOW));
-        // Plan-Ordner erlauben (für Plan-Notizen)
+        // Allow plan directory (for plan notes)
         String planDir = planDirectory(workspace);
         rules.add(new Rule("external_directory", planDir + "/*", Effect.ALLOW));
         String buildSystem = "You are a coding agent. Prefer to proceed with a sensible default " +
@@ -699,7 +699,7 @@ public String workspace() { return workspace; }
     /** Baseline plan agent: no edits except the plan directory. */
     private AgentConfig defaultPlanAgent() {
         List<Rule> rules = new ArrayList<>(ContextBuilder.leastPrivilegeDefaults());
-        // Plan-Agent: edit bleibt deny (bereits in defaults), nur Plan-Ordner erlauben
+        // Plan agent: edit stays deny (already in defaults), only plan directory allowed
         String planDir = planDirectory(workspace);
         rules.add(new Rule("external_directory", planDir + "/*", Effect.ALLOW));
         return new AgentConfig("plan",

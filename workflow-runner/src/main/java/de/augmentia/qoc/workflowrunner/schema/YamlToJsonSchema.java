@@ -41,10 +41,10 @@ public final class YamlToJsonSchema {
         try {
             obj = yamlMapper.readValue(yaml, Object.class);
         } catch (Exception e) {
-            throw new IllegalArgumentException("Ungültiges YAML: " + e.getMessage());
+            throw new IllegalArgumentException("Invalid YAML: " + e.getMessage());
         }
         if (!(obj instanceof Map<?, ?> map)) {
-            throw new IllegalArgumentException("YAML muss ein Objekt definieren");
+            throw new IllegalArgumentException("YAML must define an object");
         }
         Map<String, Object> m = new LinkedHashMap<>();
         for (Map.Entry<?, ?> e : map.entrySet()) {

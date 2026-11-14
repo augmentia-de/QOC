@@ -183,7 +183,7 @@ function CheckboxList({
     <div className="mb-3">
       <FieldLabel>{label}</FieldLabel>
       <div className="max-h-36 space-y-1 overflow-y-auto rounded border border-gray-700 p-2">
-        {options.length === 0 && <p className="text-xs text-gray-500">Keine Optionen verfügbar.</p>}
+        {options.length === 0 && <p className="text-xs text-gray-500">No options available.</p>}
         {options.map((option) => (
           <label key={option.value} className="flex items-center gap-2 text-xs">
             <input
@@ -245,7 +245,7 @@ function BranchListEditor({
       </div>
       {list.length === 0 && (
         <p className="mb-2 text-xs text-gray-500">
-          Noch keine Branches. Jeder Branch erhält einen eigenen Output-Handle.
+          No branches yet. Each branch gets its own output handle.
         </p>
       )}
       <div className="space-y-2">
@@ -286,7 +286,7 @@ function BranchListEditor({
         ))}
       </div>
       <p className="mt-1 text-xs text-gray-500">
-        Der Output-Handle wird als <code>branch-&lt;id&gt;</code> gespeichert und als Edge-Label angezeigt.
+        The output handle is stored as <code>branch-&lt;id&gt;</code> and shown as an edge label.
       </p>
     </div>
   );
@@ -585,7 +585,7 @@ export function PropertyPanel({
       try {
         mcpArgs = mcpArgsText.trim() ? JSON.parse(mcpArgsText) : {};
       } catch {
-        alert('Args ist kein gültiges JSON.');
+        alert('Args is not valid JSON.');
         return;
       }
     }
@@ -637,7 +637,7 @@ export function PropertyPanel({
   if (!selectedNode) {
     return (
       <div className="w-80 border-l border-gray-700 bg-gray-800 p-4">
-        <p className="text-sm text-gray-400">Node auswählen</p>
+        <p className="text-sm text-gray-400">Select a node</p>
       </div>
     );
   }
@@ -655,7 +655,7 @@ export function PropertyPanel({
     <div className="w-80 overflow-y-auto border-l border-gray-700 bg-gray-800 p-4">
       <h3 className="mb-4 font-bold">
         Properties: {selectedNode.id}
-        {isDirty && <span className="ml-2 text-xs text-amber-400">● ungespeichert</span>}
+        {isDirty && <span className="ml-2 text-xs text-amber-400">● unsaved</span>}
       </h3>
 
       <div className="mb-4">
@@ -692,8 +692,8 @@ export function PropertyPanel({
             </select>
           </div>
           <p className="text-xs text-gray-500">
-            Übergibt den vollständigen bisherigen Workflow-Kontext als User-Nachricht.
-            Der Shared-Systemprompt wird aus den Workflow-Einstellungen verwendet.
+            Passes the full previous workflow context as a user message.
+            The shared system prompt is taken from the workflow settings.
           </p>
         </div>
       )}
@@ -839,7 +839,7 @@ export function PropertyPanel({
                 placeholder="You are a helpful agent. Use ${node_1.output.field} for data-piping."
               />
               <p className="mt-1 text-xs text-gray-500">
-                Data-Piping: ${'node_id.output.field'} für Werte aus Vorgänger-Nodes
+                Data-piping: ${'node_id.output.field'} for values from predecessor nodes
               </p>
             </div>
             <MultiSelect
@@ -938,7 +938,7 @@ export function PropertyPanel({
             value={draftString('defaultTarget')}
             nodes={nodeOptions}
             onChange={(value) => updateField('defaultTarget', value)}
-            hint="Wird verwendet, wenn keine Branch-Condition zutrifft."
+            hint="Used when no branch condition matches."
           />
           <BranchListEditor
             branches={draftList('branches') as Branch[]}
@@ -1004,7 +1004,7 @@ export function PropertyPanel({
               value={draftString('exitCondition')}
               onChange={(event) => updateField('exitCondition', event.target.value)}
               className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
-              placeholder="contains:done oder status == 'SUCCESS'"
+              placeholder="contains:done or status == 'SUCCESS'"
             />
           </div>
         </div>
@@ -1040,7 +1040,7 @@ export function PropertyPanel({
           <ChipList
             label="Eingehende Kanten"
             values={incomingSources}
-            empty="Noch keine eingehenden Kanten."
+            empty="No incoming edges yet."
           />
         </div>
       )}
@@ -1051,10 +1051,10 @@ export function PropertyPanel({
           <ChipList
             label="Ausgehende Kanten"
             values={outgoingTargets}
-            empty="Noch keine ausgehenden Kanten."
+            empty="No outgoing edges yet."
           />
           <p className="text-xs text-gray-500">
-            Neue Ausgänge über die <code>Out +</code>-Handles im Graph verbinden.
+            Connect new outputs via the <code>Out +</code> handles in the graph.
           </p>
         </div>
       )}
@@ -1131,7 +1131,7 @@ export function PropertyPanel({
               value={draftString('defaultTarget')}
               onChange={(event) => updateField('defaultTarget', event.target.value)}
               className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
-              placeholder="${node_1.output} oder ${lastResult}"
+              placeholder="${node_1.output} or ${lastResult}"
             />
             <datalist id="llm-input-options">
               <option value="${lastResult}" />
@@ -1191,7 +1191,7 @@ export function PropertyPanel({
               placeholder="node_1, node_2 (leer = alle)"
             />
             <p className="mt-1 text-xs text-gray-500">
-              Reihenfolge der Definition bestimmt den Kontext-Flow.
+              Definition order determines the context flow.
             </p>
           </div>
           <div className="mb-3">
@@ -1201,10 +1201,10 @@ export function PropertyPanel({
               onChange={(event) => updateMcpArg('mode', event.target.value)}
               className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
             >
-              <option value="truncate">truncate – Kopf/Tail kürzen</option>
+              <option value="truncate">truncate – trim head/tail</option>
               <option value="filter_keys">filter_keys – nur definierte JSON-Keys</option>
               <option value="bulletize">bulletize – Zeilen als Bullets</option>
-              <option value="llm">llm – LLM-Verfeinerung (agentRef nötig)</option>
+              <option value="llm">llm – LLM refinement (agentRef required)</option>
             </select>
           </div>
           {compactMode !== 'llm' && (
@@ -1281,7 +1281,7 @@ export function PropertyPanel({
           {compactMode === 'llm' && (
             <>
               <div className="mb-3">
-                <FieldLabel>Agent Ref (für LLM-Verfeinerung)</FieldLabel>
+                <FieldLabel>Agent Ref (for LLM refinement)</FieldLabel>
                 <input
                   value={draftString('agentRef')}
                   onChange={(event) => updateField('agentRef', event.target.value)}
@@ -1304,7 +1304,7 @@ export function PropertyPanel({
             </>
           )}
           <div className="mb-3">
-            <FieldLabel>Section Title (Überschrift des Blocks)</FieldLabel>
+            <FieldLabel>Section Title (block heading)</FieldLabel>
             <input
               value={compactOptString('sectionTitle')}
               onChange={(event) => updateMcpArg('sectionTitle', event.target.value)}
@@ -1343,7 +1343,7 @@ export function PropertyPanel({
             emptyLabel="– Tool –"
             hint={
               mcpServer && mcpTools.length === 0
-                ? 'Für diesen Server wurden keine Tools gefunden.'
+                ? 'No tools found for this server.'
                 : undefined
             }
           />
@@ -1389,7 +1389,7 @@ export function PropertyPanel({
               placeholder='{"title": "${node_1.output.title}"}'
             />
             {!mcpArgsValid && (
-              <p className="mt-1 text-xs text-red-400">Ungültiges JSON — Speichern ist blockiert.</p>
+              <p className="mt-1 text-xs text-red-400">Invalid JSON — saving is blockiert.</p>
             )}
             <p className="mt-1 text-xs text-gray-500">
               Data-Piping: ${'node_id.output.field'}
@@ -1412,7 +1412,7 @@ export function PropertyPanel({
               placeholder='{"url": "https://api.example.com/items/${node_1.output.id}", "method": "GET", "headers": {"Authorization": "Bearer ${token}"}, "body": {"name": "${node_1.output.name}"}}'
             />
             {!mcpArgsValid && (
-              <p className="mt-1 text-xs text-red-400">Ungültiges JSON — Speichern ist blockiert.</p>
+              <p className="mt-1 text-xs text-red-400">Invalid JSON — saving is blockiert.</p>
             )}
             <p className="mt-1 text-xs text-gray-500">
               Felder: url, method (GET/POST/PUT/PATCH/DELETE), headers (Objekt), body (Objekt/String).
@@ -1434,7 +1434,7 @@ export function PropertyPanel({
           onClick={handleReset}
           className="rounded bg-gray-600 px-3 py-2 text-sm disabled:opacity-50"
           disabled={!isDirty}
-          title="Änderungen verwerfen"
+          title="Discard changes"
         >
           ↺ Reset
         </button>
@@ -1442,7 +1442,7 @@ export function PropertyPanel({
           <button
             onClick={handleCopy}
             className="rounded bg-gray-600 px-3 py-2 text-sm"
-            title="Agent-Config kopieren"
+            title="Copy agent config"
           >
             📋 Copy
           </button>

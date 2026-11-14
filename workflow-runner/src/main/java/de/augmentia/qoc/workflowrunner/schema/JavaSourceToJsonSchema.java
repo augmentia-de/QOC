@@ -44,11 +44,11 @@ public final class JavaSourceToJsonSchema {
         }
         JavaParser parser = new JavaParser();
         CompilationUnit cu = parser.parse(source).getResult()
-                .orElseThrow(() -> new IllegalArgumentException("Ungültiger Java-Quellcode"));
+                .orElseThrow(() -> new IllegalArgumentException("Invalid Java source code"));
 
         Map<String, TypeDef> defs = collectTypeDefs(cu);
         if (defs.isEmpty()) {
-            throw new IllegalArgumentException("Keine Klasse, Record oder Enum gefunden");
+            throw new IllegalArgumentException("No class, record or enum found");
         }
         TypeDef first = null;
         for (TypeDef def : defs.values()) {

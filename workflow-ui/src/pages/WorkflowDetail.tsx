@@ -71,7 +71,7 @@ export default function WorkflowDetail() {
       alert('Gespeichert');
     } catch (e) {
       console.error(e);
-      alert('Speichern fehlgeschlagen');
+      alert('Save failed');
     } finally {
       setSaving(false);
     }
@@ -84,12 +84,12 @@ export default function WorkflowDetail() {
       alert('Ergebnis: ' + res.data.result);
     } catch (e) {
       console.error(e);
-      alert('Ausführung fehlgeschlagen');
+      alert('Execution failed');
     }
   };
 
   if (loading) return <div className="p-8 text-gray-400">Lade...</div>;
-  if (!workflow) return <div className="p-8 text-red-400">Workflow nicht gefunden.</div>;
+  if (!workflow) return <div className="p-8 text-red-400">Workflow not found.</div>;
 
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] p-4 gap-3">
@@ -107,7 +107,7 @@ export default function WorkflowDetail() {
             Graph
           </button>
           <button
-            onClick={() => setTab('json')}
+            onClick={() => { setJsonText(JSON.stringify(workflow, null, 2)); setTab('json'); }}
             className={`px-3 py-1.5 rounded text-sm ${tab === 'json' ? 'bg-blue-600' : 'bg-gray-700'}`}
           >
             JSON
@@ -117,11 +117,11 @@ export default function WorkflowDetail() {
         <div className="flex-1 min-w-0 flex justify-center">
           {validation && (validation.valid ? (
             <div className="px-3 py-1.5 rounded bg-green-900/50 text-green-400 text-xs truncate">
-              ✓ gültig — {validation.summary}
+              ✓ valid — {validation.summary}
             </div>
           ) : (
             <div className="px-3 py-1.5 rounded bg-red-900/50 text-red-300 text-xs max-w-2xl max-h-16 overflow-auto">
-              <span className="font-bold text-red-400">Ungültig: </span>
+              <span className="font-bold text-red-400">Invalid: </span>
               {validation.errors.join(' · ')}
             </div>
           ))}
@@ -129,13 +129,13 @@ export default function WorkflowDetail() {
 
         <div className="flex gap-2 shrink-0">
           <button onClick={validate} disabled={validating} className="px-4 py-2 bg-gray-700 rounded text-sm">
-            {validating ? 'Validiere...' : 'Validieren'}
+            {validating ? 'Validating...' : 'Validate'}
           </button>
           <button onClick={save} disabled={saving} className="px-4 py-2 bg-blue-600 rounded text-sm">
-            {saving ? 'Speichere...' : 'Speichern'}
+            {saving ? 'Saving...' : 'Save'}
           </button>
           <button onClick={run} className="px-4 py-2 bg-green-600 rounded text-sm">
-            Ausführen
+            Run
           </button>
         </div>
       </div>
@@ -152,7 +152,7 @@ export default function WorkflowDetail() {
                 setJsonText(JSON.stringify(updated, null, 2));
               }}
             />
-            Workflow-Systemprompt aktivieren (optional, shared, cache-stabil)
+            Workflow system prompt (optional, shared, cache-stable)
           </label>
           {!!(workflow.systemPrompt ?? '') && (
             <textarea
@@ -163,7 +163,7 @@ export default function WorkflowDetail() {
                 setJsonText(JSON.stringify(updated, null, 2));
               }}
               className="h-24 w-full rounded bg-gray-900 p-2 font-mono text-xs"
-              placeholder="Optional: gemeinsamer Systemprompt für alle context_agent_executor-Knoten"
+              placeholder="Optional: shared system prompt for all context_agent_executor nodes"
             />
           )}
         </div>

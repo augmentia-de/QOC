@@ -30,9 +30,9 @@ export default function Observe() {
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold mb-4">Observe</h1>
-      <p className="text-gray-400 mb-4">Live-Überwachung aller Runs (Auto-Refresh 5s)</p>
+      <p className="text-gray-400 mb-4">Live monitoring of all runs (auto-refresh 5s)</p>
       {loading ? (
-        <p className="text-gray-400">Lade...</p>
+        <p className="text-gray-400">Loading...</p>
       ) : runs.length === 0 ? (
         <p className="text-gray-400">Keine Runs vorhanden.</p>
       ) : (

@@ -177,8 +177,9 @@ public final class ToolRuntime {
     private JsonValue decode(JsonValue value, de.augmentia.oc.engine.core.json.Schema schema, String what) {
         Result<JsonValue> decoded = Json.decode(value, schema);
         if (decoded instanceof Result.Err<JsonValue> error) {
-            throw new ToolFailure("invalid " + what + " at " + error.error().path()
-                    + ": " + error.error().message());
+            throw new ToolFailure("Invalid JSON/parameter (" + what + ") for "
+                    + error.error().path() + ": " + error.error().message()
+                    + ". Please provide valid JSON according to the tool schema and try again.");
         }
         return decoded.valueOrNull();
     }

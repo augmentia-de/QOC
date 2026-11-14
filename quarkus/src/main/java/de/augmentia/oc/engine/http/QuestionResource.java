@@ -145,11 +145,11 @@ public class QuestionResource {
             }
             html.append("<textarea id='text' placeholder='Antwort (optional)...'></textarea>");
         }
-        html.append("<br><button onclick='submit()'>Antworten</button>");
+        html.append("<br><button onclick='submit()'>Answer</button>");
         html.append("<script>async function submit(){const sel=document.querySelector('input[name=sel]:checked');const text=document.getElementById('text').value;");
         html.append("const body={selected:sel?[sel.value]:[],text};");
         html.append("const r=await fetch('/api/question/" + token + "/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});");
-        html.append("if(r.ok){document.body.innerHTML='<h2>Antwort gesendet!</h2><p>Du kannst dieses Fenster schliessen.</p>';}else{alert('Fehler: '+r.status);}}");
+        html.append("if(r.ok){document.body.innerHTML='<h2>Answer sent!</h2><p>You can close this window.</p>';}else{alert('Error: '+r.status);}}");
         html.append("</script></body></html>");
         return Response.ok(html.toString()).build();
     }

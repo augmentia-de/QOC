@@ -12,7 +12,7 @@ class WorkflowDefinitionJsonTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    /** Altes JSON (vor Einführung von systemPrompt) muss weiterhin ladbar sein. */
+    /** Old JSON (before introduction of systemPrompt) must still be loadable. */
     @Test
     void oldJsonWithoutSystemPromptDefaultsToEmptyString() throws Exception {
         String json = """
@@ -32,7 +32,7 @@ class WorkflowDefinitionJsonTest {
         assertEquals("u1", def.ownerId());
     }
 
-    /** Neues JSON mit systemPrompt wird gelesen; unbekannte Felder werden ignoriert. */
+    /** New JSON with systemPrompt is read; unknown fields are ignored. */
     @Test
     void newJsonWithSystemPromptIsRead() throws Exception {
         String json = """
@@ -61,7 +61,7 @@ class WorkflowDefinitionJsonTest {
         assertEquals("", def.systemPrompt());
     }
 
-    /** 8-Arg-Konstruktor bleibt rückwärtskompatibel und setzt "". */
+    /** 8-arg constructor stays backwards compatible and sets "". */
     @Test
     void legacyConstructorSetsEmptySystemPrompt() {
         WorkflowDefinition def = new WorkflowDefinition(

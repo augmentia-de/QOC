@@ -10,34 +10,34 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Zentraler Workflow-Kontext für die getNextStep-basierte Ausführung.
+ * Central workflow context for getNextStep-based execution.
  *
- * <p>Hält strukturierte Node-Outputs, globale State-Variablen und die
- * aktuelle Position im React-Flow-Graphen. Enthält <b>keine</b> Chat-Historie —
- * die wird von QocEngine.runPrompt() intern über ConversationStore verwaltet.</p>
+ * <p>Holds structured node outputs, global state variables and the
+ * current position in the React-Flow graph. Contains <b>no</b> chat history —
+ * which is managed internally by QocEngine.runPrompt() via ConversationStore.</p>
  *
- * <p>Der Kontext ist bewusst nur ein Laufzeitobjekt. Seine Bestandteile werden
- * als Workflow-Events im Session-Journal persistiert und beim Resume daraus
- * wiederhergestellt.</p>
+ * <p>The context is deliberately only a runtime object. Its components are
+ * persisted as workflow events in the session journal and restored from there on resume
+ * restored.</p>
  */
 public class WorkflowContext {
 
     private static final Logger LOG = LoggerFactory.getLogger(WorkflowContext.class);
 
 
-    /** Strukturierte Outputs pro Node-ID (für Data-Piping und Conditions). */
+    /** Structured outputs per node ID (for data-piping and conditions). */
     private final Map<String, Object> nodeOutputs = new HashMap<>();
 
     /** Globale State-Variablen (z. B. lastStatus, lastResult, forkResults). */
     private final Map<String, Object> workflowState = new HashMap<>();
 
-    /** Extern gespeicherte Artefakte; Prompts erhalten nur Referenzen. */
+    /** Externally stored artifacts; prompts receive only references. */
     private final Map<String, ArtifactRef> artifacts = new HashMap<>();
 
-    /** Referenzen, die in den nächsten Kontext aufgenommen werden. */
+    /** References to include in the next context. */
     private final List<String> contextInclude = new ArrayList<>();
 
-    /** Referenzen, die aus dem nächsten Kontext ausgeschlossen werden. */
+    /** References to exclude from the next context. */
     private final List<String> contextExclude = new ArrayList<>();
 
     /** Strukturiertes Ergebnis des letzten Agenten-Laufs. */
@@ -49,7 +49,7 @@ public class WorkflowContext {
     /** Ausfuehrungszaehler pro Node fuer den Circuit-Breaker. */
     private final Map<String, Integer> nodeExecutionCounts = new HashMap<>();
 
-    /** Ursprüngliche Workflow-Eingabe; enthält die Phaseninformation. */
+    /** Original workflow input; contains phase information. */
     private String initialPrompt;
 
     public String getInitialPrompt() {
@@ -144,7 +144,7 @@ public class WorkflowContext {
         this.currentNodeId = id;
     }
 
-    /** Zaehlt eine Node-Ausfuehrung und liefert den neuen Zaehlerstand. */
+    /** Counts a node execution and returns the new counter value. */
     public int recordNodeExecution(String nodeId) {
         if (nodeId == null || nodeId.isBlank() || "DONE".equalsIgnoreCase(nodeId)) return 0;
         int count = nodeExecutionCounts.merge(nodeId, 1, Integer::sum);

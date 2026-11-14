@@ -88,8 +88,8 @@ class FileSystemContract {
     @Test
     void readTextUsesUtf8() {
         Path file = root.resolve("u.txt");
-        fs.putText(file, "grün");
-        assertThat(fs.readText(file)).isEqualTo("grün");
+        fs.putText(file, "naïve");
+        assertThat(fs.readText(file)).isEqualTo("naïve");
     }
 
     @Test

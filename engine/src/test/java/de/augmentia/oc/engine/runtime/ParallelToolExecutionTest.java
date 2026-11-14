@@ -33,13 +33,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verhaltenstests für die parallele Tool-Ausführung eines {@link Step}.
+ * Behavioral tests for parallel tool execution of a {@link Step}.
  *
  * <p>Deckt drei Invarianten ab:</p>
  * <ul>
- *   <li>Mehrere Tool-Calls eines Schritts laufen gleichzeitig (G-05).</li>
- *   <li>Ein {@code question}-Tool erzwingt sequentielle Ausführung.</li>
- *   <li>Die Parallelität ist auf {@code MAX_PARALLEL_TOOLS} (8) begrenzt.</li>
+ *   <li>Multiple tool calls in a step run concurrently (G-05).</li>
+ *   <li>A {@code question} tool forces sequential execution.</li>
+ *   <li>Parallelism is limited to {@code MAX_PARALLEL_TOOLS} (8).</li>
  * </ul>
  */
 class ParallelToolExecutionTest {
@@ -70,8 +70,8 @@ class ParallelToolExecutionTest {
         assertThat(result.toolCalls()).hasSize(2);
         assertThat(result.toolCalls()).allSatisfy(call ->
                 assertThat(call.outcome()).isInstanceOf(ToolOutcome.Ok.class));
-        // Beide Tools waren gleichzeitig in-flight. Bei sequentieller Ausführung
-        // wäre maxActive == 1 (der erste wartet vergeblich auf den zweiten).
+        // Both tools were in-flight simultaneously. With sequential execution
+        // maxActive would be 1 (the first waits in vain for the second).
         assertThat(maxActive.get()).isEqualTo(2);
     }
 
@@ -106,7 +106,7 @@ class ParallelToolExecutionTest {
         StepResult.Finished result = (StepResult.Finished) step.run(emptyPrepared(), context());
 
         assertThat(result.toolCalls()).hasSize(2);
-        // Bei paralleler Ausführung würde "echo:start" vor "question:end" liegen.
+        // With parallel execution "echo:start" would precede "question:end".
         assertThat(order).containsExactly(
                 "question:start", "question:end", "echo:start");
     }

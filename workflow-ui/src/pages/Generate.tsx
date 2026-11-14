@@ -29,7 +29,7 @@ export default function Generate() {
       <textarea
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
-        placeholder="Beschreibe den Workflow, den du erstellen möchtest..."
+        placeholder="Describe the workflow you want to create..."
         className="w-full h-32 bg-gray-800 text-white p-3 rounded border border-gray-700 mb-4"
       />
       <button

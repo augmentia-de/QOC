@@ -31,10 +31,10 @@
   .chat { flex:1 1 auto; min-width:240px; display:flex; flex-direction:column; border-right:1px solid var(--border); }
   .side-resizer { flex:0 0 6px; width:6px; cursor:col-resize; background:var(--border); }
   .side-resizer:hover { background:var(--accent); }
-  .side { flex:0 0 380px; min-width:220px; max-width:60vw; height:90%; max-height:90vh; align-self:flex-start; display:flex; flex-direction:column; overflow:hidden; position:relative; transition:transform .2s ease; background:var(--panel); border-left:1px solid var(--border); }
+  .side { flex:0 0 380px; min-width:220px; max-width:60vw; height:100%; max-height:90vh; align-self:flex-start; display:flex; flex-direction:column; overflow:hidden; position:relative; transition:transform .2s ease; background:var(--panel); border-left:1px solid var(--border); }
   .backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:55; backdrop-filter:blur(2px); }
   .backdrop.open { display:block; }
-  .chat { display:flex; flex-direction:column; border-right:1px solid var(--border); }
+  .chat { display:flex; flex-direction:column; border-right:1px solid var(--border); overflow: hidden; }
   .messages { flex:1; overflow:auto; padding:1rem; display:flex; flex-direction:column; gap:.75rem; }
   .msg { padding:.6rem .8rem; border-radius:8px; max-width:92%; position:relative; }
   .ts { position:absolute; top:2px; left:6px; font-size:.6rem; color:var(--muted); opacity:.7; pointer-events:none; line-height:1; }
@@ -54,6 +54,20 @@
   .inputbar textarea { flex:1; background:#0b0d12; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.5rem; resize:none; height:70px; font-family:inherit; font-size:.9rem; }
   .inputbar button { background:var(--accent); color:#fff; border:none; border-radius:6px; padding:0 .9rem; cursor:pointer; }
   .inputbar button:disabled { opacity:.5; cursor:not-allowed; }
+  .ta-wrap { display:flex; flex-direction:row; align-items:stretch; gap:.4rem; position:relative; flex: 0 0 auto; min-height:2.6rem; }
+  .ta-wrap textarea { resize:none; overflow-y:auto; min-height:2.6rem; max-height:2.6rem; transition:max-height .2s; background:#0b0d12; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.5rem; font-size:.85rem; flex: 1 1 auto; }
+  .ta-wrap.expanded { flex: 0 0 40%; min-height: 40%; }
+  .ta-wrap.expanded textarea { min-height: 100% !important; max-height: 100% !important; height: 100% !important; }
+  .ta-toggle { background:var(--panel); border:1px solid var(--border); color:var(--fg); font-size:.85rem; cursor:pointer; padding:.3rem .5rem; border-radius:4px; flex: 0 0 auto; align-self: flex-start; margin-top:.1rem; }
+  #lastTask { background:#0b0d12; color:var(--muted); border:1px solid var(--border); border-radius:6px; padding:.5rem; font-size:.8rem; }
+  .resizer-h { flex: 0 0 6px; height: 6px; cursor: row-resize; background: var(--border); border-radius: 3px; margin: 2px 0; }
+  .resizer-h:hover { background: var(--accent); }
+  .messages { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  .inputbar { flex: 0 0 auto; min-height: 2.6rem; display: flex; gap: .5rem; padding: .5rem .75rem; border-top: 1px solid var(--border); align-items: flex-end; position: relative; }
+  .inputbar.expanded { flex: 0 0 40%; min-height: 40%; }
+  .inputbar textarea { background:#0b0d12; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.5rem .5rem .5rem 2.2rem; font-size:.85rem; min-height: 2rem; max-height: 2.6rem; resize: none; overflow-y: auto; flex: 1; }
+  .inputbar.expanded textarea { min-height: 100% !important; max-height: 100% !important; height: 100% !important; }
+  .inputbar button { padding:.4rem .7rem; font-size:.85rem; min-width:0; flex: 0 0 auto; align-self: flex-end; }
   .side { display:flex; flex-direction:column; overflow-y:auto; overflow-x:hidden; }
   .panel { display:flex; flex-direction:column; overflow:hidden; min-height:60px; }
   .panel.collapsed { min-height:0; padding-top:.25rem; padding-bottom:.25rem; }
@@ -108,7 +122,8 @@
     border-radius:6px 0 0 6px; padding:.7rem .25rem; cursor:pointer; font-size:1rem; line-height:1; }
   .file-actions { display:flex; gap:.15rem; align-items:center; }
   #agent { max-width: 180px; }
-  /* Header-Stabilität: verhindert Layout-Sprünge durch lange Session-/Agent-Namen */
+  #sessions, #sessionActions, #moreActions { max-width: 30vw; min-width: 90px; }
+  /* Header stability: prevents layout jumps from long session/agent namen */
   header { flex-wrap: wrap; }
   #sessions { min-width: 120px; max-width: 180px; flex: 0 1 auto; }
   #agent { min-width: 100px; max-width: 180px; flex: 0 1 auto; }
@@ -117,10 +132,17 @@
   .messages { overflow-y: auto; overscroll-behavior: contain; }
   .logs { overscroll-behavior: contain; }
 
-  /* Media-Queries zuletzt, damit sie die Basisregeln überschreiben */
+  /* Media queries last, so they override base rules */
   @media (max-width: 768px) {
+    #lastTask { min-height: 2rem; max-height: 2rem; font-size: .75rem; }
+    .resizer-h { height: 4px; }
+    .inputbar { padding: .4rem .6rem; }
+    .inputbar textarea { min-height: 2rem; max-height: 20rem; font-size: .85rem; height: 95%; }
+    .inputbar button { min-height: 2rem; padding: .2rem .5rem; font-size: .75rem; }
+    .input-toggle { font-size: .7rem; padding: .2rem .4rem; }
+    .ta-toggle { font-size: 1rem; padding: .4rem .6rem; min-width: 2rem; min-height: 2rem; }
     main { overflow: hidden; height: 100%; }
-    .chat { min-width: 0; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .chat { min-width: 0; flex: 1 1 auto; min-height: 0; height: 90%; max-height: 90%; display: flex; flex-direction: column; overflow: hidden; }
     .messages { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
     .inputbar { flex: 0 0 auto; }
     .side-resizer { display:none; }
@@ -132,16 +154,16 @@
   }
   @media (max-width: 480px) {
     header h1 { font-size: .95rem; }
-    #sessions { max-width: 55vw; }
+    #sessions, #sessionActions, #moreActions { max-width: 30vw; }
     #agent { max-width: 40vw; min-width: 90px; }
   }
-@media (max-width: 768px) { .cmd-hint { display: none; } header h1 { font-size: 0; } header h1::before { content: 'Qoc'; font-size: .95rem; } select { max-width: 30vw; } }
+@media (max-width: 768px) { .cmd-hint { display: none; } header h1 { font-size: 0; } header h1::before { content: 'Qoc'; font-size: .95rem; } select { max-width: 30vw; } .wf-text { display: none; } .wf-icon { display: inline !important; } .details-toggle { font-size: 0; } .details-toggle input { font-size: .8rem; } }
 </style>
 </head>
 <body>
 <header>
   <h1>QOC Engine</h1>
-  <a href="/workflow/" title="Workflow Editor" style="color:var(--accent);text-decoration:none;margin-left:1rem;font-size:1.1rem">⚙</a>
+  <a href="/workflow/" title="Workflow Editor" style="color:var(--accent);text-decoration:none;margin-left:1rem"><span class="wf-text">Workflow Editor</span><span class="wf-icon" style="display:none">⚙</span></a>
   <button id="loginBtn">Login</button>
   <button id="questionsBtn" title="Ausstehende Fragen" style="position:relative">❓ <span id="questionsBadge" style="display:none;position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:10px;padding:0 5px;font-size:0.7rem;min-width:16px;text-align:center">0</span></button>
   <button id="hardCancelBtn" title="Lauf abbrechen (Parent + Subagents)" style="background:none;border:1px solid var(--border);color:#ef4444;cursor:pointer;border-radius:4px;padding:2px 8px;font-size:0.9rem;font-weight:bold" disabled>✕</button>
@@ -149,9 +171,10 @@
   <select id="sessionActions" title="Session-Aktionen">
     <option value="">Session ▾</option>
     <option value="new">Neue Session</option>
-    <option value="delete">Löschen</option>
+    <option value="delete">Delete</option>
   </select>
   <select id="agent" title="Agent" style="max-width:30vw"></select>
+  <a href="/workflow/agents" title="Agents bearbeiten" style="color:var(--accent);text-decoration:none;font-size:1rem;margin-left:.25rem">✏</a>
   <select id="moreActions" title="Weitere Aktionen">
     <option value="">Aktionen ▾</option>
     <option value="compact">Compact</option>
@@ -161,19 +184,25 @@
     <option value="a2a">A2A</option>
     <option value="workspace">Workspace wechseln</option>
   </select>
-  <label class="details-toggle" title="Details"><input type="checkbox" id="showDetails"></label>
-  <label class="details-toggle" title="LLM"><input type="checkbox" id="showLlm"></label>
-  <span id="status" style="display:none">bereit</span>
-<span id="fallbackBanner" style="display:none;background:#3a2f1f;border:1px solid #5a4f1f;color:#ffd9a0;border-radius:6px;padding:.2rem .5rem;font-size:.75rem">Orchestrator nicht verbunden – Freigaben/Fragen werden hier angezeigt.</span>
+  <label class="details-toggle"><input type="checkbox" id="showDetails"> Details</label>
+  <label class="details-toggle"><input type="checkbox" id="showLlm"> LLM</label>
+  <span id="status" style="display:none">ready</span>
+<span id="fallbackBanner" style="display:none;background:#3a2f1f;border:1px solid #5a4f1f;color:#ffd9a0;border-radius:6px;padding:.2rem .5rem;font-size:.75rem">Orchestrator not connected – approvals/questions are shown here.</span>
 </header>
 <main>
   <div class="chat">
-    <textarea id="lastTask" rows="2" readonly style="width:100%;resize:none;background:#0b0d12;color:var(--muted);border:none;border-bottom:1px solid var(--border);padding:.4rem .6rem;font-size:.8rem;overflow-y:auto" placeholder="Letzte Aufgabe…"></textarea>
+    <div class="ta-wrap" id="lastTaskWrap">
+      <button class="ta-toggle" data-target="lastTask" type="button" title="Expand">⤢</button>
+      <textarea id="lastTask" rows="2" readonly placeholder="Letzte Aufgabe…"></textarea>
+    </div>
+    <div class="resizer-h" id="resizerTop"></div>
     <div class="messages" id="messages"></div>
     <div class="cmd-hint">Slash-Commands: /compact, /revert, /fork, /interrupt, /title, /new. Strg+Enter sendet.</div>
-    <div class="inputbar">
-      <textarea id="input" placeholder="Prompt eingeben…"></textarea>
-      <button id="send">Senden</button>
+    <div class="resizer-h" id="resizerInput"></div>
+    <div class="inputbar" id="inputWrap">
+      <button class="ta-toggle" data-target="input" type="button" title="Expand">⤢</button>
+      <textarea id="input" rows="2" placeholder="Prompt eingeben…"></textarea>
+      <button id="send">Send</button>
     </div>
   </div>
   <div class="side-resizer" id="sideResizer"></div>
@@ -186,7 +215,7 @@
       <h2>Ausstehende Fragen <button id="refreshQuestions" title="Aktualisieren" style="float:right;background:none;border:none;color:var(--muted);cursor:pointer">↻</button></h2>
       <div id="questionsList" style="max-height:300px;overflow-y:auto"></div>
     </section>
-    <button class="close-side" id="closeSide" title="Schließen">×</button>
+    <button class="close-side" id="closeSide" title="Close">×</button>
     <section class="section panel" id="panelFiles">
       <h2><span id="filesPath">.</span>
         <span class="file-actions">
@@ -207,17 +236,17 @@
           <button id="editFileBtn" title="Datei bearbeiten (max. 1000000 Zeichen)" style="display:none">✎</button>
         </span>
       </h2>
-      <pre class="viewer" id="viewer">Datei auswählen…</pre>
+      <pre class="viewer" id="viewer">Select a file…</pre>
       <textarea id="fileEditor" style="display:none;width:100%;min-height:200px;font-family:monospace;font-size:.85rem;background:#0b0d12;color:var(--fg);border:1px solid #2a3140;border-radius:6px;padding:.5rem;resize:vertical"></textarea>
       <div id="editorActions" style="display:none;gap:.5rem;margin-top:.5rem">
-        <button id="saveFileBtn" class="primary">Speichern</button>
-        <button id="cancelEditBtn">Abbrechen</button>
+        <button id="saveFileBtn" class="primary">Save</button>
+        <button id="cancelEditBtn">Cancel</button>
         <span id="editorStatus" style="color:var(--muted);font-size:.8rem"></span>
       </div>
     </section>
     <div class="resizer" data-i="1"></div>
     <section class="section panel" id="panelTasks">
-      <h2>Subagents <button id="backToParent" title="Zurück zur Parent-Session" style="float:right;display:none;background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;border-radius:4px;padding:2px 8px;font-size:0.75rem">← Zurück</button></h2>
+      <h2>Subagents <button id="backToParent" title="Back to parent session" style="float:right;display:none;background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;border-radius:4px;padding:2px 8px;font-size:0.75rem">← Back</button></h2>
       <div id="tasks" style="padding:.5rem 1rem;font-size:.8rem"></div>
     </section>
     <div class="resizer" data-i="2"></div>
@@ -237,7 +266,7 @@
 
 <div class="modal" id="permModal">
   <div class="box">
-    <h3>Berechtigung erforderlich</h3>
+    <h3>Permission required</h3>
     <p id="permContext"></p>
     <div class="actions">
       <button id="permReject">Ablehnen</button>
@@ -254,7 +283,7 @@
     <div id="questionOptions" style="display:flex;flex-direction:column;gap:.6rem;margin:.6rem 0"></div>
     <textarea id="questionAnswer" rows="3" placeholder="Antwort…" style="width:100%"></textarea>
     <div class="actions">
-      <button id="questionSend" class="primary">Senden</button>
+      <button id="questionSend" class="primary">Send</button>
     </div>
   </div>
 </div>
@@ -265,7 +294,7 @@
     <div id="a2aList" style="max-height:60vh;overflow:auto;font-size:.85rem">Lade…</div>
     <div class="actions">
       <button id="a2aRefresh">Aktualisieren</button>
-      <button id="a2aClose" class="primary">Schließen</button>
+      <button id="a2aClose" class="primary">Close</button>
     </div>
   </div>
 </div>
@@ -357,7 +386,7 @@ async function loadOidcConfig() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (!data.authorization_endpoint || !data.token_endpoint) {
-      throw new Error('Discovery unvollständig');
+      throw new Error('Discovery incomplete');
     }
     AUTH.authorizationEndpoint = data.authorization_endpoint;
     AUTH.tokenEndpoint = data.token_endpoint;
@@ -511,7 +540,7 @@ async function login() {
     return;
   }
   if (!window.crypto || !window.crypto.subtle) {
-    alert('Login benötigt HTTPS oder http://localhost (Web Crypto / PKCE).');
+    alert('Login requires HTTPS or http://localhost (Web Crypto / PKCE).');
     return;
   }
   await ensureOidcConfig();
@@ -552,7 +581,7 @@ async function handleOidcCallback() {
   if (!expected || state !== expected || !verifier) {
     clearPkce();
     history.replaceState({}, document.title, location.pathname);
-    alert('Login-State ungültig. Bitte erneut anmelden.');
+    alert('Login state invalid. Please sign in again.');
     return false;
   }
   try {
@@ -745,13 +774,13 @@ async function loadLlmTrace(reset) {
       if (!more) {
         more = document.createElement('button');
         more.id = 'llmLoadMore';
-        more.textContent = 'Ältere laden…';
+        more.textContent = 'Load older…';
         more.style.cssText = 'margin:8px auto;display:block;padding:4px 12px;font-size:.8rem;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer';
         more.onclick = () => { more.remove(); loadLlmTrace(false); };
       }
       llmTrace.insertBefore(more, llmTrace.firstChild);
     }
-  } catch (e) { llmTrace.textContent = 'Fehler: ' + e.message; }
+  } catch (e) { llmTrace.textContent = 'Error: ' + e.message; }
   finally { llmState.loading = false; }
 }
 
@@ -847,7 +876,7 @@ function initResizers() {
   const total = side.clientHeight || 600;
   const resizerTotal = Array.from(resizers).reduce((sum, r) => sum + r.offsetHeight, 0);
   const usable = Math.max(180, total - resizerTotal);
-  // LLM-Panel darf den vollen Bereich einnehmen (großer Anteil, per Resizer anpassbar)
+  // LLM panel may take the full area (large share, adjustable via resizerpassbar)
   const init = [Math.round(usable*0.22), Math.round(usable*0.16), Math.round(usable*0.14), Math.round(usable*0.13), usable - Math.round(usable*0.22) - Math.round(usable*0.16) - Math.round(usable*0.14) - Math.round(usable*0.13)];
   panels.forEach((p,i) => {
     if (!p) return;
@@ -926,7 +955,7 @@ function openSide() {
     toggle.textContent = '›';
     toggle.title = 'Dateien ausblenden';
     toggle.setAttribute('aria-label', 'Dateien ausblenden');
-    // Panel überdeckt den Button im geöffneten Zustand → ausblenden
+    // Panel covers the button in open state -> hide
     toggle.style.setProperty('display', 'none', 'important');
   }
 }
@@ -1039,7 +1068,7 @@ async function loadQuestions() {
           logEvent('Frage beantwortet: ' + q.id);
           loadQuestions();
         } else {
-          logEvent('Fehler beim Antworten: ' + res.status);
+          logEvent('Error answering: ' + res.status);
         }
       };
       div.appendChild(btn);
@@ -1075,7 +1104,7 @@ async function init() {
       try {
         await ensureOidcConfig();
       } catch (e) {
-        console.warn('OIDC-Konfiguration konnte nicht geladen werden:', e.message);
+        console.warn('OIDC configuration could not be loaded:', e.message);
       }
       await handleOidcCallback();
       const pendingForLogin = sessionStorage.getItem('qoc.pendingSession');
@@ -1185,7 +1214,7 @@ async function init() {
       await loadFiles('.');
     }
   } catch (e) {
-    status.textContent = 'Fehler: ' + e.message;
+    status.textContent = 'Error: ' + e.message;
   }
 }
 
@@ -1199,7 +1228,7 @@ async function checkHealth() {
       status.textContent = (data.provider||'') + ' / ' + (data.model||'');
     } else {
       if (title) title.style.color = 'var(--err)';
-      status.textContent = AUTH.token ? 'Anmeldung abgelaufen' : 'offline / login erforderlich';
+      status.textContent = AUTH.token ? 'Session expired' : 'offline / login required';
     }
   } catch (e) {
     const title = document.querySelector('header h1');
@@ -1230,7 +1259,7 @@ const taskElements = new Map();
 function upsertTask(id, patch) {
   const container = document.getElementById('tasks');
   if (!container) return;
-  if (container.textContent === 'Keine Subagent-Läufe.' || container.textContent === 'Keine Session.' || container.textContent.startsWith('Fehler')) {
+  if (container.textContent === 'No subagent runs.' || container.textContent === 'No session.' || container.textContent.startsWith('Error')) {
     container.innerHTML = '';
   }
   let div = taskElements.get(id);
@@ -1279,7 +1308,7 @@ function upsertTask(id, patch) {
     const openHere = document.createElement('a');
     openHere.href = '#';
     openHere.style.cssText = 'font-size:.75rem';
-    openHere.textContent = 'Im Fenster öffnen';
+    openHere.textContent = 'Open in window';
     openHere.onclick = (e) => { e.preventDefault(); pushNav(sessionId); switchSession(next.childSession); };
     actions.appendChild(openHere);
     const openTab = document.createElement('a');
@@ -1294,7 +1323,7 @@ function upsertTask(id, patch) {
   }
   if (next.state === 'running') {
     const btn = document.createElement('button');
-    btn.textContent = 'Abbrechen';
+    btn.textContent = 'Cancel';
     btn.style.marginTop = '.25rem';
     btn.onclick = async () => {
       await fetch('/api/session/' + encodeURIComponent(sessionId) + '/tasks/' + encodeURIComponent(id) + '/cancel', {method:'POST'});
@@ -1312,7 +1341,7 @@ async function loadTasks(id) {
     const res = await fetch('/api/session/' + id + '/tasks');
     const data = await res.json().catch(() => ({}));
     const tasks = data.data || [];
-    if (!tasks.length) { container.textContent = 'Keine Subagent-Läufe.'; taskElements.clear(); return false; }
+    if (!tasks.length) { container.textContent = 'No subagent runs.'; taskElements.clear(); return false; }
     container.innerHTML = '';
     taskElements.clear();
   let hasRunning = false;
@@ -1323,7 +1352,7 @@ async function loadTasks(id) {
   return hasRunning;
   } catch (e) {
   return hasRunning;
-    container.textContent = 'Fehler: ' + e.message;
+    container.textContent = 'Error: ' + e.message;
   }
 }
 
@@ -1359,12 +1388,12 @@ async function loadSessionMessages(id) {
       if (Array.isArray(m.tools)) {
         m.tools.forEach(tc => {
           addMessage('tool', '🔧 ' + (tc.name || '') + '(' + (tc.input || '') + ')', 'tool-in', m.time);
-          addMessage('tool', '↳ ' + (tc.result || '(kein Ergebnis)'), 'tool-out', m.time);
+          addMessage('tool', '↳ ' + (tc.result || '(no result)'), 'tool-out', m.time);
         });
       }
     });
   } catch (e) {
-    logEvent('Fehler beim Laden: ' + e.message);
+    logEvent('Error loading: ' + e.message);
   }
 }
 
@@ -1425,7 +1454,7 @@ async function newSession(agent) {
   try {
     const body = agent ? {agent} : {};
     const res = await fetch('/api/session', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-    if (res.status === 401) { status.textContent = 'Login erforderlich'; return; }
+    if (res.status === 401) { status.textContent = 'Login required'; return; }
     const data = await res.json();
     sessionId = data.id;
     localStorage.setItem('qoc.sessionId', sessionId);
@@ -1444,7 +1473,7 @@ async function newSession(agent) {
     await loadTasks(sessionId);
     await syncRunningState();
     startTaskPoll(sessionId);
-  } catch (e) { status.textContent = 'Fehler: ' + e.message; }
+  } catch (e) { status.textContent = 'Error: ' + e.message; }
 }
 
 async function switchAgent() {
@@ -1477,7 +1506,7 @@ async function compactNow() {
     const res = await fetch('/api/session/' + sessionId + '/compact', {method:'POST'});
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
-    logEvent('Compact ausgeführt' + (data.summary ? ': ' + String(data.summary).slice(0, 120) : ''));
+    logEvent('Compact executed' + (data.summary ? ': ' + String(data.summary).slice(0, 120) : ''));
     const current = sessionId;
     sessionId = null;
     await switchSession(current);
@@ -1492,7 +1521,7 @@ async function revertTurn() {
     const res = await fetch('/api/session/' + sessionId + '/revert', {method:'POST'});
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
-    logEvent('Revert ausgeführt');
+    logEvent('Revert executed');
     const current = sessionId;
     sessionId = null;
     await switchSession(current);
@@ -1505,7 +1534,7 @@ async function forkSession() {
   if (!sessionId) return;
   try {
     const tree = await (await fetch('/api/session/' + sessionId + '/tree')).json();
-    if (!tree.leaf) throw new Error('Session hat keine Nachricht zum Forken');
+    if (!tree.leaf) throw new Error('Session has no message to fork');
     const res = await fetch('/api/session/' + sessionId + '/fork', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({boundary: tree.leaf})
@@ -1525,13 +1554,13 @@ async function deleteCurrentSession() {
   if (!sessionId) return;
   const selected = sessionsSel.options[sessionsSel.selectedIndex];
   const label = selected ? selected.textContent : sessionId;
-  if (!confirm('Session wirklich löschen?\n\n' + label)) return;
+  if (!confirm('Really delete session?\n\n' + label)) return;
   try {
     let res = await fetch('/api/session/' + encodeURIComponent(sessionId), {method:'DELETE'});
     if (res.status === 409) {
       const err = await res.json().catch(() => ({}));
       if (err._tag === 'SessionRunningError' || /running/i.test(err.message || '')) {
-        if (!confirm('Die Session läuft noch.\n\nSession stoppen und löschen?')) return;
+        if (!confirm('Session is still running.\n\nStop and delete session?')) return;
         await fetch('/api/session/' + encodeURIComponent(sessionId) + '/interrupt', {method:'POST'});
         for (let i = 0; i < 40; i++) {
           res = await fetch('/api/session/' + encodeURIComponent(sessionId), {method:'DELETE'});
@@ -1557,7 +1586,7 @@ async function deleteCurrentSession() {
       status.textContent = 'Keine Session';
     }
   } catch (e) {
-    alert('Löschen fehlgeschlagen: ' + e.message);
+    alert('Delete failed: ' + e.message);
   }
 }
 
@@ -1600,13 +1629,13 @@ function handleSseEvent(ev) {
         sawStreamedText = true;
         const t = (ev.outcome && (ev.outcome.text || (ev.outcome.value ? JSON.stringify(ev.outcome.value) : ''))) || '';
         const trimmed = String(t).slice(0, 4000);
-        addMessage('tool', '↳ ' + (trimmed || '(kein Ergebnis)'), 'tool-out');
+        addMessage('tool', '↳ ' + (trimmed || '(no result)'), 'tool-out');
         break;
       }
       case 'LlmRequest':
       case 'LlmResponse':
-        // LLM-Kommunikation nur im Side-Panel (LLM-Trace), nicht im Chat,
-        // um Tool-Aufrufe und -Ergebnisse nicht zu ueberlagern.
+        // LLM communication only in the side panel (LLM trace), not in chat,
+        // so tool calls and results are not overlaid.
         if (showLlm.checked) loadLlmTrace(true);
         break;
       case 'ToolFailed':
@@ -1637,7 +1666,7 @@ function handleSseEvent(ev) {
         break;
       }
       case 'ProviderFailed':
-        addMessage('error', 'Provider-Fehler: ' + ev.message);
+        addMessage('error', 'Provider error: ' + ev.message);
         break;
       case 'RetryScheduled': {
         const secs = (ev.delay || '').match(/(\d+)S/)?.[1] || ev.delay;
@@ -1648,7 +1677,7 @@ function handleSseEvent(ev) {
   } else if (ev.type) {
     if (ev.type === 'tool_result') {
       const trimmed = String(ev.result || '').slice(0, 4000);
-      addMessage('tool', '↳ ' + (trimmed || '(kein Ergebnis)'), 'tool-out');
+      addMessage('tool', '↳ ' + (trimmed || '(no result)'), 'tool-out');
       return;
     }
     logEvent(ev.type + (ev.data && ev.data.text ? ': ' + ev.data.text.slice(0,80) : ''));
@@ -1769,6 +1798,45 @@ function scheduleSseReconnect() {
   }, delay);
 }
 
+// Resizer drag logic for lastTask / inputbar
+function makeResizable(resizer, target, edge) {
+  let startY, startH;
+  resizer.addEventListener('mousedown', e => {
+    startY = e.clientY; startH = target.offsetHeight;
+    const onMove = ev => {
+      const delta = edge === 'top' ? (ev.clientY - startY) : (startY - ev.clientY);
+      const newH = Math.max(28, Math.min(window.innerHeight * 0.4, startH + delta));
+      target.style.height = newH + 'px';
+      target.style.maxHeight = newH + 'px';
+      target.style.minHeight = newH + 'px';
+    };
+    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+document.querySelectorAll('.ta-toggle').forEach(btn => {
+  const wrap = btn.closest('.ta-wrap') || btn.closest('.inputbar');
+  const key = 'qoc-ta-' + btn.dataset.target;
+  if (localStorage.getItem(key) === '1') { wrap.classList.add('expanded'); btn.textContent = '⤡'; btn.title = 'Collapse'; }
+  btn.addEventListener('click', () => {
+    const now = wrap.classList.toggle('expanded');
+    btn.textContent = now ? '⤡' : '⤢';
+    btn.title = now ? 'Collapse' : 'Expand';
+    localStorage.setItem(key, now ? '1' : '0');
+    // Clear inline styles from drag-resizer so CSS takes over
+    const ta = wrap.querySelector('textarea');
+    if (ta) { ta.style.height = ''; ta.style.maxHeight = ''; ta.style.minHeight = ''; }
+    const ib = wrap.querySelector('.inputbar');
+    if (ib) { ib.style.height = ''; ib.style.maxHeight = ''; ib.style.minHeight = ''; }
+  });
+});
+const rt = document.getElementById('resizerTop');
+const ri = document.getElementById('resizerInput');
+const lastTaskEl = document.getElementById('lastTask');
+const ib = document.querySelector('.inputbar');
+if (rt && lastTaskEl) makeResizable(rt, lastTaskEl, 'top');
+if (ri && ib) makeResizable(ri, ib, 'bottom');
 async function send() {
   const text = input.value.trim();
   if (!text || !sessionId) return;
@@ -1797,7 +1865,7 @@ async function send() {
     });
     if (!res.ok) {
       const err = await res.json().catch(()=>({}));
-      addMessage('error', 'Fehler: ' + (err.message || err.error || res.status));
+      addMessage('error', 'Error: ' + (err.message || err.error || res.status));
     } else {
       const data = await res.json();
       if (data.text && !sawStreamedText) addMessage('assistant', data.text);
@@ -1808,8 +1876,8 @@ async function send() {
     if (permPoll) { clearInterval(permPoll); permPoll = null; }
     if (questionPoll) { clearInterval(questionPoll); questionPoll = null; }
     window.__sending = false;
-    sendBtn.textContent = 'Senden';
-    status.textContent = 'bereit';
+    sendBtn.textContent = 'Send';
+    status.textContent = 'ready';
     loadSessions();
     loadFiles(currentDir);
     if (sessionId) { await loadTasks(sessionId); startTaskPoll(sessionId);
@@ -1835,7 +1903,7 @@ async function handleCommand(cmd) {
         const res = await fetch('/api/session/' + sessionId + '/title', {method:'POST'});
         const data = await res.json();
         logEvent('Titel: ' + data.title);
-      } catch (e) { logEvent('Fehler: ' + e.message); }
+      } catch (e) { logEvent('Error: ' + e.message); }
       break;
     case 'compact':
       await compactNow();
@@ -1856,9 +1924,14 @@ async function handleCommand(cmd) {
 async function loadSelectors() {
   try {
     const agents = await (await fetch('/api/agent')).json();
+    const wfAgents = await (await fetch('/api/agents')).json().catch(()=>({agents:[]}));
     const models = await (await fetch('/api/model')).json();
     const providers = await (await fetch('/api/provider')).json();
-    fill('agent', (agents.data||[]).filter(a=>!a.hidden).map(a=>({value:a.id,label:a.name})));
+    // Merge: workflow agents (DB) override engine agents with same name.
+    const byName = new Map();
+    (agents.data||[]).filter(a=>!a.hidden).forEach(a => byName.set(a.name.toLowerCase(), {value:a.id, label:a.name}));
+    (wfAgents.agents||[]).forEach(a => byName.set(a.name.toLowerCase(), {value:'wf:'+a.id, label:a.name + ' (wf)'}));
+    fill('agent', Array.from(byName.values()));
     const agentSel = document.getElementById('agent');
     if (agents.canAuthor === true) {
       const newOpt = document.createElement('option');
@@ -1875,7 +1948,7 @@ async function loadSelectors() {
 function fill(id, items) {
   const sel = document.getElementById(id);
   sel.innerHTML = '';
-  if (!items.length) { const o=document.createElement('option'); o.textContent='(keine)'; sel.appendChild(o); return; }
+  if (!items.length) { const o=document.createElement('option'); o.textContent='(none)'; sel.appendChild(o); return; }
   items.forEach(it => { const o=document.createElement('option'); o.value=it.value; o.textContent=it.label; sel.appendChild(o); });
 }
 
@@ -1940,7 +2013,7 @@ async function loadFiles(path) {
       dl.onclick = (ev) => { ev.stopPropagation(); e.directory ? downloadDirectory(e.relative) : downloadFile(e.relative); };
       const del = document.createElement('button');
       del.textContent = '🗑';
-      del.title = e.directory ? 'Ordner löschen' : 'Datei löschen';
+      del.title = e.directory ? 'Delete folder' : 'Delete file';
       del.onclick = (ev) => { ev.stopPropagation(); deletePath(e.relative, e.directory); };
       actions.appendChild(dl);
       actions.appendChild(del);
@@ -1952,7 +2025,7 @@ async function loadFiles(path) {
     if (!(data.data||[]).length) {
       filetree.appendChild(document.createTextNode('(leer)'));
     }
-  } catch (e) { filetree.textContent = 'Fehler: ' + e.message; }
+  } catch (e) { filetree.textContent = 'Error: ' + e.message; }
 }
 
 async function viewFile(path) {
@@ -1966,7 +2039,7 @@ async function viewFile(path) {
     if (data.data && data.data.truncated) {
       const total = Number(data.data.totalChars || 0).toLocaleString('de-DE');
       content += '\n\n… Anzeige auf ' + MAX_FILE_CHARS.toLocaleString('de-DE')
-              + ' Zeichen gekürzt (Datei: ' + total + ' Zeichen).';
+              + ' characters truncated (file: ' + total + ' characters).';
     }
     viewer.textContent = content;
     currentFile = path;
@@ -1978,7 +2051,7 @@ async function viewFile(path) {
       row.classList.toggle('selected', row.dataset.path === path);
     });
   } catch (e) {
-    viewer.textContent = 'Fehler: ' + e.message;
+    viewer.textContent = 'Error: ' + e.message;
     currentFile = null;
     currentFileName.textContent = '';
     document.getElementById('editFileBtn').style.display = 'none';
@@ -2013,7 +2086,7 @@ function exitEditMode() {
 async function saveFile() {
   if (!currentFile) return;
   const content = document.getElementById('fileEditor').value;
-  if (content.length > 1000000) { alert('Zu groß (max. 1000000 Zeichen)'); return; }
+  if (content.length > 1000000) { alert('Too large (max. 1000000 characters)'); return; }
   try {
     const res = await fetch('/api/file', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path: currentFile, content})});
     const data = await res.json().catch(() => ({}));
@@ -2022,7 +2095,7 @@ async function saveFile() {
     await viewFile(currentFile);
     exitEditMode();
   } catch (e) {
-    document.getElementById('editorStatus').textContent = 'Fehler: ' + e.message;
+    document.getElementById('editorStatus').textContent = 'Error: ' + e.message;
   }
 }
 
@@ -2035,7 +2108,7 @@ async function createFile() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.message || data.error || ('HTTP ' + res.status));
     await loadFiles(currentDir);
-  } catch (e) { alert('Fehler: ' + e.message); }
+  } catch (e) { alert('Error: ' + e.message); }
 }
 
 function triggerDownload(blob, name) {
@@ -2073,7 +2146,7 @@ async function downloadDirectory(path) {
 
 async function deletePath(path, isDir) {
   const label = (isDir ? 'Ordner (rekursiv)' : 'Datei') + ': ' + path;
-  if (!confirm('Löschen?\n\n' + label)) return;
+  if (!confirm('Delete?\n\n' + label)) return;
   try {
     const res = await fetch('/api/file?path=' + encodeURIComponent(path), {method:'DELETE'});
     const data = await res.json().catch(() => ({}));
@@ -2081,10 +2154,10 @@ async function deletePath(path, isDir) {
     if (currentFile === path || (isDir && currentFile && currentFile.startsWith(path + '/'))) {
       currentFile = null;
       currentFileName.textContent = '';
-      viewer.textContent = 'Datei auswählen…';
+      viewer.textContent = 'Select a file…';
     }
     await loadFiles(currentDir);
-  } catch (e) { alert('Löschen fehlgeschlagen: ' + e.message); }
+  } catch (e) { alert('Delete failed: ' + e.message); }
 }
 
 async function uploadFiles(files) {
@@ -2107,7 +2180,7 @@ async function uploadFiles(files) {
     }
   }
   await loadFiles(currentDir);
-  if (failed) alert(failed + ' Datei(en) konnten nicht hochgeladen werden.');
+  if (failed) alert(failed + ' file(s) could not be uploaded.');
 }
 
 document.getElementById('newFile').onclick = createFile;
@@ -2148,7 +2221,7 @@ document.getElementById('ag_save').onclick = async () => {
   const status = document.getElementById('ag_status');
   try {
     const name = document.getElementById('ag_name').value.trim();
-    if (!name) throw new Error('Name erforderlich');
+    if (!name) throw new Error('Name required');
     const mode = document.getElementById('ag_mode').value;
     const model = document.getElementById('ag_model').value.trim();
     const hidden = document.getElementById('ag_hidden').checked;
@@ -2188,7 +2261,7 @@ document.getElementById('ag_save').onclick = async () => {
     document.getElementById('agentModal').style.display = 'none';
     await loadSelectors();
   } catch (e) {
-    status.textContent = 'Fehler: ' + e.message;
+    status.textContent = 'Error: ' + e.message;
   }
 };
 });
@@ -2325,7 +2398,7 @@ async function loadA2AAgents(refresh) {
     }
     agents.forEach(a => list.appendChild(renderA2AAgent(a)));
   } catch (e) {
-    list.textContent = 'Fehler: ' + e.message;
+    list.textContent = 'Error: ' + e.message;
   }
 }
 
@@ -2436,21 +2509,21 @@ async function updateCancelButton() {
     hardCancelBtn.disabled = true;
   }
 }
-// Synchronisiert den Interrupt/Senden-Zustand mit dem Server, damit nach
-// Reload, Tab-Wechsel oder SSE-Reconnect der korrekte Button angezeigt wird.
+// Synchronizes the interrupt/send state with the server so that after
+// Reload, tab switch or SSE reconnect shows the correct button.
 async function syncRunningState() {
   if (!sessionId || !sendBtn) return;
   try {
     const res = await fetch('/api/session/' + encodeURIComponent(sessionId) + '/running', {headers: authHeaders()});
     const data = await res.json().catch(() => ({}));
     const running = !!data.running;
-    sendBtn.textContent = running ? 'Interrupt' : 'Senden';
-    if (status) status.textContent = running ? 'Läuft…' : 'bereit';
+    sendBtn.textContent = running ? 'Interrupt' : 'Send';
+    if (status) status.textContent = running ? 'Running…' : 'ready';
   } catch (e) { /* ignore */ }
   updateCancelButton();
 }
-// Bei Tab-Wechsel / Fokus zurück synchronisieren, damit der Interrupt-Button
-// nicht fälschlich auf "Senden" springt.
+// Re-sync on tab switch / focus return so the interrupt button
+// it does not wrongly jump to "Send".
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && sessionId) syncRunningState();
 });
@@ -2468,13 +2541,13 @@ hardCancelBtn.onclick = async () => {
     const n = (data.cancelledChildren || 0) + (data.cancelledTasks || 0);
     status.textContent = 'Abgebrochen (cancel by user)' + (n ? ' — ' + n + ' Kind(er)/Task(s) gestoppt' : '');
     logEvent('Interrupt gesendet (hard cancel)');
-    // Zurück zur Parent-Session, falls vorhanden
+    // Back to parent session, if present
     const backBtn = document.getElementById('backToParent');
     if (backBtn && backBtn.style.display !== 'none') {
       backBtn.click();
     }
   } catch (e) {
-    status.textContent = 'Fehler beim Abbrechen: ' + e.message;
+    status.textContent = 'Error canceling: ' + e.message;
   } finally {
     setTimeout(updateCancelButton, 500);
   }
@@ -2510,7 +2583,7 @@ document.getElementById('moreActions').onchange = async (e) => {
       await loadSelectors();
       const agent = document.getElementById('agent').value;
       await newSession(agent && agent !== '__new__' ? agent : null);
-    } catch (e) { logEvent('Workspace-Wechsel Fehler: ' + e.message); }
+    } catch (e) { logEvent('Workspace switch error: ' + e.message); }
   }
 };
 document.getElementById('sessionActions').onchange = async (e) => {
@@ -2538,17 +2611,17 @@ init();
       <label>Max Steps <input id="ag_steps" type="number" value="0" style="width:100%"></label>
       <label>Hidden <input id="ag_hidden" type="checkbox"></label>
     </div>
-    <label style="display:block;margin-top:8px">System-Prompt <textarea id="ag_system" rows="6" style="width:100%"></textarea></label>
-    <label style="display:block;margin-top:8px">Tool Allow (kommagetrennt oder *) <input id="ag_toolAllow" value="*" style="width:100%"></label>
+    <label style="display:block;margin-top:8px">System prompt <textarea id="ag_system" rows="6" style="width:100%"></textarea></label>
+    <label style="display:block;margin-top:8px">Tool allow (comma-separated or *) <input id="ag_toolAllow" value="*" style="width:100%"></label>
     <label style="display:block;margin-top:8px">Tool Deny (kommagetrennt) <input id="ag_toolDeny" style="width:100%"></label>
-    <label style="display:block;margin-top:8px">MCP-Server (kommagetrennt oder *) <input id="ag_mcp" value="*" style="width:100%"></label>
+    <label style="display:block;margin-top:8px">MCP servers (comma-separated or *) <input id="ag_mcp" value="*" style="width:100%"></label>
     <label style="display:block;margin-top:8px">Rollen (kommagetrennt, leer = admin) <input id="ag_roles" placeholder="admin" style="width:100%"></label>
-    <label style="display:block;margin-top:8px">Verfügbare Tools / MCP / A2A <textarea id="ag_avail" rows="4" readonly style="width:100%"></textarea></label>
+    <label style="display:block;margin-top:8px">Available tools / MCP / A2A <textarea id="ag_avail" rows="4" readonly style="width:100%"></textarea></label>
     <label style="display:block;margin-top:8px">Permissions (JSON-Array) <textarea id="ag_perms" rows="4" style="width:100%">[{"action":"*","resource":"*","effect":"allow"}]</textarea></label>
     <label style="display:block;margin-top:8px">Skills (JSON) <textarea id="ag_skills" rows="4" style="width:100%">{"enabled":true,"allow":[],"deny":[],"max":0,"prompt":"top-k"}</textarea></label>
     <div style="margin-top:12px;display:flex;gap:8px">
-      <button id="ag_save" class="primary">Speichern</button>
-      <button id="ag_cancel">Abbrechen</button>
+      <button id="ag_save" class="primary">Save</button>
+      <button id="ag_cancel">Cancel</button>
       <span id="ag_status" style="color:var(--muted);align-self:center"></span>
     </div>
   </div>

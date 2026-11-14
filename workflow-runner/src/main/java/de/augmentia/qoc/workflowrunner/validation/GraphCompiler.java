@@ -17,7 +17,7 @@ public class GraphCompiler {
             "llm_eval", "llm_summarize", "mcp_call", "rest_call", "context_agent_executor", "compact",
             "guard", "inject");
 
-    /** Knotentypen, die einen Agenten (agentRef) benötigen. */
+    /** Node types that require an agent (agentRef). */
     private static final Set<String> AGENT_NODE_TYPES =
             Set.of("agent", "context_agent_executor");
 
@@ -91,11 +91,11 @@ public class GraphCompiler {
             }
         }
 
-        // Zyklen sind fuer edge-basierte Loops erlaubt; die Ausfuehrung wird
-        // durch das globale Step-Limit und den Circuit-Breaker begrenzt.
+        // Cycles are allowed for edge-based loops; execution is
+        // limited by the global step limit and the circuit breaker.
 
-        // Template-Validierung: Platzhalter, die der Resolver nicht kennt,
-        // landen sonst unaufgeloest im Prompt des LLM.
+        // Template validation: placeholders unknown to the resolver,
+        // otherwise they end up unresolved in the LLM prompt.
         errors.addAll(validateTemplates(def, nodeIds));
 
         // Check for exactly one end node

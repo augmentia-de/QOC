@@ -70,11 +70,11 @@ export default function HITL() {
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold mb-4">HITL (Human-in-the-Loop)</h1>
-      <p className="text-gray-400 mb-4">Run auswählen, um ausstehende Berechtigungen zu bearbeiten.</p>
+      <p className="text-gray-400 mb-4">Select a run to handle pending permissions.</p>
       {loading ? (
-        <p className="text-gray-400">Lade...</p>
+        <p className="text-gray-400">Loading...</p>
       ) : runs.length === 0 ? (
-        <p className="text-gray-400">Keine Runs vorhanden.</p>
+        <p className="text-gray-400">No runs available.</p>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -94,9 +94,9 @@ export default function HITL() {
           </div>
           <div>
             {!selected ? (
-              <p className="text-gray-400">Run auswählen.</p>
+              <p className="text-gray-400">Select a run.</p>
             ) : loadingPending ? (
-              <p className="text-gray-400">Lade Berechtigungen...</p>
+              <p className="text-gray-400">Loading permissions...</p>
             ) : pending.length === 0 ? (
               <p className="text-gray-400">Keine ausstehenden Entscheidungen.</p>
             ) : (

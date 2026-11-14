@@ -142,7 +142,7 @@ public static record EngineConfig(
         if (questionAsker == null) return false;
         try {
             Boolean answer = questionAsker.apply(session,
-                    "Das Step-Limit (" + stepNo + " Steps) ist erreicht. Soll der Agent weiterarbeiten? (ja/nein)");
+                    "The step limit (" + stepNo + " steps) has been reached. Should the agent continue? (yes/no)");
             return Boolean.TRUE.equals(answer);
         } catch (RuntimeException e) {
             return false;
@@ -901,7 +901,7 @@ public static record EngineConfig(
                 // keep going before running further steps.
                 if (interactiveTurn && softStepLimit > 0 && stepNo > softStepLimit && !continueApproved) {
                     statusSink.accept("\n\n---\n\n**[Status] Step " + (stepNo - 1) + " von "
-                            + softStepLimit + " erreicht.** Fortsetzung erforderlich.");
+                            + softStepLimit + " reached.** Continuation required.");
                     boolean proceed = askContinue(session, stepNo);
                     if (!proceed) break;
                     continueApproved = true; // one approval extends the whole turn
@@ -1072,7 +1072,7 @@ public static record EngineConfig(
                             }
                             resultText = tr.toString();
                         } else if (outcome.outcome() instanceof de.augmentia.oc.engine.core.contract.tool.ToolOutcome.Failed failed) {
-                            resultText = "Fehler: " + (failed.error() == null ? "unbekannt" : failed.error());
+                            resultText = "Error: " + (failed.error() == null ? "unknown" : failed.error());
                         } else {
                             resultText = "(kein Ergebnis)";
                         }
@@ -1190,7 +1190,7 @@ public static record EngineConfig(
                             && stepNo >= softStepLimit
                             && decision == de.augmentia.oc.engine.core.eval.TurnPolicy.Decision.ANSWER_NOW) {
                         statusSink.accept("\n\n---\n\n**[Status] Step " + (stepNo - 1) + " von "
-                                + softStepLimit + " erreicht.** Fortsetzung erforderlich.");
+                                + softStepLimit + " reached.** Continuation required.");
                         if (askContinue(session, stepNo)) {
                             continueApproved = true;
                             softStepLimit += Math.max(softStepLimit, 100);

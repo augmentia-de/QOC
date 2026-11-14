@@ -60,18 +60,18 @@ export default function Agents() {
       load();
     } catch (e) {
       console.error(e);
-      alert('Speichern fehlgeschlagen');
+      alert('Save failed');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(`Agent "${id}" löschen?`)) return;
+    if (!confirm(`Delete agent "${id}"?`)) return;
     try {
       await AgentApi.delete(id);
       load();
     } catch (e) {
       console.error(e);
-      alert('Löschen fehlgeschlagen');
+      alert('Delete failed');
     }
   };
 
@@ -86,7 +86,7 @@ export default function Agents() {
   };
 
   if (loading) {
-    return <div className="p-8 text-gray-400">Lade Agents...</div>;
+    return <div className="p-8 text-gray-400">Loading agents...</div>;
   }
 
   return (
@@ -94,13 +94,17 @@ export default function Agents() {
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Agents (Templates)</h1>
         <button onClick={handleNew} className="px-4 py-2 bg-blue-600 rounded text-sm font-bold">
-          + Neuer Agent
+          + New agent
         </button>
       </div>
 
       {showForm && editing && (
-        <div className="mb-6 p-4 bg-gray-800 rounded border border-gray-700">
-          <h2 className="font-bold mb-3">{editing.id ? 'Agent bearbeiten' : 'Neuer Agent'}</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 bg-gray-800 rounded border border-gray-700 shadow-xl">
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="font-bold">{editing.id ? 'Edit agent' : 'New agent'}</h2>
+            <button onClick={() => { setShowForm(false); setEditing(null); }} className="text-gray-400 hover:text-white text-xl leading-none">&times;</button>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-gray-400 mb-1">ID</label>
@@ -148,14 +152,15 @@ export default function Agents() {
             />
           </div>
           <div className="flex gap-2 mt-4">
-            <button onClick={handleSave} className="px-4 py-2 bg-blue-600 rounded text-sm font-bold">Speichern</button>
-            <button onClick={() => { setShowForm(false); setEditing(null); }} className="px-4 py-2 bg-gray-600 rounded text-sm">Abbrechen</button>
+            <button onClick={handleSave} className="px-4 py-2 bg-blue-600 rounded text-sm font-bold">Save</button>
+            <button onClick={() => { setShowForm(false); setEditing(null); }} className="px-4 py-2 bg-gray-600 rounded text-sm">Cancel</button>
+          </div>
           </div>
         </div>
       )}
 
       {agents.length === 0 ? (
-        <p className="text-gray-400">Keine Agents im Store. Erstelle einen mit "+ Neuer Agent".</p>
+        <p className="text-gray-400">No agents in store. Create one with "+ New agent".</p>
       ) : (
         <div className="grid gap-2">
           {agents.map((a) => (
@@ -164,12 +169,12 @@ export default function Agents() {
                 <span className="font-bold">{a.name || a.id}</span>
                 <span className="text-xs text-gray-400 font-mono ml-2">{a.model}</span>
                 <div className="text-xs text-gray-400 mt-1">
-                  Temp: {a.temperature} · MaxTokens: {a.maxTokens} · Tools: {a.tools.join(', ') || 'keine'}
+                  Temp: {a.temperature} · MaxTokens: {a.maxTokens} · Tools: {a.tools.join(', ') || 'none'}
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => handleEdit(a)} className="px-3 py-1 bg-gray-600 rounded text-xs">Bearbeiten</button>
-                <button onClick={() => handleDelete(a.id)} className="px-3 py-1 bg-red-600 rounded text-xs">Löschen</button>
+                <button onClick={() => handleEdit(a)} className="px-3 py-1 bg-gray-600 rounded text-xs">Edit</button>
+                <button onClick={() => handleDelete(a.id)} className="px-3 py-1 bg-red-600 rounded text-xs">Delete</button>
               </div>
             </div>
           ))}

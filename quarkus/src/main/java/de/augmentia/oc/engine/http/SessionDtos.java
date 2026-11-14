@@ -46,10 +46,10 @@ final class SessionDtos {
                         if (resultText.length() > 800) resultText = resultText.substring(0, 800) + "…";
                     } else if (state instanceof de.augmentia.oc.engine.core.model.ToolState.Failed failedState) {
                         failed = true;
-                        resultText = failedState.error() == null ? "fehlgeschlagen" : String.valueOf(failedState.error());
+                        resultText = failedState.error() == null ? "failed" : String.valueOf(failedState.error());
                         if (resultText.length() > 800) resultText = resultText.substring(0, 800) + "…";
                     } else {
-                        resultText = "(kein Ergebnis)";
+                        resultText = "(no result)";
                     }
                     tools.add(new ToolCardDto(card.id().value(), card.name().value(), input, resultText, failed));
                 }

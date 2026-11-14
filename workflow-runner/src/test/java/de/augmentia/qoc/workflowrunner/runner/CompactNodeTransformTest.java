@@ -8,9 +8,9 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests für die deterministischen Transformationen des compact-Nodes:
- * truncate, filterLines, filterKeys, bulletize. Gleiche Eingaben müssen
- * immer gleiche Ausgaben liefern (Replay-Sicherheit).
+ * Tests for the deterministic transformations of the compact node:
+ * truncate, filterLines, filterKeys, bulletize. Same inputs must
+ * always produce the same outputs (replay safety).
  */
 class CompactNodeTransformTest {
 

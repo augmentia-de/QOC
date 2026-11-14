@@ -377,7 +377,7 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
       setStoreAgents(res.data.agents || []);
     } catch (e) {
       console.error('Agent config save failed', e);
-      alert('Agent-Config konnte nicht gespeichert werden');
+      alert('Agent config could not be saved');
     }
   };
 
@@ -409,7 +409,7 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
       const updated = { ...wf.data, nodes: converted.nodes, edges: converted.edges };
       await WorkflowApi.save(id, updated as any);
       alert('Gespeichert: ' + id);
-    } catch (e) { console.error(e); alert('Speichern fehlgeschlagen'); }
+    } catch (e) { console.error(e); alert('Save failed'); }
   };
 
   const runWorkflow = async () => {
@@ -423,7 +423,7 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
       await WorkflowApi.save(id, updated as any);
       const res = await WorkflowApi.run(updated as any, 'Hello');
       alert('Ergebnis: ' + res.data.result);
-    } catch (e) { console.error(e); alert('Ausführung fehlgeschlagen'); }
+    } catch (e) { console.error(e); alert('Execution failed'); }
   };
 
   return (
@@ -448,8 +448,8 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
       <div className="flex-1 flex flex-col min-w-0">
         <div className="p-2 flex flex-wrap items-center gap-2 bg-gray-800 border-b border-gray-700">
           <span className="text-xs text-gray-400 mr-1">Actions:</span>
-          <button onClick={saveWorkflow} className="px-3 py-1 bg-green-600 rounded text-sm font-bold">💾 Speichern</button>
-          <button onClick={runWorkflow} className="px-3 py-1 bg-blue-600 rounded text-sm font-bold">▶ Ausführen</button>
+          <button onClick={saveWorkflow} className="px-3 py-1 bg-green-600 rounded text-sm font-bold">💾 Save</button>
+          <button onClick={runWorkflow} className="px-3 py-1 bg-blue-600 rounded text-sm font-bold">▶ Run</button>
           <button onClick={handleAutoLayout} className="px-3 py-1 bg-gray-600 rounded text-sm">Auto-Layout</button>
           <button onClick={undo} className="px-3 py-1 bg-gray-600 rounded text-sm" disabled={historyIndex <= 0}>Undo</button>
           <button onClick={redo} className="px-3 py-1 bg-gray-600 rounded text-sm" disabled={historyIndex >= history.length - 1}>Redo</button>

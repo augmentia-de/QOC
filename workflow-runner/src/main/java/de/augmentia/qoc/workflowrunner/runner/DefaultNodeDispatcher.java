@@ -102,9 +102,9 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                     return new NodeResult("Agent access denied: " + agentRef, null);
                 }
 
-                // Eigener Registry-Name pro Knoten, damit der Systemprompt dieses
-                // Knotens nicht durch eine bereits registrierte Agent-Config
-                // (resolveAgentConfig: first registration wins) überschrieben wird.
+                // Own registry name per node so this node's system prompt
+                // node is not overridden by an already registered agent config
+                // (resolveAgentConfig: first registration wins) is overridden.
                 String prefixedName = "wf:ctx:" + node.id();
 
                 String mode = str(opt(node, "contextMode"), "focused");
@@ -128,7 +128,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
 
                 QocEngine.AgentConfig config = toAgentConfig(agentDef, prefixedName, systemPrompt);
 
-                // Vorab-Budgetprüfung: harter Fehler statt stiller Überschreitung.
+                // Pre-flight budget check: hard error instead of silent overrun.
                 de.augmentia.oc.engine.core.contract.provider.ModelInfo modelInfo =
                         engine.resolveModelInfo(config);
                 ContextBudgetGate.check(node.id(), systemPrompt, userPrompt, agentDef, modelInfo);
@@ -207,8 +207,8 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 return new NodeResult("joined", merged);
             }
             case "loop" -> {
-                // Edge-basierter Loop: der Zaehler wird bei jedem Durchlauf erhoeht
-                // und als State an alle folgenden Nodes weitergegeben.
+                // Edge-based loop: the counter is incremented on each iteration
+                // and passed as state to all following nodes.
                 int maxIter = Math.max(1, node.data().maxIterations());
                 String counterKey = "loopCounter:" + node.id();
                 int counter = 0;
@@ -254,7 +254,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 String condition = str(opts.get("condition"), "");
                 boolean matched = condition.isBlank() || ConditionEvaluator.matches(condition, ctx);
 
-                // Begrenze Korrekturrunden: nach MAX_CORRECTION_ROUNDS nicht erneut in den Loop.
+                // Limit correction rounds: after MAX_CORRECTION_ROUNDS, do not re-enter the loop.
                 int maxRounds = Math.max(1, node.data().maxIterations());
                 String condLower = condition.toLowerCase(java.util.Locale.ROOT);
                 if (matched && condLower.contains("low_margin")) {
@@ -512,7 +512,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
         return "wf:" + name + ":" + version;
     }
 
-    /** Overload mit Systemprompt-Override (für context_agent_executor). */
+    /** Overload with system-prompt override (for context_agent_executor). */
     private QocEngine.AgentConfig toAgentConfig(WorkflowDefinition.Agent a, String prefixedName,
                                                 String systemPromptOverride) {
         QocEngine.AgentConfig base = toAgentConfig(a, prefixedName);
@@ -635,10 +635,10 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     }
 
     /**
-     * Liefert den Systemprompt für einen context_agent_executor-Knoten:
-     * der gemeinsame Workflow-Prompt (für Prompt-Caching), falls gesetzt,
-     * sonst der Agent-Systemprompt. Der Kontext liegt immer in der
-     * User-Nachricht, nie im Systemprompt.
+     * Returns the system prompt for a context_agent_executor node:
+     * the shared workflow prompt (for prompt caching), if set,
+     * otherwise the agent system prompt. The context always resides in the
+     * user message, never in the system prompt.
      */
     static String resolveSystemPrompt(WorkflowDefinition def, WorkflowDefinition.Agent agentDef) {
         String shared = def.systemPrompt();
@@ -647,9 +647,9 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     }
 
     /**
-     * Baut den vollständigen Workflow-Kontext als Prompt-Text: Initial-Prompt,
-     * Node-Outputs in Definition-Reihenfolge und sortierter Workflow-State.
-     * Deterministisch, damit der Prompt über Läufe hinweg stabil (cachefähig) ist.
+     * Builds the full workflow context as prompt text: initial prompt,
+     * node outputs in definition order and sorted workflow state.
+     * Deterministic so the prompt stays stable across runs (cacheable).
      */
     static String buildFullContext(WorkflowDefinition def, WorkflowContext ctx) {
         StringBuilder sb = new StringBuilder();
@@ -668,7 +668,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
 
         sb.append("## Workflow state\n");
         ctx.getWorkflowState().entrySet().stream()
-                .filter(e -> !"lastResult".equals(e.getKey())) // steht bereits in den Node-Outputs
+                .filter(e -> !"lastResult".equals(e.getKey())) // already present in node outputs
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(e -> sb.append("- ").append(e.getKey()).append(": ")
                         .append(renderValue(e.getValue())).append('\n'));
@@ -689,7 +689,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     private static final int CHARS_PER_TOKEN = 4;
     private static final int CONTEXT_BUDGET_TOKENS = 96_000;
 
-    /** Grobe Token-Schätzung; nur für die Warnung vor dem Lauf (kein Compaction). */
+    /** Rough token estimate; only for the pre-run warning (no compaction). */
     static int estimateTokens(String text) {
         return text == null ? 0 : text.length() / CHARS_PER_TOKEN;
     }

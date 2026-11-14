@@ -17,7 +17,7 @@ export default function Testbench() {
       setResult(res.data);
     } catch (e) {
       console.error(e);
-      setResult({ error: 'Ausführung fehlgeschlagen' });
+      setResult({ error: 'Execution failed' });
     } finally {
       setRunning(false);
     }
@@ -26,7 +26,7 @@ export default function Testbench() {
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold mb-4">Testbench</h1>
-      <p className="text-gray-400 mb-4">Workflow testen und ausführen</p>
+      <p className="text-gray-400 mb-4">Test and run workflow</p>
       <div className="space-y-4 max-w-2xl">
         <input
           value={workflowId}
@@ -37,7 +37,7 @@ export default function Testbench() {
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Input für den Workflow"
+          placeholder="Input for the workflow"
           className="w-full h-24 bg-gray-800 text-white p-3 rounded border border-gray-700"
         />
         <button
@@ -45,7 +45,7 @@ export default function Testbench() {
           disabled={running || !workflowId.trim()}
           className="px-4 py-2 bg-green-600 rounded text-sm disabled:opacity-50"
         >
-          {running ? 'Läuft...' : 'Ausführen'}
+          {running ? 'Running...' : 'Run'}
         </button>
         {result && (
           <pre className="bg-gray-800 p-4 rounded text-sm text-green-400 overflow-auto max-h-96">

@@ -173,7 +173,7 @@ export default function Runs() {
                 )}
               </div>
             ) : (
-              <p className="text-gray-400">Run auswählen für Details.</p>
+              <p className="text-gray-400">Select a run for details.</p>
             )}
           </div>
         </div>

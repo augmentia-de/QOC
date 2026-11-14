@@ -295,7 +295,7 @@ class QocEngineTest {
         assertThat(overrides.toolSnapshot()).isNull();
         assertThat(overrides.contextBuilder()).isNull();
         assertThat(overrides.skillSelection()).isNull();
-        // Rückwärtskompatibel: Compaction standardmäßig aktiv
+        // Backwards compatible: compaction enabled by default
         assertThat(overrides.compactionEnabled()).isTrue();
     }
 

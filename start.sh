@@ -12,12 +12,12 @@ if [ -f .env ]; then
 fi
 
 # LLM-Konfiguration aus .env (OpenAI-kompatibel) in die Engine-Variablen
-# übersetzen, sofern sie nicht explizit gesetzt wurden.
+# translate, unless explicitly set.
 : "${ENGINE_PROVIDER_SCRIPTED:=false}"
 export ENGINE_PROVIDER_SCRIPTED
 
 if [ -z "${ENGINE_PROVIDER_URL:-}" ] && [ -n "${OPENAI_BASE_URL:-}" ]; then
-    # Trailing Slash entfernen, dann /chat/completions anhängen.
+    # Remove trailing slash, then append /chat/completions.
     base="${OPENAI_BASE_URL%/}"
     export ENGINE_PROVIDER_URL="${base}/chat/completions"
 fi
@@ -61,11 +61,11 @@ echo "  Modell:    ${ENGINE_MODEL_ID:-<default>}"
 echo "  Workspace: ${ENGINE_WORKSPACE}"
 echo "  Auth:      $([ -n "$OPENCODE_SERVER_PASSWORD" ] && echo 'basic (opencode)' || echo 'aus (nur loopback)')"
 echo
-# Logs standardmäßig ins Projekt-./log (absolut), damit der Ordner vorhersehbar ist.
+# Logs by default into project ./log (absolute), so the folder is predictable.
 : "${LOG_DIR:=$PWD/log}"
 export LOG_DIR
 
-# Remote-Debug für IntelliJ (JVM Debug). Standardport 5005; mit DEBUG_PORT=... überschreibbar.
+# Remote debug for IntelliJ (JVM debug). Default port 5005; overridable via DEBUG_PORT=...
 : "${DEBUG_PORT:=5005}"
 echo "Remote-Debug: localhost:${DEBUG_PORT} (suspend=n)"
 
@@ -87,7 +87,7 @@ fi
 export ENGINE_DB_DRIVER ENGINE_DB_PATH ENGINE_FLYWAY_LOCATIONS
 export QUARKUS_FLYWAY_LOCATIONS="$ENGINE_FLYWAY_LOCATIONS"
 echo "Starte Quarkus-Dev-Modus ..."
-# Default HTTP port (überschreibbar via QUARKUS_HTTP_PORT / PORT).
+# Default HTTP port (overridable via QUARKUS_HTTP_PORT / PORT).
 : "${QUARKUS_HTTP_PORT:=8007}"
 export QUARKUS_HTTP_PORT
 echo "HTTP port: ${QUARKUS_HTTP_PORT}"

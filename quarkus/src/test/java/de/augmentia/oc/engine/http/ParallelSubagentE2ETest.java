@@ -25,9 +25,9 @@ import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * HTTP-E2E-Test: Ein Coordinator-Agent ruft in einem Modell-Schritt zwei
- * Research-Subagents auf. Beide laufen in eigenen Child-Sessions; der
- * Coordinator aggregiert die Ergebnisse.
+ * HTTP E2E test: a coordinator agent calls two
+ * research subagents. Both run in their own child sessions; the
+ * coordinator aggregates the results.
  */
 @QuarkusTest
 @TestProfile(ParallelSubagentE2ETest.Profile.class)
@@ -163,8 +163,8 @@ class ParallelSubagentE2ETest {
                 return text("E2E Title");
             }
 
-            // Der Coordinator-Prompt nennt die Subagent-Namen, daher zuerst
-            // den Coordinator erkennen, bevor auf "research-a" geprüft wird.
+            // The coordinator prompt names the subagent names, so first
+            // recognize the coordinator before checking for "research-a".
             if (system.contains("coordinator")) {
                 if (!toolContents.isEmpty()) {
                     String joined = String.join(" | ", toolContents);

@@ -48,8 +48,8 @@ export default function Settings() {
     <div className="p-8">
       <h1 className="text-2xl font-bold mb-4">Settings</h1>
       <p className="text-sm text-gray-400 mb-4">
-        UI-Einstellungen werden lokal im Browser gespeichert. Die API wird relativ
-        über <code>/api</code> angesprochen (nginx-/Vite-Proxy).
+        UI settings are stored locally in the browser. The API is reached
+        via <code>/api</code> (nginx/Vite proxy).
       </p>
       <div className="space-y-4 max-w-md">
         <div>
@@ -73,12 +73,12 @@ export default function Settings() {
         </div>
         <div className="flex items-center gap-3">
           <button onClick={save} className="px-4 py-2 bg-blue-600 rounded text-sm">
-            Speichern
+            Save
           </button>
           <button onClick={reset} className="px-4 py-2 bg-gray-700 rounded text-sm">
-            Zurücksetzen
+            Reset
           </button>
-          {saved && <span className="text-green-400 text-sm">Gespeichert.</span>}
+          {saved && <span className="text-green-400 text-sm">Saved.</span>}
         </div>
       </div>
     </div>

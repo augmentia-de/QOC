@@ -16,6 +16,7 @@ export const WorkflowApi = {
   list: () => api.get<{ workflows: string[] }>('/workflows'),
   get: (id: string) => api.get<import('../types/workflow').WorkflowDefinition>(`/workflows/${id}`),
   create: (name?: string) => api.post<import('../types/workflow').WorkflowDefinition>('/workflows', { name }),
+  delete: (id: string) => api.delete(`/workflows/${id}`),
   save: (id: string, def: import('../types/workflow').WorkflowDefinition) =>
     api.put<import('../types/workflow').WorkflowDefinition>(`/workflows/${id}`, def),
   validate: (def: import('../types/workflow').WorkflowDefinition) =>

@@ -95,7 +95,7 @@ public class WorkflowResource {
         }
         // Platzhalter praeventiv pruefen: unaufgeloeste Templates wuerden sonst
         // erst beim Lauf auffallen. Bewusst nur Templates — ein Entwurf ohne
-        // end-Node oder mit offenen Agent-Refs muss speicherbar bleiben.
+        // end node or with open agent refs must remain storable.
         var templateCheck = GraphCompiler.validateTemplatesOnly(def);
         if (!templateCheck.valid()) {
             return Response.status(Response.Status.BAD_REQUEST)

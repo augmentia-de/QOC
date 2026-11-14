@@ -18,7 +18,8 @@ public record ToolSnapshot(Map<ToolName, ToolDefinition> definitions) {
     public ToolDefinition require(ToolName name) {
         ToolDefinition definition = definitions.get(name);
         if (definition == null) {
-            throw new ToolFailure("Tool is not available for this request: " + name);
+            throw new ToolFailure("Tool '" + name + "' is not available in this session. "
+                    + "Please use an available tool and try again.");
         }
         return definition;
     }

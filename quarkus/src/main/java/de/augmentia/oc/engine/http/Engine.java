@@ -884,13 +884,13 @@ commandLoader = new CommandLoader(workspacePath,
         qocEngine.setQuestionAsker((sessionId, questionText) -> {
             de.augmentia.oc.engine.core.port.human.QuestionSource.Question question =
                     new de.augmentia.oc.engine.core.port.human.QuestionSource.Question(
-                            "Step-Limit erreicht",
+                            "Step limit reached",
                             questionText,
                             java.util.List.of(
                                     new de.augmentia.oc.engine.core.port.human.QuestionSource.Option(
-                                            "Ja", "Agent arbeitet mit weiteren Steps weiter"),
+                                            "Yes", "Agent continues with further steps"),
                                     new de.augmentia.oc.engine.core.port.human.QuestionSource.Option(
-                                            "Nein", "Turn wird mit einer Abschlussmeldung beendet")),
+                                            "No", "Turn ends with a closing message")),
                             false);
             try {
                 de.augmentia.oc.engine.core.port.human.QuestionSource.Answer answer =
@@ -2095,21 +2095,21 @@ commandLoader = new CommandLoader(workspacePath,
     private final java.util.concurrent.Semaphore subagentSemaphore = new java.util.concurrent.Semaphore(MAX_CONCURRENT_SUBAGENTS);
 
     private static String providerErrorType(de.augmentia.oc.engine.core.contract.provider.FailureKind kind) {
-        if (kind == null) return "anbieter.unbekannt";
+        if (kind == null) return "provider.unknown";
         return switch (kind) {
-            case de.augmentia.oc.engine.core.contract.provider.FailureKind.Transport t -> "anbieter.transport";
-            case de.augmentia.oc.engine.core.contract.provider.FailureKind.RateLimited ignored -> "anbieter.ratenbegrenzung";
-            case de.augmentia.oc.engine.core.contract.provider.FailureKind.ProviderInternal ignored -> "anbieter.intern";
-            case de.augmentia.oc.engine.core.contract.provider.FailureKind.Timeout ignored -> "anbieter.zeitueberschreitung";
-            case de.augmentia.oc.engine.core.contract.provider.FailureKind.Authentication ignored -> "anbieter.auth";
-            case de.augmentia.oc.engine.core.contract.provider.FailureKind.QuotaExceeded ignored -> "anbieter.kontingent";
-            case de.augmentia.oc.engine.core.contract.provider.FailureKind.ContentPolicy ignored -> "anbieter.inhaltsfilter";
-            case de.augmentia.oc.engine.core.contract.provider.FailureKind.UnsupportedOperation ignored -> "anbieter.nicht-unterstuetzt";
-            case de.augmentia.oc.engine.core.contract.provider.FailureKind.NoRoute ignored -> "anbieter.keine-route";
-            case de.augmentia.oc.engine.core.contract.provider.FailureKind.UnknownProvider ignored -> "anbieter.unbekannt";
-            case de.augmentia.oc.engine.core.contract.provider.FailureKind.InvalidOutput ignored -> "anbieter.ungueltige-ausgabe";
-            case de.augmentia.oc.engine.core.contract.provider.FailureKind.InvalidRequest ignored -> "anbieter.ungueltige-anfrage";
-            default -> "anbieter.unbekannt";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.Transport t -> "provider.transport";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.RateLimited ignored -> "provider.rate-limited";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.ProviderInternal ignored -> "provider.internal";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.Timeout ignored -> "provider.timeout";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.Authentication ignored -> "provider.auth";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.QuotaExceeded ignored -> "provider.quota";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.ContentPolicy ignored -> "provider.content-filter";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.UnsupportedOperation ignored -> "provider.unsupported";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.NoRoute ignored -> "provider.no-route";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.UnknownProvider ignored -> "provider.unknown";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.InvalidOutput ignored -> "provider.invalid-output";
+            case de.augmentia.oc.engine.core.contract.provider.FailureKind.InvalidRequest ignored -> "provider.invalid-request";
+            default -> "provider.unknown";
         };
     }
 

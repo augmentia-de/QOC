@@ -16,7 +16,7 @@ import java.util.Map;
 
 /**
  * Konvertiert {@link EngineResult#structured()} (Option&lt;JsonValue&gt;) in eine
- * {@code Map<String, Object>} für den {@link WorkflowContext}.
+ * {@code Map<String, Object>} for the {@link WorkflowContext}.
  */
 public final class StructuredOutputConverter {
 
@@ -27,7 +27,7 @@ public final class StructuredOutputConverter {
 
     /**
      * Konvertiert {@code Option<JsonValue>} in eine Map.
-     * Gibt {@code null} zurück wenn kein strukturiertes Ergebnis vorhanden.
+     * Returns {@code null} when no structured result is present.
      */
     public static Map<String, Object> toMap(Option<JsonValue> structured) {
         if (structured == null || structured.isEmpty()) return null;

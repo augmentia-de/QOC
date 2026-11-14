@@ -13,10 +13,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Kleiner Test-Service: stellt einen minimalen MCP-Server (Tool "add" = +1)
- * und einen REST-Endpunkt (Dekrement = -1) bereit.
+ * Small test service: provides a minimal MCP server (tool "add" = +1)
+ * and a REST endpoint (decrement = -1).
  *
- * <p>Wenn OIDC/Security aktiv ist, sind beide Endpunkte geschützt.</p>
+ * <p>When OIDC/Security is active, both endpoints are protected.</p>
  */
 @Path("/api/test")
 @Produces(MediaType.APPLICATION_JSON)

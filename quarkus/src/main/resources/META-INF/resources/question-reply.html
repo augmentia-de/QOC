@@ -12,7 +12,7 @@ const token = params.get('token');
 async function load() {
   try {
     const r = await fetch('/api/question/' + token);
-    if (!r.ok) { document.getElementById('content').textContent = 'Frage nicht gefunden oder abgelaufen.'; return; }
+    if (!r.ok) { document.getElementById('content').textContent = 'Question not found or expired.'; return; }
     const data = await r.json();
     const q = data.data;
     let html = '';
@@ -30,7 +30,7 @@ async function load() {
     html += '<br><button onclick="submit()">Antworten</button>';
     document.getElementById('content').innerHTML = html;
   } catch (e) {
-    document.getElementById('content').textContent = 'Fehler: ' + e.message;
+    document.getElementById('content').textContent = 'Error: ' + e.message;
   }
 }
 async function submit() {
@@ -41,7 +41,7 @@ async function submit() {
   if (r.ok) {
     document.body.innerHTML = '<h2>Antwort gesendet!</h2><p>Du kannst dieses Fenster schliessen.</p>';
   } else {
-    alert('Fehler: ' + r.status);
+    alert('Error: ' + r.status);
   }
 }
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }

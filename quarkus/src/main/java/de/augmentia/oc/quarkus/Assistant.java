@@ -8,8 +8,8 @@ import io.quarkiverse.langchain4j.RegisterAiService;
 public interface Assistant {
 
     @SystemMessage("""
-            Du bist ein präziser Assistent.
-            Antworte knapp, sachlich und auf Deutsch.
+            You are a precise assistant.
+            Answer concisely and factually, in English.
             """)
     String chat(@UserMessage String message);
 }

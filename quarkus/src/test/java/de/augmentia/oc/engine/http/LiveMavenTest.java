@@ -53,11 +53,11 @@ class LiveMavenTest {
         io.restassured.response.Response response = given()
                 .contentType("application/json")
                 .body(Map.of("text",
-                        "Du MUSST sofort das write-Tool aufrufen, fuer JEDE Datei einzeln. Keine Erklaerung, keine Analyse. "
-                                + "Datei 1: path=pom.xml content=<project xmlns=\"http://maven.apache.org/POM/4.0.0\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\"><modelVersion>4.0.0</modelVersion><groupId>de.example</groupId><artifactId>hello</artifactId><version>1.0.0</version><properties><maven.compiler.release>21</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties><build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId><version>3.4.2</version><configuration><archive><manifest><mainClass>de.example.App</mainClass></manifest></archive></configuration></plugin></plugins></build></project>. "
-                                + "Datei 2: path=src/main/java/de/example/App.java content=package de.example;\n\npublic class App {\n    public static void main(String[] args) {\n        System.out.println(Greeter.greet(\"World\"));\n    }\n}. "
-                                + "Datei 3: path=src/main/java/de/example/Greeter.java content=package de.example;\n\npublic class Greeter {\n    public static String greet(String name) {\n        return \"Hello, \" + name + \"!\";\n    }\n}. "
-                                + "Rufe jetzt write fuer pom.xml auf."))
+                        "You MUST immediately call the write tool, for EACH file individually. No explanation, no analysis. "
+                                + "File 1: path=pom.xml content=<project xmlns=\"http://maven.apache.org/POM/4.0.0\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\"><modelVersion>4.0.0</modelVersion><groupId>de.example</groupId><artifactId>hello</artifactId><version>1.0.0</version><properties><maven.compiler.release>21</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties><build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId><version>3.4.2</version><configuration><archive><manifest><mainClass>de.example.App</mainClass></manifest></archive></configuration></plugin></plugins></build></project>. "
+                                + "File 2: path=src/main/java/de/example/App.java content=package de.example;\n\npublic class App {\n    public static void main(String[] args) {\n        System.out.println(Greeter.greet(\"World\"));\n    }\n}. "
+                                + "File 3: path=src/main/java/de/example/Greeter.java content=package de.example;\n\npublic class Greeter {\n    public static String greet(String name) {\n        return \"Hello, \" + name + \"!\";\n    }\n}. "
+                                + "Call write for pom.xml now."))
                 .post("/api/session/" + id + "/prompt");
 
         System.out.println("Maven-project finish: " + response.jsonPath().getString("finish"));

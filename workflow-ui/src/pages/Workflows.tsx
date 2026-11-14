@@ -33,6 +33,17 @@ export default function Workflows() {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm(`Workflow "${id}" wirklich löschen?`)) return;
+    try {
+      await WorkflowApi.delete(id);
+      load();
+    } catch (e) {
+      console.error(e);
+      alert('Löschen fehlgeschlagen');
+    }
+  };
+
   return (
     <div className="p-8">
       <h1 className="text-2xl font-bold mb-4">Workflows</h1>
@@ -54,13 +65,20 @@ export default function Workflows() {
       ) : (
         <div className="grid gap-2">
           {workflows.map((id) => (
-            <Link
+            <div
               key={id}
-              to={`/workflows/${id}`}
-              className="block p-4 bg-gray-800 rounded hover:bg-gray-700"
+              className="flex items-center justify-between p-4 bg-gray-800 rounded hover:bg-gray-700"
             >
-              <span className="font-mono text-blue-400">{id}</span>
-            </Link>
+              <Link to={`/workflows/${id}`} className="font-mono text-blue-400">
+                {id}
+              </Link>
+              <button
+                onClick={() => handleDelete(id)}
+                className="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm"
+              >
+                Löschen
+              </button>
+            </div>
           ))}
         </div>
       )}

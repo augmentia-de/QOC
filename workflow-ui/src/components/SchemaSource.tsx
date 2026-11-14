@@ -56,10 +56,10 @@ export function SchemaSource({ value, onChange, disabled }: SchemaSourceProps) {
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         onChange(parsed as Record<string, unknown>);
       } else {
-        setError('Schema muss ein JSON-Objekt sein.');
+        setError('Schema must be a JSON object.');
       }
     } catch {
-      setError('Ungültiges JSON.');
+      setError('Invalid JSON.');
     }
   };
 
@@ -71,7 +71,7 @@ export function SchemaSource({ value, onChange, disabled }: SchemaSourceProps) {
       onChange(res.data.schema);
       setText(JSON.stringify(res.data.schema, null, 2));
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Fehler beim Generieren.');
+      setError(e?.response?.data?.error || e?.message || 'Error generating.');
     } finally {
       setLoading(false);
     }
@@ -92,7 +92,7 @@ export function SchemaSource({ value, onChange, disabled }: SchemaSourceProps) {
         setText(JSON.stringify(res.data.schema, null, 2));
       }
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Fehler beim Laden.');
+      setError(e?.response?.data?.error || e?.message || 'Error loading.');
     } finally {
       setLoading(false);
     }
@@ -113,7 +113,7 @@ export function SchemaSource({ value, onChange, disabled }: SchemaSourceProps) {
         setText(JSON.stringify(res.data.schema, null, 2));
       }
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Fehler beim Parsen.');
+      setError(e?.response?.data?.error || e?.message || 'Error parsing.');
     } finally {
       setLoading(false);
     }
@@ -132,7 +132,7 @@ export function SchemaSource({ value, onChange, disabled }: SchemaSourceProps) {
         setText(JSON.stringify(res.data.schema, null, 2));
       }
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Fehler beim Import.');
+      setError(e?.response?.data?.error || e?.message || 'Error importing.');
     } finally {
       setLoading(false);
     }
@@ -140,7 +140,7 @@ export function SchemaSource({ value, onChange, disabled }: SchemaSourceProps) {
 
   const validateSchema = async () => {
     if (!value) {
-      setError('Kein Schema zum Validieren.');
+      setError('No schema to validate.');
       return;
     }
     setLoading(true);
@@ -149,12 +149,12 @@ export function SchemaSource({ value, onChange, disabled }: SchemaSourceProps) {
       const res = await SchemaApi.validate(value);
       if (res.data.valid) {
         setError(null);
-        alert('Schema ist gültig.');
+        alert('Schema is valid.');
       } else {
-        setError(res.data.message || res.data.error || 'Schema ungültig.');
+        setError(res.data.message || res.data.error || 'Schema invalid.');
       }
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Fehler bei der Validierung.');
+      setError(e?.response?.data?.error || e?.message || 'Error validating.');
     } finally {
       setLoading(false);
     }
@@ -266,7 +266,7 @@ export function SchemaSource({ value, onChange, disabled }: SchemaSourceProps) {
                   disabled={disabled || loading || !selectedName}
                   className="rounded bg-green-600 px-3 py-1 text-xs font-bold disabled:opacity-50"
                 >
-                  Übernehmen
+                  Apply
                 </button>
               </>
             )}
@@ -297,7 +297,7 @@ export function SchemaSource({ value, onChange, disabled }: SchemaSourceProps) {
         {error && <span className="text-xs text-red-400">{error}</span>}
       </div>
       <p className="mt-1 text-xs text-gray-500">
-        Leer = keine strukturierte Ausgabe. Import via /api/schema/* möglich.
+        Empty = no structured output. Import via /api/schema/* possible.
       </p>
     </div>
   );

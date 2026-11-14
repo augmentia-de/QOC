@@ -10,9 +10,9 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests für die package-privaten Helfer von DefaultNodeDispatcher:
+ * Tests for the package-private helpers of DefaultNodeDispatcher:
  * buildFullContext (Determinismus, Reihenfolge, lastResult-Filter)
- * und resolveSystemPrompt (Shared-Prompt vs. Agent-Fallback).
+ * and resolveSystemPrompt (shared prompt vs. agent fallback).
  */
 class DefaultNodeDispatcherContextTest {
 
@@ -42,7 +42,7 @@ class DefaultNodeDispatcherContextTest {
         ctx.setInitialPrompt("Phase A then B");
         ctx.setNodeOutput("end", "done");
         ctx.setNodeOutput("n1", Map.of("status", "ok"));
-        // lastResult im State muss nicht doppelt erscheinen
+        // lastResult in state must not appear twice
         ctx.setState("lastResult", "done");
         ctx.setState("zeta", "z-value");
         ctx.setState("alpha", "a-value");
@@ -57,12 +57,12 @@ class DefaultNodeDispatcherContextTest {
         assertTrue(full.contains("## Initial prompt\nPhase A then B"));
         assertTrue(full.contains("### n1 (agent)"));
         assertTrue(full.contains("### end (end)"));
-        // Node-Outputs in def.nodes()-Reihenfolge (start fehlt, da ohne Output)
+        // Node outputs in def.nodes() order (start missing, as it has no output)
         int idxAgent = full.indexOf("### n1");
         int idxEnd = full.indexOf("### end");
         assertTrue(idxAgent >= 0 && idxEnd > idxAgent, "n1 before end expected");
 
-        // State-Schlüssel sortiert, lastResult gefiltert
+        // State keys sorted, lastResult filtered
         int idxAlpha = full.indexOf("- alpha:");
         int idxZeta = full.indexOf("- zeta:");
         assertTrue(idxAlpha >= 0 && idxZeta > idxAlpha, "sorted state keys expected");

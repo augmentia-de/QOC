@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Gemeinsame Prüfhelfer für die GCP-Deployment-Skripte.
+# Shared check helpers for the GCP deployment scripts.
 # Wird von gcp-auth0.sh, gcp-ssl.sh, qoc-prepare.sh und
 # gcp-sandbox-setup.sh gesourct.
 
@@ -9,17 +9,17 @@
 require_cmd() {
     local cmd="$1" hint="${2:-}"
     if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo "ERROR: '$cmd' nicht gefunden. ${hint}" >&2
+        echo "ERROR: '$cmd' not found. ${hint}" >&2
         return 1
     fi
 }
 
 # optional_cmd <cmd> <hint>
-# Gibt 0 zurück, wenn vorhanden, 1 + Warnung, wenn fehlend.
+# Returns 0 if present, 1 + warning if missing.
 optional_cmd() {
     local cmd="$1" hint="${2:-}"
     if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo "WARN: '$cmd' nicht gefunden. ${hint}" >&2
+        echo "WARN: '$cmd' not found. ${hint}" >&2
         return 1
     fi
     return 0
@@ -29,7 +29,7 @@ optional_cmd() {
 require_service() {
     local svc="$1"
     if ! systemctl is-active --quiet "$svc" 2>/dev/null; then
-        echo "ERROR: systemd-Service '$svc' ist nicht aktiv." >&2
+        echo "ERROR: systemd service '$svc' is not active." >&2
         return 1
     fi
 }
@@ -38,7 +38,7 @@ require_service() {
 require_env_file() {
     local f="${1:-/etc/qoc/env}"
     if [[ ! -r "$f" ]]; then
-        echo "ERROR: $f existiert nicht oder ist nicht lesbar." >&2
+        echo "ERROR: $f does not exist or is not readable." >&2
         return 1
     fi
 }
@@ -47,7 +47,7 @@ require_env_file() {
 require_file() {
     local f="$1" hint="${2:-}"
     if [[ ! -f "$f" ]]; then
-        echo "ERROR: Datei '$f' fehlt. ${hint}" >&2
+        echo "ERROR: file '$f' missing. ${hint}" >&2
         return 1
     fi
 }
@@ -56,7 +56,7 @@ require_file() {
 require_executable() {
     local f="$1" hint="${2:-}"
     if [[ ! -x "$f" ]]; then
-        echo "ERROR: '$f' ist nicht ausführbar. ${hint}" >&2
+        echo "ERROR: '$f' is not executable. ${hint}" >&2
         return 1
     fi
 }

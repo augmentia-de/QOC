@@ -76,20 +76,20 @@ validate() {
   [[ "$ISSUER_BASE" =~ ^https://[A-Za-z0-9._:/-]+$ ]] \
     || die "AUTH0_ISSUER muss eine https-URL sein: $AUTH0_ISSUER"
   [[ "$AUTH0_CLIENT_ID" =~ ^[A-Za-z0-9]+$ ]] \
-    || die "AUTH0_CLIENT_ID ist ungültig: $AUTH0_CLIENT_ID"
+    || die "AUTH0_CLIENT_ID is invalid: $AUTH0_CLIENT_ID"
   [[ "$AUTH0_AUDIENCE" =~ ^[A-Za-z0-9._:/-]+$ ]] \
-    || die "AUTH0_AUDIENCE ist ungültig: $AUTH0_AUDIENCE"
+    || die "AUTH0_AUDIENCE is invalid: $AUTH0_AUDIENCE"
   [[ -z "$AUTH0_API_SCOPE" || "$AUTH0_API_SCOPE" =~ ^[A-Za-z0-9._:/-]+$ ]] \
-    || die "AUTH0_API_SCOPE ist ungültig: $AUTH0_API_SCOPE"
+    || die "AUTH0_API_SCOPE is invalid: $AUTH0_API_SCOPE"
 }
 
 check_discovery() {
-  echo "Prüfe OIDC-Discovery: $ISSUER_BASE/.well-known/openid-configuration"
+  echo "Checking OIDC discovery: $ISSUER_BASE/.well-known/openid-configuration"
   local body
   body="$(curl -fsS --max-time 15 "$ISSUER_BASE/.well-known/openid-configuration")" \
     || die "Auth0-Discovery nicht erreichbar"
-  grep -q '"issuer"' <<<"$body" || die "Discovery-Antwort enthält keinen issuer"
-  grep -q '"authorization_endpoint"' <<<"$body" || die "Discovery-Antwort enthält keinen authorization_endpoint"
+  grep -q '"issuer"' <<<"$body" || die "Discovery response contains no issuer"
+  grep -q '"authorization_endpoint"' <<<"$body" || die "Discovery response contains no authorization_endpoint"
   echo "Discovery OK"
 }
 
@@ -148,7 +148,7 @@ sed -i -E \
   '/^QUARKUS_OIDC_CLIENT_ID=/d; /^QUARKUS_OIDC_CREDENTIALS_SECRET=/d; /^QUARKUS_OIDC_JWKS_PATH=/d' \
   /etc/qoc/env
 
-log "Schreibe öffentliche UI-Konfiguration /etc/qoc/ui-config.js"
+log "Writing public UI config /etc/qoc/ui-config.js"
 install -d -m 755 /etc/qoc
 cat >/etc/qoc/ui-config.js <<EOF
 window.QOC_AUTH = {
@@ -164,7 +164,7 @@ chmod 644 /etc/qoc/ui-config.js
 log "Starte QOC neu"
 systemctl restart qoc
 
-log "Prüfe, dass die UI öffentlich und die API durch OIDC geschützt ist"
+log "Checking that UI is public and API is protected by OIDC"
 ui_code=000
 api_code=000
 for _ in $(seq 1 30); do
@@ -197,7 +197,7 @@ apply_remote() {
   validate
   command -v gcloud >/dev/null || die "gcloud fehlt"
   [[ -x "$SCRIPT_DIR/gcp-ssl.sh" ]] \
-    || die "$SCRIPT_DIR/gcp-ssl.sh fehlt oder ist nicht ausführbar"
+    || die "$SCRIPT_DIR/gcp-ssl.sh missing or not executable"
   check_discovery
   write_remote_script
   echo "Lade Remote-Skript hoch ..."
@@ -214,7 +214,7 @@ apply_remote() {
 
   echo
   echo "Fertig. UI: https://$DOMAIN/"
-  echo "Der Login läuft über Auth0: $ISSUER"
+  echo "Login runs via Auth0: $ISSUER"
 }
 
 case "${1:-apply}" in
