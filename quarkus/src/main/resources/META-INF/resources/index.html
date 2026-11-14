@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="/config.js"></script>
-<title>OpenCode Engine</title>
+<title data-i18n="title">OpenCode Engine</title>
 <style>
   :root { --bg:#0f1115; --panel:#171a21; --border:#2a2f3a; --fg:#e6e6e6; --muted:#9aa0a6; --accent:#4f8cff; --ok:#3fb950; --warn:#d29922; --err:#f85149; }
   * { box-sizing:border-box; }
@@ -135,12 +135,13 @@
     #sessions { max-width: 55vw; }
     #agent { max-width: 40vw; min-width: 90px; }
   }
+@media (max-width: 768px) { .cmd-hint { display: none; } header h1 { font-size: 0; } header h1::before { content: 'Qoc'; font-size: .95rem; } select { max-width: 30vw; } }
 </style>
 </head>
 <body>
 <header>
   <h1>QOC Engine</h1>
-  <a href="/workflow/" style="color:var(--accent);text-decoration:none;margin-left:1rem">Workflow Editor</a>
+  <a href="/workflow/" title="Workflow Editor" style="color:var(--accent);text-decoration:none;margin-left:1rem;font-size:1.1rem">⚙</a>
   <button id="loginBtn">Login</button>
   <button id="questionsBtn" title="Ausstehende Fragen" style="position:relative">❓ <span id="questionsBadge" style="display:none;position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:10px;padding:0 5px;font-size:0.7rem;min-width:16px;text-align:center">0</span></button>
   <button id="hardCancelBtn" title="Lauf abbrechen (Parent + Subagents)" style="background:none;border:1px solid var(--border);color:#ef4444;cursor:pointer;border-radius:4px;padding:2px 8px;font-size:0.9rem;font-weight:bold" disabled>✕</button>
@@ -150,7 +151,7 @@
     <option value="new">Neue Session</option>
     <option value="delete">Löschen</option>
   </select>
-  <label>Agent <select id="agent"></select></label>
+  <select id="agent" title="Agent" style="max-width:30vw"></select>
   <select id="moreActions" title="Weitere Aktionen">
     <option value="">Aktionen ▾</option>
     <option value="compact">Compact</option>
@@ -160,13 +161,14 @@
     <option value="a2a">A2A</option>
     <option value="workspace">Workspace wechseln</option>
   </select>
-  <label class="details-toggle"><input type="checkbox" id="showDetails"> Details</label>
-  <label class="details-toggle"><input type="checkbox" id="showLlm"> LLM</label>
+  <label class="details-toggle" title="Details"><input type="checkbox" id="showDetails"></label>
+  <label class="details-toggle" title="LLM"><input type="checkbox" id="showLlm"></label>
   <span id="status" style="display:none">bereit</span>
 <span id="fallbackBanner" style="display:none;background:#3a2f1f;border:1px solid #5a4f1f;color:#ffd9a0;border-radius:6px;padding:.2rem .5rem;font-size:.75rem">Orchestrator nicht verbunden – Freigaben/Fragen werden hier angezeigt.</span>
 </header>
 <main>
   <div class="chat">
+    <textarea id="lastTask" rows="2" readonly style="width:100%;resize:none;background:#0b0d12;color:var(--muted);border:none;border-bottom:1px solid var(--border);padding:.4rem .6rem;font-size:.8rem;overflow-y:auto" placeholder="Letzte Aufgabe…"></textarea>
     <div class="messages" id="messages"></div>
     <div class="cmd-hint">Slash-Commands: /compact, /revert, /fork, /interrupt, /title, /new. Strg+Enter sendet.</div>
     <div class="inputbar">
@@ -1770,6 +1772,7 @@ function scheduleSseReconnect() {
 async function send() {
   const text = input.value.trim();
   if (!text || !sessionId) return;
+  const lt = document.getElementById('lastTask'); if (lt) { lt.value = text; }
   // slash commands
   if (text.startsWith('/')) {
     handleCommand(text);
@@ -2550,5 +2553,19 @@ init();
     </div>
   </div>
 </div>
+<script>
+(function(){
+  const lang = localStorage.getItem('qoc-lang') || 'de';
+  const L = {
+    de: { title: 'OpenCode Engine', workflow: 'Workflow Editor' },
+    en: { title: 'OpenCode Engine', workflow: 'Workflow Editor' }
+  }[lang] || { title: 'OpenCode Engine', workflow: 'Workflow Editor' };
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const k = el.getAttribute('data-i18n');
+    if (L[k]) el.textContent = L[k];
+  });
+  if (L.title) document.title = L.title;
+})();
+</script>
 </body>
 </html>

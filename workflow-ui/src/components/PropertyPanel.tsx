@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { McpClientApi, ToolApi, WorkflowApi } from '../services/api';
 import { SchemaSource } from './SchemaSource';
 import type { McpServerInfo, McpToolInfo } from '../services/api';
@@ -390,6 +391,7 @@ export function PropertyPanel({
   onAgentChange,
   onCopyConfig,
 }: PropertyPanelProps) {
+  const { t } = useTranslation();
   const [title, setTitle] = useState('');
   const [agentRef, setAgentRef] = useState('');
   const [requiresHITL, setRequiresHITL] = useState(false);
@@ -1121,7 +1123,7 @@ export function PropertyPanel({
 
       {selectedNode.type === 'llm_summarize' && (
         <div className="mb-4 border-t border-gray-700 pt-4">
-          <h4 className="mb-2 text-sm font-semibold">LLM Summarize Config</h4>
+          <h4 className="mb-2 text-sm font-semibold">{t('propertyPanel.llmSummarize')}</h4>
           <div className="mb-3">
             <FieldLabel>Input Source</FieldLabel>
             <input
@@ -1179,7 +1181,7 @@ export function PropertyPanel({
 
       {selectedNode.type === 'compact' && (
         <div className="mb-4 border-t border-gray-700 pt-4">
-          <h4 className="mb-2 text-sm font-semibold">Compact Config (deterministischer Kontext-Transformer)</h4>
+          <h4 className="mb-2 text-sm font-semibold">{t('propertyPanel.compact')}</h4>
           <div className="mb-3">
             <FieldLabel>Input Sources (komma-getrennte Node-IDs, leer = alle Outputs)</FieldLabel>
             <input
@@ -1315,7 +1317,7 @@ export function PropertyPanel({
 
       {selectedNode.type === 'mcp_call' && (
         <div className="mb-4 border-t border-gray-700 pt-4">
-          <h4 className="mb-2 text-sm font-semibold">MCP Call Config</h4>
+          <h4 className="mb-2 text-sm font-semibold">{t('propertyPanel.mcpCall')}</h4>
           <SelectField
             label="MCP Server"
             value={draftString('mcpServer')}
@@ -1377,7 +1379,7 @@ export function PropertyPanel({
             </div>
           )}
           <div className="mb-3">
-            <FieldLabel>Args (JSON)</FieldLabel>
+            <FieldLabel>{t('propertyPanel.argsJson')}</FieldLabel>
             <textarea
               value={mcpArgsText}
               onChange={(event) => handleMcpArgsChange(event.target.value)}
@@ -1398,9 +1400,9 @@ export function PropertyPanel({
 
       {selectedNode.type === 'rest_call' && (
         <div className="mb-4 border-t border-gray-700 pt-4">
-          <h4 className="mb-2 text-sm font-semibold">REST Call Config</h4>
+          <h4 className="mb-2 text-sm font-semibold">{t('propertyPanel.restCall')}</h4>
           <div className="mb-3">
-            <FieldLabel>Config (JSON)</FieldLabel>
+            <FieldLabel>{t('propertyPanel.restConfig')}</FieldLabel>
             <textarea
               value={mcpArgsText}
               onChange={(event) => handleMcpArgsChange(event.target.value)}
