@@ -86,28 +86,73 @@ public class TestServiceResource {
     }
 
     private Map<String, Object> toolsList() {
-        Map<String, Object> schema = new LinkedHashMap<>();
-        schema.put("type", "object");
-        schema.put("properties", Map.of("value", Map.of("type", "integer")));
-        schema.put("required", List.of("value"));
+        Map<String, Object> addSchema = new LinkedHashMap<>();
+        addSchema.put("type", "object");
+        addSchema.put("properties", Map.of("value", Map.of("type", "integer")));
+        addSchema.put("required", List.of("value"));
 
-        Map<String, Object> tool = new LinkedHashMap<>();
-        tool.put("name", "add");
-        tool.put("description", "Add +1 to the given value.");
-        tool.put("inputSchema", schema);
+        Map<String, Object> addTool = new LinkedHashMap<>();
+        addTool.put("name", "add");
+        addTool.put("description", "Add +1 to the given value.");
+        addTool.put("inputSchema", addSchema);
+
+        Map<String, Object> stockSchema = new LinkedHashMap<>();
+        stockSchema.put("type", "object");
+        stockSchema.put("properties", Map.of("quantity", Map.of("type", "integer")));
+        stockSchema.put("required", List.of("quantity"));
+
+        Map<String, Object> stockTool = new LinkedHashMap<>();
+        stockTool.put("name", "check_stock");
+        stockTool.put("description", "Check stock availability: returns quantity - 3 (sufficient stock).");
+        stockTool.put("inputSchema", stockSchema);
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("tools", List.of(tool));
+        result.put("tools", List.of(addTool, stockTool));
         return result;
     }
 
     private Map<String, Object> toolsCall(Map<String, Object> params) {
         String name = String.valueOf(params.getOrDefault("name", ""));
+        Map<String, Object> arguments = params.get("arguments") instanceof Map
+                ? (Map<String, Object>) params.get("arguments") : Map.of();
+
+        if ("check_stock".equals(name)) {
+            int quantity = 0;
+            // Accept an explicit quantity (int or string) ...
+            Object raw = arguments.get("quantity");
+            if (raw instanceof Number n) quantity = n.intValue();
+            else if (raw != null) {
+                String s = String.valueOf(raw).trim();
+                try { quantity = Integer.parseInt(s); }
+                catch (NumberFormatException e) {
+                    // ... or parse it from a text/input field containing a JSON response.
+                    quantity = extractQuantity(s);
+                }
+            }
+            // Fallback: parse from an "input"/"text" field.
+            if (quantity == 0 && raw == null) {
+                for (String key : new String[]{"input", "text", "value"}) {
+                    Object v = arguments.get(key);
+                    if (v != null) { quantity = extractQuantity(String.valueOf(v)); if (quantity != 0) break; }
+                }
+            }
+
+            int remaining = quantity - 3;
+            Map<String, Object> content = new LinkedHashMap<>();
+            content.put("type", "text");
+            content.put("text", String.valueOf(remaining));
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("content", List.of(content));
+            result.put("quantity", quantity);
+            result.put("remaining", remaining);
+            result.put("sufficient", remaining >= 0);
+            return result;
+        }
+
         if (!"add".equals(name)) {
             throw new IllegalArgumentException("unknown tool: " + name);
         }
-        Map<String, Object> arguments = params.get("arguments") instanceof Map
-                ? (Map<String, Object>) params.get("arguments") : Map.of();
         int value = 0;
         Object raw = arguments.get("value");
         if (raw instanceof Number n) value = n.intValue();
@@ -121,6 +166,21 @@ public class TestServiceResource {
         result.put("content", List.of(content));
         result.put("value", value + 1);
         return result;
+    }
+
+    private static int extractQuantity(String text) {
+        if (text == null) return 0;
+        // Try JSON field "quantity": N
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"quantity\"\\s*:\\s*(-?\\d+)").matcher(text);
+        if (m.find()) {
+            try { return Integer.parseInt(m.group(1)); } catch (NumberFormatException ignored) {}
+        }
+        // Fallback: any integer after "quantity"
+        m = java.util.regex.Pattern.compile("quantity[^0-9-]*(-?\\d+)").matcher(text);
+        if (m.find()) {
+            try { return Integer.parseInt(m.group(1)); } catch (NumberFormatException ignored) {}
+        }
+        return 0;
     }
 
     @POST
