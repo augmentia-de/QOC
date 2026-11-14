@@ -62,17 +62,34 @@ public final class ConditionEvaluator {
             }
 
             // Node-Output-basiert: "node_1.output.classification == 'VIP_ORDER'"
-            if (left.startsWith("node_") && left.contains(".output")) {
-                String[] pathParts = left.split("\\\\.");
-                String nodeId = pathParts[0];
-                String field = pathParts.length > 2 ? pathParts[2] : null;
-
-                Object output = ctx.getNodeOutput(nodeId);
-                if (output instanceof Map) {
-                    Object val = field != null ? ((Map<?, ?>) output).get(field) : output;
-                    return right.equals(String.valueOf(val));
+            if (left.contains(".output")) {
+                // Path: <nodeId>.output[.<field>.<sub>...]
+                // Splitting on a single backslash-dot: "\\." in source is the
+                // regex \. — an earlier revision used "\\\\." which never split.
+                String[] pathParts = left.split("\\.");
+                int outputIndex = -1;
+                for (int i = 0; i < pathParts.length; i++) {
+                    if ("output".equals(pathParts[i])) {
+                        outputIndex = i;
+                        break;
+                    }
                 }
-                return right.equals(String.valueOf(output));
+                if (outputIndex > 0) {
+                    String nodeId = String.join(".", java.util.Arrays.copyOfRange(pathParts, 0, outputIndex));
+                    String field = outputIndex + 1 < pathParts.length
+                            ? String.join(".", java.util.Arrays.copyOfRange(pathParts, outputIndex + 1, pathParts.length))
+                            : null;
+
+                    Object output = ctx.getNodeOutput(nodeId);
+                    if (output == null) {
+                        LOG.debug("Condition references unknown node output: {}", nodeId);
+                        return false;
+                    }
+                    if (field == null) {
+                        return right.equals(String.valueOf(output));
+                    }
+                    return right.equals(String.valueOf(resolvePath(output, field)));
+                }
             }
         }
 
@@ -80,5 +97,17 @@ public final class ConditionEvaluator {
         String ctxStr = ctx.getState("lastResult") != null
                 ? ctx.getState("lastResult").toString() : "";
         return matches(condition, ctxStr);
+    }
+
+    /** Navigates a dotted path through nested maps; returns null when absent. */
+    private static Object resolvePath(Object target, String path) {
+        if (target == null || path == null || path.isEmpty()) return null;
+        Object current = target;
+        for (String part : path.split("\\.")) {
+            if (!(current instanceof Map<?, ?> map)) return null;
+            current = map.get(part);
+            if (current == null) return null;
+        }
+        return current;
     }
 }

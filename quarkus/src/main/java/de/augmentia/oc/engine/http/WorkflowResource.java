@@ -93,6 +93,14 @@ public class WorkflowResource {
             Response denied = accessGuard == null ? null : accessGuard.requireWorkflowAccess(existing.ownerId());
             if (denied != null) return denied;
         }
+        // Platzhalter praeventiv pruefen: unaufgeloeste Templates wuerden sonst
+        // erst beim Lauf auffallen. Bewusst nur Templates — ein Entwurf ohne
+        // end-Node oder mit offenen Agent-Refs muss speicherbar bleiben.
+        var templateCheck = GraphCompiler.validateTemplatesOnly(def);
+        if (!templateCheck.valid()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("valid", false, "errors", templateCheck.errors())).build();
+        }
         // Stamp ownerId on save if not set.
         if (def != null && (def.ownerId() == null || def.ownerId().isBlank())) {
             String user = accessGuard == null ? null : accessGuard.currentUser();

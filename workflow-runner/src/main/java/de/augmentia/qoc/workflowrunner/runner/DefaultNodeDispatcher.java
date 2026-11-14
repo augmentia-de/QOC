@@ -89,7 +89,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                         nodeInput = predOutput.toString();
                     }
                 }
-                nodeInput = TemplateResolver.resolve(nodeInput, ctx);
+                nodeInput = TemplateResolver.resolveStrict(nodeInput, ctx, nodeIds(def));
 
                 NodeResult agentResult = runAgent(node, prefixedName, nodeInput, config, ctx, principal);
                 applyPostGuard(node, ctx, agentResult);
@@ -294,7 +294,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 if (prompt == null || prompt.isBlank()) {
                     prompt = "Evaluate: " + ctx.getState("lastResult");
                 }
-                prompt = TemplateResolver.resolve(prompt, ctx);
+                prompt = TemplateResolver.resolveStrict(prompt, ctx, nodeIds(def));
                 String prefixedName = "wf:llm_eval:" + node.id();
                 boolean structuredOutput = node.data().jsonOutput() == null || node.data().jsonOutput();
                 de.augmentia.oc.engine.core.model.Option<de.augmentia.oc.engine.core.json.Schema> schemaOption =
@@ -321,7 +321,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
             case "llm_summarize" -> {
                 String inputData;
                 if (node.data().defaultTarget() != null && !node.data().defaultTarget().isBlank()) {
-                    inputData = TemplateResolver.resolve(node.data().defaultTarget(), ctx);
+                    inputData = TemplateResolver.resolveStrict(node.data().defaultTarget(), ctx, nodeIds(def));
                 } else {
                     Object lastRes = ctx.getState("lastResult");
                     inputData = lastRes != null ? lastRes.toString() : "";
@@ -347,7 +347,9 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                     if (e.getValue() instanceof String s && s.contains("${")) {
                         // Preserve the original type when the whole value is a single placeholder.
                         Object resolved = TemplateResolver.resolveToObject(s, ctx);
-                        resolvedArgs.put(e.getKey(), resolved != null ? resolved : TemplateResolver.resolve(s, ctx));
+                        resolvedArgs.put(e.getKey(), resolved != null
+                                ? resolved
+                                : TemplateResolver.resolveStrict(s, ctx, nodeIds(def)));
                     } else {
                         resolvedArgs.put(e.getKey(), e.getValue());
                     }
@@ -374,14 +376,16 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 Map<String, Object> headers = mapOpt(opts.get("headers"));
                 Object body = opts.get("body");
                 // Template-Resolution
-                url = TemplateResolver.resolve(url, ctx);
+                url = TemplateResolver.resolveStrict(url, ctx, nodeIds(def));
                 Map<String, String> resolvedHeaders = new java.util.LinkedHashMap<>();
                 for (Map.Entry<String, Object> h : headers.entrySet()) {
                     Object v = h.getValue();
-                    resolvedHeaders.put(h.getKey(), v instanceof String str ? TemplateResolver.resolve(str, ctx) : String.valueOf(v));
+                    resolvedHeaders.put(h.getKey(), v instanceof String str
+                            ? TemplateResolver.resolveStrict(str, ctx, nodeIds(def))
+                            : String.valueOf(v));
                 }
                 Object resolvedBody = body;
-                if (body instanceof String bstr) resolvedBody = TemplateResolver.resolve(bstr, ctx);
+                if (body instanceof String bstr) resolvedBody = TemplateResolver.resolveStrict(bstr, ctx, nodeIds(def));
 
                 if (url == null || url.isBlank()) {
                     ctx.setNodeOutput(node.id(), "rest_call: no url");
@@ -422,6 +426,16 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 return new NodeResult("skipped (" + type + ")", null);
             }
         }
+    }
+
+    /** Node IDs of the definition, for strict template resolution. */
+    private static java.util.Set<String> nodeIds(WorkflowDefinition def) {
+        if (def == null || def.nodes() == null) return java.util.Set.of();
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (WorkflowDefinition.Node n : def.nodes()) {
+            if (n.id() != null && !n.id().isBlank()) ids.add(n.id());
+        }
+        return ids;
     }
 
     private NodeResult runAgent(WorkflowDefinition.Node node, String prefixedName, String prompt,

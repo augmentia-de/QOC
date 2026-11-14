@@ -1,6 +1,7 @@
 package de.augmentia.qoc.workflowrunner.validation;
 
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition;
+import de.augmentia.qoc.workflowrunner.runner.TemplateResolver;
 import de.augmentia.qoc.workflowrunner.runner.TopologicalSort;
 
 import java.util.*;
@@ -33,7 +34,6 @@ public class GraphCompiler {
      */
     public static ValidationResult validate(WorkflowDefinition def, Set<String> externalAgentIds) {
         List<String> errors = new ArrayList<>();
-
         if (def == null) {
             return new ValidationResult(false, List.of("Definition is null"), null);
         }
@@ -94,6 +94,10 @@ public class GraphCompiler {
         // Zyklen sind fuer edge-basierte Loops erlaubt; die Ausfuehrung wird
         // durch das globale Step-Limit und den Circuit-Breaker begrenzt.
 
+        // Template-Validierung: Platzhalter, die der Resolver nicht kennt,
+        // landen sonst unaufgeloest im Prompt des LLM.
+        errors.addAll(validateTemplates(def, nodeIds));
+
         // Check for exactly one end node
         long endCount = def.nodes().stream().filter(n -> "end".equals(n.type())).count();
         if (endCount == 0) {
@@ -105,5 +109,74 @@ public class GraphCompiler {
                 : null;
 
         return new ValidationResult(errors.isEmpty(), errors, summary);
+    }
+
+    /**
+     * Template-only validation, usable while a definition is still a draft.
+     *
+     * <p>Deliberately weaker than {@link #validate}: it does not require an
+     * {@code end} node, agent refs or a connected graph, so the editor can save
+     * work in progress. Templates, however, are checked strictly — an
+     * unresolvable placeholder is a defect at any stage and can never be fixed
+     * by adding nodes later... except by creating the missing node, which is
+     * exactly why unknown references are reported as errors only when node IDs
+     * are compared.</p>
+     */
+    public static ValidationResult validateTemplatesOnly(WorkflowDefinition def) {
+        if (def == null) {
+            return new ValidationResult(false, List.of("Definition is null"), null);
+        }
+        Set<String> nodeIds = new HashSet<>();
+        for (WorkflowDefinition.Node n : def.nodes()) {
+            if (n.id() != null && !n.id().isBlank()) nodeIds.add(n.id());
+        }
+        List<String> errors = validateTemplates(def, nodeIds);
+        String summary = errors.isEmpty()
+                ? def.name() + " (" + def.nodes().size() + " nodes, templates ok)"
+                : null;
+        return new ValidationResult(errors.isEmpty(), errors, summary);
+    }
+
+    /**
+     * Validates every placeholder-bearing string field of every node.
+     *
+     * <p>Checked fields: {@code title} (prompt templates), {@code defaultTarget}
+     * (llm_summarize input), {@code exitCondition} and branch conditions
+     * (condition paths), plus string values in {@code mcpArgs} (tool arguments).
+     * Node IDs with hyphens are supported because that is what the editor
+     * generates.</p>
+     */
+    private static List<String> validateTemplates(WorkflowDefinition def, Set<String> nodeIds) {
+        List<String> errors = new ArrayList<>();
+        for (WorkflowDefinition.Node n : def.nodes()) {
+            WorkflowDefinition.NodeData d = n.data();
+            if (d == null) continue;
+            checkTemplate(n.id(), "title", d.title(), nodeIds, errors);
+            checkTemplate(n.id(), "defaultTarget", d.defaultTarget(), nodeIds, errors);
+            checkCondition(n.id(), "exitCondition", d.exitCondition(), nodeIds, errors);
+            for (WorkflowDefinition.Branch b : d.branches()) {
+                checkCondition(n.id(), "branch condition", b.condition(), nodeIds, errors);
+            }
+            for (Map.Entry<String, Object> arg : d.mcpArgs().entrySet()) {
+                if (arg.getValue() instanceof String s) {
+                    checkTemplate(n.id(), "mcpArgs." + arg.getKey(), s, nodeIds, errors);
+                }
+            }
+        }
+        return errors;
+    }
+
+    private static void checkTemplate(String nodeId, String field, String template,
+                                      Set<String> nodeIds, List<String> errors) {
+        for (String problem : TemplateResolver.findProblems(template, nodeIds, true)) {
+            errors.add("Node " + nodeId + " (" + field + "): " + problem);
+        }
+    }
+
+    private static void checkCondition(String nodeId, String field, String condition,
+                                       Set<String> nodeIds, List<String> errors) {
+        for (String problem : TemplateResolver.findConditionProblems(condition, nodeIds)) {
+            errors.add("Node " + nodeId + " (" + field + "): " + problem);
+        }
     }
 }

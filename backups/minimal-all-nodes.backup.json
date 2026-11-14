@@ -412,7 +412,7 @@
         "y": 0
       },
       "data": {
-        "title": "Evaluate: {{lastResult}}",
+        "title": "Evaluate: ${lastResult}",
         "agentRef": "",
         "requiresHumanApproval": false,
         "assignee": "human",
@@ -466,7 +466,7 @@
         "y": 0
       },
       "data": {
-        "title": "Summarize: {{lastResult}}",
+        "title": "Summarize: ${lastResult}",
         "agentRef": "",
         "requiresHumanApproval": false,
         "assignee": "human",
