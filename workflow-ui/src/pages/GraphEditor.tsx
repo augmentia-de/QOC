@@ -26,6 +26,9 @@ import { LlmEvalNode, LlmSummarizeNode, CompactNode } from '../components/LlmEva
 import { McpCallNode } from '../components/McpCallNode';
 import { AgentApi } from '../services/api';
 import { PropertyPanel } from '../components/PropertyPanel';
+import { useIsMobile } from '../hooks/useMediaQuery';
+import NodeListView from '../components/NodeListView';
+import BottomSheet from '../components/BottomSheet';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { WorkflowApi } from '../services/api';
 import {
@@ -83,6 +86,7 @@ async function autoLayout(nodes: Node[], edges: Edge[]): Promise<{ nodes: Node[]
 }
 
 export default function GraphEditor({ nodesJson, workflowId, agents = [], onGraphChange }: GraphEditorProps) {
+  const isMobile = useIsMobile();
   // Agents live in the global agent store (Option B). Load them here as well so
   // the standalone editor (/editor) offers the same list as the workflow detail.
   const [storeAgents, setStoreAgents] = useState<any[]>([]);
@@ -425,6 +429,41 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
       alert('Ergebnis: ' + res.data.result);
     } catch (e) { console.error(e); alert('Execution failed'); }
   };
+
+  if (isMobile) {
+    return (
+      <div className="flex flex-col h-full min-h-0">
+        <NodeListView
+          nodes={nodes as any}
+          selectedId={selectedNode?.id ?? null}
+          onSelect={(id) => {
+            const n = nodes.find((x: any) => x.id === id);
+            if (n) setSelectedNode({ id: n.id, type: n.type || 'agent', data: n.data || {} });
+          }}
+          onAddNode={() => {
+            const type = prompt('Node-Typ (agent/start/end/...):', 'agent');
+            if (type) {
+              const id = 'n' + Date.now();
+              setNodes((prev: any) => [...prev, { id, type, position: { x: 0, y: 0 }, data: { title: type } }]);
+            }
+          }}
+          onDeleteNode={(id) => setNodes((prev: any) => prev.filter((n: any) => n.id !== id))}
+        />
+        <BottomSheet open={!!selectedNode} onClose={() => setSelectedNode(null)} title={selectedNode?.id}>
+          {selectedNode && (
+            <PropertyPanel
+              selectedNode={selectedNode as any}
+              onUpdate={updateNodeData}
+              nodes={nodes as any}
+              edges={edges as any}
+              agents={storeAgents.length ? storeAgents : agents}
+              onAgentChange={saveAgentConfig}
+            />
+          )}
+        </BottomSheet>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0">

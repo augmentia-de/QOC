@@ -133,6 +133,13 @@ public final class McpServerManager {
         }
     }
 
+    private static final java.util.concurrent.ExecutorService DISCOVERY_EXECUTOR =
+            java.util.concurrent.Executors.newCachedThreadPool(r -> {
+                Thread t = new Thread(r, "mcp-discover");
+                t.setDaemon(true);
+                return t;
+            });
+
     private void discover(ServerEntry entry) {
         entry.status = McpServerStatus.PENDING;
         McpClient client = client(entry.config);
@@ -141,16 +148,28 @@ public final class McpServerManager {
             entry.error = "no transport for server type";
             return;
         }
-        try {
+        int timeoutMs = Math.max(entry.config.startupTimeoutMs() + entry.config.catalogTimeoutMs(),
+                5_000);
+        java.util.concurrent.Future<List<McpRegistrar.McpToolSpec>> future = DISCOVERY_EXECUTOR.submit(() -> {
             List<McpRegistrar.McpToolSpec> tools = client.listTools();
+            return tools;
+        });
+        try {
+            List<McpRegistrar.McpToolSpec> tools = future.get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
             entry.tools = List.copyOf(tools);
             entry.client = client;
             entry.status = McpServerStatus.CONNECTED;
             entry.error = null;
             register(entry, tools);
-        } catch (RuntimeException e) {
+        } catch (java.util.concurrent.TimeoutException te) {
+            future.cancel(true);
             entry.status = McpServerStatus.FAILED;
-            entry.error = e.getMessage() == null ? "discovery failed" : e.getMessage();
+            entry.error = "discovery timed out after " + timeoutMs + "ms";
+            entry.tools = List.of();
+        } catch (Exception e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            entry.status = McpServerStatus.FAILED;
+            entry.error = cause.getMessage() == null ? "discovery failed" : cause.getMessage();
             entry.tools = List.of();
         }
     }

@@ -633,7 +633,8 @@ public static record EngineConfig(
             java.util.List<String> guardrailsOutput,
             java.util.List<String> hooks,
             boolean jsonOutput,
-            de.augmentia.oc.engine.core.model.Option<de.augmentia.oc.engine.core.json.Schema> responseSchema
+            de.augmentia.oc.engine.core.model.Option<de.augmentia.oc.engine.core.json.Schema> responseSchema,
+            java.util.List<de.augmentia.oc.engine.core.eval.VerifyRule> verifyOnStop
     ) {
         public AgentConfig {
             if (name == null) name = "wf:default:1.0.0";
@@ -643,6 +644,15 @@ public static record EngineConfig(
             if (guardrailsOutput == null) guardrailsOutput = java.util.List.of();
             if (hooks == null) hooks = java.util.List.of();
             if (responseSchema == null) responseSchema = de.augmentia.oc.engine.core.model.Option.none();
+            if (verifyOnStop == null) verifyOnStop = java.util.List.of();
+        }
+        public AgentConfig(String name, String model, double temperature, int maxTokens, double topP,
+                           String systemPrompt, java.util.List<String> tools,
+                           java.util.List<String> guardrailsInput, java.util.List<String> guardrailsOutput,
+                           java.util.List<String> hooks, boolean jsonOutput,
+                           de.augmentia.oc.engine.core.model.Option<de.augmentia.oc.engine.core.json.Schema> responseSchema) {
+            this(name, model, temperature, maxTokens, topP, systemPrompt, tools, guardrailsInput,
+                    guardrailsOutput, hooks, jsonOutput, responseSchema, java.util.List.of());
         }
     }
 
@@ -832,8 +842,9 @@ public static record EngineConfig(
                             ? overrides.agentProfile()
                             : new de.augmentia.oc.engine.runtime.context.AgentProfile(
                                     agentId,
-                                    resolved.systemPrompt() != null ? Option.some(resolved.systemPrompt()) : Option.none(),
-                                    10, java.util.List.of());
+                                    Option.some(buildSystemPromptWithVerify(resolved)),
+                                    10, java.util.List.of(), false, null,
+                                    resolved.verifyOnStop() == null ? java.util.List.of() : resolved.verifyOnStop());
 
             de.augmentia.oc.engine.core.contract.provider.ModelInfo model =
                     overrides != null && overrides.modelInfo() != null
@@ -1171,6 +1182,35 @@ public static record EngineConfig(
                         continue;
                     } else {
                         if (!hasToolCalls) {
+                            // Verify-on-Stop Guards: check required conditions before finishing.
+                            if (!agent.verifyOnStop().isEmpty()) {
+                                List<de.augmentia.oc.engine.core.eval.VerifyRule> failedRules = new java.util.ArrayList<>();
+                                for (de.augmentia.oc.engine.core.eval.VerifyRule rule : agent.verifyOnStop()) {
+                                    boolean ok = evaluateVerifyCondition(rule.condition(), recentToolCalls);
+                                    if (!ok) failedRules.add(rule);
+                                }
+                                if (!failedRules.isEmpty()) {
+                                    String missing = failedRules.stream()
+                                            .map(r -> r.condition().toString())
+                                            .collect(java.util.stream.Collectors.joining(", "));
+                                    String msg = "\n\n**[Verify-on-Stop] Unvollstaendig:** Erforderliche Schritte nicht ausgefuehrt: "
+                                            + missing + ". Bitte fuehre die fehlenden Schritte aus.";
+                                    statusSink.accept(msg);
+                                    boolean shouldContinue = failedRules.stream()
+                                            .anyMatch(r -> r.onFail() == de.augmentia.oc.engine.core.eval.VerifyAction.CONTINUE);
+                                    boolean shouldFail = failedRules.stream()
+                                            .anyMatch(r -> r.onFail() == de.augmentia.oc.engine.core.eval.VerifyAction.FAIL);
+                                    if (shouldFail) {
+                                        return de.augmentia.oc.engine.core.model.EngineResult.failed(
+                                                "Session " + session.value() + " — Verify-on-Stop failed: " + missing, false);
+                                    }
+                                    if (shouldContinue) {
+                                        stepNo++;
+                                        continue;
+                                    }
+                                    // WARN: fall through to break (mark as incomplete but finish)
+                                }
+                            }
                             break;
                         }
                     }
@@ -1357,4 +1397,40 @@ public static record EngineConfig(
                 || "local".equalsIgnoreCase(owner)) return true;
         return owner.equalsIgnoreCase(user);
     }
+
+    private static boolean evaluateVerifyCondition(de.augmentia.oc.engine.core.eval.VerifyCondition condition,
+            List<de.augmentia.oc.engine.core.contract.tool.ToolCall> calledTools) {
+        return switch (condition) {
+            case de.augmentia.oc.engine.core.eval.VerifyCondition.ToolCalled tc ->
+                    calledTools.stream().anyMatch(c -> c.name().value().equals(tc.toolName()));
+            case de.augmentia.oc.engine.core.eval.VerifyCondition.ToolCalledWith tcw ->
+                    calledTools.stream().anyMatch(c -> c.name().value().equals(tcw.toolName()));
+            case de.augmentia.oc.engine.core.eval.VerifyCondition.AnyOf ao ->
+                    ao.conditions().stream().anyMatch(c -> evaluateVerifyCondition(c, calledTools));
+            case de.augmentia.oc.engine.core.eval.VerifyCondition.AllOf ao ->
+                    ao.conditions().stream().allMatch(c -> evaluateVerifyCondition(c, calledTools));
+        };
+    }
+
+
+    private static String buildSystemPromptWithVerify(de.augmentia.oc.engine.runtime.QocEngine.AgentConfig resolved) {
+        String base = resolved.systemPrompt() == null ? "" : resolved.systemPrompt();
+        List<de.augmentia.oc.engine.core.eval.VerifyRule> rules = resolved.verifyOnStop();
+        if (rules == null || rules.isEmpty()) return base;
+        StringBuilder sb = new StringBuilder(base);
+        if (!base.isBlank()) sb.append("\n\n");
+        sb.append("Abschluss-Bedingungen: Bevor du fertig bist, stelle sicher, dass folgende ");
+        sb.append("Tools aufgerufen wurden: ");
+        List<String> tools = new java.util.ArrayList<>();
+        for (de.augmentia.oc.engine.core.eval.VerifyRule r : rules) {
+            if (r.condition() instanceof de.augmentia.oc.engine.core.eval.VerifyCondition.ToolCalled tc) {
+                tools.add(tc.toolName());
+            } else if (r.condition() instanceof de.augmentia.oc.engine.core.eval.VerifyCondition.ToolCalledWith tcw) {
+                tools.add(tcw.toolName());
+            }
+        }
+        sb.append(String.join(", ", tools)).append(".");
+        return sb.toString();
+    }
+
 }

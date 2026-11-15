@@ -17,6 +17,10 @@ public sealed interface McpServerConfig {
 
     boolean codemode();
 
+    int startupTimeoutMs();
+
+    int catalogTimeoutMs();
+
     record Local(String name, List<String> command, String cwd, Map<String, String> environment,
                  boolean disabled, boolean codemode, int startupTimeoutMs,
                  int catalogTimeoutMs, int executionTimeoutMs) implements McpServerConfig {

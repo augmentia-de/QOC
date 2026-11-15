@@ -107,6 +107,19 @@ public class WorkflowResource {
             def = new WorkflowDefinition(def.id(), def.name(), def.version(), def.status(),
                     def.nodes(), def.edges(), def.agents(), user == null ? "" : user, def.systemPrompt());
         }
+        // Schutz gegen versehentlichen Node-Verlust beim Speichern (UI): fehlende
+        // Nodes aus der bestehenden Definition wiederherstellen.
+        if (existing != null && def != null && def.nodes() != null && existing.nodes() != null
+                && def.nodes().size() < existing.nodes().size()) {
+            java.util.Set<String> incomingIds = new java.util.HashSet<>();
+            for (WorkflowDefinition.Node n : def.nodes()) incomingIds.add(n.id());
+            java.util.List<WorkflowDefinition.Node> merged = new java.util.ArrayList<>(def.nodes());
+            for (WorkflowDefinition.Node n : existing.nodes()) {
+                if (!incomingIds.contains(n.id())) merged.add(n);
+            }
+            def = new WorkflowDefinition(def.id(), def.name(), def.version(), def.status(),
+                    merged, def.edges(), def.agents(), def.ownerId(), def.systemPrompt());
+        }
         WorkflowDefinition saved = store.save(id, def);
         return Response.ok(saved).build();
     }
@@ -128,6 +141,34 @@ public class WorkflowResource {
     public Response validate(WorkflowDefinition def) {
         var result = GraphCompiler.validate(def, knownAgentIds());
         return Response.ok(Map.of("valid", result.valid(), "errors", result.errors(), "summary", result.summary() == null ? "" : result.summary())).build();
+    }
+
+    @POST
+    @Path("/workflows/generate")
+    public Response generate(Map<String, Object> request) {
+        String prompt = request == null ? null : String.valueOf(request.get("prompt"));
+        if (prompt == null || prompt.isBlank() || "null".equals(prompt)) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "prompt required")).build();
+        }
+        if (!de.augmentia.qoc.workflowrunner.generate.GenerateConfig.enabled()) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(Map.of("error", "workflow generation disabled (ENGINE_WORKFLOW_GENERATE_ENABLED)")).build();
+        }
+        try {
+            java.util.function.Function<String, String> llmCaller = p -> engine.generateText(p);
+            de.augmentia.qoc.workflowrunner.generate.WorkflowGenerator generator =
+                    new de.augmentia.qoc.workflowrunner.generate.WorkflowGenerator(
+                            llmCaller, store, new com.fasterxml.jackson.databind.ObjectMapper());
+            WorkflowDefinition def = generator.generate(prompt.trim());
+            return Response.status(Response.Status.CREATED).entity(def).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(422)
+                    .entity(Map.of("error", e.getMessage())).build();
+        } catch (Exception e) {
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(Map.of("error", e.getMessage())).build();
+        }
     }
 
     @GET

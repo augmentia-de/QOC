@@ -2239,6 +2239,9 @@ document.getElementById('ag_save').onclick = async () => {
     let perms = [];
     const permsRaw = document.getElementById('ag_perms').value.trim();
     if (permsRaw) perms = JSON.parse(permsRaw);
+    let verifyOnStop = [];
+    const verifyRaw = document.getElementById('ag_verifyOnStop').value.trim();
+    if (verifyRaw) verifyOnStop = JSON.parse(verifyRaw);
     let skills = null;
     const skillsRaw = document.getElementById('ag_skills').value.trim();
     if (skillsRaw) skills = JSON.parse(skillsRaw);
@@ -2254,6 +2257,7 @@ document.getElementById('ag_save').onclick = async () => {
     fm.push('mcpServers: ' + JSON.stringify(mcp.length ? mcp : ['*']));
     if (roles.length) fm.push('rolesAllowed: ' + JSON.stringify(roles));
     fm.push('permissions: ' + JSON.stringify(perms));
+    if (verifyOnStop && verifyOnStop.length) fm.push('verifyOnStop: ' + JSON.stringify(verifyOnStop));
     if (skills) fm.push('skills: ' + JSON.stringify(skills));
     fm.push('---');
     fm.push('');
@@ -2623,6 +2627,7 @@ init();
     <label style="display:block;margin-top:8px">Rollen (kommagetrennt, leer = admin) <input id="ag_roles" placeholder="admin" style="width:100%"></label>
     <label style="display:block;margin-top:8px">Available tools / MCP / A2A <textarea id="ag_avail" rows="4" readonly style="width:100%"></textarea></label>
     <label style="display:block;margin-top:8px">Permissions (JSON-Array) <textarea id="ag_perms" rows="4" style="width:100%">[{"action":"*","resource":"*","effect":"allow"}]</textarea></label>
+    <label style="display:block;margin-top:8px">Verify-on-Stop (JSON-Array) <textarea id="ag_verifyOnStop" rows="3" style="width:100%">[]</textarea></label>
     <label style="display:block;margin-top:8px">Skills (JSON) <textarea id="ag_skills" rows="4" style="width:100%">{"enabled":true,"allow":[],"deny":[],"max":0,"prompt":"top-k"}</textarea></label>
     <div style="margin-top:12px;display:flex;gap:8px">
       <button id="ag_save" class="primary">Save</button>

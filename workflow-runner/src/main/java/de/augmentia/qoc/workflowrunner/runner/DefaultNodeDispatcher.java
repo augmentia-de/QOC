@@ -91,6 +91,26 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 String prefixedName = prefixedName(agentDef, agentRef);
                 QocEngine.AgentConfig config = toAgentConfig(agentDef, prefixedName);
 
+                // Verify-on-Stop: convert NodeData.verifyOnStop (tool names) to VerifyRules.
+                List<String> verifyTools = node.data().verifyOnStop();
+                if (verifyTools != null && !verifyTools.isEmpty()) {
+                    List<de.augmentia.oc.engine.core.eval.VerifyRule> rules = new java.util.ArrayList<>();
+                    for (String t : verifyTools) {
+                        if (t == null || t.isBlank()) continue;
+                        rules.add(new de.augmentia.oc.engine.core.eval.VerifyRule(
+                                t.trim(),
+                                new de.augmentia.oc.engine.core.eval.VerifyCondition.ToolCalled(t.trim()),
+                                de.augmentia.oc.engine.core.eval.VerifyAction.CONTINUE));
+                    }
+                    if (!rules.isEmpty()) {
+                        config = new QocEngine.AgentConfig(
+                                config.name(), config.model(), config.temperature(), config.maxTokens(),
+                                config.topP(), config.systemPrompt(), config.tools(),
+                                config.guardrailsInput(), config.guardrailsOutput(), config.hooks(),
+                                config.jsonOutput(), config.responseSchema(), rules);
+                    }
+                }
+
                 String nodeInput = input;
                 List<String> incoming = TopologicalSort.incomingSources(def, node.id());
                 if (!incoming.isEmpty() && incoming.size() == 1) {

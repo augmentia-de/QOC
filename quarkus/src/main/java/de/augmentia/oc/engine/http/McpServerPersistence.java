@@ -2,6 +2,8 @@ package de.augmentia.oc.engine.http;
 
 import de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig;
 
+import org.jboss.logging.Logger;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -14,6 +16,8 @@ import java.util.Map;
  * Survives restarts; works in all storage modes (memory/file/db).
  */
 public final class McpServerPersistence {
+
+    private static final Logger LOG = Logger.getLogger(McpServerPersistence.class.getName());
 
     private static final String DEFAULT_FILE = "./mcp-servers.json";
 
@@ -57,7 +61,7 @@ public final class McpServerPersistence {
                 }
             }
         } catch (Exception e) {
-            System.err.println("McpServerPersistence: load failed: " + e.getMessage());
+            LOG.warnf("McpServerPersistence: load failed: %s", e.getMessage());
         }
         return result;
     }
@@ -97,7 +101,7 @@ public final class McpServerPersistence {
             String json = om.writerWithDefaultPrettyPrinter().writeValueAsString(entries);
             Files.writeString(Paths.get(filePath()), json);
         } catch (Exception e) {
-            System.err.println("McpServerPersistence: save failed: " + e.getMessage());
+            LOG.warnf("McpServerPersistence: save failed: %s", e.getMessage());
         }
     }
 }

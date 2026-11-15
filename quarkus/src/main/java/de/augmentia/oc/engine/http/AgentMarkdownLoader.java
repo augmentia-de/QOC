@@ -5,6 +5,9 @@ import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.json.Result;
 import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.model.Rule;
+import de.augmentia.oc.engine.core.eval.VerifyRule;
+import de.augmentia.oc.engine.core.eval.VerifyCondition;
+import de.augmentia.oc.engine.core.eval.VerifyAction;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -156,9 +159,11 @@ public final class AgentMarkdownLoader {
             permissions = defaultRules();
         }
 
+        List<VerifyRule> verifyOnStop = parseVerifyOnStop(frontmatter.get("verifyOnStop"));
+
         String system = body.trim();
         return new EngineConfig.AgentConfig(name, system.isBlank() ? null : system, hidden, mode, model,
-                maxSteps, toolAllow, toolDeny, permissions, mcpServers, roles);
+                maxSteps, toolAllow, toolDeny, permissions, mcpServers, roles, verifyOnStop);
     }
 
     private static List<Rule> parsePermissions(String inline, List<Map<String, String>> block) {
@@ -178,6 +183,60 @@ public final class AgentMarkdownLoader {
         for (Map<String, String> item : block) {
             Rule rule = toRule(item);
             if (rule != null) result.add(rule);
+        }
+        return result;
+    }
+
+    private static List<VerifyRule> parseVerifyOnStop(String inline) {
+        List<VerifyRule> result = new ArrayList<>();
+        if (inline == null || inline.isBlank()) return result;
+        String value = unquote(inline.trim());
+        if (!value.startsWith("[")) return result;
+        Result<JsonValue> parsed = Json.parse(value);
+        if (!(parsed instanceof Result.Ok<JsonValue> ok) || !(ok.value() instanceof JsonValue.Arr arr)) {
+            return result;
+        }
+        for (JsonValue item : arr.values()) {
+            if (!(item instanceof JsonValue.Obj obj)) continue;
+            String conditionType = string(obj, "condition");
+            String onFailStr = string(obj, "onFail");
+            VerifyAction onFail = VerifyAction.CONTINUE;
+            if (onFailStr != null) {
+                try { onFail = VerifyAction.valueOf(onFailStr.trim().toUpperCase(java.util.Locale.ROOT)); }
+                catch (IllegalArgumentException ignored) { onFail = VerifyAction.CONTINUE; }
+            }
+            VerifyCondition condition = null;
+            if ("tool_called".equalsIgnoreCase(conditionType)) {
+                String tool = string(obj, "tool");
+                if (tool != null && !tool.isBlank()) condition = new VerifyCondition.ToolCalled(tool.trim());
+            } else if ("tool_called_with".equalsIgnoreCase(conditionType)) {
+                String tool = string(obj, "tool");
+                String pattern = string(obj, "pattern");
+                if (tool != null && !tool.isBlank()) condition = new VerifyCondition.ToolCalledWith(tool.trim(), pattern == null ? "" : pattern);
+            } else if ("any_of".equalsIgnoreCase(conditionType)) {
+                // simplified: treat as tool_called list
+                List<VerifyCondition> conds = new ArrayList<>();
+                JsonValue tools = obj.values().get("tools");
+                if (tools instanceof JsonValue.Arr tarr) {
+                    for (JsonValue t : tarr.values()) {
+                        if (t instanceof JsonValue.Str s) conds.add(new VerifyCondition.ToolCalled(s.value()));
+                    }
+                }
+                if (!conds.isEmpty()) condition = new VerifyCondition.AnyOf(conds);
+            } else if ("all_of".equalsIgnoreCase(conditionType)) {
+                List<VerifyCondition> conds = new ArrayList<>();
+                JsonValue tools = obj.values().get("tools");
+                if (tools instanceof JsonValue.Arr tarr) {
+                    for (JsonValue t : tarr.values()) {
+                        if (t instanceof JsonValue.Str s) conds.add(new VerifyCondition.ToolCalled(s.value()));
+                    }
+                }
+                if (!conds.isEmpty()) condition = new VerifyCondition.AllOf(conds);
+            }
+            if (condition == null) continue;
+            String name = string(obj, "name");
+            if (name == null || name.isBlank()) name = conditionType + "_" + result.size();
+            result.add(new VerifyRule(name, condition, onFail));
         }
         return result;
     }

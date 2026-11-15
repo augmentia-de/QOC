@@ -727,7 +727,8 @@ public String workspace() { return workspace; }
                               String model, int maxSteps,
                               List<String> toolAllow, List<String> toolDeny,
                               List<Rule> permissions, List<String> mcpServers,
-                              List<String> rolesAllowed) {
+                              List<String> rolesAllowed,
+                              List<de.augmentia.oc.engine.core.eval.VerifyRule> verifyOnStop) {
         public AgentConfig {
             if (name == null || name.isBlank()) name = "build";
             if (mode == null || mode.isBlank()) mode = "all";
@@ -737,6 +738,7 @@ public String workspace() { return workspace; }
             permissions = permissions == null ? List.of() : List.copyOf(permissions);
             mcpServers = mcpServers == null ? List.of("*") : List.copyOf(mcpServers);
             rolesAllowed = normalizeRoles(name, rolesAllowed);
+            verifyOnStop = verifyOnStop == null ? List.of() : List.copyOf(verifyOnStop);
         }
 
         /**
@@ -773,7 +775,15 @@ public String workspace() { return workspace; }
         public AgentConfig(String name, String system, boolean hidden, String mode, String model, int maxSteps,
                            List<String> toolAllow, List<String> toolDeny,
                            List<Rule> permissions, List<String> mcpServers) {
-            this(name, system, hidden, mode, model, maxSteps, toolAllow, toolDeny, permissions, mcpServers, null);
+            this(name, system, hidden, mode, model, maxSteps, toolAllow, toolDeny, permissions, mcpServers, null, List.of());
+        }
+
+        // backward-compatible constructor for callers that do not pass verifyOnStop
+        public AgentConfig(String name, String system, boolean hidden, String mode, String model, int maxSteps,
+                           List<String> toolAllow, List<String> toolDeny,
+                           List<Rule> permissions, List<String> mcpServers,
+                           List<String> rolesAllowed) {
+            this(name, system, hidden, mode, model, maxSteps, toolAllow, toolDeny, permissions, mcpServers, rolesAllowed, List.of());
         }
 
         // backward-compatible constructor for callers that do not pass mode
