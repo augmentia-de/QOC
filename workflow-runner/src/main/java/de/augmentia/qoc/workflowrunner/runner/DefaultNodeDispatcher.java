@@ -11,7 +11,10 @@ import de.augmentia.oc.engine.runtime.QocEngine;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpClient;
 import de.augmentia.oc.engine.runtime.tool.mcp.McpServerManager;
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition;
+import de.augmentia.qoc.workflowrunner.store.AgentStore;
 import de.augmentia.qoc.workflowrunner.store.AgentStorePort;
+
+import java.nio.file.Path;
 import de.augmentia.qoc.workflowrunner.store.WorkflowDefinitionStore;
 import de.augmentia.qoc.workflowrunner.store.WorkflowJson;
 
@@ -69,6 +72,13 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     @Override
     public NodeResult dispatch(WorkflowDefinition.Node node, WorkflowDefinition def,
                               WorkflowContext ctx, String input) {
+        NodeResult result = dispatchImpl(node, def, ctx, input);
+        validateOutputContract(node, result);
+        return result;
+    }
+
+    private NodeResult dispatchImpl(WorkflowDefinition.Node node, WorkflowDefinition def,
+                              WorkflowContext ctx, String input) {
         LOG.debug("Dispatching node: {} (type: {})", node.id(), node.type());
         String type = node.type();
         switch (type) {
@@ -114,7 +124,10 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                     case "custom" -> ContextAssembler.Policy.CUSTOM;
                     default -> ContextAssembler.Policy.FOCUSED;
                 };
-                List<String> customRefs = strList(opt(node, "contextRefs"));
+                List<String> customRefs = node.data().contextRefs();
+                if (customRefs == null || customRefs.isEmpty()) {
+                    customRefs = strList(opt(node, "contextRefs"));
+                }
 
                 String systemPrompt = resolveSystemPrompt(def, agentDef);
 
@@ -168,9 +181,18 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 return new NodeResult("started", null);
             }
             case "hitl" -> {
-                String approvalId = java.util.UUID.randomUUID().toString();
-                ctx.setNodeOutput(node.id(), "paused");
-                return NodeResult.paused(approvalId, "");
+                // HITL pause (SDW-08): suspend the run pending human approval.
+                // The approval id is deterministic per run+node so replay and
+                // resume converge on the same decision record.
+                String approvalId = "hitl:" + (ctx.getCurrentNodeId() == null ? node.id() : ctx.getCurrentNodeId())
+                        + ":" + System.identityHashCode(ctx);
+                Map<String, Object> state = Map.of(
+                        "approval", "pending",
+                        "node", node.id(),
+                        "title", node.data() != null && node.data().title() != null
+                                ? node.data().title() : node.id());
+                ctx.setNodeOutput(node.id(), state);
+                return NodeResult.paused(approvalId, state);
             }
             case "subworkflow" -> {
                 String ref = node.data().workflowRef();
@@ -355,6 +377,29 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                     }
                 }
 
+                // Built-in check tools (SDW-02): mcpServer "builtin" executes
+                // locally, deterministic, no MCP transport. Unknown built-in
+                // names fail the node deterministically.
+                if ("builtin".equals(server)) {
+                    CheckTool check = CheckTools.byName(tool);
+                    if (check == null) {
+                        ctx.setNodeOutput(node.id(), Map.of("status", "UNKNOWN_TOOL",
+                                "tool", String.valueOf(tool)));
+                        return new NodeResult("builtin check tool not found: " + tool,
+                                Map.of("status", "UNKNOWN_TOOL", "tool", String.valueOf(tool)));
+                    }
+                    Object workDirArg = resolvedArgs.getOrDefault("work_dir", ".");
+                    Path workDir = Path.of(workDirArg == null ? "." : String.valueOf(workDirArg))
+                            .toAbsolutePath().normalize();
+                    Map<String, Object> result = check.execute(workDir, resolvedArgs, ctx);
+                    if (result.containsKey("status")) {
+                        ctx.setState("check_result", result.get("status"));
+                    }
+                    ctx.setNodeOutput(node.id(), result);
+                    String text = String.valueOf(result.getOrDefault("status", "done"));
+                    return new NodeResult(text, result);
+                }
+
                 if (mcpManager == null) {
                     ctx.setNodeOutput(node.id(), "mcp_call (no mcp manager): " + server + "/" + tool);
                     return new NodeResult("mcp_call (no mcp manager)", null);
@@ -426,6 +471,26 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 return new NodeResult("skipped (" + type + ")", null);
             }
         }
+    }
+
+    /**
+     * Validates a node's result against its declared {@code outputContract}.
+     * A missing contract is a no-op (legacy passthrough). A present contract
+     * is checked against the structured output (or the text, if no structured
+     * output is available). Violations throw {@link ContractViolationException}.
+     */
+    private static void validateOutputContract(WorkflowDefinition.Node node, NodeResult result) {
+        if (node == null || node.data() == null) return;
+        Map<String, Object> contract = node.data().outputContract();
+        if (contract == null || contract.isEmpty()) return; // no contract -> passthrough
+        Object value = null;
+        if (result != null) {
+            if (result.structured() != null) value = result.structured();
+            else value = result.text();
+        }
+        // If the node produced no output, there is nothing to validate.
+        if (value == null) return;
+        NodeContractValidator.validate(contract, value);
     }
 
     /** Node IDs of the definition, for strict template resolution. */

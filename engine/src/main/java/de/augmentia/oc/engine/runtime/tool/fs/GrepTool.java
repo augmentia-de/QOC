@@ -224,7 +224,10 @@ public final class GrepTool {
         Map<String, Object> metadata = new LinkedHashMap<>();
         if (truncated) {
             metadata.put("truncated", "yes");
+            metadata.put("hasMore", "yes");
             metadata.put("nextCursor", String.valueOf(offset + returned));
+        } else {
+            metadata.put("hasMore", "no");
         }
         if (total > 0) metadata.put("total", total);
         if (timedOut) metadata.put("timedOut", "yes");

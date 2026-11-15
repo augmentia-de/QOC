@@ -100,7 +100,10 @@ public final class GlobTool {
             Map<String, Object> metadata = new LinkedHashMap<>();
             if (outcome.truncated()) {
                 metadata.put("truncated", "yes");
+                metadata.put("hasMore", "yes");
                 metadata.put("nextCursor", String.valueOf(offset + outcome.matches().size()));
+            } else {
+                metadata.put("hasMore", "no");
             }
             if (outcome.total() > 0) metadata.put("total", outcome.total());
             if (outcome.timedOut()) metadata.put("timedOut", "yes");

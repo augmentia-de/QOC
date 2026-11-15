@@ -1,6 +1,7 @@
 package de.augmentia.qoc.workflowrunner.runner;
 
 import java.util.Map;
+import java.util.function.Function;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,6 +9,28 @@ import org.slf4j.LoggerFactory;
 /**
  * Minimal, deterministic condition language used by decision branches and loop
  * exit conditions. (Ported from agentflow ConditionEvaluator.)
+ *
+ * <p>Supported forms against a {@link WorkflowContext}:</p>
+ * <ul>
+ *   <li>{@code state.<key> == '<value>'} / {@code state.<key> != '<value>'} —
+ *       compare a workflow-state value (stringified) to a literal. Unknown keys
+ *       compare as {@code null} ({@code ==} is false, {@code !=} is true).</li>
+ *   <li>{@code node_<id>.output == '<value>'} and
+ *       {@code node_<id>.output.<field> == '<value>'} — compare a node output
+ *       (or a field of a Map output) to a literal. Node ids may contain dots or
+ *       hyphens (editor-generated ids), as long as they do not contain the
+ *       {@code .output} marker.</li>
+ *   <li>{@code status == '<value>'} — alias for the {@code lastStatus} state key
+ *       (legacy form, kept for compatibility).</li>
+ *   <li>Legacy string operators against the {@code lastResult} state:
+ *       {@code contains:}, {@code notcontains:}, {@code starts:},
+ *       {@code equals:}, {@code truthy:}, {@code falsy:}.</li>
+ * </ul>
+ *
+ * <p>Dotted state keys such as {@code state.change.contract_impact} resolve the
+ * nested Map path ({@code state["change"]["contract_impact"]}). Values are
+ * compared after {@link String#valueOf(Object)} on both sides, so numbers and
+ * booleans are matched by their string form.</p>
  */
 public final class ConditionEvaluator {
 
@@ -40,7 +63,9 @@ public final class ConditionEvaluator {
 
     /**
      * Evaluates a condition against a WorkflowContext.
-     * Supports both legacy string-based operators and state-based conditions.
+     * Supports state-based conditions ({@code state.<key>}, {@code status}),
+     * node-output conditions ({@code node_<id>.output[.<field>]}) and the
+     * legacy string-based operators (fallback on {@code lastResult}).
      */
     public static boolean matches(String condition, WorkflowContext ctx) {
         if (condition == null || condition.isBlank()) {
@@ -48,49 +73,22 @@ public final class ConditionEvaluator {
         }
         String c = condition.trim();
 
-        // State-basierte Conditions: "status == 'SUCCESS'"
-        if (c.contains("==")) {
-            String[] parts = c.split("==", 2);
-            String left = parts[0].trim();
-            String right = parts[1].trim().replace("'", "").replace("\"", "");
+        // Comparison conditions: "X == 'Y'" or "X != 'Y'"
+        if (c.contains("==") || c.contains("!=")) {
+            boolean negated = c.contains("!=") && !c.contains("==");
+            String op = negated ? "!=" : "==";
+            int splitAt = c.indexOf(op);
+            String left = c.substring(0, splitAt).trim();
+            String right = c.substring(splitAt + op.length()).trim()
+                    .replace("'", "").replace("\"", "");
 
-            if (left.equals("status") || left.equals("lastStatus")) {
-                Object val = ctx.getState("lastStatus");
-                boolean result = right.equals(String.valueOf(val));
+            Boolean result = evalComparison(left, right, ctx);
+            if (result != null) {
                 LOG.debug("Condition result: {}", result);
-                return result;
+                return negated != result;
             }
-
-            // Node-Output-basiert: "node_1.output.classification == 'VIP_ORDER'"
-            if (left.contains(".output")) {
-                // Path: <nodeId>.output[.<field>.<sub>...]
-                // Splitting on a single backslash-dot: "\\." in source is the
-                // regex \. — an earlier revision used "\\\\." which never split.
-                String[] pathParts = left.split("\\.");
-                int outputIndex = -1;
-                for (int i = 0; i < pathParts.length; i++) {
-                    if ("output".equals(pathParts[i])) {
-                        outputIndex = i;
-                        break;
-                    }
-                }
-                if (outputIndex > 0) {
-                    String nodeId = String.join(".", java.util.Arrays.copyOfRange(pathParts, 0, outputIndex));
-                    String field = outputIndex + 1 < pathParts.length
-                            ? String.join(".", java.util.Arrays.copyOfRange(pathParts, outputIndex + 1, pathParts.length))
-                            : null;
-
-                    Object output = ctx.getNodeOutput(nodeId);
-                    if (output == null) {
-                        LOG.debug("Condition references unknown node output: {}", nodeId);
-                        return false;
-                    }
-                    if (field == null) {
-                        return right.equals(String.valueOf(output));
-                    }
-                    return right.equals(String.valueOf(resolvePath(output, field)));
-                }
-            }
+            // Unrecognized left-hand side falls through to the legacy fallback
+            // so unknown operators stay deterministic (false), never guessed.
         }
 
         // Legacy String-basierte Conditions (Fallback auf lastResult)
@@ -99,15 +97,87 @@ public final class ConditionEvaluator {
         return matches(condition, ctxStr);
     }
 
-    /** Navigates a dotted path through nested maps; returns null when absent. */
-    private static Object resolvePath(Object target, String path) {
-        if (target == null || path == null || path.isEmpty()) return null;
-        Object current = target;
-        for (String part : path.split("\\.")) {
-            if (!(current instanceof Map<?, ?> map)) return null;
-            current = map.get(part);
-            if (current == null) return null;
+    /**
+     * Evaluates a {@code left op right} comparison against the context.
+     * Returns {@code null} when the left-hand side is not a recognized path,
+     * letting the caller fall through to the legacy behavior.
+     */
+    private static Boolean evalComparison(String left, String right, WorkflowContext ctx) {
+        // status / lastStatus (legacy alias)
+        if (left.equals("status") || left.equals("lastStatus")) {
+            return right.equals(String.valueOf(ctx.getState("lastStatus")));
+        }
+
+        // state.<key> with optional dotted path into nested maps:
+        //   state.contract_impact == 'internal'
+        //   state.change.contract_impact == 'external'
+        if (left.startsWith("state.")) {
+            Object val = resolvePath(ctx::getState, left.substring("state.".length()));
+            return right.equals(val == null ? "null" : String.valueOf(val));
+        }
+
+        // <nodeId>.output[.<field>] — node output lookup.
+        // Node ids may contain dots or hyphens (editor-generated ids such as
+        // "erp-prices"); the ".output" marker delimits id from field path.
+        if (left.contains(".output")) {
+            int outIdx = left.indexOf(".output");
+            String nodeId = left.substring(0, outIdx).trim();
+            String fieldPath = left.substring(outIdx + ".output".length());
+            if (nodeId.isEmpty()) {
+                return null;
+            }
+            Object output = ctx.getNodeOutput(nodeId);
+            // Convention fallback: conditions may prefix the node id with
+            // "node_" (node_n_stress for node n_stress). Try the stripped
+            // form when the verbatim id is not present.
+            if (output == null && nodeId.startsWith("node_")) {
+                output = ctx.getNodeOutput(nodeId.substring("node_".length()));
+                if (output != null) {
+                    nodeId = nodeId.substring("node_".length());
+                }
+            }
+            if (output == null) {
+                return false;
+            }
+            if (fieldPath.isBlank() || fieldPath.equals(".")) {
+                return right.equals(String.valueOf(output));
+            }
+            if (output instanceof Map<?, ?> map) {
+                Object val = resolvePath(map::get,
+                        fieldPath.startsWith(".") ? fieldPath.substring(1) : fieldPath);
+                return right.equals(val == null ? "null" : String.valueOf(val));
+            }
+            // Field requested but output is not a map
+            return false;
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolves a dotted path through nested maps. {@code a.b.c} walks
+     * {@code get("a") -> get("b") -> get("c")}. A missing segment yields
+     * {@code null}.
+     */
+    private static Object resolvePath(Function<String, Object> get, String dottedPath) {
+        if (dottedPath == null || dottedPath.isBlank()) {
+            return null;
+        }
+        Object current = null;
+        String[] segments = dottedPath.split("\\.");
+        for (int i = 0; i < segments.length; i++) {
+            current = (i == 0) ? get.apply(segments[i]) : next(current, segments[i]);
+            if (current == null) {
+                return null;
+            }
         }
         return current;
+    }
+
+    private static Object next(Object current, String segment) {
+        if (current instanceof Map<?, ?> map) {
+            return map.get(segment);
+        }
+        return null;
     }
 }

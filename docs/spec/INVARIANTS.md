@@ -1,6 +1,6 @@
 # Invariant Register
 
-> **Status:** 2026-10-25  
+> **Status:** 2026-11-14  
 > **Purpose:** Central entry point into the invariants of the specification.  
 > **Important:** This document is a **register**, not a second source.
 > The named spec file is always authoritative.
@@ -17,6 +17,7 @@
 | `R-*` | Remote Shell | [`tools/08-remote-shell.md`](./tools/08-remote-shell.md) | R-01 … R-23 |
 | `P-*` | Permissions | [`permissions/04-invariants.md`](./permissions/04-invariants.md) | Rule chain, wildcards, effects |
 | `V-*` | Provider | [`provider/05-invariants.md`](./provider/05-invariants.md) | Model call, stream, classification, budget, cache |
+| `SDW-*` | Agents – SDLC workflow | [`agents/05-aisdlc-workflow.md`](./agents/05-aisdlc-workflow.md) | SDW-01 … SDW-08 (spec-only) |
 
 ## Verification methods
 

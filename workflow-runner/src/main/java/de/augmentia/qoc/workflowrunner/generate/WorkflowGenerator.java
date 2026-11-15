@@ -65,6 +65,13 @@ public class WorkflowGenerator {
         if (!validation.valid()) {
             throw new IllegalArgumentException("Generated workflow invalid: " + validation.errors());
         }
+        // Contract validation (warnings only, non-blocking).
+        java.util.List<String> contractWarnings = WorkflowContractValidator.validate(def);
+        if (!contractWarnings.isEmpty()) {
+            System.getLogger(WorkflowGenerator.class.getName())
+                    .log(System.Logger.Level.WARNING,
+                            "Generated workflow contract warnings: " + contractWarnings);
+        }
         // Persist.
         String id = def.id();
         if (id == null || id.isBlank()) {

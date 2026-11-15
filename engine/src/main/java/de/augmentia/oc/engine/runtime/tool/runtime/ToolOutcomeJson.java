@@ -39,6 +39,21 @@ public final class ToolOutcomeJson {
                     "approvalId", JsonValue.of(paused.approvalId()),
                     "approvalUrl", JsonValue.of(paused.approvalUrl())));
         }
+        if (outcome instanceof ToolOutcome.Empty empty) {
+            return JsonValue.of(Map.of(
+                    "type", JsonValue.of("empty"),
+                    "message", JsonValue.of(empty.message() == null ? "" : empty.message())));
+        }
+        if (outcome instanceof ToolOutcome.InvalidArgument invalid) {
+            return JsonValue.of(Map.of(
+                    "type", JsonValue.of("invalid_argument"),
+                    "message", JsonValue.of(invalid.message() == null ? "" : invalid.message())));
+        }
+        if (outcome instanceof ToolOutcome.Unavailable unavailable) {
+            return JsonValue.of(Map.of(
+                    "type", JsonValue.of("unavailable"),
+                    "message", JsonValue.of(unavailable.message() == null ? "" : unavailable.message())));
+        }
         return JsonValue.of(Map.of("type", JsonValue.of("unknown")));
     }
 
@@ -63,6 +78,18 @@ public final class ToolOutcomeJson {
                 String id = obj.values().get("approvalId") instanceof JsonValue.Str s ? s.value() : "";
                 String url = obj.values().get("approvalUrl") instanceof JsonValue.Str s ? s.value() : "";
                 return new ToolOutcome.Paused(id, url);
+            }
+            case "empty" -> {
+                String msg = obj.values().get("message") instanceof JsonValue.Str s ? s.value() : "";
+                return new ToolOutcome.Empty(msg);
+            }
+            case "invalid_argument" -> {
+                String msg = obj.values().get("message") instanceof JsonValue.Str s ? s.value() : "";
+                return new ToolOutcome.InvalidArgument(msg);
+            }
+            case "unavailable" -> {
+                String msg = obj.values().get("message") instanceof JsonValue.Str s ? s.value() : "";
+                return new ToolOutcome.Unavailable(msg);
             }
             default -> {
                 return null;

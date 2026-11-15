@@ -7,6 +7,8 @@ import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.model.Content;
 import de.augmentia.oc.engine.core.model.Message;
 import de.augmentia.oc.engine.core.model.Option;
+import de.augmentia.oc.engine.core.model.ToolContent;
+import de.augmentia.oc.engine.core.model.ToolName;
 import de.augmentia.oc.engine.core.model.ToolState;
 
 import java.util.ArrayList;
@@ -66,6 +68,46 @@ public final class ConversationFolding {
         return folded;
     }
 
+    /**
+     * Wraps a tool result in delimiters so the model treats it as data, not
+     * as instructions (prompt-injection defense).
+     */
+    public static String wrapToolResult(String toolName, String callId, Object content) {
+        String body;
+        if (content instanceof de.augmentia.oc.engine.core.model.Content) {
+            body = String.valueOf(content);
+        } else if (content instanceof de.augmentia.oc.engine.core.contract.provider.ModelContent mc) {
+            body = mc.toString();
+        } else {
+            body = content == null ? "" : String.valueOf(content);
+        }
+        String safeName = toolName == null ? "tool" : toolName;
+        String safeId = callId == null ? "" : callId;
+        return "<tool-result name=\"" + safeName + "\" id=\"" + safeId + "\">"
+                + body + "</tool-result>";
+    }
+
+    private static String toolContentText(Object content) {
+        if (content == null) return "";
+        if (content instanceof List<?> list) {
+            StringBuilder sb = new StringBuilder();
+            for (Object c : list) {
+                if (c instanceof ToolContent.TextItem t) {
+                    if (sb.length() > 0) sb.append("\\n");
+                    sb.append(t.text());
+                } else if (c instanceof ToolContent.FileItem f) {
+                    if (sb.length() > 0) sb.append("\\n");
+                    sb.append("[file: ").append(f.uri()).append("]");
+                } else {
+                    if (sb.length() > 0) sb.append("\\n");
+                    sb.append(String.valueOf(c));
+                }
+            }
+            return sb.toString();
+        }
+        return String.valueOf(content);
+    }
+
     private static void foldAssistant(Message.AssistantMessage assistant, List<ModelMessage> out) {
         List<ModelContent> content = new ArrayList<>();
         List<ModelMessage> results = new ArrayList<>();
@@ -78,10 +120,20 @@ public final class ConversationFolding {
                     switch (card.card().state()) {
                         case ToolState.Completed completed -> results.add(new ModelMessage.ToolResult(
                                 card.card().id(), card.card().name(),
-                                new OutcomePayload.Content(completed.content(), Option.some(completed.metadata()))));
+                                new OutcomePayload.Content(
+                                        java.util.List.of(new ToolContent.TextItem(
+                                                ChatContextReducer.enabled()
+                                                        ? ChatContextReducer.reduce(card.card().name().value(),
+                                                                card.card().id().value(),
+                                                                toolContentText((Object) completed.content()))
+                                                        : wrapToolResult(card.card().name().value(),
+                                                                card.card().id().value(),
+                                                                toolContentText((Object) completed.content())))),
+                                        Option.some(completed.metadata()))));
                         case ToolState.Failed failed -> results.add(new ModelMessage.ToolResult(
                                 card.card().id(), card.card().name(),
-                                new OutcomePayload.Text(failed.error().message())));
+                                new OutcomePayload.Text(wrapToolResult(card.card().name().value(), card.card().id().value(),
+                                        failed.error().message()))));
                         default -> {}
                     }
                 }

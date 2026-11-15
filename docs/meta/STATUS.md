@@ -1,6 +1,6 @@
 # Documentation Status
 
-> **Status:** 2026-10-31  
+> **Status:** 2026-11-14  
 > **Reference:** QOC Java engine under `qoc/`.  
 > **Purpose:** Quick overview of which documents are specification, implementation
 > or working material. The status is a documentation statement, not a substitute
@@ -30,6 +30,7 @@
 | Operations | [`spec/betrieb/`](../spec/betrieb/README.md) | `implemented` | HTTP/SSE, skills, credentials |
 | Quality | [`spec/qualitaet/`](../spec/qualitaet/README.md) | `partial` | ArchUnit/JaCoCo gates to verify before commit |
 | Agents | [`spec/agents/`](../spec/agents/README.md) | `implemented` | Catalog, tool restrictions, MCP scoping |
+| Agents – SDLC workflow | [`spec/agents/05-aisdlc-workflow.md`](../spec/agents/05-aisdlc-workflow.md) | `partial` | SDLC-Prozess als deterministischer Workflow-Graph (SDW-01…08); ConditionEvaluator umgesetzt (Phase 1), Graph-Compiler-Checks offen |
 | OIDC/Auth0 | [`spec/betrieb/04-oidc-auth0.md`](../spec/betrieb/04-oidc-auth0.md) | `spec-only` | Auth0 als OIDC-Provider (geplant) |
 | Optimization | [`optimization.md`](../optimization.md) | `working` | Working catalog, no obligation |
 | Diagrams | [`diagrams/`](../diagrams/README.md) | `reference` | Architecture and data flow diagrams |
@@ -47,6 +48,7 @@
 | AWS ECS minimal | [`deployment/04-aws-ecs-minimal.md`](../deployment/04-aws-ecs-minimal.md) | `implemented` | Test-Stack (ECS/Fargate/EFS/Neon) |
 | AWS Lambda Serverless | [`deployment/05-aws-lambda-serverless.md`](../deployment/05-aws-lambda-serverless.md) | `spec-only` | Lambda-spezifisch (geplant) |
 | Webhook Guardrail | [`webhook.md`](../webhook.md) | `partial` | Spezifikation + Service |
+| SDLC-Workflow-Graph | [`engineering/Workflow-SDLC.md`](../engineering/Workflow-SDLC.md) | `working` | Vollständige Definition (Nodes/Edges/Agents); Migrationsplan Phase 1 (ConditionEvaluator) done 2026-11-14 |
 
 ## Cross-cutting
 

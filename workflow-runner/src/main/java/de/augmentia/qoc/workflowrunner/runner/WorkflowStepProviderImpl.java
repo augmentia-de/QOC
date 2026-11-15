@@ -107,11 +107,18 @@ public class WorkflowStepProviderImpl implements WorkflowStepProvider {
             NodeResult result = dispatcher.dispatch(node, def, ctx,
                     ctx.getState("lastResult") != null ? ctx.getState("lastResult").toString() : "");
 
-            if (result.status() == NodeResult.Status.PAUSED) {
+            // HITL pause (SDW-08): suspend before completing the node, so the
+            // resume re-enters exactly this node. Supports both signalling
+            // styles (Status.PAUSED and pauseRequested()).
+            if (result.status() == NodeResult.Status.PAUSED || result.pauseRequested()) {
+                attempts.remove(nodeId);
                 sink.nodeCompleted(nodeId, "PAUSED", "paused", null, result.sessionId(), delta(before, ctx.getWorkflowState()));
+                String outputText = result.text() == null ? "" : result.text();
+                List<de.augmentia.oc.engine.core.contract.provider.ModelEvent> events = new ArrayList<>();
+                events.add(new de.augmentia.oc.engine.core.contract.provider.ModelEvent.TextDelta(outputText, outputText));
                 return new StepResult.Paused(
                         result.approvalId() == null || result.approvalId().isBlank()
-                                ? java.util.UUID.randomUUID().toString() : result.approvalId(),
+                                ? "hitl:" + nodeId : result.approvalId(),
                         result.approvalUrl() == null ? "" : result.approvalUrl());
             }
             if (result.status() == NodeResult.Status.FAILED) {
@@ -124,7 +131,7 @@ public class WorkflowStepProviderImpl implements WorkflowStepProvider {
                         result.text().isBlank() ? "Node failed: " + nodeId : "Node failed: " + nodeId + ": " + result.text());
             }
 
-            Object output = result.structured() != null && !result.structured().isEmpty()
+            Object output = result.structured() != null
                     ? WorkflowValues.canonical(result.structured())
                     : result.text();
             ctx.setNodeOutput(nodeId, output);

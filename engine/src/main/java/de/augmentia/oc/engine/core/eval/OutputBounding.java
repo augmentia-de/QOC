@@ -81,7 +81,9 @@ public final class OutputBounding {
 
         Map<String, Object> metadata = new LinkedHashMap<>(result.metadata());
         metadata.put(TRUNCATED, "yes");
+        metadata.put("offloaded", "yes");
         metadata.put(OUTPUT_PATH, reference);
+        metadata.put("artifactRef", reference);
 
         ToolResult bounded = new ToolResult(result.output(), content, metadata);
         return new Result.Truncated(bounded, text, reference);

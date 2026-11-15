@@ -695,6 +695,37 @@ export function PropertyPanel({
             Passes the full previous workflow context as a user message.
             The shared system prompt is taken from the workflow settings.
           </p>
+          <div className="mt-3">
+            <FieldLabel>Context-Refs (Input-Nodes)</FieldLabel>
+            <div className="max-h-32 overflow-y-auto rounded border border-gray-700 bg-gray-800 p-2">
+              {nodes.filter((n) => n.id !== selectedNode?.id).map((n) => {
+                const checked = (draft.contextRefs as string[] | undefined)?.includes(n.id) ?? false;
+                return (
+                  <label key={n.id} className="flex items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        const current = (draft.contextRefs as string[] | undefined) ?? [];
+                        const next = e.target.checked
+                          ? [...current, n.id]
+                          : current.filter((id) => id !== n.id);
+                        updateField('contextRefs', next);
+                        markDirty();
+                      }}
+                    />
+                    {n.id} ({n.type})
+                  </label>
+                );
+              })}
+              {nodes.filter((n) => n.id !== selectedNode?.id).length === 0 && (
+                <p className="text-xs text-gray-500">Keine Vorgänger-Nodes verfügbar.</p>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Leer = Fallback auf lastResult. Explizite Auswahl = nur diese Nodes als Input.
+            </p>
+          </div>
         </div>
       )}
 
@@ -726,6 +757,47 @@ export function PropertyPanel({
                 Build
               </button>
             </div>
+          </div>
+
+          <div className="mb-4">
+            <FieldLabel>Context-Refs (Input-Nodes)</FieldLabel>
+            <div className="max-h-32 overflow-y-auto rounded border border-gray-700 bg-gray-800 p-2">
+              {nodes.filter((n) => n.id !== selectedNode?.id).map((n) => {
+                const checked = (draft.contextRefs as string[] | undefined)?.includes(n.id) ?? false;
+                return (
+                  <label key={n.id} className="flex items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        const current = (draft.contextRefs as string[] | undefined) ?? [];
+                        const next = e.target.checked
+                          ? [...current, n.id]
+                          : current.filter((id) => id !== n.id);
+                        updateField('contextRefs', next);
+                        markDirty();
+                      }}
+                    />
+                    {n.id} ({n.type})
+                  </label>
+                );
+              })}
+              {nodes.filter((n) => n.id !== selectedNode?.id).length === 0 && (
+                <p className="text-xs text-gray-500">Keine Vorgänger-Nodes verfügbar.</p>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Leer = Fallback auf lastResult. Explizite Auswahl = nur diese Nodes als Input.
+            </p>
+          </div>
+
+          <div className="mb-4">
+            <FieldLabel>Output-Contract (Schema)</FieldLabel>
+            <SchemaSource
+              value={(draft.outputContract as Record<string, unknown> | null) ?? null}
+              onChange={(schema) => updateField('outputContract', schema)}
+              disabled={false}
+            />
           </div>
 
           <Collapsible title="Agent Config (QocEngine.AgentConfig)" defaultOpen={false}>
@@ -1305,6 +1377,142 @@ export function PropertyPanel({
           )}
           <div className="mb-3">
             <FieldLabel>Section Title (block heading)</FieldLabel>
+            <input
+              value={compactOptString('sectionTitle')}
+              onChange={(event) => updateMcpArg('sectionTitle', event.target.value)}
+              className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
+              placeholder="Compacted context"
+            />
+          </div>
+        </div>
+      )}
+
+      {selectedNode.type === 'compact' && (
+        <div className="mb-4 border-t border-gray-700 pt-4">
+          <h4 className="mb-2 text-sm font-semibold">Compact Config (deterministischer Kontext-Transformer)</h4>
+          <div className="mb-3">
+            <FieldLabel>Input Sources (komma-getrennte Node-IDs, leer = alle Outputs)</FieldLabel>
+            <input
+              value={draftString('defaultTarget')}
+              onChange={(event) => updateField('defaultTarget', event.target.value)}
+              className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
+              placeholder="node_1, node_2 (leer = alle)"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Reihenfolge der Definition bestimmt den Kontext-Flow.
+            </p>
+          </div>
+          <div className="mb-3">
+            <FieldLabel>Mode</FieldLabel>
+            <select
+              value={compactMode}
+              onChange={(event) => updateMcpArg('mode', event.target.value)}
+              className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
+            >
+              <option value="truncate">truncate – Kopf/Tail kürzen</option>
+              <option value="filter_keys">filter_keys – nur definierte JSON-Keys</option>
+              <option value="bulletize">bulletize – Zeilen als Bullets</option>
+              <option value="llm">llm – LLM-Verfeinerung (agentRef nötig)</option>
+            </select>
+          </div>
+          {compactMode !== 'llm' && (
+            <>
+              <div className="mb-3">
+                <FieldLabel>Max Chars</FieldLabel>
+                <input
+                  type="number"
+                  value={compactOptString('maxChars')}
+                  onChange={(event) => updateMcpArg('maxChars', event.target.value)}
+                  className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
+                  placeholder="4000"
+                />
+              </div>
+              {(compactMode === 'truncate') && (
+                <>
+                  <div className="mb-3">
+                    <FieldLabel>Keep Head (chars)</FieldLabel>
+                    <input
+                      type="number"
+                      value={compactOptString('keepHead')}
+                      onChange={(event) => updateMcpArg('keepHead', event.target.value)}
+                      className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
+                      placeholder="auto = maxChars/2"
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <FieldLabel>Keep Tail (chars)</FieldLabel>
+                    <input
+                      type="number"
+                      value={compactOptString('keepTail')}
+                      onChange={(event) => updateMcpArg('keepTail', event.target.value)}
+                      className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
+                      placeholder="auto = rest"
+                    />
+                  </div>
+                </>
+              )}
+              {(compactMode === 'truncate' || compactMode === 'bulletize') && (
+                <>
+                  <div className="mb-3">
+                    <FieldLabel>Include (komma-getrennte Literale, optional)</FieldLabel>
+                    <input
+                      value={compactOptString('include')}
+                      onChange={(event) => updateMcpArg('include', event.target.value)}
+                      className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
+                      placeholder="z. B. error, timeout"
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <FieldLabel>Exclude (komma-getrennte Literale, optional)</FieldLabel>
+                    <input
+                      value={compactOptString('exclude')}
+                      onChange={(event) => updateMcpArg('exclude', event.target.value)}
+                      className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
+                      placeholder="z. B. ###, Stacktrace"
+                    />
+                  </div>
+                </>
+              )}
+              {compactMode === 'filter_keys' && (
+                <div className="mb-3">
+                  <FieldLabel>Keys (komma-getrennt)</FieldLabel>
+                  <input
+                    value={compactOptString('keys')}
+                    onChange={(event) => updateMcpArg('keys', event.target.value)}
+                    className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
+                    placeholder="status, result, errors"
+                  />
+                </div>
+              )}
+            </>
+          )}
+          {compactMode === 'llm' && (
+            <>
+              <div className="mb-3">
+                <FieldLabel>Agent Ref (für LLM-Verfeinerung)</FieldLabel>
+                <input
+                  value={draftString('agentRef')}
+                  onChange={(event) => updateField('agentRef', event.target.value)}
+                  className="w-full rounded bg-gray-700 px-2 py-1 text-sm"
+                  placeholder="agent-id"
+                />
+              </div>
+              <div className="mb-3">
+                <FieldLabel>Prompt Template (=title)</FieldLabel>
+                <textarea
+                  value={title}
+                  onChange={(event) => {
+                    setTitle(event.target.value);
+                    markDirty();
+                  }}
+                  className="h-16 w-full rounded bg-gray-700 px-2 py-1 text-sm"
+                  placeholder="Reduce this context to what is needed for the next step."
+                />
+              </div>
+            </>
+          )}
+          <div className="mb-3">
+            <FieldLabel>Section Title (Überschrift des Blocks)</FieldLabel>
             <input
               value={compactOptString('sectionTitle')}
               onChange={(event) => updateMcpArg('sectionTitle', event.target.value)}

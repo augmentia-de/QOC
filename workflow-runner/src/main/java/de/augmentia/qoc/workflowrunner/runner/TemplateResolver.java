@@ -79,7 +79,13 @@ public final class TemplateResolver {
                 || "status".equals(nodeId) || "lastStatus".equals(nodeId)) {
             return List.of();
         }
-        if (!knownNodeIds.contains(nodeId)) {
+        // Some conventions prefix node ids with "node_" in conditions
+        // (node_n_stress for node n_stress). Accept both forms.
+        String candidate = nodeId;
+        if (!knownNodeIds.contains(candidate) && candidate.startsWith("node_")) {
+            candidate = candidate.substring("node_".length());
+        }
+        if (!knownNodeIds.contains(candidate)) {
             return List.of("unknown node '" + nodeId + "' in condition '" + condition.trim() + "'");
         }
         return List.of();

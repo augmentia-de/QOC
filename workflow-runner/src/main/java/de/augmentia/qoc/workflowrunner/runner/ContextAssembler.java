@@ -50,7 +50,9 @@ public final class ContextAssembler {
             Object out = ctx.getNodeOutput(n.id());
             if (out == null) continue;
             sb.append("#### ").append(n.id()).append(" (").append(n.type()).append(")\n");
-            sb.append(renderValue(out)).append("\n\n");
+            sb.append("<node-output id=\"").append(n.id()).append("\">")
+                    .append(renderValue(out))
+                    .append("</node-output>\n\n");
         }
         sb.append("### Workflow state\n");
         ctx.getWorkflowState().entrySet().stream()
@@ -80,7 +82,9 @@ public final class ContextAssembler {
                 Object out = ctx.getNodeOutput(ref);
                 if (out != null) {
                     sb.append("#### ").append(ref).append("\n");
-                    sb.append(renderValue(out)).append("\n\n");
+                    sb.append("<node-output id=\"").append(ref).append("\">")
+                            .append(renderValue(out))
+                            .append("</node-output>\n\n");
                 }
             }
         }
@@ -112,7 +116,9 @@ public final class ContextAssembler {
                 Object out = ctx.getNodeOutput(ref);
                 if (out != null) {
                     sb.append("#### ").append(ref).append("\n");
-                    sb.append(renderValue(out)).append("\n\n");
+                    sb.append("<node-output id=\"").append(ref).append("\">")
+                            .append(renderValue(out))
+                            .append("</node-output>\n\n");
                 }
             }
         }

@@ -97,7 +97,8 @@ class ConversationFoldingCoverageTest {
         ModelMessage.ToolResult result = (ModelMessage.ToolResult) folded.get(1);
         assertThat(result.callId()).isEqualTo(call);
         OutcomePayload.Content content = (OutcomePayload.Content) result.outcome();
-        assertThat(((ToolContent.TextItem) content.items().getFirst()).text()).isEqualTo("done");
+        assertThat(((ToolContent.TextItem) content.items().getFirst()).text())
+                .isEqualTo("<tool-result name=\"read\" id=\"" + call.value() + "\">done</tool-result>");
         assertThat(content.metadata().orElseThrow()).containsEntry("source", "cache");
     }
 
@@ -115,7 +116,7 @@ class ConversationFoldingCoverageTest {
 
         assertThat(folded).hasSize(2);
         OutcomePayload.Text outcome = (OutcomePayload.Text) ((ModelMessage.ToolResult) folded.get(1)).outcome();
-        assertThat(outcome.text()).isEqualTo("failed message");
+        assertThat(outcome.text()).isEqualTo("<tool-result name=\"read\" id=\"" + call.value() + "\">failed message</tool-result>");
     }
 
     @Test

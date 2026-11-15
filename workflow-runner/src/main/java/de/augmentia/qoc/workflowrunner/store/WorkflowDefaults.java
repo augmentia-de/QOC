@@ -16,11 +16,11 @@ public final class WorkflowDefaults {
         WorkflowDefinition.Node start = new WorkflowDefinition.Node("start", "start",
                 new WorkflowDefinition.Point(100, 200),
                 new WorkflowDefinition.NodeData("Start", "", false, "human", 3, "",
-                        List.of(), "all", null, List.of(), "", "", null, "", "", Map.of(), null));
+                        List.of(), "all", null, List.of(), "", "", null, "", "", Map.of(), null, null, List.of()));
         WorkflowDefinition.Node end = new WorkflowDefinition.Node("end", "end",
                 new WorkflowDefinition.Point(400, 200),
                 new WorkflowDefinition.NodeData("Done", "", false, "human", 3, "",
-                        List.of(), "all", null, List.of(), "", "", null, "", "", Map.of(), null));
+                        List.of(), "all", null, List.of(), "", "", null, "", "", Map.of(), null, null, List.of()));
         return new WorkflowDefinition(id, title, "1.0.0", "draft",
                 List.of(start, end), List.of(), List.of(), "", "");
     }

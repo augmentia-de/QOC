@@ -136,8 +136,8 @@ public final class ReadTool {
         }
         boolean truncated = to < entries.size();
         Map<String, Object> metadata = truncated
-                ? Map.of("truncated", "yes", "total", entries.size())
-                : Map.of();
+                ? Map.of("truncated", "yes", "hasMore", "yes", "total", entries.size())
+                : Map.of("hasMore", "no");
         return ok(text.toString(), metadata);
     }
 
@@ -178,8 +178,8 @@ public final class ReadTool {
             shown++;
         }
         Map<String, Object> metadata = truncated
-                ? Map.of("truncated", "yes", "lines", shown, "total", lines.length)
-                : Map.of();
+                ? Map.of("truncated", "yes", "hasMore", "yes", "lines", shown, "total", lines.length)
+                : Map.of("hasMore", "no");
         return ok(text.toString(), metadata);
     }
 

@@ -14,6 +14,8 @@ export interface NodeData {
   defaultTarget?: string;
   workflowRef?: string;
   responseSchema?: Record<string, unknown> | null;
+  outputContract?: Record<string, unknown> | null;
+  contextRefs?: string[];
   mcpServer?: string;
   mcpTool?: string;
   mcpArgs?: Record<string, unknown>;

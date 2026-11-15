@@ -123,7 +123,6 @@ public static record EngineConfig(
 
     /** Loop mode of a single {@link #runPrompt} invocation. */
     private enum LoopMode { AGENT, WORKFLOW }
-
     /**
      * Hook for interactive turn boundaries: asks the user a yes/no question
      * ("continue working?") and returns the answer. Implemented by the outer

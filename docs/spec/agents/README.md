@@ -11,6 +11,7 @@
 | [`02-tool-restrictions.md`](./02-tool-restrictions.md) | Tool allow/deny lists and snapshot filtering |
 | [`03-mcp-scoping.md`](./03-mcp-scoping.md) | MCP server subsets per agent |
 | [`04-workflows.md`](./04-workflows.md) | Multi-agent handoff and workflow state |
+| [`05-aisdlc-workflow.md`](./05-aisdlc-workflow.md) | Deterministic SDLC process orchestration as a workflow graph (spec-only) |
 
 **Dependencies:** `session-engine` (agent id, session), `tools` (tool catalog),
 `permissions` (rules, approvals), `provider` (model selection).

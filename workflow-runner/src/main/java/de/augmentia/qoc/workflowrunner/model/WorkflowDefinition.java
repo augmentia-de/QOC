@@ -52,7 +52,7 @@ public record WorkflowDefinition(
             if (id == null) id = "";
             if (type == null) type = "agent";
             if (position == null) position = new Point(0, 0);
-            if (data == null) data = new NodeData("", "", false, "human", 3, "", List.of(), "all", null, List.of(), "", "", null, "", "", Map.of(), null);
+            if (data == null) data = new NodeData("", "", false, "human", 3, "", List.of(), "all", null, List.of(), "", "", null, "", "", Map.of(), null, null, List.of());
         }
     }
 
@@ -77,9 +77,22 @@ public record WorkflowDefinition(
             String mcpServer,
             String mcpTool,
             Map<String, Object> mcpArgs,
-            Boolean jsonOutput
+            Boolean jsonOutput,
+            Map<String, Object> outputContract,
+            List<String> contextRefs
     ) {
-        public NodeData {
+        /** Backwards-compatible constructor without outputContract/contextRefs (legacy callers). */
+    public NodeData(String title, String agentRef, boolean requiresHumanApproval, String assignee,
+                    int maxIterations, String exitCondition, List<String> bodySteps, String joinType,
+                    Integer joinN, List<Branch> branches, String defaultTarget, String workflowRef,
+                    Map<String, Object> responseSchema, String mcpServer, String mcpTool,
+                    Map<String, Object> mcpArgs, Boolean jsonOutput) {
+        this(title, agentRef, requiresHumanApproval, assignee, maxIterations, exitCondition, bodySteps,
+                joinType, joinN, branches, defaultTarget, workflowRef, responseSchema, mcpServer, mcpTool,
+                mcpArgs, jsonOutput, null, List.of());
+    }
+
+    public NodeData {
             if (title == null) title = "";
             if (agentRef == null) agentRef = "";
             if (assignee == null) assignee = "human";
@@ -94,6 +107,9 @@ public record WorkflowDefinition(
             if (mcpServer == null) mcpServer = "";
             if (mcpTool == null) mcpTool = "";
             if (mcpArgs == null) mcpArgs = Map.of();
+            // outputContract may be null (no contract declared -> legacy passthrough)
+            if (contextRefs == null) contextRefs = List.of();
+            else contextRefs = List.copyOf(contextRefs);
         }
     }
 

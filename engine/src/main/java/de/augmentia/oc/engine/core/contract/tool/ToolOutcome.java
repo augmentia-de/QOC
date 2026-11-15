@@ -45,4 +45,37 @@ public sealed interface ToolOutcome {
             if (approvalUrl == null) approvalUrl = "";
         }
     }
+
+    /**
+     * Search/lookup succeeded but produced no results. Distinct from
+     * {@link Failed}: the call worked, there is simply nothing to return.
+     * The {@code message} explains why (e.g. "no matches for query").
+     */
+    record Empty(String message) implements ToolOutcome {
+        public Empty {
+            if (message == null) message = "";
+        }
+    }
+
+    /**
+     * The tool was invoked with arguments the backend cannot process (bad
+     * phrase, out-of-range value, unknown enum). The {@code message} tells
+     * the caller how to correct the call.
+     */
+    record InvalidArgument(String message) implements ToolOutcome {
+        public InvalidArgument {
+            if (message == null) message = "";
+        }
+    }
+
+    /**
+     * The tool's backend was unreachable or returned a transport-level error.
+     * Distinct from {@link Failed} (unexpected internal error) so the caller
+     * can decide whether a retry is appropriate.
+     */
+    record Unavailable(String message) implements ToolOutcome {
+        public Unavailable {
+            if (message == null) message = "";
+        }
+    }
 }

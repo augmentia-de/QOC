@@ -28,7 +28,7 @@ public class WorkflowContext {
     /** Structured outputs per node ID (for data-piping and conditions). */
     private final Map<String, Object> nodeOutputs = new HashMap<>();
 
-    /** Globale State-Variablen (z. B. lastStatus, lastResult, forkResults). */
+    /** Global state variables (e.g. lastStatus, lastResult, forkResults). */
     private final Map<String, Object> workflowState = new HashMap<>();
 
     /** Externally stored artifacts; prompts receive only references. */
@@ -40,13 +40,13 @@ public class WorkflowContext {
     /** References to exclude from the next context. */
     private final List<String> contextExclude = new ArrayList<>();
 
-    /** Strukturiertes Ergebnis des letzten Agenten-Laufs. */
+    /** Structured result of the last agent run. */
     private Map<String, Object> lastStructuredResult = new HashMap<>();
 
-    /** Aktuelle Position im React-Flow-Graphen. */
+    /** Current position in the React-Flow graph. */
     private String currentNodeId;
 
-    /** Ausfuehrungszaehler pro Node fuer den Circuit-Breaker. */
+    /** Execution counter per node for the circuit breaker. */
     private final Map<String, Integer> nodeExecutionCounts = new HashMap<>();
 
     /** Original workflow input; contains phase information. */
@@ -167,6 +167,13 @@ public class WorkflowContext {
         this.currentNodeId = currentNodeId;
     }
 
+    /** Restore path including the initial prompt. */
+    public void restore(Map<String, Object> nodeOutputs, Map<String, Object> workflowState,
+                        String currentNodeId, String initialPrompt) {
+        restore(nodeOutputs, workflowState, currentNodeId);
+        this.initialPrompt = initialPrompt;
+    }
+
     private void restoreExtendedState(Map<String, Object> state) {
         Object artifacts = state.get("_artifacts");
         if (artifacts instanceof Map<?, ?> map) {
@@ -210,12 +217,5 @@ public class WorkflowContext {
                 }
             }
         }
-    }
-
-    /** Neuer Restore-Pfad inkl. Initial-Prompt. */
-    public void restore(Map<String, Object> nodeOutputs, Map<String, Object> workflowState,
-                        String currentNodeId, String initialPrompt) {
-        restore(nodeOutputs, workflowState, currentNodeId);
-        this.initialPrompt = initialPrompt;
     }
 }
