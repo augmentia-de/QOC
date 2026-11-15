@@ -64,14 +64,14 @@
 
 ---
 
-### Phase 7 — Deterministische Contract-Validierung (Generator) ✅
+### Phase 7 — Contract-Validierung (Generator) ✅
 
-**Commit:** `9940936`
+**Commits:** `9940936`, `f238164`
 **Dateien:**
-- `workflow-runner/.../generate/WorkflowContractValidator.java` (neu) — Namenskonvention, Tool-Overlap, fehlende outputContract/systemPrompt
-- `workflow-runner/.../generate/WorkflowGenerator.java` — Contract-Validierung als best-effort Pass
+- `workflow-runner/.../generate/WorkflowContractValidator.java` — deterministische Prüfung + LLM-basierter semantischer Pass (`validateWithLlm`)
+- `workflow-runner/.../generate/WorkflowGenerator.java` — beide Pässe integriert (best-effort, non-blocking)
 
-**Hinweis:** LLM-basierter zweiter Pass (semantische Prüfung) bleibt offen; aktuell nur deterministische Regeln.
+**Hinweis:** LLM-Pass ist best-effort (swallowed exceptions). Test-Klasse `WorkflowGeneratorContractValidationTest` noch nicht implementiert.
 
 ---
 
