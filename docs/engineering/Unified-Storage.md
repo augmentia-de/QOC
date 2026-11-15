@@ -149,11 +149,14 @@ rolesAllowed: [admin, editor]
 ## 8. Offene Punkte
 
 - **MCP-Server DB-Persistenz:** Aktuell JSON-File. DB-Modus könnte eine
-  `mcp_server`-Tabelle nutzen (Migration V12).
-- **RBAC least-privilege Default als Config-Key:** `engine.agent.default-roles`
-  (aktuell hardcoded: build/plan=`*`, sonst=admin).
+  `mcp_server`-Tabelle nutzen (Migration V12). *(Offen — JSON-File ist das
+  dokumentierte Design; DB-Persistenz wäre ein Enhancement.)*
+- **RBAC least-privilege Default als Config-Key:** ✅ Implementiert via
+  `engine.agent.default-roles` (Default: `admin`). Hardcoded-Fallback für
+  `build`/`plan` bleibt `*`.
 - **Echter File-Journal für Runtime:** Bei `file`-Modus ist die Runtime
   in-memory (kein Crash-Recovery). Ein File-Journal wäre für Offline-Nutzung
-  wünschenswert.
+  wünschenswert. *(Offen — komplex, erfordert File-Journal-Implementierung.)*
 - **Bessere Config-Möglichkeit:** UI-basierte Konfiguration für Agents,
-  Permissions und MCP-Server (aktuell nur JSON/Properties).
+  Permissions und MCP-Server (aktuell nur JSON/Properties). *(Offen — großer
+  Umfang, erfordert umfangreiche UI-Arbeit.)*

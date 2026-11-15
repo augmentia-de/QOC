@@ -98,6 +98,10 @@ public class EngineConfig {
     @ConfigProperty(name = "engine.permission.default", defaultValue = "least-privilege")
     String permissionDefaultProperty;
 
+    @Inject
+    @ConfigProperty(name = "engine.agent.default-roles", defaultValue = "admin")
+    String agentDefaultRolesProperty;
+
     private String mode;
     private String role;
     private String agentSourceUrl;
@@ -119,6 +123,7 @@ public class EngineConfig {
     private String url;
     private String password;
     private String permissionDefault = "least-privilege";
+    private static volatile String agentDefaultRoles = "admin";
     private List<AgentConfig> agents;
     private List<de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig> mcpServers;
     private boolean skillsEnabled;
@@ -156,6 +161,8 @@ public class EngineConfig {
         password = passwordProperty.orElse("");
         permissionDefault = permissionDefaultProperty == null || permissionDefaultProperty.isBlank()
                 ? "least-privilege" : permissionDefaultProperty.trim().toLowerCase(java.util.Locale.ROOT);
+        agentDefaultRoles = agentDefaultRolesProperty == null || agentDefaultRolesProperty.isBlank()
+                ? "admin" : agentDefaultRolesProperty.trim();
         agents = new ArrayList<>();
         mcpServers = new ArrayList<>();
         skillsEnabled = true;
@@ -756,7 +763,7 @@ public String workspace() { return workspace; }
             if ("build".equalsIgnoreCase(name) || "plan".equalsIgnoreCase(name)) {
                 return List.of("*");
             }
-            return List.of("admin");
+            return List.of(agentDefaultRoles);
         }
         // backward-compatible constructor with secure defaults
         public AgentConfig(String name, String system, boolean hidden) {

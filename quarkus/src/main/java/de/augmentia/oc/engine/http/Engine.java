@@ -835,6 +835,8 @@ commandLoader = new CommandLoader(workspacePath,
         registry.register(SkillTool.definition(skillCatalog, skillRules));
         registry.register(SkillTool.listDefinition(skillCatalog, skillRules));
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
+        // Wire DataSource for DB-backed MCP server persistence (postgres/sqlite).
+        McpServerPersistence.setDataSource(dataSource);
         mcp = new McpRegistry(registry, new JdkHttpTransport(), new JdkProcessRunner(),
                 Option.some(credentialStore));
         mcp.setup(registry, config, a2aConfig);

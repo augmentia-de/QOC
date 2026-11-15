@@ -43,7 +43,8 @@ public final class WorkflowBuilder {
             Map<String, Object> mcpArgs = Map.of();
             WorkflowDefinition.NodeData data = new WorkflowDefinition.NodeData(
                     step.agentRole(), step.agentRole(), false, "human", 3, "",
-                    List.of(), "all", null, List.of(), "", "", null, "", "", mcpArgs, null);
+                    List.of(), "all", null, List.of(), "", "", null, "", "", mcpArgs, null,
+                    null, List.of(), false, List.of());
             // Store instruction in systemPrompt field of agent (already set); title carries role.
             nodes.add(new WorkflowDefinition.Node(
                     step.agentRole(), "agent", new WorkflowDefinition.Point(100, y),

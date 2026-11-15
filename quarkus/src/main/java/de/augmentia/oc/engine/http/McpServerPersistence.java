@@ -21,6 +21,8 @@ public final class McpServerPersistence {
 
     private static final String DEFAULT_FILE = "./mcp-servers.json";
 
+    private static volatile javax.sql.DataSource dataSource;
+
     private McpServerPersistence() {}
 
     public static String filePath() {
@@ -30,9 +32,17 @@ public final class McpServerPersistence {
         return p;
     }
 
-    /** Load persisted server configs from disk. Returns empty list if file absent. */
+    /** Set the DataSource for DB-backed persistence (call at startup). */
+    public static void setDataSource(javax.sql.DataSource ds) {
+        dataSource = ds;
+    }
+
+    /** Load persisted server configs. Uses DB if DataSource is set, else file. */
     @SuppressWarnings("unchecked")
     public static List<McpServerConfig> load() {
+        if (dataSource != null) {
+            return new SqlMcpServerStore(dataSource).load();
+        }
         List<McpServerConfig> result = new ArrayList<>();
         try {
             Path p = Paths.get(filePath());
@@ -66,23 +76,35 @@ public final class McpServerPersistence {
         return result;
     }
 
-    /** Add a single server config to the persisted file (dedup by name). */
+    /** Add a single server config to persistence (dedup by name). */
     public static void addServer(McpServerConfig config) {
+        if (dataSource != null) {
+            new SqlMcpServerStore(dataSource).addServer(config);
+            return;
+        }
         List<McpServerConfig> existing = load();
         existing.removeIf(c -> c.name().equals(config.name()));
         existing.add(config);
         save(existing);
     }
 
-    /** Remove a server by name from the persisted file. */
+    /** Remove a server by name from persistence. */
     public static void removeServer(String name) {
+        if (dataSource != null) {
+            new SqlMcpServerStore(dataSource).removeServer(name);
+            return;
+        }
         List<McpServerConfig> existing = load();
         existing.removeIf(c -> c.name().equals(name));
         save(existing);
     }
 
-    /** Persist the given server configs to disk. */
+    /** Persist the given server configs. Uses DB if DataSource is set, else file. */
     public static void save(List<McpServerConfig> servers) {
+        if (dataSource != null) {
+            new SqlMcpServerStore(dataSource).save(servers);
+            return;
+        }
         try {
             com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
             List<Map<String, Object>> entries = new ArrayList<>();
