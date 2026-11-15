@@ -512,6 +512,15 @@ export function PropertyPanel({
       .catch(() => undefined);
   }, []);
 
+  // Reload MCP servers whenever an mcp_call node is selected, so newly
+  // registered servers show up without a full page reload.
+  useEffect(() => {
+    if (selectedNode?.type !== 'mcp_call') return;
+    McpClientApi.listServers()
+      .then((response) => setMcpServers(response.data.servers || []))
+      .catch(() => setMcpServers([]));
+  }, [selectedNode?.id, selectedNode?.type]);
+
   // Load the tool list of the selected MCP server.
   useEffect(() => {
     if (!mcpServer) {
