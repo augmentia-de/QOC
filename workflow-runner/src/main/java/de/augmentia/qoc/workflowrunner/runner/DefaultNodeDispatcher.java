@@ -128,6 +128,10 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 if (customRefs == null || customRefs.isEmpty()) {
                     customRefs = strList(opt(node, "contextRefs"));
                 }
+                // Auto-derive contextRefs from graph edges when not explicitly set.
+                if (customRefs == null || customRefs.isEmpty()) {
+                    customRefs = TopologicalSort.incomingSources(def, node.id());
+                }
 
                 String systemPrompt = resolveSystemPrompt(def, agentDef);
 
@@ -490,7 +494,16 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
         }
         // If the node produced no output, there is nothing to validate.
         if (value == null) return;
-        NodeContractValidator.validate(contract, value);
+        boolean strict = Boolean.TRUE.equals(node.data().strict());
+        try {
+            NodeContractValidator.validate(contract, value);
+        } catch (ContractViolationException e) {
+            if (strict) {
+                throw e; // abort workflow
+            }
+            // non-strict: warn and continue
+            LOG.warn("Contract warning for node {}: {} at {}", node.id(), e.getMessage(), e.path());
+        }
     }
 
     /** Node IDs of the definition, for strict template resolution. */

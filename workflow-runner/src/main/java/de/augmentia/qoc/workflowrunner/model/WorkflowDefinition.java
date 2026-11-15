@@ -52,7 +52,7 @@ public record WorkflowDefinition(
             if (id == null) id = "";
             if (type == null) type = "agent";
             if (position == null) position = new Point(0, 0);
-            if (data == null) data = new NodeData("", "", false, "human", 3, "", List.of(), "all", null, List.of(), "", "", null, "", "", Map.of(), null, null, List.of());
+            if (data == null) data = new NodeData("", "", false, "human", 3, "", List.of(), "all", null, List.of(), "", "", null, "", "", Map.of(), null, null, List.of(), false);
         }
     }
 
@@ -79,7 +79,8 @@ public record WorkflowDefinition(
             Map<String, Object> mcpArgs,
             Boolean jsonOutput,
             Map<String, Object> outputContract,
-            List<String> contextRefs
+            List<String> contextRefs,
+            Boolean strict
     ) {
         /** Backwards-compatible constructor without outputContract/contextRefs (legacy callers). */
     public NodeData(String title, String agentRef, boolean requiresHumanApproval, String assignee,
@@ -89,7 +90,19 @@ public record WorkflowDefinition(
                     Map<String, Object> mcpArgs, Boolean jsonOutput) {
         this(title, agentRef, requiresHumanApproval, assignee, maxIterations, exitCondition, bodySteps,
                 joinType, joinN, branches, defaultTarget, workflowRef, responseSchema, mcpServer, mcpTool,
-                mcpArgs, jsonOutput, null, List.of());
+                mcpArgs, jsonOutput, null, List.of(), false);
+    }
+
+    /** Backwards-compatible constructor without strict flag. */
+    public NodeData(String title, String agentRef, boolean requiresHumanApproval, String assignee,
+                    int maxIterations, String exitCondition, List<String> bodySteps, String joinType,
+                    Integer joinN, List<Branch> branches, String defaultTarget, String workflowRef,
+                    Map<String, Object> responseSchema, String mcpServer, String mcpTool,
+                    Map<String, Object> mcpArgs, Boolean jsonOutput,
+                    Map<String, Object> outputContract, List<String> contextRefs) {
+        this(title, agentRef, requiresHumanApproval, assignee, maxIterations, exitCondition, bodySteps,
+                joinType, joinN, branches, defaultTarget, workflowRef, responseSchema, mcpServer, mcpTool,
+                mcpArgs, jsonOutput, outputContract, contextRefs, false);
     }
 
     public NodeData {
@@ -110,6 +123,7 @@ public record WorkflowDefinition(
             // outputContract may be null (no contract declared -> legacy passthrough)
             if (contextRefs == null) contextRefs = List.of();
             else contextRefs = List.copyOf(contextRefs);
+            // strict may be null (default = false = warn + continue)
         }
     }
 

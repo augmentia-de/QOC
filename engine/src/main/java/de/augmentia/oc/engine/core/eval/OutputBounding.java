@@ -20,6 +20,14 @@ public final class OutputBounding {
 
     public static final int MAX_LINES = 2_000;
     public static final long MAX_BYTES = 50L * 1024L;
+
+    /** Configurable override via system property {@code qoc.output.max-bytes}. */
+    public static long maxBytes() {
+        String v = System.getProperty("qoc.output.max-bytes");
+        if (v == null || v.isBlank()) return MAX_BYTES;
+        try { return Math.max(1024, Long.parseLong(v.trim())); }
+        catch (NumberFormatException e) { return MAX_BYTES; }
+    }
     public static final String TRUNCATED = "truncated";
     public static final String OUTPUT_PATH = "outputPath";
 
@@ -60,7 +68,7 @@ public final class OutputBounding {
 
         long lines = text.lines().count();
         long bytes = text.getBytes(StandardCharsets.UTF_8).length;
-        if (lines <= MAX_LINES && bytes <= MAX_BYTES) {
+        if (lines <= MAX_LINES && bytes <= maxBytes()) {
             return new Result.Unchanged(result);
         }
 
@@ -112,7 +120,7 @@ public final class OutputBounding {
         int lines = 0;
         for (String line : text.split("\n", -1)) {
             long added = line.getBytes(StandardCharsets.UTF_8).length + (lines == 0 ? 0 : 1);
-            if (lines >= MAX_LINES || bytes + added > MAX_BYTES) {
+            if (lines >= MAX_LINES || bytes + added > maxBytes()) {
                 break;
             }
             if (lines > 0) prefix.append('\n');
