@@ -67,6 +67,12 @@ public class WorkflowGenerator {
         }
         // Contract validation (warnings only, non-blocking).
         java.util.List<String> contractWarnings = WorkflowContractValidator.validate(def);
+        // LLM-based semantic contract review (best-effort).
+        java.util.List<String> llmWarnings = WorkflowContractValidator.validateWithLlm(def, llmCaller);
+        if (!llmWarnings.isEmpty()) {
+            contractWarnings = new java.util.ArrayList<>(contractWarnings);
+            contractWarnings.addAll(llmWarnings);
+        }
         if (!contractWarnings.isEmpty()) {
             System.getLogger(WorkflowGenerator.class.getName())
                     .log(System.Logger.Level.WARNING,
