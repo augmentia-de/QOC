@@ -77,7 +77,12 @@
 
 ## Status
 
-Alle 8 Phasen sind (mindestens teilweise) implementiert. Verbleibende Follow-ups: Test-Klassen (NodeDataContractTest, ChatContextReducerTest, StrictStructuredOutputTest, etc.) und LLM-basierter Contract-Validator (Phase 7, semantischer Pass).
+Alle 8 Phasen sind (mindestens teilweise) implementiert. Empfehlungen aus den offenen Fragen umgesetzt:
+- #2: `strict`-Flag in `NodeData` (Default: false = warn + continue, true = abort)
+- #3: `contextRefs` werden automatisch aus Graph-Edges abgeleitet (`TopologicalSort.incomingSources`)
+- #5: Output-Limit konfigurierbar via System-Property `qoc.output.max-bytes` (Default: 50 KB)
+
+Verbleibende Follow-ups: Test-Klassen (NodeDataContractTest, etc.) und vollständige Integration (Config-Flags statt System-Properties, per-Agent outputLimit in AgentConfig).
 
 ## Offene Fragen (aus dem Plan)
 
