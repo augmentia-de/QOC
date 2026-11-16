@@ -65,6 +65,37 @@ export default function WorkflowDetail() {
     }
   };
 
+  const applyJson = async () => {
+    if (!id) return;
+    let def: any;
+    try {
+      def = JSON.parse(jsonText);
+    } catch {
+      alert('JSON fehlerhaft');
+      return;
+    }
+    setValidating(true);
+    try {
+      // Reload agents from store so validation uses fresh IDs.
+      const agentRes = await AgentApi.list();
+      setAgents(agentRes.data.agents || []);
+      const res = await WorkflowApi.validate(def);
+      setValidation(res.data);
+      if (!res.data.valid) {
+        alert('Ungültig: ' + (res.data.errors || []).join(' · '));
+        return;
+      }
+      setWorkflow(def);
+      setJsonText(JSON.stringify(def, null, 2));
+      setTab('graph');
+    } catch (e) {
+      console.error(e);
+      alert('Apply failed');
+    } finally {
+      setValidating(false);
+    }
+  };
+
   const save = async () => {
     if (!id || !workflow) return;
     setSaving(true);
@@ -209,12 +240,20 @@ export default function WorkflowDetail() {
           />
         </div>
       ) : (
-        <textarea
-          value={jsonText}
-          onChange={(e) => setJsonText(e.target.value)}
-          className="flex-1 min-h-0 w-full bg-gray-900 text-green-400 font-mono text-sm p-4 rounded border border-gray-700"
-          spellCheck={false}
-        />
+        <div className="flex-1 min-h-0 flex flex-col gap-2">
+          <div className="flex gap-2">
+            <button onClick={applyJson} disabled={validating} className="px-4 py-2 bg-blue-600 rounded text-sm">
+              {validating ? 'Validating...' : 'Apply JSON'}
+            </button>
+            <span className="text-xs text-gray-400 self-center">Parst, validiert (mit frisch geladenen Agents) und übernimmt ins Graph.</span>
+          </div>
+          <textarea
+            value={jsonText}
+            onChange={(e) => setJsonText(e.target.value)}
+            className="flex-1 min-h-0 w-full bg-gray-900 text-green-400 font-mono text-sm p-4 rounded border border-gray-700"
+            spellCheck={false}
+          />
+        </div>
       )}
     </div>
   );
