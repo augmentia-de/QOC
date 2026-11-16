@@ -337,6 +337,11 @@ public String workspace() { return workspace; }
     public String url() { return url; }
     public String password() { return password == null ? "" : password; }
     public List<AgentConfig> agents() { return List.copyOf(agents); }
+
+    /** Baseline agents (build, plan) defined in code — always available, not editable. */
+    public List<AgentConfig> baselineAgents() {
+        return List.of(defaultBuildAgent(), defaultPlanAgent());
+    }
     public List<de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig> mcpServers() {
         return List.copyOf(mcpServers);
     }

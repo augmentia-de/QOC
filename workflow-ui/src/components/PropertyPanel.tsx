@@ -601,6 +601,8 @@ export function PropertyPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNode?.id, selectedNode?.data?.agentRef, agents]);
 
+  const isBuiltInAgent = agentRef === 'build' || agentRef === 'plan';
+
   const loadAgent = (ref: string) => {
     setAgentRef(ref);
     loadAgentFields(agents.find((candidate) => candidate.id === ref));
@@ -654,7 +656,7 @@ export function PropertyPanel({
     if (selectedNode.type === 'mcp_call' || selectedNode.type === 'rest_call') nodeData.mcpArgs = mcpArgs;
 
     onUpdate(selectedNode.id, nodeData);
-    if (selectedNode.type === 'agent' && onAgentChange) {
+    if (selectedNode.type === 'agent' && onAgentChange && !isBuiltInAgent) {
       await onAgentChange(getCurrentAgent());
     }
     setIsDirty(false);
@@ -875,6 +877,11 @@ export function PropertyPanel({
 
       {selectedNode.type === 'agent' && (
         <>
+          {isBuiltInAgent && (
+            <div className="mb-4 rounded border border-amber-700 bg-amber-900/30 p-2 text-xs text-amber-300">
+              Built-in agent (read-only). Loaded from code; cannot be edited or deleted.
+            </div>
+          )}
           <div className="mb-4">
             <FieldLabel>Agent-Ref</FieldLabel>
             <div className="flex gap-2">
@@ -1147,7 +1154,7 @@ export function PropertyPanel({
                 onChange={(schema) => {
                   setResponseSchema(schema);
                   markDirty();
-                  if (selectedNode.type === 'agent' && onAgentChange) {
+                  if (selectedNode.type === 'agent' && onAgentChange && !isBuiltInAgent) {
                     const agent = getCurrentAgent();
                     agent.responseSchema = schema;
                     void onAgentChange(agent);

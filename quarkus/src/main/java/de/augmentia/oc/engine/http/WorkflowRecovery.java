@@ -89,6 +89,21 @@ public class WorkflowRecovery {
         if (agentStore == null || engineConfig == null) return;
         int imported = 0;
         try {
+            // 0. Baseline agents (build, plan) are defined in code and must always
+            //    be available and non-editable. Imported first so editable
+            //    Markdown/config files cannot override them.
+            if (engineConfig != null) {
+                for (EngineConfig.AgentConfig cfg : engineConfig.baselineAgents()) {
+                    if (agentStore.get(cfg.name()) == null) {
+                        de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent converted =
+                                QocAgentConverter.fromQoc(cfg);
+                        if (converted != null) {
+                            agentStore.save(converted.id(), converted);
+                            imported++;
+                        }
+                    }
+                }
+            }
             // 1. Config agents (settings.json / application.properties)
             for (EngineConfig.AgentConfig cfg : engineConfig.agents()) {
                 if (agentStore.get(cfg.name()) == null) {

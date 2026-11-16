@@ -68,6 +68,10 @@ public class AgentStoreResource {
         if (body == null) return badRequest("agent must not be null");
         String id = body.id();
         if (id == null || id.isBlank()) id = slug(body.name());
+        if ("build".equalsIgnoreCase(id) || "plan".equalsIgnoreCase(id)) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(Map.of("error", "built-in agent '" + id + "' cannot be created")).build();
+        }
         if (!valid(id)) return badRequest("invalid agent id");
         String owner = accessGuard == null ? null : accessGuard.currentUser();
         Agent saved = store.save(id, withId(body, id, owner));
@@ -84,6 +88,10 @@ public class AgentStoreResource {
     @Path("/{id}")
     public Response save(@PathParam("id") String id, Agent body) {
         if (!valid(id)) return badRequest("invalid agent id");
+        if ("build".equalsIgnoreCase(id) || "plan".equalsIgnoreCase(id)) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(Map.of("error", "built-in agent '" + id + "' cannot be edited")).build();
+        }
         if (body == null) return badRequest("agent must not be null");
         Agent existing = store.get(id);
         if (existing != null) {
@@ -117,6 +125,10 @@ public class AgentStoreResource {
     @Path("/{id}")
     public Response delete(@PathParam("id") String id) {
         if (!valid(id)) return badRequest("invalid agent id");
+        if ("build".equalsIgnoreCase(id) || "plan".equalsIgnoreCase(id)) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(Map.of("error", "built-in agent '" + id + "' cannot be deleted")).build();
+        }
         Agent existing = store.get(id);
         if (existing != null) {
             Response denied = accessGuard == null ? null : accessGuard.requireAgentAccess(existing.ownerId());
