@@ -506,12 +506,20 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
             }
             onNodeDragStop={(_event, _node, draggedNodes) => {
               if (onGraphChange) {
-                // The third argument contains the final positions. Using it
-                // avoids emitting stale positions before the next render.
-                const currentNodes = draggedNodes ?? nodesRef.current;
-                nodesRef.current = currentNodes;
+                // The third argument contains only the dragged nodes. Merge
+                // their final positions into the full node list so we don't
+                // drop the rest of the graph.
+                const dragged = (draggedNodes ?? []) as Node[];
+                const draggedIds = new Set(dragged.map((n) => n.id));
+                const merged = nodesRef.current.map((n) =>
+                  draggedIds.has(n.id)
+                    ? (dragged.find((d) => d.id === n.id) ?? n)
+                    : n,
+                );
+                nodesRef.current = merged;
+                setNodes(merged);
                 isUpdating.current = true;
-                onGraphChange(toDefinitionGraph(currentNodes, edgesRef.current));
+                onGraphChange(toDefinitionGraph(merged, edgesRef.current));
               }
             }}
             onNodeClick={onNodeClick}
