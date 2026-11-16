@@ -139,7 +139,7 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
         try { localStorage.setItem('qoc:lastWorkflowId', workflowId); } catch {}
         if (def.nodes && Array.isArray(def.nodes) && def.nodes.length > 0) {
           const rfNodes = toFlowNodes(def.nodes);
-          const rfEdges = normalizeEdgeHandles(rfNodes, toFlowEdges(def.edges || []));
+          const rfEdges = normalizeEdgeHandles(rfNodes, toFlowEdges(def.edges || [], rfNodes));
           nodesRef.current = rfNodes;
           edgesRef.current = rfEdges;
           setNodes(rfNodes);
@@ -158,7 +158,7 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
           const def = res.data;
           if (def.nodes && Array.isArray(def.nodes) && def.nodes.length > 0) {
             const rfNodes = toFlowNodes(def.nodes);
-            const rfEdges = normalizeEdgeHandles(rfNodes, toFlowEdges(def.edges || []));
+            const rfEdges = normalizeEdgeHandles(rfNodes, toFlowEdges(def.edges || [], rfNodes));
             nodesRef.current = rfNodes;
             edgesRef.current = rfEdges;
             setNodes(rfNodes);
@@ -205,7 +205,7 @@ export default function GraphEditor({ nodesJson, workflowId, agents = [], onGrap
     } else {
       // Default
       const defaultNodes: Node[] = [
-        { id: 'start', type: 'agent', position: { x: 0, y: 0 }, data: { title: 'Start', agentRef: 'build' } },
+        { id: 'start', type: 'start', position: { x: 0, y: 0 }, data: { title: 'Start' } },
         { id: 'end', type: 'end', position: { x: 300, y: 0 }, data: { title: 'Done' } },
       ];
       const defaultEdges: Edge[] = normalizeEdgeHandles(defaultNodes, [

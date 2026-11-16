@@ -331,16 +331,19 @@ export function toFlowNodes(nodes: WorkflowNode[] = []): Node[] {
   }));
 }
 
-export function toFlowEdges(edges: WorkflowEdge[] = []): Edge[] {
-  return edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    sourceHandle: edge.sourceHandle || undefined,
-    targetHandle: edge.targetHandle || undefined,
-    type: edge.type || undefined,
-    data: { condition: edge.condition || '' },
-  }));
+export function toFlowEdges(edges: WorkflowEdge[] = [], nodes?: Node[]): Edge[] {
+  const nodeIds = nodes ? new Set(nodes.map((n) => n.id)) : null;
+  return edges
+    .filter((edge) => !nodeIds || (nodeIds.has(edge.source) && nodeIds.has(edge.target)))
+    .map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle || undefined,
+      targetHandle: edge.targetHandle || undefined,
+      type: edge.type || undefined,
+      data: { condition: edge.condition || '' },
+    }));
 }
 
 export function toFlowGraph(def: WorkflowDefinition | null): {
@@ -351,7 +354,7 @@ export function toFlowGraph(def: WorkflowDefinition | null): {
   const nodes = toFlowNodes(def.nodes || []);
   return {
     nodes,
-    edges: normalizeEdgeHandles(nodes, toFlowEdges(def.edges || [])),
+    edges: normalizeEdgeHandles(nodes, toFlowEdges(def.edges || [], nodes)),
   };
 }
 
@@ -367,24 +370,28 @@ export function toDefinitionNodes(nodes: Node[] = []): WorkflowNode[] {
   }));
 }
 
-export function toDefinitionEdges(edges: Edge[] = []): WorkflowEdge[] {
-  return edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    type: edge.type || 'default',
-    condition: conditionOf(edge),
-    sourceHandle: edge.sourceHandle || '',
-    targetHandle: edge.targetHandle || '',
-  }));
+export function toDefinitionEdges(edges: Edge[] = [], nodes?: Node[]): WorkflowEdge[] {
+  const nodeIds = nodes ? new Set(nodes.map((n) => n.id)) : null;
+  return edges
+    .filter((edge) => !nodeIds || (nodeIds.has(edge.source) && nodeIds.has(edge.target)))
+    .map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      type: edge.type || 'default',
+      condition: conditionOf(edge),
+      sourceHandle: edge.sourceHandle || '',
+      targetHandle: edge.targetHandle || '',
+    }));
 }
 
 export function toDefinitionGraph(
   nodes: Node[],
   edges: Edge[],
 ): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+  const normalized = normalizeEdgeHandles(nodes, edges);
   return {
     nodes: toDefinitionNodes(nodes),
-    edges: toDefinitionEdges(normalizeEdgeHandles(nodes, edges)),
+    edges: toDefinitionEdges(normalized, nodes),
   };
 }

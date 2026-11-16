@@ -51,6 +51,20 @@ export default function WorkflowDetail() {
     }
   };
 
+  const reloadAgents = async () => {
+    try {
+      const agentRes = await AgentApi.list();
+      setAgents(agentRes.data.agents || []);
+      // refresh validation after reload
+      if (workflow) {
+        const res = await WorkflowApi.validate(workflow);
+        setValidation(res.data);
+      }
+    } catch (e) {
+      console.error('Agent reload failed', e);
+    }
+  };
+
   const save = async () => {
     if (!id || !workflow) return;
     setSaving(true);
@@ -65,8 +79,16 @@ export default function WorkflowDetail() {
           return;
         }
       }
+      // SSOT: snapshot the agents referenced by nodes into workflow.agents,
+      // so the workflow is self-contained and stable across reloads.
+      const referenced = new Set<string>();
+      (def.nodes || []).forEach((n: any) => {
+        if (n?.data?.agentRef) referenced.add(String(n.data.agentRef));
+      });
+      const snapshot = (agents || []).filter((a: any) => referenced.has(String(a.id)));
+      def = { ...def, agents: snapshot.length ? snapshot : (def.agents || []) };
       await WorkflowApi.save(id, def);
-      setWorkflow(def);
+      setWorkflow(def as any);
       setJsonText(JSON.stringify(def, null, 2));
       alert('Gespeichert');
     } catch (e) {
@@ -128,6 +150,9 @@ export default function WorkflowDetail() {
         </div>
 
         <div className="flex gap-2 shrink-0">
+          <button onClick={reloadAgents} className="px-4 py-2 bg-gray-700 rounded text-sm">
+            ↻ Reload Agents
+          </button>
           <button onClick={validate} disabled={validating} className="px-4 py-2 bg-gray-700 rounded text-sm">
             {validating ? 'Validating...' : 'Validate'}
           </button>
