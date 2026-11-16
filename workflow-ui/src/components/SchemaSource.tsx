@@ -8,6 +8,7 @@ interface SchemaSourceProps {
   value: Record<string, unknown> | null;
   onChange: (schema: Record<string, unknown> | null) => void;
   disabled?: boolean;
+  label?: string;
 }
 
 const MODE_LABELS: Record<Mode, string> = {
@@ -17,7 +18,7 @@ const MODE_LABELS: Record<Mode, string> = {
   yaml: 'YAML (JSON Schema)',
 };
 
-export function SchemaSource({ value, onChange, disabled }: SchemaSourceProps) {
+export function SchemaSource({ value, onChange, disabled, label }: SchemaSourceProps) {
   const [mode, setMode] = useState<Mode>('manual');
   const [text, setText] = useState(value ? JSON.stringify(value, null, 2) : '');
   const [schemaNames, setSchemaNames] = useState<string[]>([]);
@@ -162,7 +163,7 @@ export function SchemaSource({ value, onChange, disabled }: SchemaSourceProps) {
 
   return (
     <div className="mb-3">
-      <label className="block text-sm text-gray-400 mb-1">Response Schema (JSON Schema)</label>
+      <label className="block text-sm text-gray-400 mb-1">{label ?? 'Response Schema (JSON Schema)'}</label>
       <div className="mb-2 flex flex-wrap gap-1">
         {(Object.keys(MODE_LABELS) as Mode[]).map((m) => (
           <button

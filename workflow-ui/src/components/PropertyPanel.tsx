@@ -382,6 +382,52 @@ function ChipList({ label, values, empty }: { label: string; values: string[]; e
   );
 }
 
+interface FieldTreeProps {
+  basePath: string;
+  properties: Record<string, unknown>;
+  draft: Record<string, unknown>;
+  updateField: (field: string, value: unknown) => void;
+  markDirty: () => void;
+  depth?: number;
+}
+
+function FieldTree({ basePath, properties, draft, updateField, markDirty, depth = 0 }: FieldTreeProps) {
+  const keys = Object.keys(properties || {});
+  if (keys.length === 0) return null;
+  const fontSize = Math.max(9, 11 - depth);
+  return (
+    <div style={{ marginLeft: depth > 0 ? 12 : 0 }} className="space-y-0.5">
+      {keys.map((key) => {
+        const path = `${basePath}.${key}`;
+        const checked = ((draft.contextRefs as string[] | undefined) ?? []).includes(path);
+        const nested = (properties[key] as Record<string, unknown> | null)?.properties as Record<string, unknown> | undefined;
+        return (
+          <div key={path}>
+            <label className="flex items-center gap-2 text-gray-300" style={{ fontSize }}>
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={(e) => {
+                  const current = (draft.contextRefs as string[] | undefined) ?? [];
+                  const next = e.target.checked
+                    ? [...current, path]
+                    : current.filter((p) => p !== path);
+                  updateField('contextRefs', next);
+                  markDirty();
+                }}
+              />
+              .{key}
+            </label>
+            {nested && Object.keys(nested).length > 0 && (
+              <FieldTree basePath={path} properties={nested} draft={draft} updateField={updateField} markDirty={markDirty} depth={depth + 1} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function PropertyPanel({
   selectedNode,
   onUpdate,
@@ -679,6 +725,62 @@ export function PropertyPanel({
         />
       </div>
 
+      {selectedNode.type !== 'agent' && selectedNode.type !== 'context_agent_executor' && (
+        <div className="mb-4 border-t border-gray-700 pt-4">
+          <h4 className="mb-2 text-sm font-semibold">Data Contract (Node-Datenvertrag)</h4>
+          <div className="mb-3">
+            <FieldLabel>Context-Refs (Input-Nodes)</FieldLabel>
+            <div className="max-h-48 overflow-y-auto rounded border border-gray-700 bg-gray-800 p-2">
+              {nodes.filter((n) => n.id !== selectedNode?.id).map((n) => {
+                const checked = (draft.contextRefs as string[] | undefined)?.includes(n.id) ?? false;
+                const contract = (n.data?.outputContract ?? null) as Record<string, unknown> | null;
+                const props = (contract?.properties ?? null) as Record<string, unknown> | null;
+                const fieldKeys = props ? Object.keys(props) : [];
+                return (
+                  <div key={n.id} className="mb-1">
+                    <label className="flex items-center gap-2 text-xs font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const current = (draft.contextRefs as string[] | undefined) ?? [];
+                          const next = e.target.checked
+                            ? [...current, n.id]
+                            : current.filter((id) => id !== n.id);
+                          updateField('contextRefs', next);
+                          markDirty();
+                        }}
+                      />
+                      {n.id} ({n.type})
+                    </label>
+                    {fieldKeys.length > 0 && (
+                      <div className="ml-5 mt-1 space-y-0.5">
+                        <FieldTree basePath={n.id} properties={props ?? {}} draft={draft as Record<string, unknown>} updateField={updateField} markDirty={markDirty} depth={0} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {nodes.filter((n) => n.id !== selectedNode?.id).length === 0 && (
+                <p className="text-xs text-gray-500">Keine Vorgänger-Nodes verfügbar.</p>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Leer = Fallback auf lastResult. Explizite Auswahl = nur diese Nodes als Input.
+            </p>
+          </div>
+          <div className="mb-4">
+            <FieldLabel>Output-Contract (Schema)</FieldLabel>
+            <SchemaSource
+              value={(draft.outputContract as Record<string, unknown> | null) ?? null}
+              onChange={(schema) => updateField('outputContract', schema)}
+              disabled={false}
+              label="Output-Contract (Schema)"
+            />
+          </div>
+        </div>
+      )}
+
       {selectedNode.type === 'context_agent_executor' && (
         <div className="mb-4 border-t border-gray-700 pt-4">
           <h4 className="mb-2 text-sm font-semibold">Context Agent Executor</h4>
@@ -706,25 +808,35 @@ export function PropertyPanel({
           </p>
           <div className="mt-3">
             <FieldLabel>Context-Refs (Input-Nodes)</FieldLabel>
-            <div className="max-h-32 overflow-y-auto rounded border border-gray-700 bg-gray-800 p-2">
+            <div className="max-h-48 overflow-y-auto rounded border border-gray-700 bg-gray-800 p-2">
               {nodes.filter((n) => n.id !== selectedNode?.id).map((n) => {
                 const checked = (draft.contextRefs as string[] | undefined)?.includes(n.id) ?? false;
+                const contract = (n.data?.outputContract ?? null) as Record<string, unknown> | null;
+                const props = (contract?.properties ?? null) as Record<string, unknown> | null;
+                const fieldKeys = props ? Object.keys(props) : [];
                 return (
-                  <label key={n.id} className="flex items-center gap-2 text-xs">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        const current = (draft.contextRefs as string[] | undefined) ?? [];
-                        const next = e.target.checked
-                          ? [...current, n.id]
-                          : current.filter((id) => id !== n.id);
-                        updateField('contextRefs', next);
-                        markDirty();
-                      }}
-                    />
-                    {n.id} ({n.type})
-                  </label>
+                  <div key={n.id} className="mb-1">
+                    <label className="flex items-center gap-2 text-xs font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const current = (draft.contextRefs as string[] | undefined) ?? [];
+                          const next = e.target.checked
+                            ? [...current, n.id]
+                            : current.filter((id) => id !== n.id);
+                          updateField('contextRefs', next);
+                          markDirty();
+                        }}
+                      />
+                      {n.id} ({n.type})
+                    </label>
+                    {fieldKeys.length > 0 && (
+                      <div className="ml-5 mt-1 space-y-0.5">
+                        <FieldTree basePath={n.id} properties={props ?? {}} draft={draft as Record<string, unknown>} updateField={updateField} markDirty={markDirty} depth={0} />
+                      </div>
+                    )}
+                  </div>
                 );
               })}
               {nodes.filter((n) => n.id !== selectedNode?.id).length === 0 && (
@@ -733,6 +845,29 @@ export function PropertyPanel({
             </div>
             <p className="mt-1 text-xs text-gray-500">
               Leer = Fallback auf lastResult. Explizite Auswahl = nur diese Nodes als Input.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <input
+                type="text"
+                placeholder="Pfad (z.B. produce.konto.saldo, initial.bestellung, state.key)"
+                className="flex-1 rounded bg-gray-700 px-2 py-1 text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const val = (e.target as HTMLInputElement).value.trim();
+                    if (val) {
+                      const current = (draft.contextRefs as string[] | undefined) ?? [];
+                      if (!current.includes(val)) {
+                        updateField('contextRefs', [...current, val]);
+                        markDirty();
+                      }
+                      (e.target as HTMLInputElement).value = '';
+                    }
+                  }
+                }}
+              />
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Tipp: Feld-Pfade (nodeId.field, initial.field, state.key, lastResult.field) möglich.
             </p>
           </div>
         </div>
@@ -770,25 +905,35 @@ export function PropertyPanel({
 
           <div className="mb-4">
             <FieldLabel>Context-Refs (Input-Nodes)</FieldLabel>
-            <div className="max-h-32 overflow-y-auto rounded border border-gray-700 bg-gray-800 p-2">
+            <div className="max-h-48 overflow-y-auto rounded border border-gray-700 bg-gray-800 p-2">
               {nodes.filter((n) => n.id !== selectedNode?.id).map((n) => {
                 const checked = (draft.contextRefs as string[] | undefined)?.includes(n.id) ?? false;
+                const contract = (n.data?.outputContract ?? null) as Record<string, unknown> | null;
+                const props = (contract?.properties ?? null) as Record<string, unknown> | null;
+                const fieldKeys = props ? Object.keys(props) : [];
                 return (
-                  <label key={n.id} className="flex items-center gap-2 text-xs">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        const current = (draft.contextRefs as string[] | undefined) ?? [];
-                        const next = e.target.checked
-                          ? [...current, n.id]
-                          : current.filter((id) => id !== n.id);
-                        updateField('contextRefs', next);
-                        markDirty();
-                      }}
-                    />
-                    {n.id} ({n.type})
-                  </label>
+                  <div key={n.id} className="mb-1">
+                    <label className="flex items-center gap-2 text-xs font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const current = (draft.contextRefs as string[] | undefined) ?? [];
+                          const next = e.target.checked
+                            ? [...current, n.id]
+                            : current.filter((id) => id !== n.id);
+                          updateField('contextRefs', next);
+                          markDirty();
+                        }}
+                      />
+                      {n.id} ({n.type})
+                    </label>
+                    {fieldKeys.length > 0 && (
+                      <div className="ml-5 mt-1 space-y-0.5">
+                        <FieldTree basePath={n.id} properties={props ?? {}} draft={draft as Record<string, unknown>} updateField={updateField} markDirty={markDirty} depth={0} />
+                      </div>
+                    )}
+                  </div>
                 );
               })}
               {nodes.filter((n) => n.id !== selectedNode?.id).length === 0 && (
@@ -798,6 +943,29 @@ export function PropertyPanel({
             <p className="mt-1 text-xs text-gray-500">
               Leer = Fallback auf lastResult. Explizite Auswahl = nur diese Nodes als Input.
             </p>
+            <div className="mt-2 flex gap-2">
+              <input
+                type="text"
+                placeholder="Pfad (z.B. produce.konto.saldo, initial.bestellung, state.key)"
+                className="flex-1 rounded bg-gray-700 px-2 py-1 text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const val = (e.target as HTMLInputElement).value.trim();
+                    if (val) {
+                      const current = (draft.contextRefs as string[] | undefined) ?? [];
+                      if (!current.includes(val)) {
+                        updateField('contextRefs', [...current, val]);
+                        markDirty();
+                      }
+                      (e.target as HTMLInputElement).value = '';
+                    }
+                  }
+                }}
+              />
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Tipp: Feld-Pfade (nodeId.field, initial.field, state.key, lastResult.field) möglich.
+            </p>
           </div>
 
           <div className="mb-4">
@@ -806,6 +974,7 @@ export function PropertyPanel({
               value={(draft.outputContract as Record<string, unknown> | null) ?? null}
               onChange={(schema) => updateField('outputContract', schema)}
               disabled={false}
+              label="Output-Contract (Schema)"
             />
           </div>
 
@@ -978,6 +1147,13 @@ export function PropertyPanel({
                 onChange={(schema) => {
                   setResponseSchema(schema);
                   markDirty();
+                  if (selectedNode.type === 'agent' && onAgentChange) {
+                    const agent = getCurrentAgent();
+                    agent.responseSchema = schema;
+                    void onAgentChange(agent);
+                  } else {
+                    console.log('no onAgentChange or not agent', selectedNode.type, !!onAgentChange);
+                  }
                 }}
               />
             </div>
@@ -1645,7 +1821,7 @@ export function PropertyPanel({
           className="flex-1 rounded bg-blue-600 px-3 py-2 text-sm font-bold disabled:opacity-50"
           disabled={!isDirty}
         >
-          Save {isDirty ? '●' : ''}
+          Save Node {isDirty ? '●' : ''}
         </button>
         <button
           onClick={handleReset}

@@ -188,7 +188,7 @@ export default function WorkflowDetail() {
             {validating ? 'Validating...' : 'Validate'}
           </button>
           <button onClick={save} disabled={saving} className="px-4 py-2 bg-blue-600 rounded text-sm">
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? 'Saving...' : 'Save Workflow'}
           </button>
           <button onClick={run} className="px-4 py-2 bg-green-600 rounded text-sm">
             Run
