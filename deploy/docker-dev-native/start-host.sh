@@ -30,7 +30,8 @@ export QUARKUS_DATASOURCE_JDBC_URL="${QUARKUS_DATASOURCE_JDBC_URL//host.docker.i
 
 # Defaults (mirror docker-dev-native compose)
 export ENGINE_MODEL_ID="${ENGINE_MODEL_ID:-deepseek-v4.1-flash}"
-export ENGINE_WORKSPACE="${ENGINE_WORKSPACE:-$REPO_ROOT}"
+export ENGINE_WORKSPACE="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+# export ENGINE_WORKSPACE="${ENGINE_WORKSPACE:-$REPO_ROOT}"
 export ENGINE_WORKFLOW_STORAGE_DIR="${ENGINE_WORKFLOW_STORAGE_DIR:-$REPO_ROOT/quarkus/wf-data}"
 export ENGINE_STORAGE="${ENGINE_STORAGE:-postgres}"
 export ENGINE_DB_KIND="${ENGINE_DB_KIND:-postgresql}"

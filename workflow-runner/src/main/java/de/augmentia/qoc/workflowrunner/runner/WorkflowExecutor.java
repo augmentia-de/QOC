@@ -15,6 +15,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Map;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Executes a ReactFlow-based workflow definition.
@@ -100,7 +103,7 @@ public class WorkflowExecutor {
         if (ownerId == null || ownerId.isBlank()) {
             ownerId = principal.id();
             def = new WorkflowDefinition(def.id(), def.name(), def.version(), def.status(),
-                    def.nodes(), def.edges(), def.agents(), ownerId, def.systemPrompt());
+                    def.nodes(), def.edges(), def.agents(), ownerId, def.systemPrompt(), def.inputSchema());
         }
 
         WorkflowDefinition persisted = store.save(workflowId, def);
@@ -117,7 +120,23 @@ public class WorkflowExecutor {
 
         String context = input == null ? "" : input;
         WorkflowContext ctx = new WorkflowContext();
+        ctx.setInitialPrompt(context);
         ctx.setState("lastResult", context);
+
+        // Phase 0b: structured initial input + schema validation.
+        Object parsedInput = tryParseJson(context);
+        if (parsedInput != null) {
+            ctx.setInitialInput(parsedInput);
+        }
+        Map<String, Object> inputSchema = expanded.inputSchema();
+        if (inputSchema != null && !inputSchema.isEmpty() && parsedInput != null) {
+            try {
+                NodeContractValidator.validate(inputSchema, parsedInput);
+            } catch (ContractViolationException e) {
+                throw new IllegalArgumentException("Input does not match inputSchema: " + e.path() + " " + e.getMessage(), e);
+            }
+        }
+
         sink.runStarted(workflowId, definitionVersion, contentHash, context);
 
         return run(session, runId, expanded, ctx, context, sink, true, principal);
@@ -239,5 +258,19 @@ public class WorkflowExecutor {
         String name = "workflow:" + definition.id();
         return new QocEngine.AgentConfig(name, null, 0.3, 4096, 1.0, null,
                 List.of(), List.of(), List.of(), List.of(), false, Option.none());
+    }
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** Best-effort: parse input as JSON. Returns null if not JSON or blank. */
+    private static Object tryParseJson(String input) {
+        if (input == null || input.isBlank()) return null;
+        String trimmed = input.trim();
+        if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return null;
+        try {
+            return JSON.readValue(trimmed, Object.class);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

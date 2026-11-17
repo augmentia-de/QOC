@@ -52,12 +52,32 @@ public class WorkflowContext {
     /** Original workflow input; contains phase information. */
     private String initialPrompt;
 
+    /** Structured workflow input (Map/List/Primitive or null). */
+    private Object initialInput;
+
     public String getInitialPrompt() {
         return initialPrompt;
     }
 
     public void setInitialPrompt(String initialPrompt) {
         this.initialPrompt = initialPrompt;
+    }
+
+    public Object getInitialInput() {
+        return initialInput;
+    }
+
+    public void setInitialInput(Object initialInput) {
+        this.initialInput = WorkflowValues.canonical(initialInput);
+        syncInitialInput();
+    }
+
+    private void syncInitialInput() {
+        if (initialInput == null) {
+            workflowState.remove("_initialInput");
+        } else {
+            workflowState.put("_initialInput", WorkflowValues.canonical(initialInput));
+        }
     }
 
     public void setNodeOutput(String nodeId, Object output) {
@@ -175,6 +195,10 @@ public class WorkflowContext {
     }
 
     private void restoreExtendedState(Map<String, Object> state) {
+        Object ii = state.get("_initialInput");
+        if (ii != null) {
+            this.initialInput = ii;
+        }
         Object artifacts = state.get("_artifacts");
         if (artifacts instanceof Map<?, ?> map) {
             this.artifacts.clear();

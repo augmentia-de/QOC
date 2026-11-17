@@ -84,6 +84,42 @@ Alle 8 Phasen sind (mindestens teilweise) implementiert. Empfehlungen aus den of
 
 Verbleibende Follow-ups: Test-Klassen (NodeDataContractTest, etc.) und vollständige Integration (Config-Flags statt System-Properties, per-Agent outputLimit in AgentConfig).
 
+### Phase 0b — Feingranulare Feld-Auswahl + strukturierter Initial-Input ✅ (Backend)
+
+**Dateien:**
+- `workflow-runner/.../model/WorkflowDefinition.java` — `inputSchema` Feld (+ Backwards-Compat-Konstruktoren)
+- `workflow-runner/.../runner/WorkflowContext.java` — `initialInput` Feld + Getter/Setter + Persistierung in `restore()`
+- `workflow-runner/.../runner/ContextRefResolver.java` (neu) — Auflösung + Validierung von Pfad-Refs
+- `workflow-runner/.../runner/ContextAssembler.java` — `appendCustom` nutzt `ContextRefResolver`; Feld-Rendering via `<context-value>`
+- `workflow-runner/.../validation/GraphCompiler.java` — `validateContextRefs` + reservierte Node-Namen
+- `workflow-runner/.../runner/WorkflowExecutor.java` — `tryParseJson` + `inputSchema`-Validierung via `NodeContractValidator`
+
+**Tests:**
+- `ContextRefResolverTest` — 11 Tests grün
+- `ContextAssemblerTest` — 5 Tests grün (inkl. Feld-Auswahl)
+- `GraphCompilerTest` — +2 Tests (reservierte Node-Namen, unbekannte Nodes in contextRefs)
+
+**Offen (UI):**
+- Phase 5b Feld-Selektor (JSON-Tree mit Checkboxen) noch nicht implementiert.
+
+**Verbleibende Follow-ups:** NodeDataContractTest (P0-1..P0-13), vollständige Integration (Config-Flags statt System-Properties, per-Agent outputLimit).
+
+**Phase 3 (Strict Structured Outputs):** Detaillierte Anleitung in `docs/plans/strict-structured-outputs.md` (Status: Offen). Drei Optionen analysiert: Option 1 (aktuelle Umsetzung, non-strict + eigene Validierung), Option 2 mit Weg A (response_format) — nicht empfohlen, Weg B (strict auf ToolSpecification) — empfohlen, aber offen (erfordert Schema-Anpassungen + echtes API-Testing).
+
+**UI (2026-11-16, vierte Runde):**
+- PropertyPanel zeigt jetzt pro Vorgänger-Node (wenn `outputContract.properties` vorhanden) Checkboxen für Top-Level-Felder (`nodeId.field`).
+- Texteingabe für beliebige Pfade (nodeId.field, initial.field, state.key, lastResult.field) bleibt.
+
+**UI (2026-11-16, sechste Runde):**
+- Vollständiger rekursiver JSON-Tree-Feld-Selektor (`FieldTree`-Komponente): beliebige Verschachtelungstiefe, Checkboxen pro Feld, Pfade werden als `nodeId.a.b.c` zu `contextRefs` hinzugefügt.
+
+**Zusätzlich implementiert (2026-11-16, dritte Runde):**
+- `WorkflowContractValidatorTest` — 7 Tests (Namenskonvention, fehlender Output-Contract, fehlender System-Prompt, LLM-Parse, null-Caller, null-Def).
+
+**Zusätzlich implementiert (2026-11-16, fünfte Runde):**
+- `NodeDataContractTest` — 11 Tests (Contract-Validierung valid/invalid/missing/additional/enum, no-contract passthrough, contextRefs field filtering, unknown ref, template type check/mismatch).
+- Phase 5b UI: rekursiver JSON-Tree-Feld-Selektor (Top-Level + verschachtelte Felder) in PropertyPanel.
+
 ## Offene Fragen (aus dem Plan)
 
 1. Soll `outputContract` verpflichtend oder optional sein? → Empfehlung: optional (Default = kein Contract → Legacy).

@@ -112,15 +112,14 @@ public final class ContextAssembler {
                     sb.append("- artifact ").append(artifact.id())
                             .append(": ").append(artifact.summary()).append(" -> ").append(artifact.uri()).append('\n');
                 }
-            } else {
-                Object out = ctx.getNodeOutput(ref);
-                if (out != null) {
-                    sb.append("#### ").append(ref).append("\n");
-                    sb.append("<node-output id=\"").append(ref).append("\">")
-                            .append(renderValue(out))
-                            .append("</node-output>\n\n");
-                }
+                continue;
             }
+            Object val = ContextRefResolver.resolve(ctx, ref);
+            if (val == null) continue;
+            sb.append("#### ").append(ref).append("\n");
+            sb.append("<context-value ref=\"").append(ref).append("\">")
+                    .append(renderValue(val))
+                    .append("</context-value>\n\n");
         }
     }
 
