@@ -163,6 +163,8 @@ export default function EditorPage() {
   const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showJsonOverlay, setShowJsonOverlay] = useState(false);
+  const [showRunOverlay, setShowRunOverlay] = useState(false);
+  const [runInput, setRunInput] = useState('Hello');
   const workflowName = useWorkflowStore((s) => s.workflowName);
   const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
   const [agents, setAgents] = useState([]);
@@ -735,7 +737,7 @@ export default function EditorPage() {
     else alert('Workflow is valid!');
   };
 
-  const handleRun = async () => {
+  const runWorkflow = async () => {
     const errors = [];
     if (nodes.length === 0) errors.push('No nodes');
     const hasStart = nodes.some((n) => n.type === 'start');
@@ -744,11 +746,11 @@ export default function EditorPage() {
     const def = { id: workflowName.trim() || 'untitled', name: workflowName.trim() || 'untitled', nodes, edges };
     try {
       const { QocApi } = await import('./services/qocApi.ts');
-      const res = await QocApi.workflows.run(def, 'Hello');
+      const res = await QocApi.workflows.run(def, runInput);
       alert('Ergebnis: ' + (res.result || 'OK') + '\\nOrder: ' + (res.order || []).join(', '));
-      return;
     } catch { /* fallback */ }
     alert('Running workflow with ' + nodes.length + ' nodes and ' + edges.length + ' edges...');
+    setShowRunOverlay(false);
   };
 
   const handleAutoLayout = async () => {
@@ -807,7 +809,8 @@ export default function EditorPage() {
         <button onClick={handleValidate} style={{ background: '#f0ad4e', color: '#000', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Validate</button>
         <button onClick={handleAutoLayout} style={{ background: '#6f42c1', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Auto-Layout</button>
         <button onClick={() => setShowJsonOverlay(true)} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>JSON</button>
-        <button onClick={handleRun} style={{ background: '#d9534f', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Run</button>
+        <a href="/core/" style={{ background: '#337ab7', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, textDecoration: 'none' }}>Chat (Core)</a>
+        <button onClick={() => { setRunInput('Hello'); setShowRunOverlay(true); }} style={{ background: '#d9534f', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Run</button>
       </div>
       {isMobile && (
         <div style={{ display: 'flex', gap: 4, padding: 6, background: '#161616', overflowX: 'auto', borderBottom: '1px solid #333' }}>
@@ -1041,6 +1044,23 @@ export default function EditorPage() {
                 <button onClick={() => setShowJsonOverlay(false)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16 }}>x</button>
               </div>
               <textarea readOnly value={JSON.stringify({ id: workflowName.trim() || 'untitled', name: workflowName.trim() || 'untitled', version: '1.0.0', status: 'draft', nodes, edges, agents: [], ownerId: '', systemPrompt: '', inputSchema: null }, null, 2)} style={{ width: '100%', height: '60vh', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555', fontFamily: 'monospace', fontSize: 11, resize: 'none' }} />
+            </div>
+          </div>
+        )}
+
+        {showRunOverlay && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div style={{ background: '#2d2d2d', padding: 16, borderRadius: 8, width: 520, maxHeight: '80vh', overflow: 'auto', color: '#d4d4d4', fontSize: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <h3 style={{ margin: 0 }}>Run workflow – initial input</h3>
+                <button onClick={() => setShowRunOverlay(false)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16 }}>x</button>
+              </div>
+              <p style={{ fontSize: 11, color: '#999', margin: '0 0 8px' }}>Provide the initial data for this run. Prefilled with an example; use JSON when a structure is defined.</p>
+              <textarea value={runInput} onChange={(e) => setRunInput(e.target.value)} style={{ width: '100%', height: 140, background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555', fontFamily: 'monospace', fontSize: 11, resize: 'vertical' }} />
+              <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                <button onClick={runWorkflow} style={{ background: '#d9534f', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 4, cursor: 'pointer' }}>Run</button>
+                <button onClick={() => setShowRunOverlay(false)} style={{ background: '#555', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 4, cursor: 'pointer' }}>Cancel</button>
+              </div>
             </div>
           </div>
         )}

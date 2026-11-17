@@ -44,6 +44,7 @@ export default function App() {
       {!isMobile && (
         <nav style={{ display: 'flex', gap: 12, padding: '8px 16px', background: '#1e1e1e', borderBottom: '1px solid #333', alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 'bold', color: '#5bc0de', marginRight: 8 }}>QOC</span>
+          <a href="/core/" style={{ color: '#d4d4d4', textDecoration: 'none', fontSize: 12, padding: '4px 8px', borderRadius: 4, background: '#2d2d2d' }}>Chat</a>
           {NAV.map((n) => (
             <Link key={n.to} to={n.to} style={{ color: '#d4d4d4', textDecoration: 'none', fontSize: 12, padding: '4px 8px', borderRadius: 4, background: '#2d2d2d' }}>
               {n.label}
@@ -53,6 +54,7 @@ export default function App() {
       )}
       {isMobile && (
         <div style={{ padding: '8px 12px', background: '#1e1e1e', borderBottom: '1px solid #333', display: 'flex', gap: 8, overflowX: 'auto' }}>
+          <a href="/core/" style={{ color: '#d4d4d4', textDecoration: 'none', fontSize: 11, padding: '4px 6px', borderRadius: 4, background: '#2d2d2d', whiteSpace: 'nowrap' }}>Chat</a>
           {NAV.map((n) => (
             <Link key={n.to} to={n.to} style={{ color: '#d4d4d4', textDecoration: 'none', fontSize: 11, padding: '4px 6px', borderRadius: 4, background: '#2d2d2d', whiteSpace: 'nowrap' }}>
               {n.label}
