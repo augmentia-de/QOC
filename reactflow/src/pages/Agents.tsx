@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { QocApi } from '../services/qocApi.ts';
 import { SchemaSource } from '../components/SchemaSource.tsx';
+import { AgentConfigOverlay, AgentForm } from '../components/AgentConfigOverlay.tsx';
 
-const emptyAgent: any = {
-  id: '', name: '', version: '1.0.0', category: '', model: 'deepseek-v4.1-flash',
-  temperature: 0.3, maxTokens: 4096, topP: 1.0, tools: [], guardrailsInput: [], guardrailsOutput: [],
-  hooks: [], jsonOutput: false, active: true, systemPrompt: '', responseSchema: null, ownerId: '',
-  rolesAllowed: ['*'], mode: 'all', skills: [],
+const emptyAgent: AgentForm = {
+  name: '', version: '1.0.0', category: '', model: 'deepseek-v4.1-flash',
+  temperature: 0.3, maxTokens: 4096, topP: 1.0, tools: [], guardrailsInput: '', guardrailsOutput: '',
+  hooks: '', jsonOutput: false, active: true, ownerId: '',
+  mode: 'all', skills: '', permissions: '', prompt: '', schema: '', requiresHITL: false,
+  maxTurns: 10, maxCost: 1.0,
 };
 
 const inp = { width: '100%', padding: '6px 8px', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555', borderRadius: 4, fontSize: 12 };
@@ -28,14 +30,45 @@ export default function Agents() {
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const name = params.get('agent');
+    if (!name) return;
+    const found = agents.find((a) => a.name === name || a.id === name);
+    if (found) { setEditing({ ...found }); setShowForm(true); }
+  }, [agents]);
+
+  const toAgent = (f: AgentForm) => ({
+    id: f.name,
+    name: f.name,
+    version: f.version,
+    category: f.category,
+    model: f.model,
+    temperature: f.temperature,
+    maxTokens: f.maxTokens,
+    topP: f.topP,
+    tools: f.tools,
+    guardrailsInput: f.guardrailsInput.split(',').map((s) => s.trim()).filter(Boolean),
+    guardrailsOutput: f.guardrailsOutput.split(',').map((s) => s.trim()).filter(Boolean),
+    hooks: f.hooks.split(',').map((s) => s.trim()).filter(Boolean),
+    jsonOutput: f.jsonOutput,
+    systemPrompt: f.prompt,
+    responseSchema: f.schema.trim() ? (() => { try { return JSON.parse(f.schema); } catch { return null; } })() : null,
+    ownerId: f.ownerId,
+    rolesAllowed: ['*'],
+    mode: f.mode,
+    skills: f.skills.split(',').map((s) => s.trim()).filter(Boolean),
+  });
+
   const handleSave = async () => {
     if (!editing) return;
+    const agent = toAgent(editing);
     try {
-      if (editing.id && agents.find((a) => a.id === editing.id)) {
-        await QocApi.agents.save(editing.id, editing);
+      if (editing.name && agents.find((a: any) => a.id === editing.name || a.name === editing.name)) {
+        await QocApi.agents.save(editing.name, agent);
       } else {
-        const created = await QocApi.agents.create(editing);
-        setEditing(created);
+        const created = await QocApi.agents.create(agent);
+        setEditing(created ? { ...editing, name: (created as any).name || editing.name } : editing);
       }
       setShowForm(false); setEditing(null); load();
     } catch (e) { console.error(e); alert('Save failed'); }
@@ -48,7 +81,33 @@ export default function Agents() {
   };
 
   const handleNew = () => { setEditing({ ...emptyAgent }); setShowForm(true); };
-  const handleEdit = (a: any) => { setEditing({ ...a }); setShowForm(true); };
+  const handleEdit = (a: any) => {
+    setEditing({
+      name: a.name || a.id || '',
+      version: a.version || '1.0.0',
+      category: a.category || '',
+      model: a.model || 'deepseek-v4.1-flash',
+      temperature: a.temperature ?? 0.3,
+      maxTokens: a.maxTokens ?? 4096,
+      topP: a.topP ?? 1.0,
+      permissions: '',
+      prompt: a.systemPrompt || '',
+      jsonOutput: !!a.jsonOutput,
+      schema: a.responseSchema ? JSON.stringify(a.responseSchema, null, 2) : '',
+      tools: Array.isArray(a.tools) ? a.tools : [],
+      guardrailsInput: Array.isArray(a.guardrailsInput) ? a.guardrailsInput.join(', ') : '',
+      guardrailsOutput: Array.isArray(a.guardrailsOutput) ? a.guardrailsOutput.join(', ') : '',
+      hooks: Array.isArray(a.hooks) ? a.hooks.join(', ') : '',
+      mode: a.mode || 'all',
+      skills: Array.isArray(a.skills) ? a.skills.join(', ') : '',
+      ownerId: a.ownerId || '',
+      maxTurns: 10,
+      maxCost: 1.0,
+      active: a.active !== false,
+      requiresHITL: false,
+    });
+    setShowForm(true);
+  };
 
   if (loading) return <div style={{ padding: 24, color: '#999' }}>Loading agents...</div>;
 
@@ -60,43 +119,14 @@ export default function Agents() {
       </div>
 
       {showForm && editing && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', padding: 16 }}>
-          <div style={{ width: '100%', maxWidth: 720, maxHeight: '90vh', overflow: 'auto', padding: 20, background: '#1e1e1e', borderRadius: 8, border: '1px solid #333' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h2 style={{ fontSize: 16, color: '#5bc0de' }}>{editing.id ? 'Edit agent' : 'New agent'}</h2>
-              <button onClick={() => { setShowForm(false); setEditing(null); }} style={{ background: 'none', border: 'none', color: '#999', fontSize: 20, cursor: 'pointer' }}>×</button>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div><label style={{ display: 'block', fontSize: 11, color: '#999', marginBottom: 2 }}>ID</label><input value={editing.id} onChange={(e) => setEditing({ ...editing, id: e.target.value })} style={inp} /></div>
-              <div><label style={{ display: 'block', fontSize: 11, color: '#999', marginBottom: 2 }}>Name</label><input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} style={inp} /></div>
-              <div><label style={{ display: 'block', fontSize: 11, color: '#999', marginBottom: 2 }}>Model</label><input value={editing.model} onChange={(e) => setEditing({ ...editing, model: e.target.value })} style={inp} /></div>
-              <div><label style={{ display: 'block', fontSize: 11, color: '#999', marginBottom: 2 }}>Temperature</label><input type="number" step="0.1" value={editing.temperature} onChange={(e) => setEditing({ ...editing, temperature: parseFloat(e.target.value) || 0.3 })} style={inp} /></div>
-              <div><label style={{ display: 'block', fontSize: 11, color: '#999', marginBottom: 2 }}>Max Tokens</label><input type="number" value={editing.maxTokens} onChange={(e) => setEditing({ ...editing, maxTokens: parseInt(e.target.value) || 4096 })} style={inp} /></div>
-              <div><label style={{ display: 'block', fontSize: 11, color: '#999', marginBottom: 2 }}>Top P</label><input type="number" step="0.05" value={editing.topP} onChange={(e) => setEditing({ ...editing, topP: parseFloat(e.target.value) || 1.0 })} style={inp} /></div>
-            </div>
-            <div style={{ marginTop: 10 }}>
-              <label style={{ display: 'block', fontSize: 11, color: '#999', marginBottom: 2 }}>System Prompt</label>
-              <textarea value={editing.systemPrompt} onChange={(e) => setEditing({ ...editing, systemPrompt: e.target.value })} style={{ ...inp, height: 80, resize: 'vertical' }} />
-            </div>
-            <div style={{ marginTop: 10 }}>
-              <label style={{ display: 'block', fontSize: 11, color: '#999', marginBottom: 2 }}>Tools (comma-separated)</label>
-              <input value={(editing.tools || []).join(', ')} onChange={(e) => setEditing({ ...editing, tools: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })} style={inp} />
-            </div>
-            <div style={{ marginTop: 10 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                <input type="checkbox" checked={editing.jsonOutput} onChange={(e) => setEditing({ ...editing, jsonOutput: e.target.checked })} />
-                JSON Output
-              </label>
-            </div>
-            <div style={{ marginTop: 10 }}>
-              <SchemaSource value={editing.responseSchema ?? null} onChange={(schema: any) => setEditing({ ...editing, responseSchema: schema })} label="Response Schema" />
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-              <button onClick={handleSave} style={{ padding: '6px 14px', background: '#337ab7', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13 }}>Save</button>
-              <button onClick={() => { setShowForm(false); setEditing(null); }} style={{ padding: '6px 14px', background: '#555', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13 }}>Cancel</button>
-            </div>
-          </div>
-        </div>
+        <AgentConfigOverlay
+          open={true}
+          agent={editing}
+          onChange={(patch) => setEditing((prev) => (prev ? { ...prev, ...patch } : prev))}
+          onClose={() => { setShowForm(false); setEditing(null); }}
+          onSave={handleSave}
+          showWorkflowActions={false}
+        />
       )}
 
       {agents.length === 0 ? (
