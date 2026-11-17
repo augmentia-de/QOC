@@ -478,7 +478,12 @@ export default function EditorPage() {
 
   const openInputOverlay = () => {
     const current = (selectedNode && selectedNode.data && selectedNode.data.inputs) || [];
-    setSelectedInputs(new Set(current.map((i) => i.path || i.nodeId)));
+    const refs = (selectedNode && selectedNode.data && selectedNode.data.contextRefs) || [];
+    // Fall back to contextRefs when inputs (UI-only) is not persisted by the backend.
+    const seed = current.length > 0
+      ? current.map((i) => i.path || i.nodeId)
+      : refs;
+    setSelectedInputs(new Set(seed));
     setShowInputOverlay(true);
   };
 
