@@ -415,29 +415,9 @@ async function loadSelectors() {
 }
 
 async function openAgentEditor() {
-  const overlay = document.getElementById('agentOverlay') as HTMLDivElement | null
-  const content = document.getElementById('agentOverlayContent') as HTMLTextAreaElement | null
-  const status = document.getElementById('agentOverlayStatus') as HTMLParagraphElement | null
-  const title = document.getElementById('agentOverlayTitle') as HTMLElement | null
-  const deleteBtn = document.getElementById('agentOverlayDelete') as HTMLButtonElement | null
-  if (!overlay || !content || !status || !title || !deleteBtn) return
   const selectedOption = agentSelect.options[agentSelect.selectedIndex]
   currentAgentName = (selectedOption?.textContent || '').trim() || agentSelect.value
-  title.textContent = 'Agent bearbeiten: ' + currentAgentName
-  status.textContent = ''
-  content.value = ''
-  overlay.style.display = 'flex'
-  try {
-    const res = await QocApi.agents.get(currentAgentName)
-    content.value = (res as any)?.content || ''
-  } catch {
-    status.textContent = 'Laden fehlgeschlagen'
-  }
-  const dbNames = (window as any).__qocDbAgentNames as Set<string> | undefined
-  const isDb = !!dbNames && dbNames.has(currentAgentName.toLowerCase())
-  deleteBtn.disabled = !isDb
-  deleteBtn.style.opacity = deleteBtn.disabled ? '0.4' : '1'
-  deleteBtn.style.cursor = deleteBtn.disabled ? 'not-allowed' : 'pointer'
+  window.open('/agents?agent=' + encodeURIComponent(currentAgentName), '_blank')
 }
 
 async function saveAgentEditor() {
@@ -814,11 +794,12 @@ function bindEvents() {
       logEvent('agent switch: ' + (error instanceof Error ? error.message : String(error)))
     })
   })
-  el<HTMLButtonElement>('newSessionBtn').addEventListener('click', () => {
-    void newSession()
-  })
-  el<HTMLButtonElement>('deleteSessionBtn').addEventListener('click', () => {
-    void deleteCurrentSession()
+  const sessionActions = document.getElementById('sessionActions')
+  if (sessionActions) sessionActions.addEventListener('change', () => {
+    const value = (sessionActions as HTMLSelectElement).value
+    ;(sessionActions as HTMLSelectElement).value = ''
+    if (value === 'new') void newSession()
+    else if (value === 'delete') void deleteCurrentSession()
   })
   el<HTMLButtonElement>('hardCancelBtn').addEventListener('click', () => {
     void interrupt()
