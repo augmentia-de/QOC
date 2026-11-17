@@ -32,8 +32,8 @@ Updated: 2026-11-11.
 
 - [ ] **Workflow-runner in Quarkus native**: port `/api/workflows*` endpoints into Quarkus (see `Quarkus-workflow.md` plan). Currently standalone on port 8097.
 - [ ] **SPA fallback** for workflow-ui and temporal-ui in Quarkus native (Hash-Router or JAX-RS catch-all).
-- [ ] **Both UIs served** from single native binary.
-- [ ] **React vs. Vanilla HTML**: decide on lighter UI variant for small VMs.
+- [x] **Both UIs served** from single native binary (`/` React, `/core/` Core).
+- [x] **React vs. Vanilla HTML**: React is the primary UI; the Core page is the lighter variant for small VMs.
 
 ## Deployment
 

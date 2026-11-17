@@ -5,8 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "build:qoc": "vite build && rm -rf ../quarkus/src/main/resources/META-INF/resources/workflow && mkdir -p ../quarkus/src/main/resources/META-INF/resources/workflow && cp -r dist/* ../quarkus/src/main/resources/META-INF/resources/workflow/",
+    "typecheck": "tsc --noEmit",
+    "typecheck:core": "tsc -p core/tsconfig.json --noEmit",
+    "build:app": "npm run typecheck && vite build",
+    "build:core": "npm run typecheck:core && vite build -c core/vite.config.js",
+    "build": "npm run build:app && npm run build:core",
+    "build:qoc": "npm run build && node scripts/copy-to-quarkus.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
   },

@@ -1,0 +1,6 @@
+Kleine Reminder / offene Punkte
+==============================
+
+- [X] Reload verbessert md Anzeige des Ergebnisses
+- [X] Interrupt Button verschwindet bei reload oder Tab Wechsel im Browser trotz laufendem qoc run
+- [ ] Context Initialzer vor erstem conext agent call, zum datem sammeln

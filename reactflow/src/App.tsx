@@ -4,6 +4,7 @@ import EditorPage from './EditorPage.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import Workflows from './pages/Workflows.tsx';
 import Agents from './pages/Agents.tsx';
+import EngineAgentsPage from './pages/EngineAgentsPage.tsx';
 import McpServers from './pages/McpServers.tsx';
 import Generate from './pages/Generate.tsx';
 import Runs from './pages/Runs.tsx';
@@ -18,6 +19,7 @@ const NAV = [
   { to: '/editor', label: 'Editor' },
   { to: '/runs', label: 'Runs' },
   { to: '/agents', label: 'Agents' },
+  { to: '/engine-agents', label: 'Engine Agents' },
   { to: '/mcp-servers', label: 'MCP Servers' },
   { to: '/generate', label: 'Generate' },
   { to: '/testbench', label: 'Testbench' },
@@ -66,6 +68,7 @@ export default function App() {
           <Route path="/editor" element={<EditorPage />} />
           <Route path="/runs" element={<Runs />} />
           <Route path="/agents" element={<Agents />} />
+          <Route path="/engine-agents" element={<EngineAgentsPage />} />
           <Route path="/mcp-servers" element={<McpServers />} />
           <Route path="/generate" element={<Generate />} />
           <Route path="/testbench" element={<Testbench />} />

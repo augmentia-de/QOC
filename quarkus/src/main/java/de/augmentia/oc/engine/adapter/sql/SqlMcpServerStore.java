@@ -1,4 +1,4 @@
-package de.augmentia.oc.engine.http;
+package de.augmentia.oc.engine.adapter.sql;
 
 import de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig;
 

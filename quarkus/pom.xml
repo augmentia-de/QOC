@@ -147,6 +147,36 @@
     </dependencies>
 
     <profiles>
+        <!-- Build and copy the React/Core frontend before packaging. -->
+        <profile>
+            <id>frontend</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>build-frontend</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>npm</executable>
+                                    <workingDirectory>${project.basedir}/../reactflow</workingDirectory>
+                                    <arguments>
+                                        <argument>run</argument>
+                                        <argument>build:qoc</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- Native profile: exclude A2A SDK (threading incompatible with GraalVM) -->
         <profile>
             <id>native</id>

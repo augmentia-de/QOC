@@ -1,0 +1,5 @@
+[ {
+  "name" : "test",
+  "type" : "remote",
+  "url" : "http://localhost:8090/api/test/mcp"
+} ]
