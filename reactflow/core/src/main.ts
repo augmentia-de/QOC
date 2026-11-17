@@ -71,6 +71,7 @@ let permissionTimer: number | null = null
 let taskTimer: number | null = null
 let questionTimer: number | null = null
 let taskPollActive = false
+let currentAgentName = ''
 
 function logEvent(text: string) {
   const logs = document.getElementById('logs')
@@ -377,6 +378,7 @@ async function loadSelectors() {
     const agentsResponse = await Catalog.agents()
     const workflowAgents = await QocApi.agents.list().catch(() => ({ agents: [] }))
     const byName = new Map<string, { value: string; label: string }>()
+    const dbNames = new Set<string>()
     const engineAgents = Array.isArray(agentsResponse?.data) ? agentsResponse.data : []
     for (const item of engineAgents) {
       const agent = item as { name?: string; id?: string; hidden?: boolean }
@@ -387,15 +389,14 @@ async function loadSelectors() {
     for (const item of workflowList) {
       const agent = item as { name?: string; id?: string }
       if (!agent.name || !agent.id) continue
-      const engineAgent = engineAgents.find((entry) => {
-        const candidate = entry as { name?: string }
-        return candidate.name?.toLowerCase() === agent.name?.toLowerCase()
-      }) as { id?: string } | undefined
+      dbNames.add(agent.name.toLowerCase())
+      const existing = byName.get(agent.name.toLowerCase())
       byName.set(agent.name.toLowerCase(), {
-        value: engineAgent?.id || ('wf:' + agent.id),
-        label: agent.name + ' (wf)',
+        value: existing?.value || ('wf:' + agent.id),
+        label: agent.name,
       })
     }
+    ;(window as any).__qocDbAgentNames = dbNames
     agentSelect.innerHTML = ''
     for (const option of byName.values()) {
       const element = document.createElement('option')
@@ -410,6 +411,68 @@ async function loadSelectors() {
     }
   } catch (error) {
     logEvent('selectors: ' + (error instanceof Error ? error.message : String(error)))
+  }
+}
+
+async function openAgentEditor() {
+  const overlay = document.getElementById('agentOverlay') as HTMLDivElement | null
+  const content = document.getElementById('agentOverlayContent') as HTMLTextAreaElement | null
+  const status = document.getElementById('agentOverlayStatus') as HTMLParagraphElement | null
+  const title = document.getElementById('agentOverlayTitle') as HTMLElement | null
+  const deleteBtn = document.getElementById('agentOverlayDelete') as HTMLButtonElement | null
+  if (!overlay || !content || !status || !title || !deleteBtn) return
+  const selectedOption = agentSelect.options[agentSelect.selectedIndex]
+  currentAgentName = (selectedOption?.textContent || '').trim() || agentSelect.value
+  title.textContent = 'Agent bearbeiten: ' + currentAgentName
+  status.textContent = ''
+  content.value = ''
+  overlay.style.display = 'flex'
+  try {
+    const res = await QocApi.agents.get(currentAgentName)
+    content.value = (res as any)?.content || ''
+  } catch {
+    status.textContent = 'Laden fehlgeschlagen'
+  }
+  const dbNames = (window as any).__qocDbAgentNames as Set<string> | undefined
+  const isDb = !!dbNames && dbNames.has(currentAgentName.toLowerCase())
+  deleteBtn.disabled = !isDb
+  deleteBtn.style.opacity = deleteBtn.disabled ? '0.4' : '1'
+  deleteBtn.style.cursor = deleteBtn.disabled ? 'not-allowed' : 'pointer'
+}
+
+async function saveAgentEditor() {
+  const content = document.getElementById('agentOverlayContent') as HTMLTextAreaElement | null
+  const status = document.getElementById('agentOverlayStatus') as HTMLParagraphElement | null
+  const overlay = document.getElementById('agentOverlay') as HTMLDivElement | null
+  if (!content || !status || !overlay || !currentAgentName) return
+  try {
+    await QocApi.agents.save(currentAgentName, { name: currentAgentName, content: content.value })
+    status.textContent = 'Gespeichert'
+    await loadSelectors()
+    for (let i = 0; i < agentSelect.options.length; i++) {
+      if (agentSelect.options[i].textContent?.trim() === currentAgentName) {
+        agentSelect.selectedIndex = i
+        break
+      }
+    }
+    window.setTimeout(() => { overlay.style.display = 'none' }, 400)
+  } catch (error) {
+    status.textContent = 'Speichern fehlgeschlagen: ' + (error instanceof Error ? error.message : String(error))
+  }
+}
+
+async function deleteAgentEditor() {
+  const status = document.getElementById('agentOverlayStatus') as HTMLParagraphElement | null
+  const overlay = document.getElementById('agentOverlay') as HTMLDivElement | null
+  if (!currentAgentName || !overlay) return
+  if (!window.confirm('Agent "' + currentAgentName + '" wirklich löschen?')) return
+  try {
+    await QocApi.agents.delete(currentAgentName)
+    if (status) status.textContent = 'Gelöscht'
+    await loadSelectors()
+    overlay.style.display = 'none'
+  } catch (error) {
+    if (status) status.textContent = 'Löschen fehlgeschlagen: ' + (error instanceof Error ? error.message : String(error))
   }
 }
 
@@ -694,6 +757,22 @@ async function bootstrap() {
     void loginOrLogoutImported()
   })
   await loadSelectors()
+  const editAgentBtn = document.getElementById('editAgentBtn')
+  if (editAgentBtn) editAgentBtn.addEventListener('click', () => { void openAgentEditor() })
+  const closeBtn = document.getElementById('agentOverlayClose')
+  if (closeBtn) closeBtn.addEventListener('click', () => {
+    const overlay = document.getElementById('agentOverlay') as HTMLDivElement | null
+    if (overlay) overlay.style.display = 'none'
+  })
+  const cancelBtn = document.getElementById('agentOverlayCancel')
+  if (cancelBtn) cancelBtn.addEventListener('click', () => {
+    const overlay = document.getElementById('agentOverlay') as HTMLDivElement | null
+    if (overlay) overlay.style.display = 'none'
+  })
+  const saveBtn = document.getElementById('agentOverlaySave')
+  if (saveBtn) saveBtn.addEventListener('click', () => { void saveAgentEditor() })
+  const deleteBtn = document.getElementById('agentOverlayDelete')
+  if (deleteBtn) deleteBtn.addEventListener('click', () => { void deleteAgentEditor() })
   await loadSessions()
   await loadQuestions()
   questionTimer = window.setInterval(() => {

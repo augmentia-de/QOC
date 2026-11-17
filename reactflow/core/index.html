@@ -16,10 +16,26 @@
       <button id="newSessionBtn">Neue Session</button>
       <button id="deleteSessionBtn">Delete</button>
       <select id="agent" title="Agent" style="max-width:30vw"></select>
+      <button id="editAgentBtn" title="Agent bearbeiten">✎</button>
       <label class="details-toggle"><input type="checkbox" id="showDetails"> Details</label>
       <span id="status">ready</span>
       <a href="/" style="color:var(--accent);text-decoration:none;margin-left:1rem">Full UI</a>
     </header>
+    <div id="agentOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:#1e1e1e;padding:16px;border-radius:8px;width:min(640px,90vw);max-height:80vh;overflow:auto;color:#d4d4d4;font-size:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <h3 style="margin:0" id="agentOverlayTitle">Agent bearbeiten</h3>
+          <button id="agentOverlayClose" style="background:none;border:none;color:#999;cursor:pointer;font-size:16px">x</button>
+        </div>
+        <textarea id="agentOverlayContent" style="width:100%;height:240px;background:#0b0d12;color:#d4d4d4;border:1px solid #333;border-radius:4px;padding:8px;font-family:monospace;font-size:11px;resize:vertical"></textarea>
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button id="agentOverlaySave" style="background:#337ab7;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer">Speichern</button>
+          <button id="agentOverlayCancel" style="background:#555;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer">Abbrechen</button>
+          <button id="agentOverlayDelete" style="background:#c0392b;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;margin-left:auto">Löschen</button>
+        </div>
+        <p id="agentOverlayStatus" style="margin-top:8px;color:#999;font-size:11px"></p>
+      </div>
+    </div>
     <main>
       <div class="chat">
         <div class="messages" id="messages"></div>
