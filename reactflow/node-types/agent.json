@@ -1,0 +1,46 @@
+{
+  "type": "agent",
+  "description": "Agent node — runs an LLM agent with tools and produces a structured result.",
+  "schema": {
+    "id": "string (unique node id)",
+    "type": "agent",
+    "position": { "x": "number", "y": "number" },
+    "data": {
+      "label": "string (display name)",
+      "agentId": "string (reference to agent definition)",
+      "systemPrompt": "string (system prompt for the agent)",
+      "model": "string (model id, e.g. gpt-4o-mini)",
+      "tools": ["string (tool names available to this agent)"],
+      "maxTurns": "number (max agent loop iterations)",
+      "maxCost": "number (max cost in USD)"
+    }
+  },
+  "inputs": [
+    { "handle": "input", "type": "data", "description": "Incoming data / trigger" }
+  ],
+  "outputs": [
+    { "handle": "output", "type": "data", "description": "Agent result (text or structured)" },
+    { "handle": "error", "type": "error", "description": "Error output if agent fails" }
+  ],
+  "outputStructure": {
+    "result": "string (final agent response)",
+    "toolCalls": "number (count of tool calls made)",
+    "turns": "number (turns used)",
+    "cost": "number (total cost in USD)",
+    "status": "enum (success | failed | timeout)"
+  },
+  "example": {
+    "id": "agent-1",
+    "type": "agent",
+    "position": { "x": 100, "y": 50 },
+    "data": {
+      "label": "Code Reviewer",
+      "agentId": "code-reviewer",
+      "systemPrompt": "You are a code reviewer. Analyze the provided code and suggest improvements.",
+      "model": "gpt-4o-mini",
+      "tools": ["read_file", "search_replace", "bash"],
+      "maxTurns": 10,
+      "maxCost": 1.0
+    }
+  }
+}

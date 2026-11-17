@@ -1,0 +1,34 @@
+{
+  "type": "start",
+  "description": "Start node — entry point of a workflow. No inputs, one output.",
+  "schema": {
+    "id": "string (unique node id)",
+    "type": "start",
+    "position": { "x": "number", "y": "number" },
+    "data": {
+      "label": "string (display name)",
+      "trigger": "enum (manual | webhook | schedule | event)",
+      "config": "object (trigger-specific configuration)",
+      "structure": "string (JSON structure info for the node output)"
+    }
+  },
+  "inputs": [],
+  "outputs": [
+    { "handle": "output", "type": "data", "description": "Workflow start signal / initial data" }
+  ],
+  "outputStructure": {
+    "timestamp": "string (ISO-8601 start time)",
+    "trigger": "string (trigger type)",
+    "payload": "object (initial payload, if any)"
+  },
+  "example": {
+    "id": "start-1",
+    "type": "start",
+    "position": { "x": 50, "y": 100 },
+    "data": {
+      "label": "Workflow Start",
+      "trigger": "manual",
+      "config": {}
+    }
+  }
+}

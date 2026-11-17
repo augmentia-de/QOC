@@ -1,0 +1,47 @@
+{
+  "type": "decision",
+  "description": "Decision node — evaluates a condition and routes to one of multiple outputs.",
+  "schema": {
+    "id": "string (unique node id)",
+    "type": "decision",
+    "position": { "x": "number", "y": "number" },
+    "data": {
+      "label": "string (display name)",
+      "condition": "string (expression or LLM prompt to evaluate)",
+      "mode": "enum (rule | llm) — rule: evaluate JS expression; llm: ask model to decide",
+      "branches": [
+        { "handle": "string (output handle name)", "label": "string (branch label)", "value": "any (match value)" }
+      ],
+      "defaultBranch": "string (handle used when no branch matches)"
+    }
+  },
+  "inputs": [
+    { "handle": "input", "type": "data", "description": "Incoming data to evaluate" }
+  ],
+  "outputs": [
+    { "handle": "branch-a", "type": "data", "description": "First branch output" },
+    { "handle": "branch-b", "type": "data", "description": "Second branch output" },
+    { "handle": "default", "type": "data", "description": "Fallback when no branch matches" }
+  ],
+  "outputStructure": {
+    "decision": "string (chosen branch handle)",
+    "reason": "string (explanation of the decision)",
+    "confidence": "number (0.0-1.0, only in llm mode)",
+    "matchedBranch": "string (handle of the matched branch)"
+  },
+  "example": {
+    "id": "decision-1",
+    "type": "decision",
+    "position": { "x": 300, "y": 50 },
+    "data": {
+      "label": "Severity Check",
+      "condition": "input.severity === 'critical'",
+      "mode": "rule",
+      "branches": [
+        { "handle": "critical", "label": "Critical", "value": true },
+        { "handle": "normal", "label": "Normal", "value": false }
+      ],
+      "defaultBranch": "normal"
+    }
+  }
+}

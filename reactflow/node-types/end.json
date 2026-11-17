@@ -1,0 +1,34 @@
+{
+  "type": "end",
+  "description": "End node — terminal point of a workflow. One input, no outputs.",
+  "schema": {
+    "id": "string (unique node id)",
+    "type": "end",
+    "position": { "x": "number", "y": "number" },
+    "data": {
+      "label": "string (display name)",
+      "resultMapping": "object (maps input fields to final result fields)",
+      "status": "enum (success | failed | partial)"
+    }
+  },
+  "inputs": [
+    { "handle": "input", "type": "data", "description": "Final result data" }
+  ],
+  "outputs": [],
+  "outputStructure": {
+    "result": "any (final workflow result)",
+    "status": "enum (success | failed | partial)",
+    "completedAt": "string (ISO-8601 completion time)",
+    "duration": "number (total duration in ms)"
+  },
+  "example": {
+    "id": "end-1",
+    "type": "end",
+    "position": { "x": 700, "y": 100 },
+    "data": {
+      "label": "Workflow End",
+      "resultMapping": {},
+      "status": "success"
+    }
+  }
+}

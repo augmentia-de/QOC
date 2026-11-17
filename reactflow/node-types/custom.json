@@ -1,0 +1,54 @@
+{
+  "type": "custom",
+  "description": "Custom node — user-defined node with arbitrary inputs, outputs, and processing logic.",
+  "schema": {
+    "id": "string (unique node id)",
+    "type": "custom",
+    "position": { "x": "number", "y": "number" },
+    "data": {
+      "label": "string (display name)",
+      "component": "string (React component name to render)",
+      "config": "object (arbitrary configuration passed to the component)",
+      "inputs": [
+        { "handle": "string", "type": "string", "description": "string" }
+      ],
+      "outputs": [
+        { "handle": "string", "type": "string", "description": "string" }
+      ]
+    }
+  },
+  "inputs": [
+    { "handle": "in-1", "type": "any", "description": "Primary input" },
+    { "handle": "in-2", "type": "any", "description": "Secondary input (optional)" }
+  ],
+  "outputs": [
+    { "handle": "out-1", "type": "any", "description": "Primary output" },
+    { "handle": "out-2", "type": "any", "description": "Secondary output (optional)" }
+  ],
+  "outputStructure": {
+    "result": "any (output of the custom component)",
+    "status": "enum (success | failed)",
+    "metadata": "object (arbitrary metadata from the component)"
+  },
+  "example": {
+    "id": "custom-1",
+    "type": "custom",
+    "position": { "x": 500, "y": 50 },
+    "data": {
+      "label": "HTTP Request",
+      "component": "HttpRequestNode",
+      "config": {
+        "method": "GET",
+        "url": "https://api.example.com/data",
+        "headers": { "Authorization": "Bearer token" }
+      },
+      "inputs": [
+        { "handle": "in-1", "type": "object", "description": "Request body (optional)" }
+      ],
+      "outputs": [
+        { "handle": "out-1", "type": "object", "description": "Response body" },
+        { "handle": "error", "type": "error", "description": "Error if request fails" }
+      ]
+    }
+  }
+}
