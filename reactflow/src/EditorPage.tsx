@@ -163,7 +163,8 @@ export default function EditorPage() {
   const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showJsonOverlay, setShowJsonOverlay] = useState(false);
-  const [workflowName, setWorkflowName] = useState('');
+  const workflowName = useWorkflowStore((s) => s.workflowName);
+  const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
   const [agents, setAgents] = useState([]);
   const [agentRef, setAgentRef] = useState('');
   const [agentEditMode, setAgentEditMode] = useState(false);
@@ -239,6 +240,11 @@ export default function EditorPage() {
   }, [selected?.id]);
 
   useEffect(() => {
+    // Mock data is development-only and must never replace a route-loaded
+    // workflow or leak into production builds.
+    if (routeId || !import.meta.env.DEV) return;
+    const currentNodes = useWorkflowStore.getState().nodes;
+    if (currentNodes.length > 0) return;
     fetch(MOCK_API + '/nodes')
       .then((r) => r.json())
       .then((data) => setNodes(data))
@@ -262,7 +268,7 @@ export default function EditorPage() {
           { id: 'e4-5', source: 'rest-1', target: 'end-1', type: 'labeled' },
         ]);
       });
-  }, [setNodes, setEdges]);
+  }, [routeId, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (params) => setEdges((eds) => {
@@ -630,7 +636,7 @@ export default function EditorPage() {
     const name = workflowName.trim() || 'untitled';
     try {
       const { Api } = await import('./services/api.ts');
-      await Api.workflows.save(name, { id: name, name, nodes, edges });
+      await Api.workflows.save(name, { id: name, name, version: '1.0.0', status: 'draft', nodes, edges, agents: [], ownerId: '', systemPrompt: '', inputSchema: null });
     } catch {
       saveWorkflow(name, nodes, edges);
     }
@@ -638,7 +644,7 @@ export default function EditorPage() {
 
   const handleSaveToFile = async () => {
     const name = workflowName.trim() || 'untitled';
-    const def = { id: name, name, nodes, edges };
+    const def = { id: name, name, version: '1.0.0', status: 'draft', nodes, edges, agents: [], ownerId: '', systemPrompt: '', inputSchema: null };
     try {
       const { Api } = await import('./services/api.ts');
       await Api.workflows.save(name, def);
@@ -797,6 +803,7 @@ export default function EditorPage() {
         <button onClick={undo} disabled={historyIndex <= 0} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, opacity: historyIndex <= 0 ? 0.5 : 1 }}>Undo</button>
         <button onClick={redo} disabled={historyIndex >= history.length - 1} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, opacity: historyIndex >= history.length - 1 ? 0.5 : 1 }}>Redo</button>
         <button onClick={() => setShowListOverlay(true)} style={{ background: '#337ab7', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Load/List</button>
+        <button onClick={() => { useWorkflowStore.getState().clear(); }} style={{ background: '#888', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Clear</button>
         <button onClick={handleValidate} style={{ background: '#f0ad4e', color: '#000', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Validate</button>
         <button onClick={handleAutoLayout} style={{ background: '#6f42c1', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Auto-Layout</button>
         <button onClick={() => setShowJsonOverlay(true)} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>JSON</button>
@@ -865,7 +872,7 @@ export default function EditorPage() {
               <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer' }}>x</button>
             </div>
             <label style={{ display: 'block', marginTop: 8 }}>Label<br />
-              <input value={selectedNode.data?.label || ''} onChange={(e) => updateSelected('label', e.target.value)} disabled={selectedNode.type === 'agent'} style={{ width: '100%', background: '#2d2d2d', color: '#d4d4d4', border: '1px solid #555', opacity: selectedNode.type === 'agent' ? 0.6 : 1 }} />
+              <input value={selectedNode.data?.label || ''} onChange={(e) => updateSelected('label', e.target.value)} disabled={selectedNode.type === 'agent' || selectedNode.type === 'context_agent_executor'} style={{ width: '100%', background: '#2d2d2d', color: '#d4d4d4', border: '1px solid #555', opacity: (selectedNode.type === 'agent' || selectedNode.type === 'context_agent_executor') ? 0.6 : 1 }} />
             </label>
             {selectedNode.type !== 'start' && selectedNode.type !== 'end' && (
               <>
@@ -883,14 +890,44 @@ export default function EditorPage() {
                 <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '8px 0' }} />
               </>
             )}
-            {selectedNode.type === 'agent' && (
+            {(selectedNode.type === 'agent' || selectedNode.type === 'context_agent_executor') && (
               <div>
                 <label style={{ display: 'block', marginTop: 8 }}>Agent-Ref<br />
                   <select value={agentRef} disabled={Boolean(selectedNode.data?.customized)} onChange={(e) => {
                     const v = e.target.value;
                     setAgentRef(v);
                     updateSelected('agentRef', v);
-                    const a = getAgent(v);
+                    let a = getAgent(v);
+                    // Fallback: fetch from backend when not in local store
+                    if (!a && v) {
+                      (async () => {
+                        try {
+                          const { Api } = await import('./services/api.ts');
+                          const fetched = await Api.agents.get(v);
+                          if (fetched) {
+                            setAgentModel(fetched.model || '');
+                            setAgentPrompt(fetched.systemPrompt || '');
+                            setAgentJsonOutput(Boolean(fetched.jsonOutput));
+                            setAgentSchema(fetched.responseSchema ? JSON.stringify(fetched.responseSchema, null, 2) : '');
+                            setAgentName(fetched.name || '');
+                            setAgentVersion(fetched.version || '1.0.0');
+                            setAgentCategory(fetched.category || '');
+                            setAgentTemperature(typeof fetched.temperature === 'number' ? fetched.temperature : 0.3);
+                            setAgentMaxTokens(typeof fetched.maxTokens === 'number' ? fetched.maxTokens : 4096);
+                            setAgentTopP(typeof fetched.topP === 'number' ? fetched.topP : 1.0);
+                            setAgentActive(fetched.active !== false);
+                            setAgentTools(Array.isArray(fetched.tools) ? fetched.tools : []);
+                            setAgentPermissions(Array.isArray(fetched.rolesAllowed) ? fetched.rolesAllowed.join(', ') : (fetched.permissions || ''));
+                            updateSelected('model', fetched.model || '');
+                            updateSelected('systemPrompt', fetched.systemPrompt || '');
+                            updateSelected('jsonOutput', Boolean(fetched.jsonOutput));
+                            updateSelected('responseSchema', fetched.responseSchema || null);
+                            updateSelected('title', fetched.name || fetched.id || v);
+                            updateSelected('label', fetched.name || fetched.id || v);
+                          }
+                        } catch { /* keep empty */ }
+                      })();
+                    }
                     if (a) {
                       setAgentModel(a.model || '');
                       setAgentPrompt(a.systemPrompt || '');
@@ -1003,12 +1040,12 @@ export default function EditorPage() {
                 <h3 style={{ margin: 0 }}>Workflow (JSON)</h3>
                 <button onClick={() => setShowJsonOverlay(false)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: 16 }}>x</button>
               </div>
-              <textarea readOnly value={JSON.stringify({ name: workflowName.trim() || 'untitled', nodes, edges }, null, 2)} style={{ width: '100%', height: '60vh', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555', fontFamily: 'monospace', fontSize: 11, resize: 'none' }} />
+              <textarea readOnly value={JSON.stringify({ id: workflowName.trim() || 'untitled', name: workflowName.trim() || 'untitled', version: '1.0.0', status: 'draft', nodes, edges, agents: [], ownerId: '', systemPrompt: '', inputSchema: null }, null, 2)} style={{ width: '100%', height: '60vh', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555', fontFamily: 'monospace', fontSize: 11, resize: 'none' }} />
             </div>
           </div>
         )}
 
-        {showAgentOverlay && selectedNode && selectedNode.type === 'agent' && (
+        {showAgentOverlay && selectedNode && (selectedNode.type === 'agent' || selectedNode.type === 'context_agent_executor') && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
             <div style={{ background: '#2d2d2d', padding: 16, borderRadius: 8, width: 560, maxHeight: '85vh', overflow: 'auto', color: '#d4d4d4', fontSize: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
