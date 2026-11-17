@@ -869,6 +869,11 @@ public static record EngineConfig(
             boolean continueApproved = false;
             int retryAttempts = 0;
             int maxRetries = 2;
+            boolean leakRetried = false;
+            boolean leakRepairPending = false;
+            final String LEAK_REPAIR_HINT =
+                    "The previous attempt returned provider-native tool-call markup instead of a final answer. "
+                            + "Do not emit DSML or other provider-native tool-call markup; use proper tool calls or plain text.";
             int totalToolCalls = 0;
             long totalTokens = 0;
             boolean workflowDone = false;
@@ -937,6 +942,11 @@ public static record EngineConfig(
                                     de.augmentia.oc.engine.core.model.Option.none(), null,
                                     overrides == null ? de.augmentia.oc.engine.core.model.Option.none() : overrides.promptCacheKey());
 
+                    if (leakRepairPending) {
+                        prepared = prepared.withSystem(LEAK_REPAIR_HINT);
+                        leakRepairPending = false;
+                    }
+
                     de.augmentia.oc.engine.core.contract.tool.ToolContext toolContext =
                             new de.augmentia.oc.engine.core.contract.tool.ToolContext(
                                     session, info.agent(),
@@ -1000,6 +1010,23 @@ public static record EngineConfig(
                 }
 
                 if (result instanceof de.augmentia.oc.engine.runtime.step.StepResult.Failed failed) {
+                    boolean isLeak = failed.kind() instanceof de.augmentia.oc.engine.core.contract.provider.FailureKind.InvalidOutput io
+                            && io.classification() == de.augmentia.oc.engine.core.contract.provider.InvalidOutputClassification.TOOL_CALL_LEAK;
+                    if (isLeak) {
+                        if (!leakRetried) {
+                            leakRetried = true;
+                            leakRepairPending = true;
+                            java.util.logging.Logger.getLogger(QocEngine.class.getName())
+                                    .warning("Session " + session.value() + " step " + stepNo
+                                            + ": tool-call markup detected; retrying once with repair hint");
+                            statusSink.accept("[Retry] Tool-call markup detected in LLM response; retrying with repair hint");
+                            stepNo++;
+                            continue;
+                        }
+                        stores.claims().release(session);
+                        return de.augmentia.oc.engine.core.model.EngineResult.failed(
+                                "Session " + session.value() + " — LLM failed: " + failed.message(), false);
+                    }
                     int maxAttempts = Math.max(1, engineConfig.retryMaxAttempts());
                     if (retryAttempts < maxAttempts) {
                         // Phase 1: Error classification

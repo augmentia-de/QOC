@@ -27,7 +27,8 @@ public final class ProviderClassifier {
             case FailureKind.ProviderInternal ignored -> true;
             case FailureKind.Timeout ignored -> true;
             case FailureKind.InvalidOutput output ->
-                    output.classification() == InvalidOutputClassification.INCOMPLETE_STREAM;
+                    output.classification() == InvalidOutputClassification.INCOMPLETE_STREAM
+                            || output.classification() == InvalidOutputClassification.TOOL_CALL_LEAK;
             case FailureKind.InvalidRequest request ->
                     request.classification() == InvalidRequestClassification.CONTEXT_OVERFLOW;
             case FailureKind.Transport transport -> isRetryable(transport);

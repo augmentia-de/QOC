@@ -107,11 +107,12 @@ public final class Step {
                     "stream ended without a finish event");
         }
 
-        // Some providers leak native tool-call markup into the text channel when
-        // tools are disabled. It is not a final answer, even with a normal finish.
-        if (toolCalls.isEmpty() && toolsDisabled(prepared) && ToolCallLeak.contains(text(events))) {
+        // Some providers leak native tool-call markup into the text channel.
+        // It is not a final answer, even with a normal finish and even when
+        // tools are enabled — the markup is not a structured tool call.
+        if (toolCalls.isEmpty() && ToolCallLeak.contains(text(events))) {
             return new StepResult.Failed(new FailureKind.InvalidOutput(
-                    de.augmentia.oc.engine.core.contract.provider.InvalidOutputClassification.UNKNOWN),
+                    de.augmentia.oc.engine.core.contract.provider.InvalidOutputClassification.TOOL_CALL_LEAK),
                     "provider returned tool-call markup as text");
         }
 

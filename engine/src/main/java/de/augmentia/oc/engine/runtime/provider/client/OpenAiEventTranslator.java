@@ -38,7 +38,9 @@ public final class OpenAiEventTranslator implements EventTranslator {
     private boolean reasoningEnded;
     private boolean done;
     private FinishReason finish = FinishReason.UNKNOWN;
+    private String rawFinishReason;
     private TokenCount usage = TokenCount.zero();
+    private int toolCallCount;
 
     @Override
     public List<ModelEvent> translate(SseReader.SseFrame frame) {
@@ -98,6 +100,7 @@ public final class OpenAiEventTranslator implements EventTranslator {
         }
         if (choiceObject.values().get("finish_reason") instanceof JsonValue.Str reason) {
             finish = finishReason(reason.value());
+            rawFinishReason = reason.value();
         }
         return List.copyOf(events);
     }
@@ -148,11 +151,17 @@ public final class OpenAiEventTranslator implements EventTranslator {
             Result<JsonValue> input = Json.parse(state.arguments.isEmpty() ? "{}" : state.arguments.toString());
             if (input instanceof Result.Ok<JsonValue> ok) {
                 events.add(new ModelEvent.ToolCallRequested(state.callId, state.name, ok.value()));
+                toolCallCount++;
             } else {
                 events.add(new ModelEvent.ToolFailed(state.callId, "malformed tool input"));
             }
         }
-        events.add(new ModelEvent.Finished(finish, usage, JsonValue.ofNull()));
+        if ("tool_calls".equalsIgnoreCase(rawFinishReason) && toolCallCount == 0) {
+            events.add(failure(new FailureKind.InvalidOutput(InvalidOutputClassification.TOOL_CALL_LEAK),
+                    "provider reported tool_calls but returned no structured tool calls"));
+        } else {
+            events.add(new ModelEvent.Finished(finish, usage, JsonValue.ofNull()));
+        }
         return List.copyOf(events);
     }
 
