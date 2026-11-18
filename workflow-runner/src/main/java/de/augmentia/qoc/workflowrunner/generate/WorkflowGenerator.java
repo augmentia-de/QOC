@@ -1,7 +1,13 @@
 package de.augmentia.qoc.workflowrunner.generate;
 
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition;
+import de.augmentia.qoc.workflowrunner.store.AgentStorePort;
 import de.augmentia.qoc.workflowrunner.store.WorkflowDefinitionStore;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import de.augmentia.qoc.workflowrunner.validation.GraphCompiler;
 
 import java.util.UUID;
@@ -38,16 +44,25 @@ public class WorkflowGenerator {
 
     private final Function<String, String> llmCaller;
     private final WorkflowDefinitionStore store;
+    private final AgentStorePort agentStore;
     private final com.fasterxml.jackson.databind.ObjectMapper mapper;
 
     public WorkflowGenerator(Function<String, String> llmCaller,
                             WorkflowDefinitionStore store,
+                            com.fasterxml.jackson.databind.ObjectMapper mapper) {
+        this(llmCaller, store, null, mapper);
+    }
+
+    public WorkflowGenerator(Function<String, String> llmCaller,
+                            WorkflowDefinitionStore store,
+                            AgentStorePort agentStore,
                             com.fasterxml.jackson.databind.ObjectMapper mapper) {
         if (llmCaller == null || store == null || mapper == null) {
             throw new IllegalArgumentException("dependencies must not be null");
         }
         this.llmCaller = llmCaller;
         this.store = store;
+        this.agentStore = agentStore;
         this.mapper = mapper;
     }
 
@@ -60,6 +75,70 @@ public class WorkflowGenerator {
         String json = StripFences.strip(raw);
         WorkflowPlanParser.WorkbookResult result = WorkflowPlanParser.parseSteps(mapper, json);
         WorkflowDefinition def = WorkflowBuilder.build(result);
+
+        // Persist generated agents to the global agent store (DB) so they are
+        // available as standalone agents (e.g. category "Generated") and can be
+        // resolved by ID at execution time even when the workflow is run without
+        // its inline agent list. Assign globally unique IDs.
+        if (agentStore != null && def.agents() != null && !def.agents().isEmpty()) {
+            String wfId = def.id();
+            Map<String, String> idMap = new LinkedHashMap<>();
+            List<WorkflowDefinition.Agent> newAgents = new ArrayList<>();
+            for (WorkflowDefinition.Agent a : def.agents()) {
+                String newId = "gen-" + wfId + "-" + a.id();
+                // Ensure uniqueness against the store.
+                int suffix = 2;
+                String candidate = newId;
+                while (agentStore.get(candidate) != null) {
+                    candidate = newId + "-" + suffix++;
+                }
+                newId = candidate;
+                WorkflowDefinition.Agent persisted = new WorkflowDefinition.Agent(
+                        newId,
+                        a.name().isBlank() ? a.id() : a.name(),
+                        a.version(),
+                        "Generated",
+                        a.model(),
+                        a.temperature(),
+                        a.maxTokens(),
+                        a.topP(),
+                        a.tools(),
+                        a.guardrailsInput(),
+                        a.guardrailsOutput(),
+                        a.hooks(),
+                        a.jsonOutput(),
+                        a.active(),
+                        a.systemPrompt(),
+                        a.responseSchema(),
+                        a.ownerId(),
+                        a.rolesAllowed(),
+                        a.mode(),
+                        a.skills());
+                agentStore.save(newId, persisted);
+                idMap.put(a.id(), newId);
+                newAgents.add(persisted);
+            }
+            // Rebuild nodes with updated agentRefs.
+            List<WorkflowDefinition.Node> newNodes = new ArrayList<>();
+            for (WorkflowDefinition.Node n : def.nodes()) {
+                if (n.data() != null && n.data().agentRef() != null
+                        && idMap.containsKey(n.data().agentRef())) {
+                    WorkflowDefinition.NodeData d = n.data();
+                    WorkflowDefinition.NodeData nd = new WorkflowDefinition.NodeData(
+                            d.title(), idMap.get(d.agentRef()), d.requiresHumanApproval(),
+                            d.assignee(), d.maxIterations(), d.exitCondition(), d.bodySteps(),
+                            d.joinType(), d.joinN(), d.branches(), d.defaultTarget(),
+                            d.workflowRef(), d.responseSchema(), d.mcpServer(), d.mcpTool(),
+                            d.mcpArgs(), d.jsonOutput(), d.outputContract(), d.contextRefs(),
+                            d.strict(), d.verifyOnStop());
+                    newNodes.add(new WorkflowDefinition.Node(n.id(), n.type(), n.position(), nd));
+                } else {
+                    newNodes.add(n);
+                }
+            }
+            def = new WorkflowDefinition(def.id(), def.name(), def.version(), def.status(),
+                    newNodes, def.edges(), newAgents, def.ownerId(), def.systemPrompt());
+        }
         // Validate with GraphCompiler (best-effort; throws on structural issues).
         var validation = GraphCompiler.validate(def);
         if (!validation.valid()) {

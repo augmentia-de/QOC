@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { QocApi } from '../services/qocApi.ts';
 import { SchemaSource } from '../components/SchemaSource.tsx';
 import { AgentConfigOverlay, AgentForm } from '../components/AgentConfigOverlay.tsx';
@@ -18,6 +18,33 @@ export default function Agents() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('qoc-agent-groups-collapsed');
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch { return new Set(); }
+  });
+
+  const persistCollapsed = (next: Set<string>) => {
+    setCollapsed(next);
+    try { localStorage.setItem('qoc-agent-groups-collapsed', JSON.stringify([...next])); } catch { /* ignore */ }
+  };
+
+  const toggleGroup = (cat: string) => {
+    const next = new Set(collapsed);
+    if (next.has(cat)) next.delete(cat); else next.add(cat);
+    persistCollapsed(next);
+  };
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, any[]>();
+    for (const a of agents) {
+      const cat = (a.category || '').trim() || 'Ohne Kategorie';
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(a);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [agents]);
 
   const load = async () => {
     setLoading(true);
@@ -132,20 +159,42 @@ export default function Agents() {
       {agents.length === 0 ? (
         <p style={{ color: '#999' }}>No agents in store. Create one with "+ New agent".</p>
       ) : (
-        <div style={{ display: 'grid', gap: 8 }}>
-          {agents.map((a: any) => (
-            <div key={a.id} style={{ padding: 12, background: '#1e1e1e', borderRadius: 6, border: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <span style={{ fontWeight: 'bold' }}>{a.name || a.id}</span>
-                <span style={{ fontSize: 11, color: '#999', fontFamily: 'monospace', marginLeft: 8 }}>{a.model}</span>
-                <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>Temp: {a.temperature} · MaxTokens: {a.maxTokens} · Tools: {(a.tools || []).join(', ') || 'none'}</div>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => persistCollapsed(new Set())} style={{ padding: '4px 10px', background: '#555', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}>Alle aufklappen</button>
+            <button onClick={() => persistCollapsed(new Set(grouped.map(([c]) => c)))} style={{ padding: '4px 10px', background: '#555', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}>Alle zuklappen</button>
+          </div>
+          {grouped.map(([cat, list]) => {
+            const isCollapsed = collapsed.has(cat);
+            return (
+              <div key={cat} style={{ background: '#1a1a1a', borderRadius: 6, border: '1px solid #333', overflow: 'hidden' }}>
+                <button
+                  onClick={() => toggleGroup(cat)}
+                  style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#2d2d2d', border: 'none', color: '#d4d4d4', cursor: 'pointer', fontSize: 13, fontWeight: 'bold' }}
+                >
+                  <span>{isCollapsed ? '▸' : '▾'} {cat}</span>
+                  <span style={{ fontSize: 11, color: '#999' }}>{list.length}</span>
+                </button>
+                {!isCollapsed && (
+                  <div style={{ display: 'grid', gap: 8, padding: 8 }}>
+                    {list.map((a: any) => (
+                      <div key={a.id} style={{ padding: 12, background: '#1e1e1e', borderRadius: 6, border: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontWeight: 'bold' }}>{a.name || a.id}</span>
+                          <span style={{ fontSize: 11, color: '#999', fontFamily: 'monospace', marginLeft: 8 }}>{a.model}</span>
+                          <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>Temp: {a.temperature} · MaxTokens: {a.maxTokens} · Tools: {(a.tools || []).join(', ') || 'none'}</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button onClick={() => handleEdit(a)} style={{ padding: '4px 10px', background: '#555', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}>Edit</button>
+                          <button onClick={() => handleDelete(a.id)} style={{ padding: '4px 10px', background: '#c0392b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}>Delete</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => handleEdit(a)} style={{ padding: '4px 10px', background: '#555', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}>Edit</button>
-                <button onClick={() => handleDelete(a.id)} style={{ padding: '4px 10px', background: '#c0392b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}>Delete</button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

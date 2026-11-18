@@ -36,34 +36,76 @@ public final class WorkflowBuilder {
             }
         }
 
-        // Nodes: one per step, positioned top-to-bottom.
+        // Nodes: one per step, positioned top-to-bottom, plus start/end nodes.
         List<WorkflowDefinition.Node> nodes = new ArrayList<>();
         int y = 0;
+        // start node
+        nodes.add(new WorkflowDefinition.Node("start", "start",
+                new WorkflowDefinition.Point(100, y),
+                new WorkflowDefinition.NodeData("Start", "", false, "human", 3, "",
+                        List.of(), "all", null, List.of(), "", "", null, "", "", Map.of(), null, null, List.of())));
+        y += 120;
         for (WorkflowPlanParser.GeneratedStep step : result.steps()) {
             Map<String, Object> mcpArgs = Map.of();
             WorkflowDefinition.NodeData data = new WorkflowDefinition.NodeData(
                     step.agentRole(), step.agentRole(), false, "human", 3, "",
                     List.of(), "all", null, List.of(), "", "", null, "", "", mcpArgs, null,
                     null, List.of(), false, List.of());
-            // Store instruction in systemPrompt field of agent (already set); title carries role.
             nodes.add(new WorkflowDefinition.Node(
                     step.agentRole(), "agent", new WorkflowDefinition.Point(100, y),
                     data));
             y += 120;
         }
+        // end node
+        nodes.add(new WorkflowDefinition.Node("end", "end",
+                new WorkflowDefinition.Point(100, y),
+                new WorkflowDefinition.NodeData("Done", "", false, "human", 3, "",
+                        List.of(), "all", null, List.of(), "", "", null, "", "", Map.of(), null, null, List.of())));
 
-        // Edges: from each dependency to the dependent step.
+        // Edges: start -> roots, dep -> dependent, leaves -> end.
         List<WorkflowDefinition.Edge> edges = new ArrayList<>();
         int edgeIdx = 0;
         Set<String> edgeKeys = new LinkedHashSet<>();
+        Set<String> depended = new LinkedHashSet<>();
+        for (WorkflowPlanParser.GeneratedStep step : result.steps()) {
+            for (String dep : step.dependsOn()) depended.add(dep);
+        }
+        // start -> roots (agents with no dependsOn)
+        for (WorkflowPlanParser.GeneratedStep step : result.steps()) {
+            if (step.dependsOn() == null || step.dependsOn().isEmpty()) {
+                String key = "start->" + step.agentRole();
+                if (edgeKeys.add(key)) {
+                    edges.add(new WorkflowDefinition.Edge("e" + (edgeIdx++), "start", step.agentRole(), "default", ""));
+                }
+            }
+        }
+        // dep edges
         for (WorkflowPlanParser.GeneratedStep step : result.steps()) {
             for (String dep : step.dependsOn()) {
                 String key = dep + "->" + step.agentRole();
                 if (edgeKeys.add(key)) {
-                    edges.add(new WorkflowDefinition.Edge(
-                            "e" + (edgeIdx++), dep, step.agentRole(), "default", ""));
+                    edges.add(new WorkflowDefinition.Edge("e" + (edgeIdx++), dep, step.agentRole(), "default", ""));
                 }
             }
+        }
+        // leaves -> end
+        for (WorkflowPlanParser.GeneratedStep step : result.steps()) {
+            if (!depended.contains(step.agentRole())) {
+                String key = step.agentRole() + "->end";
+                if (edgeKeys.add(key)) {
+                    edges.add(new WorkflowDefinition.Edge("e" + (edgeIdx++), step.agentRole(), "end", "default", ""));
+                }
+            }
+        }
+        // Fallback: if no roots (all have deps, e.g. cycle), connect start to first step
+        if (edges.stream().noneMatch(e -> "start".equals(e.source()))) {
+            String first = result.steps().get(0).agentRole();
+            edges.add(0, new WorkflowDefinition.Edge("e" + (edgeIdx++), "start", first, "default", ""));
+        }
+        // Fallback: if no leaves, connect last step to end
+        if (edges.stream().noneMatch(e -> "end".equals(e.target()))) {
+            String last = result.steps().get(result.steps().size() - 1).agentRole();
+            edges.add(new WorkflowDefinition.Edge("e" + (edgeIdx++), last, "end", "default", ""));
         }
 
         String name = result.workflowName() != null && !result.workflowName().isBlank()

@@ -131,7 +131,7 @@ public class WorkflowStepProviderImpl implements WorkflowStepProvider {
                         result.text().isBlank() ? "Node failed: " + nodeId : "Node failed: " + nodeId + ": " + result.text());
             }
 
-            Object output = result.structured() != null
+            Object output = (result.structured() != null && !result.structured().isEmpty())
                     ? WorkflowValues.canonical(result.structured())
                     : result.text();
             ctx.setNodeOutput(nodeId, output);

@@ -45,7 +45,7 @@ class GraphCompilerTemplateTest {
     void acceptsSupportedPlaceholderSyntax() {
         WorkflowDefinition def = def(
                 node("start", "start", "Start", "", "", Map.of()),
-                node("node_1", "llm_eval", "Evaluate: ${lastResult}", "", "", Map.of()),
+                node("node_1", "compact", "Evaluate: ${lastResult}", "", "", Map.of()),
                 node("end", "end", "Done", "", "", Map.of()));
         GraphCompiler.ValidationResult result = GraphCompiler.validate(def);
         assertTrue(result.valid(), () -> String.join("; ", result.errors()));
@@ -56,7 +56,7 @@ class GraphCompilerTemplateTest {
         // Regression: this definition validated and then leaked {{lastResult}}.
         WorkflowDefinition def = def(
                 node("start", "start", "Start", "", "", Map.of()),
-                node("llm-eval-1", "llm_eval", "Evaluate: {{lastResult}}", "", "", Map.of()),
+                node("llm-eval-1", "compact", "Evaluate: {{lastResult}}", "", "", Map.of()),
                 node("end", "end", "Done", "", "", Map.of()));
         GraphCompiler.ValidationResult result = GraphCompiler.validate(def);
         assertFalse(result.valid());
@@ -68,7 +68,7 @@ class GraphCompilerTemplateTest {
     void rejectsUnknownNodeReference() {
         WorkflowDefinition def = def(
                 node("start", "start", "Start", "", "", Map.of()),
-                node("node_1", "llm_eval", "${node_99.output.name}", "", "", Map.of()),
+                node("node_1", "compact", "${node_99.output.name}", "", "", Map.of()),
                 node("end", "end", "Done", "", "", Map.of()));
         GraphCompiler.ValidationResult result = GraphCompiler.validate(def);
         assertFalse(result.valid());
@@ -80,7 +80,7 @@ class GraphCompilerTemplateTest {
         // Editor-generated ids contain hyphens; they must be addressable.
         WorkflowDefinition def = def(
                 node("start", "start", "Start", "", "", Map.of()),
-                node("erp-prices", "llm_eval", "${erp-prices.output.total}", "", "", Map.of()),
+                node("erp-prices", "compact", "${erp-prices.output.total}", "", "", Map.of()),
                 node("end", "end", "Done", "", "", Map.of()));
         GraphCompiler.ValidationResult result = GraphCompiler.validate(def);
         assertTrue(result.valid(), () -> String.join("; ", result.errors()));
@@ -113,7 +113,7 @@ class GraphCompilerTemplateTest {
     void acceptsStateReferenceInTitle() {
         WorkflowDefinition def = def(
                 node("start", "start", "Start", "", "", Map.of()),
-                node("node_1", "llm_eval", "Status: ${state.lastStatus}", "", "", Map.of()),
+                node("node_1", "compact", "Status: ${state.lastStatus}", "", "", Map.of()),
                 node("end", "end", "Done", "", "", Map.of()));
         GraphCompiler.ValidationResult result = GraphCompiler.validate(def);
         assertTrue(result.valid(), () -> String.join("; ", result.errors()));

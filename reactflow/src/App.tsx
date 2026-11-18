@@ -1,6 +1,7 @@
 import { Link, Routes, Route } from 'react-router-dom';
 import { useIsMobile } from './hooks/useMediaQuery.ts';
 import EditorPage from './EditorPage.tsx';
+import ChatPage from './features/chat/ChatPage.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import Workflows from './pages/Workflows.tsx';
 import Agents from './pages/Agents.tsx';
@@ -15,6 +16,7 @@ import Settings from './pages/Settings.tsx';
 
 const NAV = [
   { to: '/', label: 'Dashboard' },
+  { to: '/chat', label: 'Chat' },
   { to: '/workflows', label: 'Workflows' },
   { to: '/editor', label: 'Editor' },
   { to: '/runs', label: 'Runs' },
@@ -44,7 +46,6 @@ export default function App() {
       {!isMobile && (
         <nav style={{ display: 'flex', gap: 12, padding: '8px 16px', background: '#1e1e1e', borderBottom: '1px solid #333', alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 'bold', color: '#5bc0de', marginRight: 8 }}>QOC</span>
-          <a href="/core/" style={{ color: '#d4d4d4', textDecoration: 'none', fontSize: 12, padding: '4px 8px', borderRadius: 4, background: '#2d2d2d' }}>Chat</a>
           {NAV.map((n) => (
             <Link key={n.to} to={n.to} style={{ color: '#d4d4d4', textDecoration: 'none', fontSize: 12, padding: '4px 8px', borderRadius: 4, background: '#2d2d2d' }}>
               {n.label}
@@ -54,7 +55,6 @@ export default function App() {
       )}
       {isMobile && (
         <div style={{ padding: '8px 12px', background: '#1e1e1e', borderBottom: '1px solid #333', display: 'flex', gap: 8, overflowX: 'auto' }}>
-          <a href="/core/" style={{ color: '#d4d4d4', textDecoration: 'none', fontSize: 11, padding: '4px 6px', borderRadius: 4, background: '#2d2d2d', whiteSpace: 'nowrap' }}>Chat</a>
           {NAV.map((n) => (
             <Link key={n.to} to={n.to} style={{ color: '#d4d4d4', textDecoration: 'none', fontSize: 11, padding: '4px 6px', borderRadius: 4, background: '#2d2d2d', whiteSpace: 'nowrap' }}>
               {n.label}
@@ -65,6 +65,7 @@ export default function App() {
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/chat" element={<ChatPage />} />
           <Route path="/workflows" element={<Workflows />} />
           <Route path="/workflows/:id" element={<EditorPage />} />
           <Route path="/editor" element={<EditorPage />} />

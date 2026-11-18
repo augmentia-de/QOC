@@ -136,25 +136,6 @@ export function SubworkflowNode({ data, selected }) {
   );
 }
 
-export function LlmEvalNode({ data, selected }) {
-  const jsonOutput = data?.jsonOutput === false ? false : true;
-  return (
-    <NodeShell title={String(data?.title || 'LLM Eval')} subtitle={jsonOutput ? 'evaluate → JSON' : 'evaluate → text'} color="bg-purple-600 border-purple-400" selected={selected}>
-      <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
-      <PortRow right={{ id: 'error', label: 'Error' }} />
-    </NodeShell>
-  );
-}
-
-export function LlmSummarizeNode({ data, selected }) {
-  return (
-    <NodeShell title={String(data?.title || 'LLM Summarize')} subtitle="summarize" color="bg-indigo-600 border-indigo-400" selected={selected}>
-      <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
-      <PortRow right={{ id: 'error', label: 'Error' }} />
-    </NodeShell>
-  );
-}
-
 export function CompactNode({ data, selected }) {
   const args = (data?.mcpArgs && typeof data.mcpArgs === 'object') ? data.mcpArgs : {};
   const mode = String(args.mode || 'truncate');
@@ -190,6 +171,17 @@ export function RestCallNode({ data, selected }) {
   const args = (data?.mcpArgs && typeof data.mcpArgs === 'object') ? data.mcpArgs : {};
   return (
     <NodeShell title={String(data?.title || 'REST Call')} subtitle={String(args.method || 'GET') + ' ' + String(args.url || '')} color="bg-cyan-700 border-cyan-400" selected={selected}>
+      <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
+      <PortRow right={{ id: 'error', label: 'Error' }} />
+    </NodeShell>
+  );
+}
+
+export function ClassifyNode({ data, selected }) {
+  const args = (data?.mcpArgs && typeof data.mcpArgs === 'object') ? data.mcpArgs : {};
+  const modelName = String(args.modelName || args.model || 'jev-latest');
+  return (
+    <NodeShell title={String(data?.title || 'Classify')} subtitle={'classify: ' + modelName} color="bg-violet-600 border-violet-400" selected={selected}>
       <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
       <PortRow right={{ id: 'error', label: 'Error' }} />
     </NodeShell>

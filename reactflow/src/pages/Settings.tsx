@@ -43,11 +43,26 @@ export default function Settings() {
     window.setTimeout(() => setSaved(false), 2500);
   };
 
+  const [reloadingConfig, setReloadingConfig] = useState(false);
+
   const reset = () => {
     localStorage.removeItem(STORAGE_KEY);
     setBackendUrl(DEFAULTS.backendUrl);
     setTheme(DEFAULTS.theme);
     setSaved(false);
+  };
+
+  const reloadConfig = async () => {
+    setReloadingConfig(true);
+    try {
+      await QocApi.config.reload();
+      alert('Config reloaded');
+    } catch (e) {
+      console.error(e);
+      alert('Config reload failed: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setReloadingConfig(false);
+    }
   };
 
   const addServer = async () => {
@@ -105,6 +120,7 @@ export default function Settings() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button onClick={save} style={{ padding: '6px 14px', background: '#337ab7', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13 }}>Save</button>
             <button onClick={reset} style={{ padding: '6px 14px', background: '#555', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13 }}>Reset</button>
+            <button onClick={reloadConfig} disabled={reloadingConfig} style={{ padding: '6px 14px', background: '#f0ad4e', color: '#000', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, opacity: reloadingConfig ? 0.5 : 1 }}>Reload Config</button>
             {saved && <span style={{ color: '#5cb85c', fontSize: 12 }}>Saved.</span>}
           </div>
         </div>

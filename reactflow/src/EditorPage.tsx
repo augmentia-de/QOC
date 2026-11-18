@@ -18,6 +18,8 @@ import { useIsMobile } from './hooks/useMediaQuery.ts';
 import { SchemaSource } from './components/SchemaSource.tsx';
 import NodeListView from './components/NodeListView.tsx';
 import { BottomSheet } from './components/BottomSheet.tsx';
+import { Toast } from './components/Toast.tsx';
+import { ConfirmDialog } from './components/ConfirmDialog.tsx';
 import { LabeledEdge } from './components/LabeledEdge.tsx';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { listWorkflows, loadWorkflow, saveWorkflow, deleteWorkflow, exportWorkflow, importWorkflow } from './services/workflowStore.ts';
@@ -37,11 +39,10 @@ const NODE_PALETTE = [
   { type: 'loop', label: 'Loop', color: '#ea580c' },
   { type: 'hitl', label: 'HITL', color: '#9333ea' },
   { type: 'subworkflow', label: 'Sub-Workflow', color: '#4f46e5' },
-  { type: 'llm_eval', label: 'LLM Eval', color: '#7c3aed' },
-  { type: 'llm_summarize', label: 'LLM Summarize', color: '#4338ca' },
   { type: 'compact', label: 'Compact', color: '#059669' },
   { type: 'mcp_call', label: 'MCP Call', color: '#c026d3' },
   { type: 'rest_call', label: 'REST Call', color: '#0891b2' },
+  { type: 'classify', label: 'Classify', color: '#7c3aed' },
   { type: 'end', label: 'End', color: '#d9534f' },
 ];
 
@@ -165,6 +166,8 @@ export default function EditorPage() {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showJsonOverlay, setShowJsonOverlay] = useState(false);
   const [showRunOverlay, setShowRunOverlay] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [confirmState, setConfirmState] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [runInput, setRunInput] = useState('Hello');
   const workflowName = useWorkflowStore((s) => s.workflowName);
   const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
@@ -199,7 +202,10 @@ export default function EditorPage() {
   useEffect(() => {
     seedDummyAgents();
     setAgents(listAgents());
-    if (listWorkflows().length > 0) {
+    // Show the workflow picker only when no workflow is selected/loaded yet
+    // (e.g. opening the editor directly without a route id). When a workflow
+    // is opened via /workflows/:id the overlay must stay closed.
+    if (!routeId && useWorkflowStore.getState().nodes.length === 0 && listWorkflows().length > 0) {
       setShowListOverlay(true);
     }
     (async () => {
@@ -427,7 +433,7 @@ export default function EditorPage() {
         const t = walk(p);
         if (t && typeof t === 'object' && Object.keys(t).length > 0) return t;
       }
-      return d;
+      return {};
     };
     return walk(node);
   };
@@ -601,7 +607,7 @@ export default function EditorPage() {
     try {
       const { Api } = await import('./services/api.ts');
       if (agentRef) await Api.agents.save(id, agent); else { const c = await Api.agents.create(agent); setAgentRef(c.id); updateSelected('agentRef', c.id); }
-      alert('Gespeichert in data/agents/' + id + '.json');
+      showToast('Gespeichert in data/agents/' + id + '.json');
       return;
     } catch {
       const blob = new Blob([JSON.stringify(agent, null, 2)], { type: 'application/json' });
@@ -635,6 +641,21 @@ export default function EditorPage() {
     setAgentPermissions(Array.isArray(a.rolesAllowed) ? a.rolesAllowed.join(', ') : (a.permissions || ''));
   };
 
+  const showToast = useCallback((msg: string) => setToast(msg), []);
+  const requestConfirm = useCallback((message: string, onConfirm: () => void) => {
+    setConfirmState({ message, onConfirm });
+  }, []);
+
+  const handleNew = useCallback(() => {
+    const start = { id: 'start-1', type: 'start', position: { x: 50, y: 100 }, data: { title: 'Start' } };
+    const end = { id: 'end-1', type: 'end', position: { x: 300, y: 100 }, data: { title: 'Ende' } };
+    const edge = { id: 'e-start-end', source: 'start-1', target: 'end-1', type: 'labeled' };
+    setNodes([start, end]);
+    setEdges([edge]);
+    setWorkflowName('untitled');
+    pushHistory([start, end], [edge]);
+  }, [setNodes, setEdges, setWorkflowName, pushHistory]);
+
   const handleSave = async () => {
     const name = workflowName.trim() || 'untitled';
     try {
@@ -651,7 +672,7 @@ export default function EditorPage() {
     try {
       const { Api } = await import('./services/api.ts');
       await Api.workflows.save(name, def);
-      alert('Gespeichert in data/workflows/' + name + '.json');
+      showToast('Gespeichert in data/workflows/' + name + '.json');
       return;
     } catch {
       // Fallback: Download
@@ -683,7 +704,7 @@ export default function EditorPage() {
         }
         setShowListOverlay(false);
       } catch (e) {
-        alert('Import fehlgeschlagen: ' + (e && e.message ? e.message : e));
+        showToast('Import fehlgeschlagen: ' + (e && e.message ? e.message : e));
       }
     };
     reader.readAsText(file);
@@ -709,9 +730,12 @@ export default function EditorPage() {
   };
 
   const handleDelete = (id) => {
-    if (!window.confirm('Delete this workflow?')) return;
-    deleteWorkflow(id);
-    setShowListOverlay(false);
+    requestConfirm('Delete this workflow?', () => {
+      deleteWorkflow(id);
+      setRemoteWorkflows((prev) => prev.filter((x) => x !== id));
+      setShowListOverlay(false);
+      setConfirmState(null);
+    });
   };
 
   const handleValidate = async () => {
@@ -719,8 +743,8 @@ export default function EditorPage() {
     try {
       const { QocApi } = await import('./services/qocApi.ts');
       const res = await QocApi.workflows.validate(def);
-      if (res.valid) alert('Workflow is valid! ' + (res.summary || ''));
-      else alert('Validation errors:\n' + (res.errors || []).join('\n'));
+      if (res.valid) showToast('Workflow is valid! ' + (res.summary || ''));
+      else showToast('Validation errors:\n' + (res.errors || []).join('\n'));
       return;
     } catch { /* fallback */ }
     const errors = [];
@@ -734,8 +758,8 @@ export default function EditorPage() {
     const hasEnd = nodes.some((n) => n.type === 'end');
     if (!hasStart) errors.push('Missing start node');
     if (!hasEnd) errors.push('Missing end node');
-    if (errors.length) alert('Validation errors:\n' + errors.join('\n'));
-    else alert('Workflow is valid!');
+    if (errors.length) showToast('Validation errors:\n' + errors.join('\n'));
+    else showToast('Workflow is valid!');
   };
 
   const runWorkflow = async () => {
@@ -743,14 +767,14 @@ export default function EditorPage() {
     if (nodes.length === 0) errors.push('No nodes');
     const hasStart = nodes.some((n) => n.type === 'start');
     if (!hasStart) errors.push('Missing start node');
-    if (errors.length) { alert('Cannot run:\n' + errors.join('\n')); return; }
+    if (errors.length) { showToast('Cannot run:\n' + errors.join('\n')); return; }
     const def = { id: workflowName.trim() || 'untitled', name: workflowName.trim() || 'untitled', nodes, edges };
     try {
       const { QocApi } = await import('./services/qocApi.ts');
       const res = await QocApi.workflows.run(def, runInput);
-      alert('Ergebnis: ' + (res.result || 'OK') + '\\nOrder: ' + (res.order || []).join(', '));
+      showToast('Ergebnis: ' + (res.result || 'OK') + '\\nOrder: ' + (res.order || []).join(', '));
     } catch { /* fallback */ }
-    alert('Running workflow with ' + nodes.length + ' nodes and ' + edges.length + ' edges...');
+    showToast('Running workflow with ' + nodes.length + ' nodes and ' + edges.length + ' edges...');
     setShowRunOverlay(false);
   };
 
@@ -763,7 +787,7 @@ export default function EditorPage() {
       pushHistory(result.nodes, result.edges);
     } catch (e) {
       console.error('Auto-layout failed', e);
-      alert('Auto-Layout fehlgeschlagen: ' + (e && e.message ? e.message : e));
+      showToast('Auto-Layout fehlgeschlagen: ' + (e && e.message ? e.message : e));
     }
   };
 
@@ -771,13 +795,13 @@ export default function EditorPage() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh' }}>
         <div style={{ padding: 8, background: '#161616', color: '#d4d4d4', borderBottom: '1px solid #333' }}>
-          <input value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} placeholder="Workflow name" style={{ background: '#2d2d2d', color: '#d4d4d4', border: '1px solid #555', borderRadius: 4, padding: '4px 8px', fontSize: 12, width: '100%' }} />
+          <input data-testid="workflow-name" aria-label="Workflow-Name" value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} placeholder="Workflow name" style={{ background: '#2d2d2d', color: '#d4d4d4', border: '1px solid #555', borderRadius: 4, padding: '4px 8px', fontSize: 12, width: '100%' }} />
         </div>
         <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
           <div style={{ width: 200, borderRight: '1px solid #333', overflow: 'auto' }}>
             <NodeListView nodes={nodes} selectedId={selected?.id} onSelect={(id) => setSelected(nodes.find((n) => n.id === id) || null)} onAddNode={() => { const t = prompt('Node-Typ:', 'agent'); if (t) addNode(t); }} onDeleteNode={(id) => setNodes((nds) => nds.filter((n) => n.id !== id))} />
           </div>
-          <div style={{ flex: 1 }}>
+          <div data-testid="workflow-canvas" style={{ flex: 1 }}>
             <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={onNodeClick} nodeTypes={nodeTypes} edgeTypes={edgeTypes} defaultEdgeOptions={{ type: 'labeled' }} deleteKeyCode={['Backspace', 'Delete']} fitView>
               <Controls />
               <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
@@ -792,6 +816,12 @@ export default function EditorPage() {
             </div>
           )}
         </BottomSheet>
+        <Toast message={toast} onClose={() => setToast(null)} />
+        <ConfirmDialog
+          message={confirmState?.message ?? null}
+          onConfirm={() => { confirmState?.onConfirm(); setConfirmState(null); }}
+          onCancel={() => setConfirmState(null)}
+        />
       </div>
     );
   }
@@ -800,24 +830,27 @@ export default function EditorPage() {
     <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh' }}>
       <div style={{ display: 'flex', gap: 8, padding: 8, background: '#161616', color: '#d4d4d4', borderBottom: '1px solid #333', alignItems: 'center' }}>
         <span style={{ fontWeight: 'bold', color: '#5bc0de' }}>Workflow Editor</span>
-        <input value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} placeholder="Workflow name" style={{ background: '#2d2d2d', color: '#d4d4d4', border: '1px solid #555', borderRadius: 4, padding: '4px 8px', fontSize: 12 }} />
-        <button onClick={handleSave} style={{ background: '#5cb85c', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Save</button>
-        <button onClick={handleSaveToFile} style={{ background: '#17a2b8', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Save to file</button>
-        <button onClick={undo} disabled={historyIndex <= 0} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, opacity: historyIndex <= 0 ? 0.5 : 1 }}>Undo</button>
-        <button onClick={redo} disabled={historyIndex >= history.length - 1} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, opacity: historyIndex >= history.length - 1 ? 0.5 : 1 }}>Redo</button>
-        <button onClick={() => setShowListOverlay(true)} style={{ background: '#337ab7', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Load/List</button>
-        <button onClick={() => { useWorkflowStore.getState().clear(); }} style={{ background: '#888', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Clear</button>
-        <button onClick={handleValidate} style={{ background: '#f0ad4e', color: '#000', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Validate</button>
-        <button onClick={handleAutoLayout} style={{ background: '#6f42c1', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Auto-Layout</button>
-        <button onClick={() => setShowJsonOverlay(true)} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>JSON</button>
+        <input data-testid="workflow-name" aria-label="Workflow-Name" value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} placeholder="Workflow name" style={{ background: '#2d2d2d', color: '#d4d4d4', border: '1px solid #555', borderRadius: 4, padding: '4px 8px', fontSize: 12 }} />
+        <button data-testid="toolbar-new" aria-label="New (Start+End)" onClick={handleNew} style={{ background: '#5cb85c', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>New (Start+End)</button>
+        <button data-testid="toolbar-save" aria-label="Save" onClick={handleSave} style={{ background: '#5cb85c', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Save</button>
+        <button data-testid="toolbar-save-file" aria-label="Save to file" onClick={handleSaveToFile} style={{ background: '#17a2b8', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Save to file</button>
+        <button data-testid="toolbar-undo" aria-label="Undo" onClick={undo} disabled={historyIndex <= 0} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, opacity: historyIndex <= 0 ? 0.5 : 1 }}>Undo</button>
+        <button data-testid="toolbar-redo" aria-label="Redo" onClick={redo} disabled={historyIndex >= history.length - 1} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, opacity: historyIndex >= history.length - 1 ? 0.5 : 1 }}>Redo</button>
+        <button data-testid="toolbar-list" aria-label="Load/List" onClick={() => setShowListOverlay(true)} style={{ background: '#337ab7', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Load/List</button>
+        <button data-testid="toolbar-clear" aria-label="Clear" onClick={() => { useWorkflowStore.getState().clear(); }} style={{ background: '#888', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Clear</button>
+        <button data-testid="toolbar-validate" aria-label="Validate" onClick={handleValidate} style={{ background: '#f0ad4e', color: '#000', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Validate</button>
+        <button data-testid="toolbar-layout" aria-label="Auto-Layout" onClick={handleAutoLayout} style={{ background: '#6f42c1', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Auto-Layout</button>
+        <button data-testid="toolbar-json" aria-label="JSON" onClick={() => setShowJsonOverlay(true)} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>JSON</button>
         <a href="/core/" style={{ background: '#337ab7', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, textDecoration: 'none' }}>Chat (Core)</a>
-        <button onClick={() => { setRunInput('Hello'); setShowRunOverlay(true); }} style={{ background: '#d9534f', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Run</button>
+        <button data-testid="toolbar-run" aria-label="Run" onClick={() => { setRunInput('Hello'); setShowRunOverlay(true); }} style={{ background: '#d9534f', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Run</button>
       </div>
       {isMobile && (
         <div style={{ display: 'flex', gap: 4, padding: 6, background: '#161616', overflowX: 'auto', borderBottom: '1px solid #333' }}>
           {NODE_PALETTE.map((n) => (
             <button
               key={n.type}
+              data-testid={'palette-' + n.type}
+              aria-label={n.label}
               onClick={() => addNode(n.type)}
               style={{ flex: '0 0 auto', padding: '4px 8px', background: '#2d2d2d', color: '#d4d4d4', border: '1px solid ' + n.color, borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
             >
@@ -833,6 +866,8 @@ export default function EditorPage() {
           {NODE_PALETTE.map((n) => (
             <button
               key={n.type}
+              data-testid={'palette-' + n.type}
+              aria-label={n.label}
               onClick={() => addNode(n.type)}
               style={{ display: 'block', width: '80%', marginBottom: 6, padding: '4px 4px', background: '#2d2d2d', color: '#d4d4d4', border: '1px solid ' + n.color, borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
             >
@@ -842,7 +877,7 @@ export default function EditorPage() {
         </div>
         )}
 
-        <div style={{ flex: 1 }}>
+        <div data-testid="workflow-canvas" style={{ flex: 1 }}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -870,7 +905,7 @@ export default function EditorPage() {
         </div>
 
         {selectedNode && (
-          <div style={{ width: 240, padding: 8, background: '#1e1e1e', color: '#d4d4d4', overflow: 'auto', borderLeft: '1px solid #333', fontSize: 12 }}>
+          <div data-testid="property-panel" style={{ width: 240, padding: 8, background: '#1e1e1e', color: '#d4d4d4', overflow: 'auto', borderLeft: '1px solid #333', fontSize: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h4 style={{ margin: 0 }}>{selectedNode.id}</h4>
               <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer' }}>x</button>
@@ -956,9 +991,21 @@ export default function EditorPage() {
                   }} style={{ width: '100%', background: '#2d2d2d', color: '#d4d4d4', border: '1px solid #555', opacity: selectedNode.data?.customized ? 0.6 : 1 }}>
                     {selectedNode.data?.customized && <option value={agentRef}>{'custom (' + (agentRef || 'inline') + ')'}</option>}
                     <option value="">-- neu / inline --</option>
-                    {agents.map((a) => (
-                      <option key={a.id} value={a.id}>{a.id} ({a.name || a.model})</option>
-                    ))}
+                    {(() => {
+                      const groups = new Map<string, any[]>();
+                      for (const a of agents) {
+                        const cat = (a.category || '').trim() || 'Ohne Kategorie';
+                        if (!groups.has(cat)) groups.set(cat, []);
+                        groups.get(cat)!.push(a);
+                      }
+                      return [...groups.entries()].sort((x, y) => x[0].localeCompare(y[0])).map(([cat, opts]) => (
+                        <optgroup key={cat} label={cat}>
+                          {opts.map((a: any) => (
+                            <option key={a.id} value={a.id}>{a.id} ({a.name || a.model})</option>
+                          ))}
+                        </optgroup>
+                      ));
+                    })()}
                     {agentRef && !agents.some((a) => a.id === agentRef) && (
                       <option value={agentRef}>{agentRef} (unbekannt)</option>
                     )}
@@ -988,6 +1035,34 @@ export default function EditorPage() {
                   style={{ width: '100%', height: 100, background: '#2d2d2d', color: '#d4d4d4', border: '1px solid #555', fontFamily: 'monospace', fontSize: 11 }}
                 />
               </label>
+            )}
+            {selectedNode.type === 'classify' && (
+              <div style={{ marginTop: 8 }}>
+                <label style={{ display: 'block', marginTop: 4 }}>Model Name<br />
+                  <input value={selectedNode.data?.mcpArgs?.modelName || selectedNode.data?.mcpArgs?.model || ''} onChange={(e) => {
+                    const args = { ...(selectedNode.data?.mcpArgs || {}) };
+                    args.modelName = e.target.value;
+                    updateSelected('mcpArgs', args);
+                  }} style={{ width: '100%', background: '#2d2d2d', color: '#d4d4d4', border: '1px solid #555' }} placeholder="jev-latest / jev-1.13.0" />
+                </label>
+                <label style={{ display: 'block', marginTop: 8 }}>Config (JSON): questions, thresholds, outputMapping, failMode, baseUrl, apiKey, timeoutSeconds, maxRetries<br />
+                  <textarea
+                    key={selectedNode.id}
+                    defaultValue={JSON.stringify(selectedNode.data?.mcpArgs || {}, null, 2)}
+                    onBlur={(e) => {
+                      try {
+                        const parsed = JSON.parse(e.target.value);
+                        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) updateSelected('mcpArgs', parsed);
+                      } catch { /* ignore invalid json */ }
+                    }}
+                    placeholder={'{\n  "questions": [\n    { "name": "team", "type": "choice", "text": "Which team?", "options": { "billing": "Payments", "support": "Usage" } }\n  ],\n  "thresholds": { "margin": 0.2 },\n  "outputMapping": { "team": "ticketTeam" },\n  "failMode": "open"\n}'}
+                    style={{ width: '100%', height: 160, background: '#2d2d2d', color: '#d4d4d4', border: '1px solid #555', fontFamily: 'monospace', fontSize: 11 }}
+                  />
+                </label>
+                <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
+                  Input kommt über Context-Refs (Inputs-Button). Ergebnis: chosen values in State + <code>low_margin</code> für guard-Nodes.
+                </div>
+              </div>
             )}
             <div style={{ marginTop: 8 }}>
               <div style={{ fontSize: 11, color: '#999', marginBottom: 4 }}>Gewählte Inputs (Context-Refs)</div>
@@ -1050,7 +1125,7 @@ export default function EditorPage() {
         )}
 
         {showRunOverlay && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div data-testid="run-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
             <div style={{ background: '#2d2d2d', padding: 16, borderRadius: 8, width: 520, maxHeight: '80vh', overflow: 'auto', color: '#d4d4d4', fontSize: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <h3 style={{ margin: 0 }}>Run workflow – initial input</h3>
@@ -1127,7 +1202,7 @@ export default function EditorPage() {
         )}
 
         {showListOverlay && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div data-testid="list-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
             <div style={{ background: '#2d2d2d', padding: 16, borderRadius: 8, width: 400, maxHeight: '80vh', overflow: 'auto', color: '#d4d4d4', fontSize: 12 }}>
               <h3 style={{ margin: '0 0 8px' }}>Workflows</h3>
               {listWorkflows().length === 0 && remoteWorkflows.length === 0 && <p style={{ color: '#999' }}>No saved workflows.</p>}
@@ -1166,6 +1241,12 @@ export default function EditorPage() {
         )}
 
       </div>
+      <Toast message={toast} onClose={() => setToast(null)} />
+      <ConfirmDialog
+        message={confirmState?.message ?? null}
+        onConfirm={() => { confirmState?.onConfirm(); setConfirmState(null); }}
+        onCancel={() => setConfirmState(null)}
+      />
     </div>
   );
 }

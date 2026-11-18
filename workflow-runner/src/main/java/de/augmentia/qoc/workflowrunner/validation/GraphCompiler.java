@@ -26,8 +26,8 @@ public class GraphCompiler {
 
     private static final Set<String> VALID_NODE_TYPES = Set.of(
             "agent", "start", "decision", "loop", "fork", "join", "hitl", "subworkflow", "end",
-            "llm_eval", "llm_summarize", "mcp_call", "rest_call", "context_agent_executor", "compact",
-            "guard", "inject");
+            "mcp_call", "rest_call", "context_agent_executor", "compact",
+            "guard", "inject", "classify");
 
     /** Node types that require an agent (agentRef). */
     private static final Set<String> AGENT_NODE_TYPES =
@@ -186,7 +186,7 @@ public class GraphCompiler {
      * Validates every placeholder-bearing string field of every node.
      *
      * <p>Checked fields: {@code title} (prompt templates), {@code defaultTarget}
-     * (llm_summarize input), {@code exitCondition} and branch conditions
+     * ({@code defaultTarget} input), {@code exitCondition} and branch conditions
      * (condition paths), plus string values in {@code mcpArgs} (tool arguments).
      * Node IDs with hyphens are supported because that is what the editor
      * generates.</p>

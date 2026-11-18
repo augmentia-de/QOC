@@ -457,12 +457,15 @@ public String generateText(String prompt) {
     if (provider == null) return "";
     String modelId = (config == null || config.model() == null || config.model().isBlank())
             ? "gpt-4o-mini" : config.model();
-    String providerId = (config == null || config.provider() == null || config.provider().isBlank())
-            ? "openai" : config.provider();
     de.augmentia.oc.engine.core.model.ModelRef modelRef =
             new de.augmentia.oc.engine.core.model.ModelRef(
-                    de.augmentia.oc.engine.core.model.ProviderId.of(providerId),
-                    de.augmentia.oc.engine.core.model.ModelId.of(modelId));
+                    de.augmentia.oc.engine.core.model.ProviderId.create(),
+                    de.augmentia.oc.engine.core.model.ModelId.create());
+    de.augmentia.oc.engine.core.model.SessionId genSession = de.augmentia.oc.engine.core.model.SessionId.create();
+    java.util.Map<String, String> cacheHeaders = de.augmentia.oc.engine.core.eval.CacheAffinity.headers(
+            de.augmentia.oc.engine.core.eval.CacheAffinity.affinity(genSession,
+                    de.augmentia.oc.engine.core.model.Option.none(),
+                    de.augmentia.oc.engine.core.model.Option.none()));
     java.util.List<de.augmentia.oc.engine.core.contract.provider.ModelEvent> events = provider.stream(
             new de.augmentia.oc.engine.core.contract.provider.ModelRequest(
                     modelRef, java.util.List.of(),
@@ -474,7 +477,7 @@ public String generateText(String prompt) {
                             de.augmentia.oc.engine.core.model.Option.none(),
                             de.augmentia.oc.engine.core.model.Option.some(4096),
                             de.augmentia.oc.engine.core.model.Option.none(), java.util.List.of()),
-                    java.util.Map.of(), java.util.Map.of(),
+                    java.util.Map.of(), cacheHeaders,
                     de.augmentia.oc.engine.core.model.Option.none())).toList();
     StringBuilder sb = new StringBuilder();
     String ended = null;

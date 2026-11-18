@@ -56,8 +56,7 @@ public final class WorkflowContractValidator {
             // output contract presence
             if (n.data().outputContract() == null || n.data().outputContract().isEmpty()) {
                 // only warn for agent/context nodes, not structural ones
-                if ("agent".equals(n.type()) || "context_agent_executor".equals(n.type())
-                        || "llm_eval".equals(n.type())) {
+                if ("agent".equals(n.type()) || "context_agent_executor".equals(n.type())) {
                     warnings.add("Node has no outputContract: " + n.id()
                             + " (consider declaring one for clear data passing)");
                 }

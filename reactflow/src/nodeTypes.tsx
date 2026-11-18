@@ -9,9 +9,8 @@ export {
   LoopNode,
   HitlNode,
   SubworkflowNode,
-  LlmEvalNode,
-  LlmSummarizeNode,
   CompactNode,
   McpCallNode,
   RestCallNode,
+  ClassifyNode,
 } from './components/workflowNodes.tsx';

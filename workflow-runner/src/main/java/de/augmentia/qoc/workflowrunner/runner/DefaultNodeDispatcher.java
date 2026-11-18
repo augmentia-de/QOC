@@ -22,7 +22,7 @@ import java.util.*;
 
 /**
  * Default implementation of NodeDispatcher.
- * Handles all node types: agent, decision, start, hitl, subworkflow, fork, join, loop, end, llm_eval, llm_summarize.
+ * Handles all node types: agent, decision, start, hitl, subworkflow, fork, join, loop, end, classify.
  */
 public class DefaultNodeDispatcher implements NodeDispatcher {
 
@@ -201,8 +201,9 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 return new NodeResult("decision -> " + target, Map.of("target", target));
             }
             case "start" -> {
-                ctx.setNodeOutput(node.id(), "started");
-                return new NodeResult("started", null);
+                String passed = (input == null || input.isBlank()) ? "started" : input;
+                ctx.setNodeOutput(node.id(), passed);
+                return new NodeResult(passed, null);
             }
             case "hitl" -> {
                 // HITL pause (SDW-08): suspend the run pending human approval.
@@ -335,52 +336,75 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 ctx.setNodeOutput(node.id(), "injected:" + refs);
                 return new NodeResult("injected:" + refs, Map.of("refs", refs));
             }
-            case "llm_eval" -> {
-                String prompt = node.data().title();
-                if (prompt == null || prompt.isBlank()) {
-                    prompt = "Evaluate: " + ctx.getState("lastResult");
-                }
-                prompt = TemplateResolver.resolveStrict(prompt, ctx, nodeIds(def));
-                String prefixedName = "wf:llm_eval:" + node.id();
-                boolean structuredOutput = node.data().jsonOutput() == null || node.data().jsonOutput();
-                de.augmentia.oc.engine.core.model.Option<de.augmentia.oc.engine.core.json.Schema> schemaOption =
-                        de.augmentia.oc.engine.core.model.Option.none();
-                if (node.data().responseSchema() != null) {
-                    de.augmentia.oc.engine.core.json.Result<de.augmentia.oc.engine.core.json.Schema> parsed =
-                            de.augmentia.oc.engine.core.json.JsonSchema.parse(
-                                    de.augmentia.oc.engine.core.json.JsonValues.fromJava(node.data().responseSchema()));
-                    de.augmentia.oc.engine.core.json.Schema parsedSchema = parsed.valueOrNull();
-                    if (parsedSchema == null) {
-                        throw new IllegalArgumentException("Invalid response schema for node " + node.id());
-                    }
-                    schemaOption = de.augmentia.oc.engine.core.model.Option.some(parsedSchema);
-                }
-                QocEngine.AgentConfig config = new QocEngine.AgentConfig(
-                        prefixedName, null, 0.3, 4096, 1.0,
-                        "You are an evaluation assistant. Respond with valid JSON.",
-                        List.of(), List.of(), List.of(), List.of(), structuredOutput,
-                        schemaOption);
-                NodeResult evalResult = runAgent(node, prefixedName, prompt, config, ctx, principal);
-                applyPostGuard(node, ctx, evalResult);
-                return evalResult;
-            }
-            case "llm_summarize" -> {
-                String inputData;
-                if (node.data().defaultTarget() != null && !node.data().defaultTarget().isBlank()) {
-                    inputData = TemplateResolver.resolveStrict(node.data().defaultTarget(), ctx, nodeIds(def));
-                } else {
+            case "classify" -> {
+                Map<String, Object> opts = node.data().mcpArgs() == null ? Map.of() : node.data().mcpArgs();
+                // Input resolution (template-aware).
+                String inputTemplate = str(opts.get("input"), "");
+                Object resolvedInput;
+                if (inputTemplate.isBlank()) {
                     Object lastRes = ctx.getState("lastResult");
-                    inputData = lastRes != null ? lastRes.toString() : "";
+                    resolvedInput = lastRes != null ? lastRes : input;
+                } else if (inputTemplate.contains("${")) {
+                    Object obj = TemplateResolver.resolveToObject(inputTemplate, ctx);
+                    resolvedInput = obj != null ? obj : TemplateResolver.resolveStrict(inputTemplate, ctx, nodeIds(def));
+                } else {
+                    resolvedInput = TemplateResolver.resolveStrict(inputTemplate, ctx, nodeIds(def));
                 }
-                String prompt = "Summarize the following data concisely:\n" + inputData;
-                String prefixedName = "wf:llm_summarize:" + node.id();
-                QocEngine.AgentConfig config = new QocEngine.AgentConfig(
-                        prefixedName, null, 0.3, 4096, 1.0, "You are a summarization assistant.",
-                        List.of(), List.of(), List.of(), List.of(), false,
-                        de.augmentia.oc.engine.core.model.Option.none());
-                NodeResult summarizeResult = runAgent(node, prefixedName, prompt, config, ctx, principal);
-                applyPostGuard(node, ctx, summarizeResult);
-                return summarizeResult;
+
+                // Fail mode.
+                String failMode = str(opts.get("failMode"), "open").toLowerCase(java.util.Locale.ROOT);
+                boolean failClosed = "closed".equals(failMode);
+
+                Map<String, Object> execResult;
+                try {
+                    execResult = TypeSafeDecisionClient.classify(opts, resolvedInput);
+                } catch (RuntimeException e) {
+                    LOG.warn("classify node {} failed: {}", node.id(), e.getMessage());
+                    if (failClosed) {
+                        throw new IllegalStateException("classify node " + node.id() + " failed: " + e.getMessage(), e);
+                    }
+                    execResult = new java.util.LinkedHashMap<>();
+                    execResult.put("error", e.getMessage());
+                    execResult.put("lowMargin", false);
+                    execResult.put("answers", Map.of());
+                }
+
+                // Apply output mapping to workflow state.
+                Map<String, Object> stateUpdates = new java.util.LinkedHashMap<>();
+                TypeSafeDecisionClient.applyOutputMapping(opts, execResult, stateUpdates);
+                stateUpdates.forEach(ctx::setState);
+                if (execResult.containsKey("lowMargin") && Boolean.TRUE.equals(execResult.get("lowMargin"))) {
+                    ctx.setState("low_margin", true);
+                }
+                ctx.setState("classifyResult", execResult);
+                ctx.setNodeOutput(node.id(), execResult);
+
+                // Summary text.
+                StringBuilder sb = new StringBuilder("classify");
+                Object answersObj = execResult.get("answers");
+                if (answersObj instanceof Map<?, ?> answers && !answers.isEmpty()) {
+                    sb.append(": ");
+                    List<String> parts = new ArrayList<>();
+                    for (Map.Entry<?, ?> ae : answers.entrySet()) {
+                        if (!(ae.getValue() instanceof Map<?, ?> am)) continue;
+                        Object rawVal = am.get("value");
+                        if (rawVal == null) rawVal = am.get("mean");
+                        if (rawVal == null) rawVal = "?";
+                        String val = String.valueOf(rawVal);
+                        Object prob = am.get("probability");
+                        Object margin = am.get("margin");
+                        StringBuilder p = new StringBuilder(String.valueOf(ae.getKey())).append("=").append(val);
+                        if (prob != null) p.append(" (").append(prob).append(")");
+                        if (margin != null) p.append(" m=").append(margin);
+                        parts.add(p.toString());
+                    }
+                    sb.append(String.join(", ", parts));
+                } else if (execResult.containsKey("error")) {
+                    sb.append(": error ").append(execResult.get("error"));
+                }
+                String text = sb.toString();
+                ctx.setNodeOutput(node.id(), execResult);
+                return new NodeResult(text, execResult);
             }
             case "mcp_call" -> {
                 String server = node.data().mcpServer();

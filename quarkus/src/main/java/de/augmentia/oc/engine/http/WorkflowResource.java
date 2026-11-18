@@ -159,7 +159,7 @@ public class WorkflowResource {
             java.util.function.Function<String, String> llmCaller = p -> engine.generateText(p);
             de.augmentia.qoc.workflowrunner.generate.WorkflowGenerator generator =
                     new de.augmentia.qoc.workflowrunner.generate.WorkflowGenerator(
-                            llmCaller, store, new com.fasterxml.jackson.databind.ObjectMapper());
+                            llmCaller, store, agentStore, new com.fasterxml.jackson.databind.ObjectMapper());
             WorkflowDefinition def = generator.generate(prompt.trim());
             return Response.status(Response.Status.CREATED).entity(def).build();
         } catch (IllegalArgumentException e) {

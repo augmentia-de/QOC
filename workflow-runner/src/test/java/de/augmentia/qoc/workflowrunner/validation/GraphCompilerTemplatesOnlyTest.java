@@ -34,7 +34,7 @@ class GraphCompilerTemplatesOnlyTest {
     @Test
     void unfinishedDraftIsSaveable() {
         // No end node, no edges, no agents — but templates are fine.
-        WorkflowDefinition def = def(node("llm-eval-1", "llm_eval", "Evaluate: ${lastResult}", Map.of()));
+        WorkflowDefinition def = def(node("llm-eval-1", "compact", "Evaluate: ${lastResult}", Map.of()));
         GraphCompiler.ValidationResult result = GraphCompiler.validateTemplatesOnly(def);
         assertTrue(result.valid(), () -> String.join("; ", result.errors()));
 
@@ -44,7 +44,7 @@ class GraphCompilerTemplatesOnlyTest {
 
     @Test
     void mustacheTemplateIsRejectedOnSave() {
-        WorkflowDefinition def = def(node("llm-eval-1", "llm_eval", "Evaluate: {{lastResult}}", Map.of()));
+        WorkflowDefinition def = def(node("llm-eval-1", "compact", "Evaluate: {{lastResult}}", Map.of()));
         GraphCompiler.ValidationResult result = GraphCompiler.validateTemplatesOnly(def);
         assertFalse(result.valid());
         assertTrue(result.errors().stream().anyMatch(e -> e.contains("{{lastResult}}")),
@@ -53,7 +53,7 @@ class GraphCompilerTemplatesOnlyTest {
 
     @Test
     void unknownNodeReferenceIsRejectedOnSave() {
-        WorkflowDefinition def = def(node("n1", "llm_eval", "${ghost.output.x}", Map.of()));
+        WorkflowDefinition def = def(node("n1", "compact", "${ghost.output.x}", Map.of()));
         GraphCompiler.ValidationResult result = GraphCompiler.validateTemplatesOnly(def);
         assertFalse(result.valid());
         assertTrue(result.errors().stream().anyMatch(e -> e.contains("ghost")), result.errors().toString());
@@ -62,8 +62,8 @@ class GraphCompilerTemplatesOnlyTest {
     @Test
     void knownNodeReferenceIsAccepted() {
         WorkflowDefinition def = def(
-                node("node_1", "llm_eval", "${node_1.output.x}", Map.of()),
-                node("node_2", "llm_eval", "use ${node_1.output}", Map.of()));
+                node("node_1", "compact", "${node_1.output.x}", Map.of()),
+                node("node_2", "compact", "use ${node_1.output}", Map.of()));
         GraphCompiler.ValidationResult result = GraphCompiler.validateTemplatesOnly(def);
         assertTrue(result.valid(), () -> String.join("; ", result.errors()));
     }

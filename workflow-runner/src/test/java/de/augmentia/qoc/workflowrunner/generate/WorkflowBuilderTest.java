@@ -21,11 +21,11 @@ class WorkflowBuilderTest {
         WorkbookResult r = WorkflowPlanParser.parseSteps(MAPPER, json);
         WorkflowDefinition def = WorkflowBuilder.build(r);
         assertEquals("w", def.name());
-        assertEquals(2, def.nodes().size());
-        assertEquals(1, def.edges().size());
+        assertEquals(4, def.nodes().size());
+        assertEquals(3, def.edges().size());
         assertEquals(2, def.agents().size());
-        assertEquals("a", def.edges().get(0).source());
-        assertEquals("b", def.edges().get(0).target());
+        assertEquals("a", def.edges().get(1).source());
+        assertEquals("b", def.edges().get(1).target());
     }
 
     @Test
@@ -38,8 +38,8 @@ class WorkflowBuilderTest {
         String json = "{\"steps\":[{\"agentRole\":\"solo\"}]}";
         WorkbookResult r = WorkflowPlanParser.parseSteps(MAPPER, json);
         WorkflowDefinition def = WorkflowBuilder.build(r);
-        assertEquals(1, def.nodes().size());
-        assertEquals(0, def.edges().size());
+        assertEquals(3, def.nodes().size());
+        assertEquals(2, def.edges().size());
         assertEquals(1, def.agents().size());
     }
 }

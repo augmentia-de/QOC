@@ -103,6 +103,13 @@ export const QocApi = {
   health: {
     check: () => request('/health'),
   },
+  config: {
+    reload: () => request('/config/reload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }),
+  },
   schema: {
     fromJava: (source: string) => request('/schema/from-java', {
       method: 'POST',

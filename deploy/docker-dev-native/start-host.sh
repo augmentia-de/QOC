@@ -70,8 +70,8 @@ case "$ACTION" in
         echo "Workflow UI: http://localhost:$PORT/workflow/"
         ;;
     down)
-        pkill -f "quarkus:dev" 2>/dev/null || true
-        echo "Stopped."
+        pkill -f "quarkus.http.port=$PORT" 2>/dev/null || true
+        echo "Stopped instance on port $PORT."
         ;;
     logs)
         tail -f "$LOG_FILE"

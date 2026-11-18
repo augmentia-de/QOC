@@ -28,11 +28,6 @@ public class RootSpaFallbackResource {
         String normalized = path == null ? "" : path;
         if (normalized.startsWith("/")) normalized = normalized.substring(1);
 
-        // Convenience redirect: the chat (core) UI lives under /core/.
-        if (normalized.equals("chat") || normalized.equals("chat/")) {
-            return Response.temporaryRedirect(java.net.URI.create("/core/")).build();
-        }
-
         // Never shadow API, Quarkus, Core-UI or workflow redirects.
         if (normalized.startsWith("api/")
                 || normalized.startsWith("core/")
