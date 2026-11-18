@@ -19,9 +19,11 @@ public final class QocAgentConverter {
         String id = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]", "-");
         if (id.isBlank()) id = "agent-" + System.currentTimeMillis();
         // tools: QOC uses allow/deny patterns; workflow uses a flat list.
-        // Expand "*" to empty (follow engine default) for simplicity.
-        List<String> tools = (cfg.toolAllow() == null || cfg.toolAllow().contains("*"))
-                ? List.of() : List.copyOf(cfg.toolAllow());
+        // "*" in toolAllow means "all tools" -> keep "*" sentinel (not empty,
+        // because empty means "no tools" in the workflow-agent semantics).
+        List<String> tools = (cfg.toolAllow() == null)
+                ? List.of("*")
+                : (cfg.toolAllow().isEmpty() ? List.of() : List.copyOf(cfg.toolAllow()));
         List<String> guardrailsIn = cfg.permissions() == null ? List.of() : List.of();
         return new Agent(
                 id,

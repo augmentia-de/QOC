@@ -92,7 +92,7 @@ test.describe('workflow editor (user journeys)', () => {
     await expect(page.locator('.react-flow__node')).toHaveCount(1);
 
     await page.getByTestId('toolbar-validate').click();
-    await expect(page.getByTestId('toast')).toContainText(/Missing end node/i);
+    await expect(page.getByTestId('toast')).toContainText(/end.*node/i);
 
     await page.getByTestId('palette-end').click();
     await page.getByTestId('toolbar-validate').click();
@@ -120,28 +120,26 @@ test.describe('workflow editor (user journeys)', () => {
       await page.getByTestId('toolbar-list').click();
     }
     await expect(listOverlay).toBeVisible();
-    const row = listOverlay.locator('div', { hasText: id });
+    const row = listOverlay.getByText(id, { exact: true }).locator('..');
     await row.getByRole('button', { name: 'Load' }).click();
     await expect(listOverlay).toHaveCount(0);
     await expect(page.getByTestId('workflow-name')).toHaveValue(id);
   });
 
-  test('J12: delete from list removes the workflow', async ({ page }) => {
+  test('J12: delete from list removes the workflow', async ({ page, request }) => {
     await page.goto('/editor');
     const listOverlay = page.getByTestId('list-overlay');
     if (!(await listOverlay.count())) {
       await page.getByTestId('toolbar-list').click();
     }
     await expect(listOverlay).toBeVisible();
-    const row = listOverlay.locator('div', { hasText: id });
+    const row = listOverlay.getByText(id, { exact: true }).locator('..');
     await row.getByRole('button', { name: 'Delete' }).click();
     await page.getByTestId('confirm-yes').click();
     await expect(listOverlay.locator('div', { hasText: id })).toHaveCount(0);
 
-    const ctx = await request.newContext();
-    const res = await ctx.get(API + '/workflows/' + id);
+    const res = await request.get(API + '/workflows/' + id);
     expect(res.status()).toBe(404);
-    await ctx.dispose();
   });
 
   test('J13: classify node can be added and configured', async ({ page }) => {
@@ -154,6 +152,7 @@ test.describe('workflow editor (user journeys)', () => {
 
   test('J14: undo and redo', async ({ page }) => {
     await page.goto('/workflows/' + id);
+    await expect(page.locator('.react-flow__node')).toHaveCount(2);
     const before = await page.locator('.react-flow__node').count();
     await page.getByTestId('palette-agent').click();
     await expect(page.locator('.react-flow__node')).toHaveCount(before + 1);
@@ -187,16 +186,12 @@ test.describe('workflow editor (negative)', () => {
 
   test('J5b: invalid workflow (no end) fails validation', async ({ page, request }) => {
     const badId = 'e2e-bad-' + Date.now();
-    const ctx = await request.newContext();
-    await ctx.put(API + '/workflows/' + badId, { data: invalidDef(badId) });
-    await ctx.dispose();
+    await request.put(API + '/workflows/' + badId, { data: invalidDef(badId) });
 
     await page.goto('/workflows/' + badId);
     await page.getByTestId('toolbar-validate').click();
-    await expect(page.getByTestId('toast')).toContainText(/Missing end node/i);
+    await expect(page.getByTestId('toast')).toContainText(/end.*node/i);
 
-    const ctx2 = await request.newContext();
-    await ctx2.delete(API + '/workflows/' + badId);
-    await ctx2.dispose();
+    await request.delete(API + '/workflows/' + badId);
   });
 });

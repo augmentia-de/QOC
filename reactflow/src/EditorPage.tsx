@@ -223,9 +223,12 @@ export default function EditorPage() {
       try {
         const { Api } = await import('./services/api.ts');
         const wf = await Api.workflows.get(routeId);
-        setNodes(wf.nodes || []);
-        setEdges((wf.edges || []).map((e: any) => ({ ...e, type: e.type || 'labeled' })));
+        const loadedNodes = wf.nodes || [];
+        const loadedEdges = (wf.edges || []).map((e: any) => ({ ...e, type: e.type || 'labeled' }));
+        setNodes(loadedNodes);
+        setEdges(loadedEdges);
         setWorkflowName(wf.name || routeId);
+        pushHistory(loadedNodes, loadedEdges);
       } catch { /* keep */ }
     })();
   }, [routeId]);
@@ -523,7 +526,9 @@ export default function EditorPage() {
     updateSelected('active', agentActive);
     updateSelected('tools', agentTools);
     updateSelected('permissions', agentPermissions);
-    updateSelected('rolesAllowed', agentPermissions.split(',').map((s) => s.trim()).filter(Boolean));
+    updateSelected('rolesAllowed', (agentPermissions.split(',').map((s) => s.trim()).filter(Boolean).length
+      ? agentPermissions.split(',').map((s) => s.trim()).filter(Boolean)
+      : ['*']));
     updateSelected('guardrailsInput', agentGuardrailsInput.split(',').map((s) => s.trim()).filter(Boolean));
     updateSelected('guardrailsOutput', agentGuardrailsOutput.split(',').map((s) => s.trim()).filter(Boolean));
     updateSelected('hooks', agentHooks.split(',').map((s) => s.trim()).filter(Boolean));
@@ -556,7 +561,9 @@ export default function EditorPage() {
       systemPrompt: agentPrompt,
       responseSchema: schema,
       ownerId: '',
-      rolesAllowed: agentPermissions.split(',').map((s) => s.trim()).filter(Boolean),
+      rolesAllowed: (agentPermissions.split(',').map((s) => s.trim()).filter(Boolean).length
+        ? agentPermissions.split(',').map((s) => s.trim()).filter(Boolean)
+        : ['*']),
       mode: 'all',
       skills: [],
       permissions: agentPermissions,
@@ -601,7 +608,9 @@ export default function EditorPage() {
       systemPrompt: agentPrompt,
       responseSchema: schema,
       permissions: agentPermissions,
-      rolesAllowed: agentPermissions.split(',').map((s) => s.trim()).filter(Boolean),
+      rolesAllowed: (agentPermissions.split(',').map((s) => s.trim()).filter(Boolean).length
+        ? agentPermissions.split(',').map((s) => s.trim()).filter(Boolean)
+        : ['*']),
     };
     const id = agent.id;
     try {
@@ -661,8 +670,10 @@ export default function EditorPage() {
     try {
       const { Api } = await import('./services/api.ts');
       await Api.workflows.save(name, { id: name, name, version: '1.0.0', status: 'draft', nodes, edges, agents: [], ownerId: '', systemPrompt: '', inputSchema: null });
+      showToast('Gespeichert');
     } catch {
       saveWorkflow(name, nodes, edges);
+      showToast('Speichern fehlgeschlagen – lokal gespeichert');
     }
   };
 
@@ -730,8 +741,11 @@ export default function EditorPage() {
   };
 
   const handleDelete = (id) => {
-    requestConfirm('Delete this workflow?', () => {
-      deleteWorkflow(id);
+    requestConfirm('Delete this workflow?', async () => {
+      try {
+        const { Api } = await import('./services/api.ts');
+        await Api.workflows.delete(id);
+      } catch { deleteWorkflow(id); }
       setRemoteWorkflows((prev) => prev.filter((x) => x !== id));
       setShowListOverlay(false);
       setConfirmState(null);
@@ -773,8 +787,7 @@ export default function EditorPage() {
       const { QocApi } = await import('./services/qocApi.ts');
       const res = await QocApi.workflows.run(def, runInput);
       showToast('Ergebnis: ' + (res.result || 'OK') + '\\nOrder: ' + (res.order || []).join(', '));
-    } catch { /* fallback */ }
-    showToast('Running workflow with ' + nodes.length + ' nodes and ' + edges.length + ' edges...');
+    } catch { showToast('Running workflow with ' + nodes.length + ' nodes and ' + edges.length + ' edges...'); }
     setShowRunOverlay(false);
   };
 
@@ -796,6 +809,19 @@ export default function EditorPage() {
       <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh' }}>
         <div style={{ padding: 8, background: '#161616', color: '#d4d4d4', borderBottom: '1px solid #333' }}>
           <input data-testid="workflow-name" aria-label="Workflow-Name" value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} placeholder="Workflow name" style={{ background: '#2d2d2d', color: '#d4d4d4', border: '1px solid #555', borderRadius: 4, padding: '4px 8px', fontSize: 12, width: '100%' }} />
+        </div>
+        <div style={{ display: 'flex', gap: 4, padding: 6, background: '#161616', overflowX: 'auto', borderBottom: '1px solid #333' }}>
+          {NODE_PALETTE.map((n) => (
+            <button
+              key={n.type}
+              data-testid={'palette-' + n.type}
+              aria-label={n.label}
+              onClick={() => addNode(n.type)}
+              style={{ flex: '0 0 auto', padding: '4px 8px', background: '#2d2d2d', color: '#d4d4d4', border: '1px solid ' + n.color, borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+            >
+              {n.label}
+            </button>
+          ))}
         </div>
         <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
           <div style={{ width: 200, borderRight: '1px solid #333', overflow: 'auto' }}>
@@ -1211,13 +1237,7 @@ export default function EditorPage() {
                   <span>{id}</span>
                   <div>
                     <button onClick={() => handleLoad(id)} style={{ background: '#337ab7', color: '#fff', border: 'none', padding: '2px 8px', borderRadius: 4, marginRight: 4, fontSize: 11 }}>Load</button>
-                    <button onClick={async () => {
-                      try {
-                        const { Api } = await import('./services/api.ts');
-                        await Api.workflows.delete(id);
-                      } catch { deleteWorkflow(id); }
-                      setRemoteWorkflows((prev) => prev.filter((x) => x !== id));
-                    }} style={{ background: '#d9534f', color: '#fff', border: 'none', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>Delete</button>
+                    <button onClick={() => handleDelete(id)} style={{ background: '#d9534f', color: '#fff', border: 'none', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>Delete</button>
                   </div>
                 </div>
               ))}
@@ -1232,6 +1252,13 @@ export default function EditorPage() {
                   ]);
                   setEdges([{ id: 'e-start-end', source: 'start-1', target: 'end-1', type: 'labeled' }]);
                   setWorkflowName('');
+                  pushHistory(
+                    [
+                      { id: 'start-1', type: 'start', position: { x: 50, y: 100 }, data: { title: 'Start' } },
+                      { id: 'end-1', type: 'end', position: { x: 300, y: 100 }, data: { title: 'End' } },
+                    ],
+                    [{ id: 'e-start-end', source: 'start-1', target: 'end-1', type: 'labeled' }]
+                  );
                   setShowListOverlay(false);
                 }} style={{ background: '#5cb85c', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 4 }}>New (Start+End)</button>
                 <button onClick={() => setShowListOverlay(false)} style={{ background: '#555', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 4 }}>Close</button>

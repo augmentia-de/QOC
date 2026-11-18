@@ -61,7 +61,7 @@ export function AgentConfigOverlay({ open, agent, onChange, onClose, onSave, onS
           <label>Temperature<br /><input type="number" step="0.1" value={agent.temperature} onChange={(e) => onChange({ temperature: parseFloat(e.target.value) || 0.3 })} style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }} /></label>
           <label>Max Tokens<br /><input type="number" value={agent.maxTokens} onChange={(e) => onChange({ maxTokens: parseInt(e.target.value) || 4096 })} style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }} /></label>
           <label>Top P<br /><input type="number" step="0.05" value={agent.topP} onChange={(e) => onChange({ topP: parseFloat(e.target.value) || 1.0 })} style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }} /></label>
-          <label>Permissions (text)<br /><input value={agent.permissions} onChange={(e) => onChange({ permissions: e.target.value })} placeholder="admin, reviewer" style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }} /></label>
+          <label>Roles allowed (comma, * = all)<br /><input value={agent.permissions} onChange={(e) => onChange({ permissions: e.target.value })} placeholder="*, admin, reviewer" style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }} /></label>
         </div>
         <label style={{ display: 'block', marginTop: 8 }}>System Prompt<br />
           <textarea value={agent.prompt} onChange={(e) => onChange({ prompt: e.target.value })} style={{ width: '100%', height: 80, background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }} />
@@ -72,7 +72,7 @@ export function AgentConfigOverlay({ open, agent, onChange, onClose, onSave, onS
         </label>
         <SchemaSource value={agent.schema.trim() ? (() => { try { return JSON.parse(agent.schema); } catch { return null; } })() : null} onChange={(schema) => onChange({ schema: schema ? JSON.stringify(schema, null, 2) : '' })} label="Response Schema (JSON)" />
         <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 11, color: '#999', marginBottom: 4 }}>Tools</div>
+          <div style={{ fontSize: 11, color: '#999', marginBottom: 4 }}>Tools (leer = keine Tools; * ist kein Eintrag — nutze keine Auswahl für "keine")</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {TOOL_OPTIONS.map((tool) => (
               <label key={tool} style={{ fontSize: 11 }}>

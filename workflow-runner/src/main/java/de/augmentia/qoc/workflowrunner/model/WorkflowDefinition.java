@@ -222,8 +222,9 @@ public record WorkflowDefinition(
             if (systemPrompt == null) systemPrompt = "";
             // responseSchema may be null (no structured output)
             if (ownerId == null) ownerId = "";
-            if (rolesAllowed == null || rolesAllowed.isEmpty()) rolesAllowed = List.of("*");
+            if (rolesAllowed == null) rolesAllowed = List.of();
             else rolesAllowed = List.copyOf(rolesAllowed);
+            // rolesAllowed: null/empty => nobody (not all). "*" => all.
             if (mode == null || mode.isBlank()) mode = "all";
             if (skills == null) skills = List.of();
             else skills = List.copyOf(skills);

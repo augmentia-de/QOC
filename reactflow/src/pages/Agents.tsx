@@ -82,7 +82,9 @@ export default function Agents() {
     systemPrompt: f.prompt,
     responseSchema: f.schema.trim() ? (() => { try { return JSON.parse(f.schema); } catch { return null; } })() : null,
     ownerId: f.ownerId,
-    rolesAllowed: ['*'],
+    rolesAllowed: (f.permissions || '').split(',').map((s) => s.trim()).filter(Boolean).length
+      ? (f.permissions || '').split(',').map((s) => s.trim()).filter(Boolean)
+      : ['*'],
     mode: f.mode,
     skills: f.skills.split(',').map((s) => s.trim()).filter(Boolean),
   });

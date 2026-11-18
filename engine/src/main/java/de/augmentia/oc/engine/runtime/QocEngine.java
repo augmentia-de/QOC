@@ -116,6 +116,9 @@ public static record EngineConfig(
     private final de.augmentia.oc.engine.runtime.step.Step step;
     private final de.augmentia.oc.engine.runtime.workflow.WorkflowStepProvider workflowStepProvider;
     private final de.augmentia.oc.engine.core.contract.tool.ToolSnapshot toolSnapshot;
+    public de.augmentia.oc.engine.core.contract.tool.ToolSnapshot globalToolSnapshot() {
+        return toolSnapshot;
+    }
     private final de.augmentia.oc.engine.core.contract.provider.ModelInfo modelInfo;
     private int workflowMaxSteps = 100;
     private int workflowNodeMaxRepetitions = 5;
@@ -802,9 +805,11 @@ public static record EngineConfig(
                         ? overrides.contextBuilder() : contextBuilder;
         if ((overrides == null || overrides.step() == null)
                 && !workflowMode && responseSchema.isPresent() && provider != null) {
-            de.augmentia.oc.engine.core.contract.tool.ToolSnapshot base = toolSnapshot == null
-                    ? new de.augmentia.oc.engine.core.contract.tool.ToolSnapshot(java.util.Map.of())
-                    : toolSnapshot;
+            de.augmentia.oc.engine.core.contract.tool.ToolSnapshot base = runSnapshot == null
+                    ? (toolSnapshot == null
+                            ? new de.augmentia.oc.engine.core.contract.tool.ToolSnapshot(java.util.Map.of())
+                            : toolSnapshot)
+                    : runSnapshot;
             de.augmentia.oc.engine.core.contract.tool.ToolSnapshot withSchema =
                     de.augmentia.oc.engine.runtime.tool.structured.SubmitResult.withTool(base, responseSchema.orElseThrow());
             de.augmentia.oc.engine.core.contract.tool.Hooks noopHooks = new de.augmentia.oc.engine.core.contract.tool.Hooks() {

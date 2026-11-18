@@ -73,7 +73,7 @@ public class SessionResource {
                                         java.util.List.of(),
                                         java.util.List.of(),
                                         java.util.List.of("*"),
-                                        a.rolesAllowed() == null ? java.util.List.of("*") : a.rolesAllowed());
+                                        a.rolesAllowed() == null || a.rolesAllowed().isEmpty() ? java.util.List.of("*") : a.rolesAllowed());
                         engine.agentCatalogue.define(a.name(), cfg, null);
                     }
                     de.augmentia.oc.engine.core.model.AgentId resolvedId = engine.agentCatalogue.resolve(a.name());

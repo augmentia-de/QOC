@@ -122,7 +122,7 @@ public class EngineConfig {
     private boolean workspaceSettingsEnabled = true;
     private String url;
     private String password;
-    private String permissionDefault = "least-privilege";
+    private static volatile String permissionDefault = "least-privilege";
     private static volatile String agentDefaultRoles = "admin";
     private List<AgentConfig> agents;
     private List<de.augmentia.oc.engine.runtime.tool.mcp.McpServerConfig> mcpServers;
@@ -766,6 +766,10 @@ public String workspace() { return workspace; }
                 if (!cleaned.isEmpty()) return cleaned;
             }
             if ("build".equalsIgnoreCase(name) || "plan".equalsIgnoreCase(name)) {
+                return List.of("*");
+            }
+            // "allow all" mode: default to "*" instead of admin-only.
+            if ("allow-all".equalsIgnoreCase(permissionDefault)) {
                 return List.of("*");
             }
             return List.of(agentDefaultRoles);

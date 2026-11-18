@@ -571,6 +571,20 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                                 de.augmentia.oc.engine.core.model.Principal principal,
                                 QocEngine.ExecutionOverrides overrides) {
         if (principal == null) principal = de.augmentia.oc.engine.core.model.Principal.anonymous();
+        // Enforce the agent's tool allow-list (empty = no tools, "*" = all).
+        if (overrides == null || overrides.toolSnapshot() == null) {
+            de.augmentia.oc.engine.core.contract.tool.ToolSnapshot global = engine.globalToolSnapshot();
+            de.augmentia.oc.engine.core.contract.tool.ToolSnapshot filtered = filterToolSnapshotForAgent(global, config);
+            QocEngine.ExecutionOverrides ov = new QocEngine.ExecutionOverrides(
+                    null, null, null, filtered, null, null);
+            if (overrides != null) {
+                ov = new QocEngine.ExecutionOverrides(
+                        overrides.agentProfile(), overrides.modelInfo(), overrides.step(),
+                        filtered, overrides.contextBuilder(), overrides.skillSelection(),
+                        overrides.compactionEnabled(), overrides.promptCacheKey());
+            }
+            overrides = ov;
+        }
         // Keep the child session so the parent run journal can link to it.
         SessionId child = engine.createSession(prefixedName, principal.id(), "workspace");
         EngineResult result = engine.runPrompt(child, prefixedName, prompt, config, true,
@@ -683,11 +697,40 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
         );
     }
 
+    /** Filters the global tool snapshot by the agent's configured tool allow-list.
+     *  null or "*" => all tools; empty list => no tools (only SubmitResult kept). */
+    private static de.augmentia.oc.engine.core.contract.tool.ToolSnapshot filterToolSnapshotForAgent(
+            de.augmentia.oc.engine.core.contract.tool.ToolSnapshot global,
+            QocEngine.AgentConfig config) {
+        if (global == null) return de.augmentia.oc.engine.core.contract.tool.ToolSnapshot.empty();
+        java.util.List<String> allow = (config == null || config.tools() == null) ? java.util.List.of("*") : config.tools();
+        boolean all = allow.isEmpty() ? false : allow.stream().anyMatch(a -> "*".equals(a));
+        if (all) return global;
+        if (allow.isEmpty()) {
+            // no tools: keep only submit_result (structured output) if present
+            java.util.Map<de.augmentia.oc.engine.core.model.ToolName, de.augmentia.oc.engine.core.contract.tool.ToolDefinition> filtered = new java.util.LinkedHashMap<>();
+            for (de.augmentia.oc.engine.core.contract.tool.ToolDefinition def : global.list()) {
+                if ("submit_result".equalsIgnoreCase(def.effectiveName())) filtered.put(def.name(), def);
+            }
+            return new de.augmentia.oc.engine.core.contract.tool.ToolSnapshot(filtered);
+        }
+        java.util.Set<String> allowed = new java.util.LinkedHashSet<>(allow);
+        java.util.Map<de.augmentia.oc.engine.core.model.ToolName, de.augmentia.oc.engine.core.contract.tool.ToolDefinition> filtered = new java.util.LinkedHashMap<>();
+        for (de.augmentia.oc.engine.core.contract.tool.ToolDefinition def : global.list()) {
+            String name = def.effectiveName();
+            if ("submit_result".equalsIgnoreCase(name) || allowed.stream().anyMatch(a -> a.equalsIgnoreCase(name))) {
+                filtered.put(def.name(), def);
+            }
+        }
+        return new de.augmentia.oc.engine.core.contract.tool.ToolSnapshot(filtered);
+    }
+
     /** RBAC: principal may use the agent? '*' in rolesAllowed means everyone. */
     private static boolean agentAllowed(WorkflowDefinition.Agent a, Principal p) {
         if (a == null) return true;
         List<String> allowed = a.rolesAllowed();
-        if (allowed == null || allowed.isEmpty() || allowed.contains("*")) return true;
+        if (allowed == null || allowed.isEmpty()) return false; // nobody
+        if (allowed.contains("*")) return true;
         if (p == null) return false;
         if (p.isAdmin()) return true;
         List<String> roles = p.roles();
