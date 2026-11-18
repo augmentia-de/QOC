@@ -40,6 +40,8 @@ const NODE_PALETTE = [
   { type: 'hitl', label: 'HITL', color: '#9333ea' },
   { type: 'subworkflow', label: 'Sub-Workflow', color: '#4f46e5' },
   { type: 'compact', label: 'Compact', color: '#059669' },
+  { type: 'guard', label: 'Guard', color: '#e11d48' },
+  { type: 'inject', label: 'Inject', color: '#65a30d' },
   { type: 'mcp_call', label: 'MCP Call', color: '#c026d3' },
   { type: 'rest_call', label: 'REST Call', color: '#0891b2' },
   { type: 'classify', label: 'Classify', color: '#7c3aed' },

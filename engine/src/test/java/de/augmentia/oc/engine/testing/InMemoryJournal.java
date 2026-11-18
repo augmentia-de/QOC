@@ -65,6 +65,11 @@ public final class InMemoryJournal implements Journal {
     }
 
     @Override
+    public synchronized Seq lastSeq(String aggregateId) {
+        return Seq.of(events.getOrDefault(aggregateId, List.of()).size());
+    }
+
+    @Override
     public synchronized void deleteAggregate(String aggregateId) {
         events.remove(aggregateId);
     }

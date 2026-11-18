@@ -177,6 +177,27 @@ export function RestCallNode({ data, selected }) {
   );
 }
 
+export function GuardNode({ data, selected }) {
+  const args = (data?.mcpArgs && typeof data.mcpArgs === 'object') ? data.mcpArgs : {};
+  const condition = String(args.condition || '');
+  return (
+    <NodeShell title={String(data?.title || 'Guard')} subtitle={condition ? `guard: ${condition}` : 'guard'} color="bg-rose-600 border-rose-400" selected={selected}>
+      <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
+      <PortRow right={{ id: 'error', label: 'Error' }} />
+    </NodeShell>
+  );
+}
+
+export function InjectNode({ data, selected }) {
+  const args = (data?.mcpArgs && typeof data.mcpArgs === 'object') ? data.mcpArgs : {};
+  const refs = Array.isArray(args.injectRefs) ? args.injectRefs : [];
+  return (
+    <NodeShell title={String(data?.title || 'Inject')} subtitle={refs.length ? `inject: ${refs.join(', ')}` : 'inject'} color="bg-lime-600 border-lime-400" selected={selected}>
+      <PortRow left={{ id: 'in', label: 'In' }} right={{ id: 'out', label: 'Out' }} />
+      <PortRow right={{ id: 'error', label: 'Error' }} />
+    </NodeShell>
+  );
+}
 export function ClassifyNode({ data, selected }) {
   const args = (data?.mcpArgs && typeof data.mcpArgs === 'object') ? data.mcpArgs : {};
   const modelName = String(args.modelName || args.model || 'jev-latest');

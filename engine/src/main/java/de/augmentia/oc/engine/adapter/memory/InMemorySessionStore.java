@@ -132,6 +132,19 @@ public final class InMemorySessionStore implements SessionStore, SessionWorkspac
     }
 
     @Override
+    public List<SessionInfo> listByTitlePrefix(String prefix) {
+        if (prefix == null || prefix.isBlank()) return list();
+        List<SessionInfo> result = new ArrayList<>();
+        for (Object o : state.sessions.values()) {
+            if (o instanceof SessionInfo info && info.title() != null
+                    && info.title().startsWith(prefix)) {
+                result.add(info);
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    @Override
     public boolean delete(SessionId session) {
         if (session == null) throw new IllegalArgumentException("session must not be null");
         ReentrantLock lock = state.lock(session);

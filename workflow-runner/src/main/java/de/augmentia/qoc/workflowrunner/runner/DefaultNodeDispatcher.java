@@ -28,6 +28,9 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
 
     private static final Logger LOG = LoggerFactory.getLogger(DefaultNodeDispatcher.class);
 
+    private static final int MAX_SUBWORKFLOW_DEPTH = 3;
+    private static final ThreadLocal<Integer> SUBWORKFLOW_DEPTH = ThreadLocal.withInitial(() -> 0);
+
 
     private final QocEngine engine;
     private final WorkflowDefinitionStore store;
@@ -207,10 +210,12 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
             }
             case "hitl" -> {
                 // HITL pause (SDW-08): suspend the run pending human approval.
-                // The approval id is deterministic per run+node so replay and
-                // resume converge on the same decision record.
+                // The approval id is derived from the run/session and node so replay
+                // and resume converge on the same decision record. It must not depend
+                // on object identity, which is not stable across JVM restarts.
+                String runKey = (cacheKey == null || cacheKey.isBlank()) ? "" : cacheKey;
                 String approvalId = "hitl:" + (ctx.getCurrentNodeId() == null ? node.id() : ctx.getCurrentNodeId())
-                        + ":" + System.identityHashCode(ctx);
+                        + ":" + runKey;
                 Map<String, Object> state = Map.of(
                         "approval", "pending",
                         "node", node.id(),
@@ -229,9 +234,43 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 if (subWf == null) {
                     return new NodeResult("subworkflow not found: " + ref, null);
                 }
-                WorkflowDefinition expanded = expander.expand(subWf);
-                ctx.setNodeOutput(node.id(), "subworkflow:" + ref);
-                return new NodeResult("subworkflow:" + ref, null);
+                WorkflowDefinition expanded = expander == null ? subWf : expander.expand(subWf);
+
+                // Nested execution is bounded to avoid infinite recursion.
+                if (SUBWORKFLOW_DEPTH.get() >= MAX_SUBWORKFLOW_DEPTH) {
+                    String msg = "subworkflow depth limit exceeded: " + ref;
+                    ctx.setNodeOutput(node.id(), msg);
+                    return NodeResult.failed("SUBWORKFLOW_DEPTH", msg);
+                }
+                int previousDepth = SUBWORKFLOW_DEPTH.get();
+                SUBWORKFLOW_DEPTH.set(previousDepth + 1);
+                try {
+                    WorkflowExecutor executor = new WorkflowExecutor(engine, store, mcpManager, agentStore);
+                    WorkflowExecution execution = executor.executeRun(
+                            expanded, input == null ? "" : input, principal);
+                    Map<String, Object> structured = new java.util.LinkedHashMap<>();
+                    structured.put("subworkflow", ref);
+                    structured.put("runId", execution.runId());
+                    structured.put("sessionId", execution.sessionId());
+                    structured.put("failed", execution.failed());
+                    structured.put("paused", execution.paused());
+                    if (execution.error() != null && !execution.error().isBlank()) {
+                        structured.put("error", execution.error());
+                    }
+                    ctx.setNodeOutput(node.id(), execution.result());
+                    if (execution.paused()) {
+                        return NodeResult.paused(execution.approvalId(), structured);
+                    }
+                    if (execution.failed()) {
+                        String msg = execution.error().isBlank()
+                                ? "subworkflow failed: " + ref : "subworkflow failed: " + ref + ": " + execution.error();
+                        ctx.setNodeOutput(node.id(), msg);
+                        return NodeResult.failed("SUBWORKFLOW_FAILED", msg);
+                    }
+                    return new NodeResult("subworkflow:" + ref, structured, execution.sessionId());
+                } finally {
+                    SUBWORKFLOW_DEPTH.set(previousDepth);
+                }
             }
             case "fork" -> {
                 List<String> targets = TopologicalSort.outgoingTargets(def, node.id());

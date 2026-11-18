@@ -120,7 +120,7 @@ Wichtige Semantiken:
 - **`guard` / `inject` / `compact`**: Korrekturrunden, Kontext-Injektion,
   Kontext-Kompaktierung.
 - **`mcp_call` / `rest_call`**: externe Tools und HTTP.
-- **`subworkflow`**: wird beim Start expandiert (Kindgraph; keine geschachtelte Ausführung).
+- **`subworkflow`**: führt den referenzierten Workflow als geschachtelten Run aus (Tiefenlimit 3).
 - **`fork` / `join`**: strukturelle Graph-Knoten; die Ausführung bleibt
   step-basiert.
 

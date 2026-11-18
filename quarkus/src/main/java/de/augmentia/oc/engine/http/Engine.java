@@ -451,6 +451,12 @@ public class Engine {
 
     public de.augmentia.oc.engine.runtime.QocEngine qocEngine() { return qocEngine; }
 
+    public java.util.Map<String, Long> resilienceMetrics() {
+        if (qocEngine == null) return java.util.Map.of();
+        try { return qocEngine.resilienceMetrics(); }
+        catch (RuntimeException e) { return java.util.Map.of(); }
+    }
+
 /** Lightweight LLM text completion for workflow generation (and similar). */
 public String generateText(String prompt) {
     if (prompt == null || prompt.isBlank()) return "";
@@ -1452,7 +1458,7 @@ commandLoader = new CommandLoader(workspacePath,
             return new de.augmentia.oc.engine.runtime.compaction.CompactionResult.NothingToDo();
         }
         ModelRef model = preparedModel(info, modelInfo());
-        Seq throughSeq = Seq.of(journal.history(id.value(), Seq.zero()).size());
+        Seq throughSeq = journal.lastSeq(id.value());
         return compaction.compact(id, CompactionReason.MANUAL, model,
                 modelInfo().limits().context(), Option.none(), throughSeq, clock.now());
     }
@@ -1803,7 +1809,7 @@ commandLoader = new CommandLoader(workspacePath,
         Option<SessionInfo> found = sessions.info(id);
         if (found.isEmpty()) throw new IllegalArgumentException("unknown session: " + id);
 
-        long before = journal.history(id.value(), Seq.zero()).size();
+        long before = journal.lastSeq(id.value()).value();
         metrics.promptStarted();
         if (!promptSlots.tryAcquire()) {
             metrics.promptBusy();
@@ -1964,7 +1970,7 @@ commandLoader = new CommandLoader(workspacePath,
         org.jboss.logmanager.MDC.put("session_id", id.value());
         InboxItem item = new InboxItem.UserItem(text, List.of(), List.of(), List.of(), Map.of());
         sessionService.enqueue(id, inboxId, item);
-        Seq enqueuedSeq = Seq.of(journal.history(id.value(), Seq.zero()).size());
+        Seq enqueuedSeq = journal.lastSeq(id.value());
         sessions.putInbox(new InboxEntry(inboxId, id, item,
                 de.augmentia.oc.engine.core.model.Delivery.QUEUE, enqueuedSeq, clock.now()));
         sessionService.deliver(id);

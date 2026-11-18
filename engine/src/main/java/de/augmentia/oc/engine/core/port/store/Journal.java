@@ -19,6 +19,9 @@ public interface Journal {
 
     List<StoredEvent> history(String aggregateId, Seq after);
 
+    /** Returns the current last sequence for an aggregate (zero if none). */
+    Seq lastSeq(String aggregateId);
+
     List<StoredEvent> historyOfType(String aggregateId, String type, Seq after);
 
     /** Removes all events and the sequence row of one aggregate. */

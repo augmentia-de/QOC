@@ -22,6 +22,14 @@ public interface SessionStore extends SessionReader {
 
     List<SessionInfo> list();
 
+    /** Lists sessions whose title starts with the given prefix. */
+    default List<SessionInfo> listByTitlePrefix(String prefix) {
+        if (prefix == null || prefix.isBlank()) return list();
+        return list().stream()
+                .filter(info -> info.title() != null && info.title().startsWith(prefix))
+                .toList();
+    }
+
     /** Deletes one session and its dependent projections. */
     boolean delete(SessionId session);
 }

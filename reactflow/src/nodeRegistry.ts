@@ -1,4 +1,4 @@
-import { AgentNode, DecisionNode, StartNode, EndNode, ContextAgentExecutorNode, ForkNode, JoinNode, LoopNode, HitlNode, SubworkflowNode, CompactNode, McpCallNode, RestCallNode, ClassifyNode } from './nodeTypes.tsx';
+import { AgentNode, DecisionNode, StartNode, EndNode, ContextAgentExecutorNode, ForkNode, JoinNode, LoopNode, HitlNode, SubworkflowNode, CompactNode, McpCallNode, RestCallNode, ClassifyNode, GuardNode, InjectNode } from './nodeTypes.tsx';
 
 export const nodeTypes = {
   agent: AgentNode,
@@ -12,6 +12,8 @@ export const nodeTypes = {
   hitl: HitlNode,
   subworkflow: SubworkflowNode,
   compact: CompactNode,
+  guard: GuardNode,
+  inject: InjectNode,
   mcp_call: McpCallNode,
   rest_call: RestCallNode,
   classify: ClassifyNode,

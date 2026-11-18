@@ -199,7 +199,7 @@ When `security.mode = "oidc"`:
 
 - MCP servers are namespaced.
 - Remote MCP uses HTTP transport.
-- OAuth 2.1 is supported for remote MCP clients.
+- OAuth 2.1 is supported for remote MCP clients; QOC's own MCP server OAuth endpoints are not implemented.
 - Tokens are stored per integration.
 - Local MCP servers run as child processes.
 - MCP resources are read-only.
@@ -220,13 +220,12 @@ When `security.mode = "oidc"`:
 
 ### 4.9 Guardrails
 
-- Declarative guardrails in `settings.json`.
-- Java SPI guardrails via CDI.
-- Optional external webhook guardrails (see §4.9a).
+- Built-in guardrails are currently provided by the external webhook path (`GuardrailHooks` + `WebhookClient`).
+- There is no declarative guardrail rule engine and no in-process SPI in the current code.
 - Pre-hooks may block or rewrite.
 - Post-hooks may redact or replace.
 - Permission hooks may change effect and message.
-- Hooks are ordered and fail closed where appropriate.
+- Webhook decisions follow the configured fail mode.
 
 #### 4.9a External webhook guardrails
 
@@ -266,7 +265,7 @@ When `security.mode = "oidc"`:
 
 - OpenTelemetry spans for prompts, steps and tools.
 - Structured logs for permission decisions.
-- Guardrail decision logging (webhook + SPI + declarative), redacted.
+- Guardrail decision logging (webhook), redacted.
 - Cost and token tracking.
 - Session history and event replay.
 - Error classification.

@@ -328,14 +328,21 @@ public final class LangChain4jProviderAdapter implements ProviderAdapter {
     }
 
     private ToolSpecification toToolSpecification(ToolDefinition definition) {
+        boolean strict = strictStructuredOutput()
+                && "submit_result".equals(definition.effectiveName());
         return ToolSpecification.builder()
                 .name(definition.effectiveName())
                 .description(definition.description())
-                .parameters(toJsonObjectSchema(definition.inputSchema()))
+                .parameters(toJsonObjectSchema(definition.inputSchema(), strict))
+                .strict(strict)
                 .build();
     }
 
     private JsonObjectSchema toJsonObjectSchema(Schema schema) {
+        return toJsonObjectSchema(schema, false);
+    }
+
+    private JsonObjectSchema toJsonObjectSchema(Schema schema, boolean strict) {
         if (schema instanceof Schema.Obj obj) {
             JsonObjectSchema.Builder builder = JsonObjectSchema.builder();
             List<String> required = new ArrayList<>();
@@ -343,29 +350,33 @@ public final class LangChain4jProviderAdapter implements ProviderAdapter {
                 Schema inner = field.getValue();
                 boolean optional = inner instanceof Schema.Opt;
                 Schema unwrapped = optional ? ((Schema.Opt) inner).inner() : inner;
-                builder.addProperty(field.getKey(), toLcSchema(unwrapped));
-                if (!optional) required.add(field.getKey());
+                builder.addProperty(field.getKey(), toLcSchema(unwrapped, strict));
+                if (strict || !optional) required.add(field.getKey());
             }
-            if (obj.additionalProperties()) builder.additionalProperties(true);
+            if (strict) {
+                builder.additionalProperties(false);
+            } else if (obj.additionalProperties()) {
+                builder.additionalProperties(true);
+            }
             return builder.required(required).build();
         }
         // Wrap non-object schemas so ToolSpecification always receives an object schema.
         return JsonObjectSchema.builder()
-                .addProperty("value", toLcSchema(schema))
+                .addProperty("value", toLcSchema(schema, strict))
                 .required("value")
                 .build();
     }
 
-    private JsonSchemaElement toLcSchema(Schema schema) {
+    private JsonSchemaElement toLcSchema(Schema schema, boolean strict) {
         return switch (schema) {
             case Schema.Str ignored -> new JsonStringSchema();
             case Schema.Int ignored -> new JsonIntegerSchema();
             case Schema.Long ignored -> new JsonIntegerSchema();
             case Schema.Num ignored -> new JsonNumberSchema();
             case Schema.Bool ignored -> new JsonBooleanSchema();
-            case Schema.Arr arr -> JsonArraySchema.builder().items(toLcSchema(arr.item())).build();
-            case Schema.Obj obj -> toJsonObjectSchema(obj);
-            case Schema.Opt opt -> toLcSchema(opt.inner());
+            case Schema.Arr arr -> JsonArraySchema.builder().items(toLcSchema(arr.item(), strict)).build();
+            case Schema.Obj obj -> toJsonObjectSchema(obj, strict);
+            case Schema.Opt opt -> toLcSchema(opt.inner(), strict);
             case Schema.Enum en -> {
                 JsonEnumSchema.Builder b = JsonEnumSchema.builder();
                 b.enumValues(en.values());
@@ -374,12 +385,18 @@ public final class LangChain4jProviderAdapter implements ProviderAdapter {
             case Schema.Union union -> {
                 JsonAnyOfSchema.Builder b = JsonAnyOfSchema.builder();
                 for (Schema option : union.options()) {
-                    b.anyOf(toLcSchema(option));
+                    b.anyOf(toLcSchema(option, strict));
                 }
                 yield b.build();
             }
             case Schema.Any ignored -> new JsonStringSchema();
         };
+    }
+
+    private boolean strictStructuredOutput() {
+        String value = System.getProperty("qoc.structured-output.strict");
+        if (value == null || value.isBlank()) value = System.getenv("QOC_STRUCTURED_OUTPUT_STRICT");
+        return "true".equalsIgnoreCase(value);
     }
 
     private String joinText(List<ModelContent> content) {

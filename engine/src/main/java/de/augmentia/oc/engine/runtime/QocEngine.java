@@ -106,6 +106,11 @@ public static record EngineConfig(
     private final de.augmentia.oc.engine.runtime.resilience.TriageService triageService;
     private final de.augmentia.oc.engine.runtime.resilience.PreflightChecker preflightChecker;
     private final de.augmentia.oc.engine.runtime.resilience.WebhookAlerter webhookAlerter;
+    private final java.util.concurrent.atomic.AtomicLong preflightFailures = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong triageAttempts = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong triageNonRetryable = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong loopDetections = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong verifyFailures = new java.util.concurrent.atomic.AtomicLong();
     private final EventPublisher eventPublisher;
     private final AgentResolver agentResolver;
     private final TracerProvider tracerProvider;
@@ -759,6 +764,7 @@ public static record EngineConfig(
                             null, null, () -> true, java.nio.file.Path.of("."));
             var preflightResult = preflightChecker.check(preflightCtx);
             if (!preflightResult.passed()) {
+                preflightFailures.incrementAndGet();
                 StringBuilder msg = new StringBuilder("Pre-flight checks failed:\n");
                 for (var issue : preflightResult.issues()) {
                     msg.append("  - ").append(issue.type()).append(": ").append(issue.message()).append("\n");
@@ -970,7 +976,7 @@ public static record EngineConfig(
                         compactionService.compact(session, de.augmentia.oc.engine.core.model.CompactionReason.OVERFLOW,
                                 new de.augmentia.oc.engine.core.model.ModelRef(model.providerId(), model.id()),
                                 de.augmentia.oc.engine.core.model.Option.none(),
-                                de.augmentia.oc.engine.core.model.Seq.of(stores.journal().history(session.value(), de.augmentia.oc.engine.core.model.Seq.zero()).size()),
+                                de.augmentia.oc.engine.core.model.Seq.of(stores.journal().lastSeq(session.value()).value()),
                                 clock.now());
                     } catch (RuntimeException e) {
                         // Compaction failed — continue anyway
@@ -1052,10 +1058,12 @@ public static record EngineConfig(
                         // Phase 2: Triage for correctable errors
                         if (errorType == de.augmentia.oc.engine.runtime.resilience.ErrorClassifier.ErrorType.CORRECTABLE
                                 && engineConfig.triageEnabled() && triageService != null) {
+                            triageAttempts.incrementAndGet();
                             var triageCtx = new de.augmentia.oc.engine.runtime.resilience.TriageService.TriageContext(
                                     null, failed.message(), null, null, retryAttempts, engineConfig.triageMaxAttempts());
                             var triageResult = triageService.analyze(triageCtx);
                             if (!triageResult.retryable()) {
+                                triageNonRetryable.incrementAndGet();
                                 return de.augmentia.oc.engine.core.model.EngineResult.failed(
                                         "Session " + session.value() + " — LLM failed: " + failed.message(), false);
                             }
@@ -1197,6 +1205,7 @@ public static record EngineConfig(
                     if (!finished.toolCalls().isEmpty()) {
                         for (de.augmentia.oc.engine.runtime.step.StepResult.ToolCallOutcome outcome : finished.toolCalls()) {
                             if (loopDetector.isLoop(recentToolCalls, outcome.call(), engineConfig.loopDetectionThreshold())) {
+                                loopDetections.incrementAndGet();
                                 return de.augmentia.oc.engine.core.model.EngineResult.failed(
                                         "Session " + session.value() + " — Loop detected: " + outcome.call().name().value(), false);
                             }
@@ -1222,6 +1231,7 @@ public static record EngineConfig(
                                     if (!ok) failedRules.add(rule);
                                 }
                                 if (!failedRules.isEmpty()) {
+                                    verifyFailures.incrementAndGet();
                                     String missing = failedRules.stream()
                                             .map(r -> r.condition().toString())
                                             .collect(java.util.stream.Collectors.joining(", "));
@@ -1428,6 +1438,16 @@ public static record EngineConfig(
         if ("anonymous".equalsIgnoreCase(owner) || "opencode".equalsIgnoreCase(owner)
                 || "local".equalsIgnoreCase(owner)) return true;
         return owner.equalsIgnoreCase(user);
+    }
+
+    public java.util.Map<String, Long> resilienceMetrics() {
+        java.util.Map<String, Long> values = new java.util.LinkedHashMap<>();
+        values.put("preflightFailures", preflightFailures.get());
+        values.put("triageAttempts", triageAttempts.get());
+        values.put("triageNonRetryable", triageNonRetryable.get());
+        values.put("loopDetections", loopDetections.get());
+        values.put("verifyFailures", verifyFailures.get());
+        return values;
     }
 
     private static boolean evaluateVerifyCondition(de.augmentia.oc.engine.core.eval.VerifyCondition condition,

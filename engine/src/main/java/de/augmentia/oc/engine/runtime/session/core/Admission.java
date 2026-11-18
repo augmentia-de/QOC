@@ -52,7 +52,7 @@ public final class Admission {
             return new AdmissionResult.Admitted(id, false);
         }
 
-        Seq enqueuedSeq = Seq.of(journal.history(session.value(), Seq.zero()).size() + 1L);
+        Seq enqueuedSeq = Seq.of(journal.lastSeq(session.value()).value() + 1L);
         journal.append(new EventDraft(session.value(), 1,
                 new SessionEvent.InboxEnqueued(session, id, item, enqueuedSeq)));
 

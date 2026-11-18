@@ -234,6 +234,23 @@ public abstract class AbstractJdbcSessions implements SessionStore, de.augmentia
     }
 
     @Override
+    public List<SessionInfo> listByTitlePrefix(String prefix) {
+        if (prefix == null || prefix.isBlank()) return list();
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "select * from session where title like ? order by time_updated desc")) {
+            statement.setString(1, prefix + "%");
+            try (ResultSet resultSet = statement.executeQuery()) {
+                List<SessionInfo> sessions = new ArrayList<>();
+                while (resultSet.next()) sessions.add(readInfo(resultSet));
+                return List.copyOf(sessions);
+            }
+        } catch (SQLException e) {
+            throw new StoreFailure("cannot list sessions by title prefix", e);
+        }
+    }
+
+    @Override
     public Option<SessionInfo> info(SessionId session) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(

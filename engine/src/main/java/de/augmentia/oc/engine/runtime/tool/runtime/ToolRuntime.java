@@ -42,6 +42,7 @@ public final class ToolRuntime {
     private final ToolOutputStore outputStore;
     private final ToolResultCache resultCache;
     private final long stepTimeoutSeconds;
+    private final long cacheTtlSeconds;
 
     public ToolRuntime(ToolSnapshot snapshot, ToolAuthorizer authorizer, PermissionGate permission,
                        Hooks hooks, ToolOutputStore outputStore) {
@@ -56,6 +57,12 @@ public final class ToolRuntime {
     public ToolRuntime(ToolSnapshot snapshot, ToolAuthorizer authorizer, PermissionGate permission,
                        Hooks hooks, ToolOutputStore outputStore, ToolResultCache resultCache,
                        long stepTimeoutSeconds) {
+        this(snapshot, authorizer, permission, hooks, outputStore, resultCache, stepTimeoutSeconds, 0);
+    }
+
+    public ToolRuntime(ToolSnapshot snapshot, ToolAuthorizer authorizer, PermissionGate permission,
+                       Hooks hooks, ToolOutputStore outputStore, ToolResultCache resultCache,
+                       long stepTimeoutSeconds, long cacheTtlSeconds) {
         if (snapshot == null || authorizer == null || permission == null || hooks == null
                 || outputStore == null) {
             throw new IllegalArgumentException("runtime dependencies must not be null");
@@ -67,6 +74,7 @@ public final class ToolRuntime {
         this.outputStore = outputStore;
         this.resultCache = resultCache;
         this.stepTimeoutSeconds = stepTimeoutSeconds > 0 ? stepTimeoutSeconds : 30;
+        this.cacheTtlSeconds = cacheTtlSeconds > 0 ? cacheTtlSeconds : 0;
     }
 
     public ToolOutcome execute(ToolCall rawCall, ToolContext context) {
@@ -83,7 +91,9 @@ public final class ToolRuntime {
 
             // Idempotency: return cached result if present.
             if (resultCache != null && context.idempotencyKey() != null) {
-                java.util.Optional<JsonValue> cached = resultCache.find(context.idempotencyKey());
+                java.time.Instant cutoff = cacheTtlSeconds > 0
+                        ? java.time.Instant.now().minusSeconds(cacheTtlSeconds) : null;
+                java.util.Optional<JsonValue> cached = resultCache.find(context.idempotencyKey(), cutoff);
                 if (cached.isPresent()) {
                     ToolOutcome decoded = ToolOutcomeJson.decode(cached.get());
                     if (decoded != null) {

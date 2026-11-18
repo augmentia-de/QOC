@@ -91,7 +91,9 @@ public class AdminResource {
     public Response metrics() {
         Response denied = requireRole("admin");
         if (denied != null) return denied;
-        return Response.ok(metrics.snapshot()).build();
+        java.util.Map<String, Long> snapshot = new java.util.LinkedHashMap<>(metrics.snapshot());
+        snapshot.putAll(engine.resilienceMetrics());
+        return Response.ok(snapshot).build();
     }
 
     @GET

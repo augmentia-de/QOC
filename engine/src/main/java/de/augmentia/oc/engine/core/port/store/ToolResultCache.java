@@ -17,6 +17,11 @@ public interface ToolResultCache {
 
     Optional<JsonValue> find(IdempotencyKey key);
 
+    /** Finds a cached result, ignoring entries created before {@code notBefore}. */
+    default Optional<JsonValue> find(IdempotencyKey key, java.time.Instant notBefore) {
+        return find(key);
+    }
+
     void store(IdempotencyKey key, String sessionId, String toolName, JsonValue outcome);
 
     void delete(IdempotencyKey key);

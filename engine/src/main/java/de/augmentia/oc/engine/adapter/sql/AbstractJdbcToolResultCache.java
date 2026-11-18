@@ -28,11 +28,19 @@ public abstract class AbstractJdbcToolResultCache implements ToolResultCache {
 
     @Override
     public Optional<JsonValue> find(IdempotencyKey key) {
+        return find(key, null);
+    }
+
+    @Override
+    public Optional<JsonValue> find(IdempotencyKey key, java.time.Instant notBefore) {
         if (key == null) return Optional.empty();
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(
-                     "select outcome from tool_result_cache where idempotency_key = ?")) {
+                     notBefore == null
+                             ? "select outcome from tool_result_cache where idempotency_key = ?"
+                             : "select outcome from tool_result_cache where idempotency_key = ? and created_at >= ?")) {
             statement.setString(1, key.value());
+            if (notBefore != null) statement.setTimestamp(2, java.sql.Timestamp.from(notBefore));
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (!resultSet.next()) return Optional.empty();
                 Result<JsonValue> parsed = Json.parse(resultSet.getString("outcome"));

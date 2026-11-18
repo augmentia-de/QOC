@@ -137,12 +137,11 @@ public final class WorkflowRunJournal {
         int max = Math.max(1, limit);
         List<SessionInfo> sessions;
         try {
-            sessions = stores.sessions().list();
+            sessions = stores.sessions().listByTitlePrefix("workflow:");
         } catch (RuntimeException e) {
             return List.of();
         }
         return sessions.stream()
-                .filter(info -> info.title() != null && info.title().startsWith("workflow:"))
                 .sorted(Comparator.comparing(SessionInfo::updated).reversed())
                 .limit(max)
                 .map(SessionInfo::id)

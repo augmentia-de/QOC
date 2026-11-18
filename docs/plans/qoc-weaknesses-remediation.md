@@ -13,6 +13,26 @@
 
 ---
 
+## Umsetzungsstatus (2026-11-18)
+
+Bereits umgesetzt:
+- P0-1 Ownership für Workflow-Runs (`WorkflowResource` list/status/resume).
+- P0-2 Stabile HITL-Approval-IDs (kein `System.identityHashCode` mehr).
+- P0-3 Geschachtelte Subworkflow-Ausführung (`DefaultNodeDispatcher`) mit Tiefenlimit.
+- P0-4 Fork/Join als strukturelle Knoten dokumentiert und validiert.
+- P1-1 Journal `lastSeq(...)` statt Full-History-Scans in Hot Paths.
+- P1-2 `SessionStore.listByTitlePrefix(...)` für Run-Scan-Optimierung.
+- P1-4 MCP-Server bleibt Tool-only; OAuth-Stubs sind dokumentiert, nicht implementiert.
+- P1-10 Editor-Palette um `guard` und `inject` ergänzt (16 Node-Typen).
+- P1-3 Fork/Join-Formvalidierung in `GraphCompiler`.
+- P1-5 Opt-in Strict Structured Output (`qoc.structured-output.strict` / `QOC_STRUCTURED_OUTPUT_STRICT`).
+- P1-7 Tool-Outputs auf Dateisystem (`FileSystemToolOutputStore`) statt DB-Blobs für SQL/Postgres.
+- P1-9 Resilience-Metriken in `/api/metrics` (`resilienceMetrics()`).
+
+Noch offen: P1-9 Metriken, P2-1 bis P2-5.
+
+---
+
 ## 0. Leitprinzipien
 
 1. **Keine stillen Semantikänderungen.** Wenn `subworkflow`, `fork` oder `guard`
@@ -24,8 +44,9 @@
    Session/Run/Node abgeleitet werden, nicht aus `System.identityHashCode`.
 4. **Performance als Feature.** Journal-Scans, Run-Scans und DB-Blobs werden als
    technische Schulden behandelt, nicht als Detail.
-5. **Konzepte bleiben Konzepte.** Runtime-Adaptation, Temporal und MCP-OAuth
-   werden nicht als fertig verkauft, bis Code und Tests existieren.
+5. **Konzepte bleiben Konzepte.** Runtime-Adaptation und MCP-OAuth
+   werden nicht als fertig verkauft, bis Code und Tests existieren. Temporal
+   wird nicht benötigt.
 
 ---
 
@@ -427,22 +448,12 @@ fehlen).
 
 ---
 
-### P2-2: Temporal-Integration
+### P2-2: Temporal-Integration (nicht benötigt / out of scope)
 
-**Problem:** Nur Plan/Doku, keine Implementierung.
-
-**Umsetzung:**
-- Entscheidung: Temporal als externer Orchestrator oder nur als optionale
-  Durability-Schicht.
-- Wenn umgesetzt: Workflow-Run ↔ Temporal Workflow/Activity Mapping.
-- Fallback: aktueller Journal-basierter Runner bleibt Standard.
-
-**Dateien:**
-- `docs/engineering/ReactFlow-temporal.md`
-- `docs/plans/Hybrid.md`
-
-**Akzeptanz:**
-- Temporal bleibt optional und dokumentiert als experimentell.
+Temporal ist eine externe, verteilte Workflow-Orchestrierungsplattform. QOC hat
+bereits journalbasierte Recovery, Resume und Checkpoints; eine Temporal-
+Integration ist daher optional und aktuell nicht erforderlich. Sie bleibt
+Konzept/Dokumentation und wird nicht als Feature gezählt.
 
 ---
 

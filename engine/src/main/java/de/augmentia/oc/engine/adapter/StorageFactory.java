@@ -172,8 +172,8 @@ public final class StorageFactory {
                                                   DataSource dataSource) {
         return switch (kind) {
             case MEMORY -> new de.augmentia.oc.engine.adapter.memory.InMemoryToolOutputStore(memory);
-            case SQLITE -> new SqliteToolOutput(dataSource, java.nio.file.Path.of("tool-output"));
-            case POSTGRES -> new SqlToolOutput(dataSource, java.nio.file.Path.of("tool-output"));
+            case SQLITE, POSTGRES -> new de.augmentia.oc.engine.adapter.fs.FileSystemToolOutputStore(
+                    java.nio.file.Path.of("tool-output"));
         };
     }
 

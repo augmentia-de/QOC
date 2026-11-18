@@ -90,6 +90,16 @@ public final class InMemoryJournal implements Journal {
     }
 
     @Override
+    public Seq lastSeq(String aggregateId) {
+        if (aggregateId == null || aggregateId.isBlank()) return Seq.zero();
+        EventLog log = (EventLog) state.journals.get(aggregateId);
+        if (log == null) return Seq.zero();
+        synchronized (log) {
+            return Seq.of(log.seq.get());
+        }
+    }
+
+    @Override
     public void deleteAggregate(String aggregateId) {
         if (aggregateId == null || aggregateId.isBlank()) return;
         state.journals.remove(aggregateId);

@@ -13,4 +13,6 @@ export {
   McpCallNode,
   RestCallNode,
   ClassifyNode,
+  GuardNode,
+  InjectNode,
 } from './components/workflowNodes.tsx';

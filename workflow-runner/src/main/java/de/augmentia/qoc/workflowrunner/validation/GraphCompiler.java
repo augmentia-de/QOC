@@ -138,10 +138,24 @@ public class GraphCompiler {
         // otherwise they end up unresolved in the LLM prompt.
         errors.addAll(validateTemplates(def, nodeIds));
 
-        // Check for exactly one end node
+        // Check for at least one end node
         long endCount = def.nodes().stream().filter(n -> "end".equals(n.type())).count();
         if (endCount == 0) {
             errors.add("Workflow must have at least one 'end' node");
+        }
+
+        // Check fork/join shape...
+        // a join at least two incoming edges. Otherwise the node is decorative.
+        for (WorkflowDefinition.Node n : def.nodes()) {
+            if ("fork".equals(n.type())) {
+                if (TopologicalSort.outgoingTargets(def, n.id()).size() < 2) {
+                    errors.add("Fork node " + n.id() + " requires at least two outgoing edges");
+                }
+            } else if ("join".equals(n.type())) {
+                if (TopologicalSort.incomingSources(def, n.id()).size() < 2) {
+                    errors.add("Join node " + n.id() + " requires at least two incoming edges");
+                }
+            }
         }
 
         // SDW-07: gate-bypass invariant

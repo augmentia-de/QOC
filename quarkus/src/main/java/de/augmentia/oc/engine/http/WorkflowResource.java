@@ -220,12 +220,34 @@ public class WorkflowResource {
     @Path("/workflows/runs")
     public Response listRuns(@QueryParam("limit") @DefaultValue("50") int limit) {
         WorkflowRunJournal journal = new WorkflowRunJournal(engine.qocEngine());
-        return Response.ok(Map.of("runs", journal.scan(limit))).build();
+        List<WorkflowRunSnapshot> runs = journal.scan(limit);
+        String user = accessGuard == null ? null : accessGuard.currentUser();
+        boolean admin = accessGuard != null && accessGuard.isAdmin();
+        if (!admin && user != null && !user.isBlank()) {
+            List<WorkflowRunSnapshot> filtered = new ArrayList<>();
+            for (WorkflowRunSnapshot snapshot : runs) {
+                try {
+                    var info = engine.qocEngine().session(
+                            de.augmentia.oc.engine.core.model.SessionId.parse(snapshot.runId()));
+                    if (info.isPresent() && accessGuard.isOwner(info.orElseThrow(), user)) {
+                        filtered.add(snapshot);
+                    }
+                } catch (IllegalArgumentException ignored) {
+                    // invalid id: skip
+                }
+            }
+            runs = filtered;
+        }
+        return Response.ok(Map.of("runs", runs)).build();
     }
 
     @GET
     @Path("/workflows/runs/{runId}")
     public Response runStatus(@PathParam("runId") String runId) {
+        if (accessGuard != null) {
+            Response denied = accessGuard.requireAccess(runId);
+            if (denied != null) return denied;
+        }
         WorkflowRunJournal journal = new WorkflowRunJournal(engine.qocEngine());
         Optional<WorkflowRunSnapshot> snapshot = journal.load(runId);
         if (snapshot.isEmpty()) {
@@ -238,6 +260,10 @@ public class WorkflowResource {
     @Path("/workflows/runs/{runId}/resume")
     @Consumes(MediaType.WILDCARD)
     public Response resumeRun(@PathParam("runId") String runId) {
+        if (accessGuard != null) {
+            Response denied = accessGuard.requireAccess(runId);
+            if (denied != null) return denied;
+        }
         try {
             WorkflowExecution execution = executor().resume(runId);
             Map<String, Object> body = new LinkedHashMap<>();

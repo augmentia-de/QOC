@@ -53,6 +53,22 @@ public abstract class AbstractJdbcJournal implements Journal {
     }
 
     @Override
+    public Seq lastSeq(String aggregateId) {
+        if (aggregateId == null || aggregateId.isBlank()) return Seq.zero();
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "select seq from event_sequence where aggregate_id = ?")) {
+            statement.setString(1, aggregateId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (resultSet.next()) return Seq.of(resultSet.getLong(1));
+                return Seq.zero();
+            }
+        } catch (SQLException e) {
+            throw new StoreFailure("cannot read event sequence", e);
+        }
+    }
+
+    @Override
     public List<StoredEvent> history(String aggregateId, Seq after) {
         return query("select aggregate_id, seq, type, version, data, created_at from event " +
                 "where aggregate_id = ? and seq > ? order by seq", aggregateId, after);
