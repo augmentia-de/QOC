@@ -34,7 +34,7 @@ cd deploy/docker-oidc-native
 docker compose up -d
 ```
 
-Wichtig: `qoc-dev-native` muss im Keycloak-Netzwerk hängen (im Compose bereits
+Wichtig: `qoc-oidc-native` muss im Keycloak-Netzwerk hängen (im Compose bereits
 als externes Netzwerk `qoc-keycloak_default` eingetragen).
 
 Aufruf: **http://localhost:8081** → „Login" → `alice` / `alice-password`.

@@ -1,9 +1,9 @@
 # Native dev container for QOC.
 # Run via: ./deploy/docker-oidc-native/deploy.sh up
 services:
-  qoc-dev-native:
+  qoc-oidc-native:
     image: qoc-engine:dev-native
-    container_name: qoc-dev-native
+    container_name: qoc-oidc-native
     working_dir: /app
     command: ["/usr/local/bin/entrypoint-dev-native.sh"]
     restart: unless-stopped
@@ -22,6 +22,7 @@ services:
       MAVEN_REPO: /home/qoc/.m2
       DEV_NATIVE_REBUILD: "never"
       DEV_NATIVE_OIDC: "true"
+      RUNNER_FILE: quarkus/target/runner-oidc
       ENGINE_SECURITY_MODE: oidc
       QUARKUS_OIDC_ENABLED: "true"
       QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080/realms/qoc

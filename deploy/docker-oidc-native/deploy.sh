@@ -24,21 +24,21 @@ case "$ACTION" in
     up)
         # Remove host-built native runners (incompatible glibc) so the container rebuilds.
         rm -f "$REPO_ROOT"/quarkus/target/*-runner 2>/dev/null || true
-        echo "Starting qoc-dev-native (profile dev-native)..."
-        docker compose -f "$COMPOSE_FILE" --profile dev-native up -d --build qoc-dev-native
-        echo "Container started. Logs: docker logs -f qoc-dev-native"
+        echo "Starting qoc-oidc-native (profile dev-native)..."
+        docker compose -f "$COMPOSE_FILE" --profile dev-native up -d --build qoc-oidc-native
+        echo "Container started. Logs: docker logs -f qoc-oidc-native"
         echo "UI: http://localhost:8081  (engine on 8081, mapped from container 8080)"
         ;;
     down)
-        echo "Stopping qoc-dev-native..."
-        docker compose -f "$COMPOSE_FILE" --profile dev-native down qoc-dev-native
+        echo "Stopping qoc-oidc-native..."
+        docker compose -f "$COMPOSE_FILE" --profile dev-native down qoc-oidc-native
         ;;
     logs)
-        docker logs -f qoc-dev-native
+        docker logs -f qoc-oidc-native
         ;;
     rebuild)
         echo "Forcing native rebuild..."
-        DEV_NATIVE_REBUILD=always docker compose -f "$COMPOSE_FILE" --profile dev-native up -d --build qoc-dev-native
+        DEV_NATIVE_REBUILD=always docker compose -f "$COMPOSE_FILE" --profile dev-native up -d --build qoc-oidc-native
         ;;
     *)
         echo "Usage: $0 [up|down|build|logs|rebuild]"

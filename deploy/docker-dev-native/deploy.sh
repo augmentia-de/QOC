@@ -27,7 +27,7 @@ case "$ACTION" in
         echo "Starting qoc-dev-native (profile dev-native)..."
         docker compose -f "$COMPOSE_FILE" --profile dev-native up -d --build qoc-dev-native
         echo "Container started. Logs: docker logs -f qoc-dev-native"
-        echo "UI: http://localhost:8081  (engine on 8081, mapped from container 8080)"
+        echo "UI: http://localhost:8082  (engine on 8082, mapped from container 8080)"
         ;;
     down)
         echo "Stopping qoc-dev-native..."

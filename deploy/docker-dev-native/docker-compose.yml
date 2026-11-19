@@ -22,6 +22,7 @@ services:
       MAVEN_REPO: /home/qoc/.m2
       DEV_NATIVE_REBUILD: "${DEV_NATIVE_REBUILD:-auto}"
       DEV_NATIVE_OIDC: "${DEV_NATIVE_OIDC:-false}"
+      RUNNER_FILE: quarkus/target/runner-dev
     volumes:
       - ../..:/app
       - ${HOME}/.m2:/home/qoc/.m2
@@ -30,7 +31,7 @@ services:
       - ./log:/data/log
       - ./entrypoint-dev-native.sh:/usr/local/bin/entrypoint-dev-native.sh:ro
     ports:
-      - "8081:8080"
+      - "8082:8080"
     user: "${UID:-1000}:${GID:-1000}"
     group_add:
       - "${DOCKER_GID:-983}"

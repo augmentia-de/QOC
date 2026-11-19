@@ -28,6 +28,14 @@ OIDC="${DEV_NATIVE_OIDC:-false}"
 cd "$APP_DIR"
 
 find_runner() {
+    # When RUNNER_FILE is set, use exactly that file (no fallback to the shared
+    # glob) so two variants (dev / oidc) never run each other's binary.
+    if [ -n "${RUNNER_FILE:-}" ]; then
+        if [ -x "$APP_DIR/$RUNNER_FILE" ]; then
+            echo "$APP_DIR/$RUNNER_FILE"
+        fi
+        return 0
+    fi
     ls "$APP_DIR"/quarkus/target/*-runner 2>/dev/null | head -n 1 || true
 }
 
@@ -57,13 +65,27 @@ build_native() {
     export ENGINE_FLYWAY_LOCATIONS="${ENGINE_FLYWAY_LOCATIONS:-classpath:db/migration}"
     export QUARKUS_OIDC_ENABLED="$OIDC"
 
+    # Cap the native-image build heap so the host OOM killer does not SIGKILL
+    # the build (exit 137) when GraalVM would otherwise reserve ~80% of RAM.
+    NATIVE_XMX="${QUARKUS_NATIVE_NATIVE_IMAGE_XMX:-8g}"
     mvn -B -pl quarkus -am package \
         -DskipTests \
         -Djacoco.skip=true \
         -Dmaven.repo.local="$M2_LOCAL" \
         -Dquarkus.package.type=native \
         -Dquarkus.native.container-build=false \
+        -Dquarkus.native.native-image-xmx="$NATIVE_XMX" \
         -Dquarkus.arc.exclude-types=org.a2aproject.sdk.**
+
+    # Keep the variants side by side: copy the freshly built runner to the
+    # dedicated file so the other container's binary is not overwritten.
+    if [ -n "${RUNNER_FILE:-}" ]; then
+        built="$(ls "$APP_DIR"/quarkus/target/*-runner 2>/dev/null | head -n 1 || true)"
+        if [ -n "$built" ]; then
+            cp -f "$built" "$APP_DIR/$RUNNER_FILE"
+            chmod +x "$APP_DIR/$RUNNER_FILE"
+        fi
+    fi
 }
 
 if [ ! -f "$ENGINE_JAR" ] || [ -n "$(find engine/src/main/java -newer "$ENGINE_JAR" -print -quit 2>/dev/null)" ]; then
