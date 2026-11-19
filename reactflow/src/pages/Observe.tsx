@@ -14,14 +14,15 @@ export default function Observe() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
+  useEffect(() => { load(); }, []);
 
   const statusColor = (s: string) => s === 'COMPLETED' ? '#5cb85c' : s === 'RUNNING' ? '#5bc0de' : s === 'PAUSED' ? '#f0ad4e' : s === 'FAILED' ? '#d9534f' : '#555';
 
   return (
     <div style={{ padding: 24, color: '#d4d4d4' }}>
       <h1 style={{ fontSize: 22, color: '#5bc0de', marginBottom: 4 }}>Observe</h1>
-      <p style={{ color: '#999', fontSize: 13, marginBottom: 12 }}>Live monitoring of all runs (auto-refresh 5s)</p>
+      <p style={{ color: '#999', fontSize: 13, marginBottom: 12 }}>Live monitoring of all runs</p>
+<button onClick={load} style={{ marginBottom: 12, padding: '4px 10px', background: '#555', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>Aktualisieren</button>
       {loading ? <p style={{ color: '#999' }}>Loading...</p> : runs.length === 0 ? <p style={{ color: '#999' }}>Keine Runs vorhanden.</p> : (
         <div style={{ display: 'grid', gap: 6 }}>
           {runs.map((r: any) => (

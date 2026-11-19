@@ -23,7 +23,16 @@ export default function Runs() {
   };
 
   useEffect(() => { load(); }, []);
-  useEffect(() => { if (!autoRefresh) return; const t = setInterval(load, 3000); return () => clearInterval(t); }, [autoRefresh]);
+  useEffect(() => {
+    if (!autoRefresh) return;
+    let t: ReturnType<typeof setInterval> | null = null;
+    const start = () => { if (t === null && document.visibilityState === 'visible') t = setInterval(load, 3000); };
+    const stop = () => { if (t !== null) { clearInterval(t); t = null; } };
+    const onVis = () => { if (document.visibilityState === 'visible') { load(); start(); } else stop(); };
+    start();
+    document.addEventListener('visibilitychange', onVis);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
+  }, [autoRefresh]);
   useEffect(() => () => streamRef.current?.close(), []);
 
   const showDetail = async (runId: string) => {
@@ -60,7 +69,7 @@ export default function Runs() {
     <div style={{ padding: 24, color: '#d4d4d4' }}>
       <h1 style={{ fontSize: 22, color: '#5bc0de', marginBottom: 12 }}>Runs</h1>
       <div style={{ marginBottom: 12 }}>
-        <button onClick={load} style={btn('#555')}>Aktualisieren</button>
+        <button onClick={load} disabled={autoRefresh} style={{ ...btn('#555'), opacity: autoRefresh ? 0.5 : 1, cursor: autoRefresh ? 'not-allowed' : 'pointer' }}>Aktualisieren</button>
         <button onClick={() => setAutoRefresh(!autoRefresh)} style={{ ...btn(autoRefresh ? '#27ae60' : '#555'), marginLeft: 8 }}>Auto-Refresh: {autoRefresh ? 'AN' : 'AUS'}</button>
       </div>
       {loading ? <p style={{ color: '#999' }}>Lade...</p> : runs.length === 0 ? <p style={{ color: '#999' }}>Keine Runs vorhanden.</p> : (

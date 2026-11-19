@@ -38,6 +38,8 @@ public class UiConfigResource {
         appendString(json, "clientId", text("ENGINE_UI_OIDC_CLIENT_ID", "engine.ui.oidc.client-id", "qoc-ui"));
         appendString(json, "audience", text("ENGINE_UI_OIDC_AUDIENCE", "engine.ui.oidc.audience", ""));
         appendString(json, "apiScope", text("ENGINE_UI_OIDC_API_SCOPE", "engine.ui.oidc.api-scope", ""));
+        json.append(",\"generateEnabled\":")
+                .append(de.augmentia.qoc.workflowrunner.generate.GenerateConfig.enabled());
         json.append('}');
         return "window.QOC_AUTH = " + json + ";\n";
     }

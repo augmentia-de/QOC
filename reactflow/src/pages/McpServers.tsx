@@ -22,9 +22,14 @@ export default function McpServers() {
   };
 
   useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const start = () => { if (interval === null && document.visibilityState === 'visible') interval = setInterval(fetchServers, 30000); };
+    const stop = () => { if (interval !== null) { clearInterval(interval); interval = null; } };
+    const onVis = () => { if (document.visibilityState === 'visible') { fetchServers(); start(); } else stop(); };
     fetchServers();
-    const interval = setInterval(fetchServers, 30000);
-    return () => clearInterval(interval);
+    start();
+    document.addEventListener('visibilitychange', onVis);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
   }, []);
 
   const reload = async (name: string) => {

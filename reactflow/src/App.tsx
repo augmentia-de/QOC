@@ -9,10 +9,11 @@ import EngineAgentsPage from './pages/EngineAgentsPage.tsx';
 import McpServers from './pages/McpServers.tsx';
 import Generate from './pages/Generate.tsx';
 import Runs from './pages/Runs.tsx';
-import Observe from './pages/Observe.tsx';
 import HITL from './pages/HITL.tsx';
 import Testbench from './pages/Testbench.tsx';
 import Settings from './pages/Settings.tsx';
+import { isOidcEnabled, loginOrLogout, getToken } from '@shared/auth';
+import { useState, useEffect } from 'react';
 
 const NAV = [
   { to: '/', label: 'Dashboard' },
@@ -23,10 +24,8 @@ const NAV = [
   { to: '/agents', label: 'Agents' },
   { to: '/engine-agents', label: 'Engine Agents' },
   { to: '/mcp-servers', label: 'MCP Servers' },
-  { to: '/generate', label: 'Generate' },
   { to: '/testbench', label: 'Testbench' },
   { to: '/hitl', label: 'HITL' },
-  { to: '/observe', label: 'Observe' },
   { to: '/settings', label: 'Settings' },
 ];
 
@@ -41,6 +40,26 @@ function Stub({ title }: { title: string }) {
 
 export default function App() {
   const isMobile = useIsMobile();
+  const [authed, setAuthed] = useState<boolean>(!!getToken());
+  const generateEnabled = (typeof window !== 'undefined' && (window as any).QOC_AUTH?.generateEnabled === true);
+  const oidc = isOidcEnabled();
+  useEffect(() => {
+    // handle OIDC callback if present
+    (async () => {
+      const { handleOidcCallback } = await import('@shared/auth');
+      const handled = await handleOidcCallback();
+      if (handled) setAuthed(!!getToken());
+    })();
+  }, []);
+  const handleAuth = async () => {
+    await loginOrLogout();
+    setAuthed(!!getToken());
+  };
+  const loginBtn = oidc ? (
+    <button onClick={handleAuth} style={{ color: '#d4d4d4', fontSize: 12, padding: '4px 8px', borderRadius: 4, background: authed ? '#5cb85c' : '#337ab7', border: 'none', cursor: 'pointer' }}>
+      {authed ? 'Logout' : 'Login'}
+    </button>
+  ) : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh', background: '#161616', color: '#d4d4d4' }}>
       {!isMobile && (
@@ -51,15 +70,27 @@ export default function App() {
               {n.label}
             </Link>
           ))}
+          {generateEnabled ? (
+            <Link to="/generate" style={{ color: '#d4d4d4', textDecoration: 'none', fontSize: 12, padding: '4px 8px', borderRadius: 4, background: '#2d2d2d' }}>Generate</Link>
+          ) : (
+            <span title="Workflow-Generierung deaktiviert (ENGINE_WORKFLOW_GENERATE_ENABLED)" style={{ color: '#666', fontSize: 12, padding: '4px 8px', borderRadius: 4, background: '#1a1a1a', cursor: 'not-allowed', opacity: 0.5 }}>Generate</span>
+          )}
+          {loginBtn && <span style={{ marginLeft: 'auto' }}>{loginBtn}</span>}
         </nav>
       )}
       {isMobile && (
-        <div style={{ padding: '8px 12px', background: '#1e1e1e', borderBottom: '1px solid #333', display: 'flex', gap: 8, overflowX: 'auto' }}>
+        <div style={{ padding: '8px 12px', background: '#1e1e1e', borderBottom: '1px solid #333', display: 'flex', gap: 8, overflowX: 'auto', alignItems: 'center' }}>
           {NAV.map((n) => (
             <Link key={n.to} to={n.to} style={{ color: '#d4d4d4', textDecoration: 'none', fontSize: 11, padding: '4px 6px', borderRadius: 4, background: '#2d2d2d', whiteSpace: 'nowrap' }}>
               {n.label}
             </Link>
           ))}
+          {generateEnabled ? (
+            <Link to="/generate" style={{ color: '#d4d4d4', textDecoration: 'none', fontSize: 11, padding: '4px 6px', borderRadius: 4, background: '#2d2d2d', whiteSpace: 'nowrap' }}>Generate</Link>
+          ) : (
+            <span style={{ color: '#666', fontSize: 11, padding: '4px 6px', borderRadius: 4, background: '#1a1a1a', whiteSpace: 'nowrap', opacity: 0.5, cursor: 'not-allowed' }}>Generate</span>
+          )}
+          {loginBtn}
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
@@ -76,7 +107,6 @@ export default function App() {
           <Route path="/generate" element={<Generate />} />
           <Route path="/testbench" element={<Testbench />} />
           <Route path="/hitl" element={<HITL />} />
-          <Route path="/observe" element={<Observe />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </div>
