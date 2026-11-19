@@ -1,108 +1,105 @@
 # Dynamic State-Driven Workflow & Context Hygiene — Plan
 
 > **Status:** Plan, 2026-11-13  
-> **Bezug:** `docs/plans/Hybrid.md`, `docs/engineering/Additional-Nodes.md`,
+> **Reference:** `docs/plans/Hybrid.md`, `docs/engineering/Additional-Nodes.md`,
 > `docs/engineering/Workflow.md`, `docs/engineering/Two-Agent-Systems.md`  
-> **Ziel:** Den Workflow von einem statischen, vollständig kontexttragenden
-> Graphen zu einem dynamischen, zustandsgetriebenen System mit
-> Kontext-Hygiene umbauen. Nach jedem Agenten-Lauf erfolgt eine
-> deterministische Auswertung; Daten werden über Referenzen/Links statt
-> Volltext in den Kontext injiziert.
+> **Goal:** Rebuild the workflow from a static, fully context-carrying graph into
+> a dynamic, state-driven system with context hygiene. After every agent run, a
+> deterministic evaluation takes place; data is injected into the context via
+> references/links rather than full text.
 
 ---
 
-## 0. Korrektur der bisherigen Annahmen
+## 0. Correction of Previous Assumptions
 
-### 0.1 Klarstellung: WorkflowMode und JSON-Integration
+### 0.1 Clarification: WorkflowMode and JSON Integration
 
-Der Workflow läuft im `workflowMode`. Features werden bewusst über JSON-Strukturen
-integriert (`mcpArgs`, strukturierte Agent-Ergebnisse, `stateUpdates`,
-`injectRefs`, `postGuard`). Der `context_agent_executor` ist ein spezieller
-Workflow-Node, der über `runAgent` ein LLM in einer Kind-Session aufruft. Er
-ist kein `SubagentTool`-Aufruf und erhält keinen Shared-Workflow-Kontext über
-den Subagenten-Pfad.
+The workflow runs in `workflowMode`. Features are deliberately integrated via
+JSON structures (`mcpArgs`, structured agent results, `stateUpdates`,
+`injectRefs`, `postGuard`). The `context_agent_executor` is a special
+workflow node that invokes an LLM in a child session via `runAgent`. It is not
+a `SubagentTool` call and does not receive a shared workflow context through
+the subagent path.
 
-Die vorherige Planung ging von drei Annahmen aus, die für große,
-dynamische Workflows problematisch sind:
+The previous planning rested on three assumptions that are problematic for
+large, dynamic workflows:
 
-1. **Statischer Kontext:** `buildFullContext` sendet alle bisherigen
-   Node-Outputs in fester `def.nodes()`-Reihenfolge. Bei großen Daten oder
-   langen Läufen explodiert das Context-Window.
-2. **Immer voller Kontext:** Der `context_agent_executor` erhält den gesamten
-   bisherigen Verlauf. Das ist für Synthese sinnvoll, aber nicht für jeden
-   Schritt; viele Agenten brauchen nur einen minimalen, fokussierten Kontext.
-3. **Statischer Graphfluss:** Die Navigation folgt im Wesentlichen den
-   Kanten. Dynamische Rücksprünge mit neu injizierten Daten sind nur über
-   `loop` und `decision` möglich, aber nicht als First-Class-Mechanismus.
+1. **Static context:** `buildFullContext` sends all previous node outputs in
+   fixed `def.nodes()` order. With large data or long runs, the context window
+   explodes.
+2. **Always full context:** The `context_agent_executor` receives the entire
+   previous history. That is sensible for synthesis, but not for every step;
+   many agents need only a minimal, focused context.
+3. **Static graph flow:** Navigation essentially follows the edges. Dynamic
+   back-jumps with newly injected data are possible only via `loop` and
+   `decision`, but not as a first-class mechanism.
 
-Die Korrektur:
+The correction:
 
-- **Deterministische Auswertung nach jedem Agenten-Lauf** steuert den Fluss.
-- **Externe Daten/Artefakte** werden im Speicher gehalten und nur als
-  Referenzen/Links in Prompts injiziert.
-- **Der Workflow ist eine dynamische State-Machine**, die sich nach jedem
-  Agenten-Schritt neu kalibriert.
+- **Deterministic evaluation after every agent run** controls the flow.
+- **External data/artifacts** are held in storage and injected into prompts
+  only as references/links.
+- **The workflow is a dynamic state machine** that recalibrates itself after
+  every agent step.
 
 ---
 
-## 1. Kernkonzept
+## 1. Core Concept
 
-### 1.1 Deterministische Prüfung nach dem Agent-Run
+### 1.1 Deterministic Check After the Agent Run
 
-Der Agent liefert ein strukturiertes Ergebnis (JSON Schema). Ein
-deterministischer Guard wertet harte Bedingungen aus:
+The agent returns a structured result (JSON Schema). A deterministic guard
+evaluates hard conditions:
 
 - `score < 0.8`
 - `missing_fields == true`
 - `status == "retry"`
 
-Der Guard steuert den Graph-Fluss:
+The guard controls the graph flow:
 
-- weiter zum nächsten Schritt,
-- Rücksprung (Loop) mit zusätzlichen Parametern,
-- Aufruf eines anderen Agenten,
-- Injektion zusätzlicher Daten/Links.
+- proceed to the next step,
+- jump back (loop) with additional parameters,
+- invoke another agent,
+- inject additional data/links.
 
-Das LLM entscheidet nicht über den Workflow; es liefert nur das Ergebnis.
+The LLM does not decide about the workflow; it only delivers the result.
 
-### 1.2 Context-Window-Hygiene
+### 1.2 Context-Window Hygiene
 
-- Der LLM/Subagent erhält **niemals** den gesamten historischen Ballast oder
-  riesige Rohdaten.
-- Externe Daten, Artefakte und Links werden in einem `ArtifactStore`
-  gehalten.
-- Der deterministische Kontroll-Layer injiziert bei Übergängen oder
-  Rücksprüngen gezielt neue Daten-Pointer oder Links in den Prompt.
-- Der Agent arbeitet immer mit einem minimalen, fokussierten Kontext.
+- The LLM/subagent **never** receives the entire historical ballast or huge
+  raw data.
+- External data, artifacts, and links are held in an `ArtifactStore`.
+- The deterministic control layer selectively injects new data pointers or
+  links into the prompt on transitions or back-jumps.
+- The agent always works with a minimal, focused context.
 
-### 1.3 Verschmelzung von Agent-Loop und Workflow
+### 1.3 Merging the Agent Loop and the Workflow
 
-- Der Agent-Loop ist nur das Ausführungswerkzeug für eine Teilaufgabe.
-- Der Workflow ist keine starre, vorausberechnete Pfadliste
-  (`def.nodes()` in fixer Reihenfolge), sondern eine dynamische
-  State-Machine.
-- Nach jedem Agenten-Schritt wird der Zustand neu kalibriert.
+- The agent loop is only the execution tool for a subtask.
+- The workflow is not a rigid, precomputed path list (`def.nodes()` in fixed
+  order), but a dynamic state machine.
+- After every agent step the state is recalibrated.
 
 ---
 
-## 2. Zielarchitektur
+## 2. Target Architecture
 
 ```text
 WorkflowExecutor
  └─ QocEngine.runPrompt(workflowSession, WorkflowStepProvider)
      └─ WorkflowStepProviderImpl
-         ├─ getNextNodeId(def, ctx)   // dynamische State-Machine
+         ├─ getNextNodeId(def, ctx)   // dynamic state machine
          ├─ DefaultNodeDispatcher.dispatch(node, def, ctx, input)
          │    ├─ Agent-Node
          │    │    ├─ ContextAssembler.assemble(ctx, policy, task)
          │    │    ├─ runAgent(..., compactionEnabled=false)
-         │    │    └─ optionaler Post-Guard
+         │    │    └─ optional Post-Guard
          │    ├─ Guard-Node
-         │    │    ├─ Bedingungen auswerten
-         │    │    ├─ State setzen
-         │    │    └─ Inject-Refs / nextNode setzen
+         │    │    ├─ evaluate conditions
+         │    │    ├─ set state
+         │    │    └─ Inject-Refs / set nextNode
          │    ├─ Inject-Node
-         │    │    └─ Artifact-Refs in ctx.contextInclude
+         │    │    └─ Artifact-Refs into ctx.contextInclude
          │    ├─ Decision / MCP / Compact / HITL
          │    └─ ...
          └─ JournalWorkflowEventSink
@@ -110,24 +107,24 @@ WorkflowExecutor
 
 ---
 
-## 3. Datenmodell
+## 3. Data Model
 
-### 3.1 `ArtifactRef` und `ArtifactStore`
+### 3.1 `ArtifactRef` and `ArtifactStore`
 
-**Neue Datei:** `workflow-runner/.../runner/ArtifactRef.java`
+**New file:** `workflow-runner/.../runner/ArtifactRef.java`
 
 ```java
 public record ArtifactRef(
         String id,
         String type,        // json, text, link, file, mcp-result
-        String uri,         // storage key oder URL
-        String summary,     // kurze Beschreibung für Prompt
+        String uri,         // storage key or URL
+        String summary,     // short description for prompt
         long sizeBytes,
         java.time.Instant createdAt
 ) {}
 ```
 
-**Neue Datei:** `workflow-runner/.../runner/ArtifactStore.java`
+**New file:** `workflow-runner/.../runner/ArtifactStore.java`
 
 ```java
 public interface ArtifactStore {
@@ -138,16 +135,16 @@ public interface ArtifactStore {
 }
 ```
 
-**Neue Datei:** `workflow-runner/.../runner/InMemoryArtifactStore.java`
+**New file:** `workflow-runner/.../runner/InMemoryArtifactStore.java`
 
-- Erste Implementierung für JVM-Modus.
-- JDBC-Implementierung später analog zu `AgentStore`.
+- First implementation for JVM mode.
+- JDBC implementation later, analogous to `AgentStore`.
 
-### 3.2 `WorkflowContext`-Erweiterungen
+### 3.2 `WorkflowContext` Extensions
 
-**Datei:** `workflow-runner/.../runner/WorkflowContext.java`
+**File:** `workflow-runner/.../runner/WorkflowContext.java`
 
-Neue Felder:
+New fields:
 
 ```java
 private final Map<String, ArtifactRef> artifacts = new HashMap<>();
@@ -156,7 +153,7 @@ private final List<String> contextExclude = new ArrayList<>();
 private Map<String, Object> lastStructuredResult = Map.of();
 ```
 
-Neue Methoden:
+New methods:
 
 ```java
 public void addArtifact(ArtifactRef ref) { artifacts.put(ref.id(), ref); }
@@ -169,19 +166,18 @@ public void setLastStructuredResult(Map<String, Object> result) { ... }
 public Map<String, Object> getLastStructuredResult() { ... }
 ```
 
-Persistenz (pragmatisch, ohne Journal-Schemaänderung):
+Persistence (pragmatic, without journal schema changes):
 
-- `artifacts`, `contextInclude`, `contextExclude` und `lastStructuredResult`
-  werden unter den Schlüsseln `_artifacts`, `_contextInclude`,
-  `_contextExclude` und `_lastStructuredResult` in `workflowState`
-  gespeichert.
-- Beim Resume werden sie aus `workflowState` wiederhergestellt.
+- `artifacts`, `contextInclude`, `contextExclude`, and `lastStructuredResult`
+  are stored under the keys `_artifacts`, `_contextInclude`,
+  `_contextExclude`, and `_lastStructuredResult` in `workflowState`.
+- On resume they are restored from `workflowState`.
 
 ### 3.3 `ContextAssembler`
 
-**Neue Datei:** `workflow-runner/.../runner/ContextAssembler.java`
+**New file:** `workflow-runner/.../runner/ContextAssembler.java`
 
-Ersetzt `buildFullContext` und unterstützt Policies:
+Replaces `buildFullContext` and supports policies:
 
 ```java
 public enum ContextPolicy { FULL, FOCUSED, ARTIFACTS, CUSTOM }
@@ -190,28 +186,27 @@ public static String assemble(WorkflowDefinition def, WorkflowContext ctx,
                              ContextPolicy policy, String task, List<String> customRefs)
 ```
 
-Verhalten:
+Behavior:
 
-- `FULL`: bisheriges `buildFullContext` (Legacy/Backward-Compat).
-- `FOCUSED`: nur `ctx.getContextInclude()` (Node-IDs/Artifact-IDs), plus
-  Initial-Prompt und Task.
-- `ARTIFACTS`: nur Artifact-Refs/Links/Summaries.
-- `CUSTOM`: nur `customRefs`.
+- `FULL`: previous `buildFullContext` (legacy/backward-compat).
+- `FOCUSED`: only `ctx.getContextInclude()` (Node-IDs/Artifact-IDs), plus
+  initial prompt and task.
+- `ARTIFACTS`: only Artifact-Refs/Links/Summaries.
+- `CUSTOM`: only `customRefs`.
 
-Determinismus:
+Determinism:
 
-- feste Reihenfolge,
-- kanonische JSON-Serialisierung,
-- keine Zeitstempel,
-- keine Rohdaten bei `FOCUSED`/`ARTIFACTS`.
+- fixed order,
+- canonical JSON serialization,
+- no timestamps,
+- no raw data for `FOCUSED`/`ARTIFACTS`.
 
-### 3.4 `NodeData`-Erweiterungen
+### 3.4 `NodeData` Extensions
 
-Pragmatisch über das bestehende `mcpArgs`-Options-Bag (wie bei `compact`),
-um Schema-Migrationen zu vermeiden. Langfristig können dedizierte Felder
-folgen.
+Pragmatic via the existing `mcpArgs` options bag (as with `compact`), to avoid
+schema migrations. Dedicated fields may follow later.
 
-Neue Optionen:
+New options:
 
 ```json
 {
@@ -227,26 +222,26 @@ Neue Optionen:
 }
 ```
 
-Bedeutung:
+Meaning:
 
 - `contextMode`: `full`, `focused`, `artifacts`, `custom`.
-- `contextRefs`: explizite Referenzen für `CUSTOM`.
-- `postGuard`: deterministische Auswertung nach einem Agenten-Lauf.
-- `injectRefs`: Artefakt-Refs, die in `contextInclude` aufgenommen werden.
+- `contextRefs`: explicit references for `CUSTOM`.
+- `postGuard`: deterministic evaluation after an agent run.
+- `injectRefs`: artifact refs to include in `contextInclude`.
 
-### 3.5 `guard`- und `inject`-Knoten
+### 3.5 `guard` and `inject` Nodes
 
-Neue Node-Typen:
+New node types:
 
-- `guard`: deterministische Prüfung mit `condition`, `onTrue`, `onFalse`,
+- `guard`: deterministic check with `condition`, `onTrue`, `onFalse`,
   `stateUpdates`, `injectRefs`, `nextNode`.
-- `inject`: nimmt `injectRefs` und fügt sie zu `contextInclude` hinzu.
+- `inject`: takes `injectRefs` and adds them to `contextInclude`.
 
-`GraphCompiler.VALID_NODE_TYPES` wird um `guard` und `inject` erweitert.
+`GraphCompiler.VALID_NODE_TYPES` is extended with `guard` and `inject`.
 
-### 3.6 Dynamische Sprünge
+### 3.6 Dynamic Jumps
 
-`WorkflowStepProviderImpl.getNextNodeId` wird erweitert:
+`WorkflowStepProviderImpl.getNextNodeId` is extended:
 
 ```java
 String override = (String) ctx.getState("nextNode");
@@ -256,64 +251,63 @@ if (override != null && !override.isBlank()) {
 }
 ```
 
-Damit können `guard`/`inject`/`decision` einen dynamischen Sprung setzen, ohne
-dass eine Kante im Graphen existiert. Das schließt die Lücke zwischen
-statischem Graph und dynamischer State-Machine.
+This lets `guard`/`inject`/`decision` set a dynamic jump without an edge
+existing in the graph. It closes the gap between static graph and dynamic
+state machine.
 
-Loop-Schutz: `LoopDetector` und `attempts` bleiben aktiv. Ein Sprung, der
-denselben Node ohne Zustandsänderung wiederholt, wird als Loop erkannt.
+Loop protection: `LoopDetector` and `attempts` remain active. A jump that
+repeats the same node without state change is detected as a loop.
 
 ---
 
-## 4. Implementierung
+## 4. Implementation
 
-### Phase 0 — Kontext- und Artefaktmodell
+### Phase 0 — Context and Artifact Model
 
-1. `ArtifactRef`, `ArtifactStore`, `InMemoryArtifactStore` anlegen.
-2. `WorkflowContext` um Artefakte, `contextInclude`, `contextExclude`,
-   `lastStructuredResult` erweitern.
-3. Persistenz über `workflowState`-Schlüssel.
-4. `WorkflowContextTest` erweitern.
+1. Create `ArtifactRef`, `ArtifactStore`, `InMemoryArtifactStore`.
+2. Extend `WorkflowContext` with artifacts, `contextInclude`, `contextExclude`,
+   `lastStructuredResult`.
+3. Persistence via `workflowState` keys.
+4. Extend `WorkflowContextTest`.
 
-### Phase 1 — Dynamische Kontextassemblierung
+### Phase 1 — Dynamic Context Assembly
 
-5. `ContextAssembler` mit Policies `FULL`, `FOCUSED`, `ARTIFACTS`, `CUSTOM`.
-6. `DefaultNodeDispatcher.buildFullContext` durch `ContextAssembler.assemble`
-   ersetzen.
-7. `context_agent_executor` nutzt `contextMode` aus `mcpArgs` (Default:
-   `FOCUSED`, falls `contextInclude` nicht leer, sonst `FULL`).
-8. `ContextAssemblerTest` mit Determinismus und Hygiene.
+5. `ContextAssembler` with policies `FULL`, `FOCUSED`, `ARTIFACTS`, `CUSTOM`.
+6. Replace `DefaultNodeDispatcher.buildFullContext` with
+   `ContextAssembler.assemble`.
+7. `context_agent_executor` uses `contextMode` from `mcpArgs` (default:
+   `FOCUSED` if `contextInclude` is non-empty, otherwise `FULL`).
+8. `ContextAssemblerTest` with determinism and hygiene.
 
-### Phase 2 — Post-Guard und dynamische Sprünge
+### Phase 2 — Post-Guard and Dynamic Jumps
 
-9. `guard`- und `inject`-Node-Typen in `GraphCompiler` und
+9. `guard` and `inject` node types in `GraphCompiler` and
    `DefaultNodeDispatcher`.
-10. `getNextNodeId` um `nextNode`-Override erweitern.
-11. Optionaler `postGuard` in Agent-Nodes:
-    - nach `runAgent` strukturiertes Ergebnis in `lastStructuredResult`
-      speichern,
-    - Bedingung auswerten,
-    - State-Updates setzen,
-    - `injectRefs` in `contextInclude` aufnehmen,
-    - `nextNode` setzen.
-12. `ConditionEvaluator` für Guard-Bedingungen wiederverwenden.
+10. Extend `getNextNodeId` with `nextNode` override.
+11. Optional `postGuard` in agent nodes:
+    - store structured result in `lastStructuredResult` after `runAgent`,
+    - evaluate condition,
+    - set state updates,
+    - include `injectRefs` in `contextInclude`,
+    - set `nextNode`.
+12. Reuse `ConditionEvaluator` for guard conditions.
 
-### Phase 3 — Kontext-Hygiene erzwingen
+### Phase 3 — Enforce Context Hygiene
 
-13. `ContextBudgetGate` auf fokussierten Kontext anwenden.
-14. `mcp_call` kann große Ergebnisse als Artefakt speichern und nur die
-    `ArtifactRef` zurückgeben.
-15. `compact` kann `contextInclude` reduzieren.
-16. UI: Artefaktliste, Kontext-Vorschau, Guard-Editor.
+13. Apply `ContextBudgetGate` to focused context.
+14. `mcp_call` may store large results as an artifact and return only the
+    `ArtifactRef`.
+15. `compact` may reduce `contextInclude`.
+16. UI: artifact list, context preview, guard editor.
 
-### Phase 4 — Tests und Coverage
+### Phase 4 — Tests and Coverage
 
-17. Unit-, Integrations- und E2E-Tests (siehe Abschnitt 6).
-18. `mvn test` und `mvn -pl engine verify` (≥ 80 %).
+17. Unit, integration, and E2E tests (see Section 6).
+18. `mvn test` and `mvn -pl engine verify` (≥ 80 %).
 
 ---
 
-## 5. Implementierungsdetails
+## 5. Implementation Details
 
 ### 5.1 `ContextAssembler`
 
@@ -324,26 +318,25 @@ public final class ContextAssembler {
     public static String assemble(WorkflowDefinition def, WorkflowContext ctx,
                                  ContextPolicy policy, String task,
                                  List<String> customRefs) {
-        // FULL: bisherige Logik
-        // FOCUSED: nur ctx.getContextInclude()
-        // ARTIFACTS: nur Artifact-Refs/Links/Summaries
-        // CUSTOM: nur customRefs
-        // immer: Initial-Prompt + Task
+        // FULL: previous logic
+        // FOCUSED: only ctx.getContextInclude()
+        // ARTIFACTS: only Artifact-Refs/Links/Summaries
+        // CUSTOM: only customRefs
+        // always: Initial-Prompt + Task
     }
 }
 ```
 
-Regeln:
+Rules:
 
-- `FULL` behält die bisherige Reihenfolge und Serialisierung.
-- `FOCUSED` enthält nur referenzierte Node-Outputs/Artefakte.
-- `ARTIFACTS` enthält keine Rohdaten, nur `id`, `type`, `summary`, `uri`.
-- Wenn `contextInclude` leer ist, fällt `FOCUSED` auf den letzten Node-Output
-  plus Initial-Prompt zurück (kein harter Fehler).
-- Keine stillen Kürzungen; bei Budget-Überschreitung wirft
-  `ContextBudgetGate`.
+- `FULL` keeps the previous order and serialization.
+- `FOCUSED` contains only referenced node outputs/artifacts.
+- `ARTIFACTS` contains no raw data, only `id`, `type`, `summary`, `uri`.
+- If `contextInclude` is empty, `FOCUSED` falls back to the last node output
+  plus initial prompt (no hard error).
+- No silent truncation; on budget overflow, `ContextBudgetGate` throws.
 
-### 5.2 `guard`-Node
+### 5.2 `guard` Node
 
 ```java
 case "guard" -> {
@@ -367,7 +360,7 @@ case "guard" -> {
 }
 ```
 
-### 5.3 `inject`-Node
+### 5.3 `inject` Node
 
 ```java
 case "inject" -> {
@@ -378,9 +371,9 @@ case "inject" -> {
 }
 ```
 
-### 5.4 Post-Guard in Agent-Nodes
+### 5.4 Post-Guard in Agent Nodes
 
-Nach `runAgent`:
+After `runAgent`:
 
 ```java
 Map<String, Object> guard = map(node.data().mcpArgs() == null ? null : node.data().mcpArgs().get("postGuard"));
@@ -396,110 +389,109 @@ if (!guard.isEmpty()) {
 }
 ```
 
-Damit wird „nach jedem Agenten-Lauf deterministisch auswerten“ explizit und
-nachvollziehbar, ohne implizite Magie.
+This makes "deterministically evaluate after every agent run" explicit and
+traceable, without implicit magic.
 
-### 5.5 `ContextBudgetGate` (fokussiert)
+### 5.5 `ContextBudgetGate` (focused)
 
-Das bestehende Budget-Gate wird auf den fokussierten Kontext angewendet.
-Bei Überschreitung:
+The existing budget gate is applied to the focused context. On overflow:
 
 ```text
 WorkflowBudgetExceeded(nodeId, estimatedTokens, maxInputTokens,
   "Reduce contextInclude or insert a compact step.")
 ```
 
-Keine stille Truncation.
+No silent truncation.
 
 ---
 
 ## 6. Tests
 
-### 6.1 Unit-Tests
+### 6.1 Unit Tests
 
-**Neue Datei:** `workflow-runner/.../runner/ArtifactStoreTest.java`
+**New file:** `workflow-runner/.../runner/ArtifactStoreTest.java`
 
-| Test | Erwartung |
+| Test | Expectation |
 |---|---|
-| `putAndGetRoundTrips` | Payload identisch |
-| `listReturnsRefs` | Refs vorhanden |
-| `removeDeletes` | nicht mehr abrufbar |
+| `putAndGetRoundTrips` | payload identical |
+| `listReturnsRefs` | refs present |
+| `removeDeletes` | no longer retrievable |
 
-**Neue Datei:** `workflow-runner/.../runner/WorkflowContextSelectionTest.java`
+**New file:** `workflow-runner/.../runner/WorkflowContextSelectionTest.java`
 
-| Test | Erwartung |
+| Test | Expectation |
 |---|---|
-| `includeAndExcludeAreDeterministic` | Reihenfolge stabil |
-| `artifactsAreCopied` | keine externe Mutation |
-| `resumeRestoresSelection` | aus `workflowState` wiederhergestellt |
+| `includeAndExcludeAreDeterministic` | order stable |
+| `artifactsAreCopied` | no external mutation |
+| `resumeRestoresSelection` | restored from `workflowState` |
 
-**Neue Datei:** `workflow-runner/.../runner/ContextAssemblerFocusedTest.java`
+**New file:** `workflow-runner/.../runner/ContextAssemblerFocusedTest.java`
 
-| Test | Erwartung |
+| Test | Expectation |
 |---|---|
-| `focusedIncludesOnlySelectedRefs` | nicht selektierte Outputs fehlen |
-| `artifactsModeIncludesOnlyRefs` | keine Rohdaten |
-| `customUsesCustomRefs` | nur customRefs |
-| `fullRemainsBackwardCompatible` | bisheriges Verhalten unverändert |
-| `focusedFallsBackWhenEmpty` | letzter Output + Initial-Prompt |
-| `focusedIsDeterministic` | zweimal bauen → identisch |
+| `focusedIncludesOnlySelectedRefs` | unselected outputs absent |
+| `artifactsModeIncludesOnlyRefs` | no raw data |
+| `customUsesCustomRefs` | only customRefs |
+| `fullRemainsBackwardCompatible` | previous behavior unchanged |
+| `focusedFallsBackWhenEmpty` | last output + initial prompt |
+| `focusedIsDeterministic` | building twice → identical |
 
-**Neue Datei:** `workflow-runner/.../runner/GuardNodeTest.java`
+**New file:** `workflow-runner/.../runner/GuardNodeTest.java`
 
-| Test | Erwartung |
+| Test | Expectation |
 |---|---|
-| `trueBranchSetsStateAndNextNode` | State + `nextNode` gesetzt |
+| `trueBranchSetsStateAndNextNode` | state + `nextNode` set |
 | `falseBranchWorks` | `onFalse` |
-| `injectRefsAdded` | `contextInclude` erweitert |
-| `conditionBlankMatches` | Default true |
+| `injectRefsAdded` | `contextInclude` extended |
+| `conditionBlankMatches` | default true |
 
-**Neue Datei:** `workflow-runner/.../runner/InjectNodeTest.java`
+**New file:** `workflow-runner/.../runner/InjectNodeTest.java`
 
-| Test | Erwartung |
+| Test | Expectation |
 |---|---|
-| `injectAddsRefs` | `contextInclude` enthält Refs |
-| `injectIsDeterministic` | Output stabil |
+| `injectAddsRefs` | `contextInclude` contains refs |
+| `injectIsDeterministic` | output stable |
 
-**Neue Datei:** `workflow-runner/.../runner/DynamicJumpTest.java`
+**New file:** `workflow-runner/.../runner/DynamicJumpTest.java`
 
-| Test | Erwartung |
+| Test | Expectation |
 |---|---|
-| `nextNodeOverrideIsConsumed` | nächster Node aus Override, dann null |
-| `loopDetectionPreventsInfiniteJump` | Loop erkannt |
+| `nextNodeOverrideIsConsumed` | next node from override, then null |
+| `loopDetectionPreventsInfiniteJump` | loop detected |
 
-### 6.2 Integrations-Tests
+### 6.2 Integration Tests
 
-**Neue Datei:** `workflow-runner/.../runner/ContextHygieneIntegrationTest.java`
+**New file:** `workflow-runner/.../runner/ContextHygieneIntegrationTest.java`
 
-| Test | Erwartung |
+| Test | Expectation |
 |---|---|
-| `largeRawDataNotInPrompt` | Prompt enthält nur Artifact-Ref/Summary |
-| `focusedContextSmallerThanFull` | Token-Schätzung kleiner |
-| `guardDrivesBranch` | strukturiertes Ergebnis steuert Fluss |
+| `largeRawDataNotInPrompt` | prompt contains only Artifact-Ref/Summary |
+| `focusedContextSmallerThanFull` | token estimate smaller |
+| `guardDrivesBranch` | structured result controls flow |
 
-**Neue Datei:** `workflow-runner/.../runner/PostGuardIntegrationTest.java`
+**New file:** `workflow-runner/.../runner/PostGuardIntegrationTest.java`
 
-| Test | Erwartung |
+| Test | Expectation |
 |---|---|
 | `postGuardOnLowScoreRetries` | `retry=true`, `nextNode=agent_retry` |
-| `postGuardInjectsRefs` | Refs im `contextInclude` |
-| `postGuardSkippedWhenConditionFalse` | keine State-Änderung |
+| `postGuardInjectsRefs` | refs in `contextInclude` |
+| `postGuardSkippedWhenConditionFalse` | no state change |
 
-### 6.3 E2E-Tests
+### 6.3 E2E Tests
 
-**Neue Datei:** `quarkus/.../http/DynamicWorkflowE2ETest.java`
+**New file:** `quarkus/.../http/DynamicWorkflowE2ETest.java`
 
-| Test | Erwartung |
+| Test | Expectation |
 |---|---|
-| `agentLowScoreLoopsWithInjectedArtifact` | zweiter Agent erhält fokussierten Kontext mit neuem Ref |
-| `contextAgentUsesFocusedContext` | Request enthält nur selektierte Refs |
-| `artifactNotLeakedAsRaw` | großer Payload nicht im Prompt |
-| `guardBranchesToDifferentAgent` | anderer Agent wird aufgerufen |
-| `dynamicJumpWorks` | `nextNode`-Override wird befolgt |
+| `agentLowScoreLoopsWithInjectedArtifact` | second agent receives focused context with new ref |
+| `contextAgentUsesFocusedContext` | request contains only selected refs |
+| `artifactNotLeakedAsRaw` | large payload not in prompt |
+| `guardBranchesToDifferentAgent` | different agent is invoked |
+| `dynamicJumpWorks` | `nextNode` override is honored |
 
-### 6.4 Bestehende Tests
+### 6.4 Existing Tests
 
-- `DefaultNodeDispatcherContextTest` (anpassen an `ContextAssembler`)
+- `DefaultNodeDispatcherContextTest` (adapt to `ContextAssembler`)
 - `WorkflowContextTest`
 - `WorkflowRunJournalTest`
 - `ParallelToolExecutionTest`, `SubagentParallelTest`, `ParallelSubagentE2ETest`
@@ -515,77 +507,75 @@ mvn test
 mvn -pl engine verify
 ```
 
-Akzeptanz: alle Tests grün, Coverage ≥ 80 %.
+Acceptance: all tests green, coverage ≥ 80 %.
 
 ---
 
-## 7. Implementierungsreihenfolge
+## 7. Implementation Order
 
-### P0 — Modell
+### P0 — Model
 
 1. `ArtifactRef`, `ArtifactStore`, `InMemoryArtifactStore`.
-2. `WorkflowContext`-Erweiterungen.
-3. Persistenz über `workflowState`.
-4. Tests für Artefakte und Selektion.
+2. `WorkflowContext` extensions.
+3. Persistence via `workflowState`.
+4. Tests for artifacts and selection.
 
-### P1 — Dynamische Kontextassemblierung
+### P1 — Dynamic Context Assembly
 
-5. `ContextAssembler` mit Policies.
-6. `DefaultNodeDispatcher` nutzt `ContextAssembler`.
-7. `context_agent_executor` mit `contextMode`.
+5. `ContextAssembler` with policies.
+6. `DefaultNodeDispatcher` uses `ContextAssembler`.
+7. `context_agent_executor` with `contextMode`.
 8. `ContextAssemblerTest`.
 
-### P2 — Guards und dynamische Sprünge
+### P2 — Guards and Dynamic Jumps
 
-9. `guard`- und `inject`-Knoten.
-10. `getNextNodeId`-Override.
-11. `postGuard` in Agent-Nodes.
+9. `guard` and `inject` nodes.
+10. `getNextNodeId` override.
+11. `postGuard` in agent nodes.
 12. Tests.
 
-### P3 — Kontext-Hygiene erzwingen
+### P3 — Enforce Context Hygiene
 
-13. `ContextBudgetGate` auf fokussierten Kontext.
-14. `mcp_call` speichert große Ergebnisse als Artefakt.
-15. `compact` reduziert `contextInclude`.
-16. UI: Artefakte, Vorschau, Guard-Editor.
+13. `ContextBudgetGate` on focused context.
+14. `mcp_call` stores large results as an artifact.
+15. `compact` reduces `contextInclude`.
+16. UI: artifacts, preview, guard editor.
 
-### P4 — Tests und Coverage
+### P4 — Tests and Coverage
 
-17. Unit/Integration/E2E.
-18. Coverage-Gate.
-
----
-
-## 8. Akzeptanzkriterien
-
-- Nach jedem Agenten-Lauf kann ein deterministischer Guard Fluss und
-  Zustand steuern.
-- Große Rohdaten landen nicht im Prompt; nur Referenzen/Links/Summaries.
-- `ContextAssembler` unterstützt `FULL`, `FOCUSED`, `ARTIFACTS`, `CUSTOM`.
-- Dynamische Sprünge über `nextNode` sind möglich und loop-geschützt.
-- `context_agent_executor` ist nicht mehr zwangsläufig voller Kontext.
-- Budget-Gate gilt für den fokussierten Kontext.
-- Alle Tests grün, Coverage ≥ 80 %.
+17. Unit/integration/E2E.
+18. Coverage gate.
 
 ---
 
-## 9. Risiken
+## 8. Acceptance Criteria
 
-| Risiko | Wirkung | Gegenmaßnahme |
+- After every agent run, a deterministic guard can control flow and state.
+- Large raw data does not end up in the prompt; only references/links/summaries.
+- `ContextAssembler` supports `FULL`, `FOCUSED`, `ARTIFACTS`, `CUSTOM`.
+- Dynamic jumps via `nextNode` are possible and loop-protected.
+- `context_agent_executor` is no longer necessarily full context.
+- Budget gate applies to the focused context.
+- All tests green, coverage ≥ 80 %.
+
+---
+
+## 9. Risks
+
+| Risk | Impact | Mitigation |
 |---|---|---|
-| Zu viele Optionen im Options-Bag | Unübersichtlich | später dedizierte NodeData-Felder |
-| Dynamische Sprünge erzeugen Loops | Endlosschleife | `attempts`, `LoopDetector`, Max-Steps |
-| Artefakt-Speicher wächst | Memory/DB | TTL, Cleanup, Größenlimit |
-| Fokussierter Kontext verliert Information | schlechtere Ergebnisse | `FULL`-Modus als Fallback, Tests |
-| UI-Komplexität | schwer bedienbar | Defaults, Vorschau, Validierung |
+| Too many options in the options bag | Unwieldy | dedicated `NodeData` fields later |
+| Dynamic jumps create loops | Infinite loop | `attempts`, `LoopDetector`, max steps |
+| Artifact store grows | Memory/DB | TTL, cleanup, size limit |
+| Focused context loses information | Worse results | `FULL` mode as fallback, tests |
+| UI complexity | Hard to use | defaults, preview, validation |
 
 ---
 
-## 10. Fazit
+## 10. Conclusion
 
-Die Korrektur verschiebt den Schwerpunkt von „immer voller Kontext“ zu
-„deterministisch gesteuerter, fokussierter Kontext“. Der Agent bleibt
-Ausführungswerkzeug; der Workflow wird zur dynamischen State-Machine.
-Artefakte und Links ersetzen Volltext im Prompt. Das schließt die Lücke
-zwischen starren Graphen und unkontrollierten Agenten, ohne einen dritten
-Loop-Typ einzuführen.
+The correction shifts the emphasis from "always full context" to
+"deterministically controlled, focused context". The agent remains the
+execution tool; the workflow becomes a dynamic state machine. Artifacts and
+links replace full text in the prompt. This closes the gap between rigid
+graphs and uncontrolled agents, without introducing a third loop type.

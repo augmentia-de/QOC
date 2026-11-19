@@ -1,188 +1,181 @@
-# UI-Workflow-Editor-Tests — nutzerzentrierter Testplan
+# UI Workflow Editor Tests — User-Centered Test Plan
 
 **Status:** Plan (2026-11-18)
-**Bezug:** `reactflow/src/EditorPage.tsx`, `reactflow/src/pages/Workflows.tsx`, Workflow-API (`/api/workflows`), Playwright
-**Nicht Teil dieses Plans:** Auth/RBAC (siehe `ui-security-tests.md`), Chat-UI, Runs-/Observe-Seiten.
+**Reference:** `reactflow/src/EditorPage.tsx`, `reactflow/src/pages/Workflows.tsx`, Workflow API (`/api/workflows`), Playwright
+**Not part of this plan:** Auth/RBAC (see `ui-security-tests.md`), Chat UI, Runs/Observe pages.
 
 ---
 
-## 1. Testhaltung: wie ein Nutzer, nicht wie das DOM
+## 1. Testing attitude: like a user, not like the DOM
 
-Der Test beschreibt, **was ein Nutzer sieht und tut**, nicht wie die Oberfläche
-intern gebaut ist. Daraus folgen drei Regeln:
+The test describes **what a user sees and does**, not how the UI is built
+internally. Three rules follow from this:
 
-1. **Schwarzer Kasten.** Geprüft wird nur, was sichtbar ist: Nodes auf der
-   Fläche, Beschriftungen, Dialoge, Statusmeldungen, Ergebnislisten.
-2. **Nutzer findet Elemente über Namen und Rollen**, nicht über CSS-Klassen.
-   Ein Button heißt „Speichern", ein Feld heißt „Workflow-Name".
-3. **Jede Journey ist auch manuell nachvollziehbar.** Wer die Checkliste in
-   Abschnitt 4 abarbeitet, testet denselben Ablauf ohne Playwright-Kenntnisse.
+1. **Black box.** Only what is visible is checked: nodes on the
+   canvas, labels, dialogs, status messages, result lists.
+2. **Users find elements by name and role**, not by CSS classes.
+   A button is called "Speichern", a field "Workflow-Name".
+3. **Every journey is also manually reproducible.** Anyone working through the
+   checklist in section 4 tests the same flow without Playwright knowledge.
 
-Automatisierung ist die Wiederholung der manuellen Prüfung — kein Ersatz dafür.
+Automation is the repetition of manual verification — not a replacement for it.
 
 ---
 
-## 2. Was der App fehlt, damit Nutzer (und Tests) sie prüfen können
+## 2. What the app lacks so users (and tests) can verify it
 
-Diese Punkte sind die eigentliche Vorarbeit. Ohne sie bleibt jeder Test brüchig.
+These points are the real preparatory work. Without them every test remains brittle.
 
-| # | Maßnahme | Warum sie hilft | Aufwand |
+| # | Measure | Why it helps | Effort |
 |---|---|---|---|
-| 1 | `alert()`/`confirm()` durch Toast bzw. Inline-Status ersetzen | Ein Nutzer sieht „Gespeichert"/„Fehler" dauerhaft; der Test kann dieselbe Meldung lesen, statt einen blockierenden Browser-Dialog abzufangen | mittel |
-| 2 | Bedienelemente mit Rollen und Namen versehen (`<button>`, `aria-label`, `<label for>`) | `getByRole`/`getByLabel` funktioniert dann für Screenreader **und** Playwright; Icon-Buttons werden überhaupt erst ansprechbar | klein |
-| 3 | Validierungsfehler inline anzeigen (Liste im Panel, Marker am Node) | Nutzer erkennt, *was* falsch ist; Test prüft Text statt `alert`-Inhalt | mittel |
-| 4 | Speicherstatus sichtbar halten („Gespeichert 12:34", „Nicht gespeichert") | Nutzer weiß, ob er gefahrlos navigieren kann; Test hat ein stabiles Signal für Persistenz | klein |
-| 5 | Error Boundary um den Editor | Backend-Ausfall erzeugt eine Meldung statt weißer Seite | klein |
-| 6 | Einstieg „Neu (Start+End)" und „Beispiel-Workflow" | Ein Nutzer kann ohne API/Postman starten; der Test muss keine Fixtures voraussetzen | klein |
-| 7 | Testprofil mit deterministischem Provider (`ENGINE_PROVIDER_SCRIPTED=true`) | „Ausführen" liefert eine feste Antwort; Run-Tests werden reproduzierbar | klein |
-| 8 | Animationen respektieren `prefers-reduced-motion`, Auto-Layout deterministisch | Weniger Timing-Flakes beim Ziehen und Verbinden | klein |
-| 9 | `data-testid` **nur** für Canvas-Nodes und Handles | Dort gibt es keine semantische Rolle; überall sonst bleiben Rollen/Namen die erste Wahl | klein |
+| 1 | Replace `alert()`/`confirm()` with toast or inline status | A user sees "Gespeichert"/"Fehler" persistently; the test can read the same message instead of catching a blocking browser dialog | medium |
+| 2 | Provide controls with roles and names (`<button>`, `aria-label`, `<label for>`) | `getByRole`/`getByLabel` then works for screen readers **and** Playwright; icon buttons become addressable at all | small |
+| 3 | Show validation errors inline (list in panel, marker on node) | User recognizes what is wrong; test checks text instead of `alert` content | medium |
+| 4 | Keep save status visible ("Gespeichert 12:34", "Nicht gespeichert") | User knows whether they can navigate safely; test has a stable signal for persistence | small |
+| 5 | Error Boundary around the editor | Backend outage produces a message instead of a white page | small |
+| 6 | Entry points "Neu (Start+End)" and "Beispiel-Workflow" | A user can start without API/Postman; the test need not require fixtures | small |
+| 7 | Test profile with deterministic provider (`ENGINE_PROVIDER_SCRIPTED=true`) | "Ausführen" returns a fixed answer; run tests become reproducible | small |
+| 8 | Animations respect `prefers-reduced-motion`, auto-layout deterministic | Fewer timing flakes when dragging and connecting | small |
+| 9 | `data-testid` **only** for canvas nodes and handles | There is no semantic role there; everywhere else roles/names remain the first choice | small |
 
-Punkt 1 und 2 sind die wichtigsten: Sie machen die Oberfläche sowohl
-benutzbarer als auch testbarer — derselbe Aufwand, doppelter Nutzen.
+Points 1 and 2 are the most important: they make the UI both more usable and
+more testable — same effort, double benefit.
 
 ---
 
-## 3. Selektionsregeln (Priorität von oben nach unten)
+## 3. Selection rules (priority top to bottom)
 
-| Priorität | Selektor | Beispiel |
+| Priority | Selector | Example |
 |---|---|---|
-| 1 | Rolle + Name | `getByRole('button', { name: 'Speichern' })` |
+| 1 | Role + name | `getByRole('button', { name: 'Speichern' })` |
 | 2 | Label | `getByLabel('Workflow-Name')` |
-| 3 | Sichtbarer Text | `getByText('Workflow ist gültig')` |
+| 3 | Visible text | `getByText('Workflow ist gültig')` |
 | 4 | `data-testid` | `getByTestId('node-start-1')` |
-| 5 | CSS (nur Zählen/Struktur) | `.react-flow__edge` |
+| 5 | CSS (counting/structure only) | `.react-flow__edge` |
 
-`npx playwright codegen <url>` erzeugt genau diese Nutzer-Selektoren und ist
-das praktische Werkzeug, um zu prüfen, ob die Oberfläche „auffindbar" ist.
-
----
-
-## 4. Manueller Testdurchlauf (Checkliste, ca. 10 Minuten)
-
-Voraussetzung: App läuft, ein Workflow ist ausgewählt oder „Neu" geklickt.
-Jeder Punkt gilt als bestanden, wenn das **sichtbare Ergebnis** eintritt.
-
-- [ ] **M1 — Leerstart:** „Neu (Start+End)" → Fläche zeigt genau zwei Nodes,
-      „Start" und „Ende", verbunden durch eine Kante.
-- [ ] **M2 — Node hinzufügen:** In der Palette „Agent" wählen → ein Node
-      erscheint, das Eigenschaften-Panel öffnet sich und zeigt die Node-ID.
-- [ ] **M3 — Verbinden:** Vom Ausgang von „Start" zum Eingang des neuen Nodes
-      ziehen → eine zweite Kante erscheint, ohne Fehlermeldung.
-- [ ] **M4 — Eigenschaften:** Node anklicken, Titel ändern → der neue Titel ist
-      sofort auf dem Node sichtbar.
-- [ ] **M5 — Speichern:** Namen ändern, „Speichern" → sichtbare Bestätigung
-      („Gespeichert"), keine Fehlermeldung.
-- [ ] **M6 — Neuladen:** Seite neu laden → Name, Nodes und Kanten sind
-      unverändert vorhanden.
-- [ ] **M7 — Validieren (gültig):** „Validieren" → Meldung „Workflow ist gültig".
-- [ ] **M8 — Validieren (ungültig):** „Ende"-Node löschen, „Validieren" →
-      verständliche Fehlermeldung, die das fehlende Ende benennt.
-- [ ] **M9 — Ausführen:** „Ausführen", Eingabe „Hallo" bestätigen → Ergebnis
-      erscheint, die Reihenfolge enthält Start und Ende.
-- [ ] **M10 — Wiederfinden:** Zur Workflow-Liste, den Workflow öffnen → der
-      Editor zeigt ihn, **ohne** dass die Liste darüber liegt.
-- [ ] **M11 — Löschen:** In der Liste „Löschen" → Rückfrage, danach ist der
-      Eintrag verschwunden.
-- [ ] **M12 — Handy:** Fenster auf Handybreite → Palette bleibt bedienbar,
-      Panel lässt sich öffnen und schließen.
-
-Diese zwölf Punkte sind die Abnahme. Die Automatisierung bildet sie 1:1 ab.
+`npx playwright codegen <url>` produces exactly these user-facing selectors and is
+the practical tool for checking whether the UI is "discoverable".
 
 ---
 
-## 5. Nutzer-Journeys (automatisiert)
+## 4. Manual test run (checklist, approx. 10 minutes)
 
-Jede Journey nennt Ziel, Vorgehen aus Nutzersicht, sichtbares Ergebnis und die
-Prüfpunkte. Technische Hinweise stehen getrennt darunter.
+Prerequisite: App running, a workflow selected or "Neu" clicked.
+Each item counts as passed when the **visible result** occurs.
 
-### J1 — Ersten Workflow von null bauen
+- [ ] **M1 — Empty start:** "Neu (Start+End)" → canvas shows exactly two nodes,
+      "Start" and "Ende", connected by an edge.
+- [ ] **M2 — Add node:** Choose "Agent" in the palette → a node appears, the
+      properties panel opens and shows the node ID.
+- [ ] **M3 — Connect:** Drag from the output of "Start" to the input of the new
+      node → a second edge appears, without an error message.
+- [ ] **M4 — Properties:** Click the node, change the title → the new title is
+      immediately visible on the node.
+- [ ] **M5 — Save:** Change the name, "Speichern" → visible confirmation
+      ("Gespeichert"), no error message.
+- [ ] **M6 — Reload:** Reload the page → name, nodes and edges are still present
+      unchanged.
+- [ ] **M7 — Validate (valid):** "Validieren" → message "Workflow ist gültig".
+- [ ] **M8 — Validate (invalid):** Delete the "Ende" node, "Validieren" →
+      understandable error message naming the missing end.
+- [ ] **M9 — Run:** "Ausführen", confirm input "Hallo" → result appears, the
+      order contains Start and Ende.
+- [ ] **M10 — Find again:** Go to the workflow list, open the workflow → the
+      editor shows it, **without** the list overlaying it.
+- [ ] **M11 — Delete:** "Löschen" in the list → confirmation prompt, afterwards
+      the entry is gone.
+- [ ] **M12 — Mobile:** Window at mobile width → palette remains usable, panel
+      can be opened and closed.
 
-**Ziel:** Ein Nutzer erstellt ohne Vorkenntnisse einen lauffähigen Workflow.
-**Vorgehen:** Editor öffnen → „Neu (Start+End)" → „Agent" hinzufügen →
-Start mit Agent verbinden → Agent mit Ende verbinden → Namen vergeben →
-„Speichern".
-**Sichtbares Ergebnis:** Drei Nodes, zwei Kanten, Bestätigung „Gespeichert".
-**Prüfpunkte:** Node-Anzahl, Kanten-Anzahl, sichtbarer Name, Bestätigung.
-**Technik:** Keine Fixtures nötig — dieser Test legt alles über die UI an.
-Langsamer, aber der einzige echte End-to-End-Nachweis.
-
-### J2 — Workflow wiederfinden und öffnen
-
-**Ziel:** Ein Nutzer findet einen gespeicherten Workflow wieder.
-**Vorgehen:** Workflow-Liste öffnen → Eintrag wählen → „Laden".
-**Sichtbares Ergebnis:** Editor zeigt den Workflow; die Liste ist geschlossen.
-**Prüfpunkte:** Name im Editor, Node-/Kanten-Anzahl, Liste nicht mehr sichtbar.
-**Technik:** Entspricht dem Fix „Liste nur zeigen, wenn kein Workflow gewählt
-ist". Fixture per API anlegen ist hier sinnvoll (Setup, nicht Prüfung).
-
-### J3 — Agent konfigurieren
-
-**Ziel:** Ein Nutzer passt Modell und Prompt eines Agent-Nodes an.
-**Vorgehen:** Agent-Node anklicken → Modell wählen → Prompt ändern → speichern
-→ neu laden.
-**Sichtbares Ergebnis:** Werte stehen nach dem Neuladen unverändert im Panel.
-**Prüfpunkte:** Modell, Prompt, Persistenz nach Reload.
-
-### J4 — Classify konfigurieren
-
-**Ziel:** Ein Nutzer richtet eine Klassifikation ein.
-**Vorgehen:** Classify-Node hinzufügen → Modellname und Fragen-JSON eintragen →
-speichern → neu laden.
-**Sichtbares Ergebnis:** Konfiguration bleibt erhalten; bei ungültigem JSON
-erscheint eine verständliche Fehlermeldung statt eines Absturzes.
-**Prüfpunkte:** Werte persistiert, Fehlerfall sichtbar und nicht blockierend.
-
-### J5 — Fehler finden und beheben
-
-**Ziel:** Ein Nutzer erkennt einen ungültigen Workflow und repariert ihn.
-**Vorgehen:** Ende-Node löschen → „Validieren" → Fehlermeldung lesen → Ende
-wieder hinzufügen und verbinden → erneut validieren.
-**Sichtbares Ergebnis:** Erst konkrete Fehlermeldung, danach „Workflow ist
-gültig".
-**Prüfpunkte:** Fehlertext nennt das Problem; nach Korrektur verschwindet er.
-
-### J6 — Workflow ausführen
-
-**Ziel:** Ein Nutzer startet einen Workflow und liest das Ergebnis.
-**Vorgehen:** „Ausführen" → Eingabe bestätigen → Ergebnis ansehen.
-**Sichtbares Ergebnis:** Ergebnisbereich zeigt Antwort und Reihenfolge der
-Nodes.
-**Prüfpunkte:** Ergebnis vorhanden, Reihenfolge enthält Start und Ende, keine
-Fehlermeldung.
-**Technik:** Testprofil mit scripted Provider für feste Antwort.
-
-### J7 — Auf dem Handy bedienen
-
-**Ziel:** Ein Nutzer arbeitet mit kleinem Bildschirm.
-**Vorgehen:** Handy-Viewport → Workflow öffnen → Node hinzufügen → Panel
-öffnen/schließen.
-**Sichtbares Ergebnis:** Palette scrollbar und bedienbar, Panel überlagert den
-Editor nicht dauerhaft.
-**Prüfpunkte:** Node wird angelegt, Panel schließt wieder, Fläche bleibt
-bedienbar.
-
-### J8 — Fehlerfall: Backend nicht erreichbar
-
-**Ziel:** Ein Nutzer bekommt bei Ausfall eine verständliche Meldung.
-**Vorgehen:** Netzwerk zu `/api/workflows/*` blockieren → „Speichern".
-**Sichtbares Ergebnis:** Meldung „Speichern fehlgeschlagen", keine weiße Seite,
-Eingaben bleiben erhalten.
-**Prüfpunkte:** sichtbare Fehlermeldung, Editor weiter bedienbar.
+These twelve points are the acceptance. Automation maps them 1:1.
 
 ---
 
-## 6. Testdaten
+## 5. User journeys (automated)
 
-Fixtures sind **Setup-Erleichterung**, nicht der Prüfgegenstand.
+Each journey names goal, steps from the user's perspective, visible result and
+checkpoints. Technical notes are listed separately below.
 
-- **J1** baut alles über die UI — keine Fixtures.
-- **J2–J8** dürfen einen Workflow per `PUT /api/workflows/{id}` anlegen, prüfen
-  aber ausschließlich sichtbares Verhalten.
-- IDs immer eindeutig: `e2e-<timestamp>-<random>`, Löschung im `afterEach`.
-- Negativfall (J5) startet mit einem Workflow ohne Ende-Node.
+### J1 — Build a first workflow from scratch
 
-Beispiel-Minimalworkflow:
+**Goal:** A user creates a working workflow without prior knowledge.
+**Steps:** Open editor → "Neu (Start+End)" → add "Agent" → connect Start to Agent
+→ connect Agent to Ende → assign a name → "Speichern".
+**Visible result:** Three nodes, two edges, confirmation "Gespeichert".
+**Checkpoints:** Node count, edge count, visible name, confirmation.
+**Technique:** No fixtures needed — this test creates everything through the UI.
+Slower, but the only true end-to-end proof.
+
+### J2 — Find and open a workflow
+
+**Goal:** A user finds a saved workflow again.
+**Steps:** Open workflow list → select entry → "Laden".
+**Visible result:** Editor shows the workflow; the list is closed.
+**Checkpoints:** Name in editor, node/edge count, list no longer visible.
+**Technique:** Corresponds to the fix "show list only when no workflow is
+selected". Creating a fixture via API is sensible here (setup, not verification).
+
+### J3 — Configure an agent
+
+**Goal:** A user adjusts model and prompt of an agent node.
+**Steps:** Click agent node → choose model → change prompt → save → reload.
+**Visible result:** Values are unchanged in the panel after reload.
+**Checkpoints:** Model, prompt, persistence after reload.
+
+### J4 — Configure classify
+
+**Goal:** A user sets up a classification.
+**Steps:** Add classify node → enter model name and questions JSON → save →
+reload.
+**Visible result:** Configuration is retained; on invalid JSON an understandable
+error message appears instead of a crash.
+**Checkpoints:** Values persisted, error case visible and non-blocking.
+
+### J5 — Find and fix errors
+
+**Goal:** A user recognizes an invalid workflow and repairs it.
+**Steps:** Delete end node → "Validieren" → read error message → add end node
+again and connect → validate again.
+**Visible result:** First a concrete error message, then "Workflow ist gültig".
+**Checkpoints:** Error text names the problem; it disappears after correction.
+
+### J6 — Run a workflow
+
+**Goal:** A user starts a workflow and reads the result.
+**Steps:** "Ausführen" → confirm input → view result.
+**Visible result:** Result area shows answer and order of nodes.
+**Checkpoints:** Result present, order contains Start and Ende, no error message.
+**Technique:** Test profile with scripted provider for a fixed answer.
+
+### J7 — Operate on mobile
+
+**Goal:** A user works with a small screen.
+**Steps:** Mobile viewport → open workflow → add node → open/close panel.
+**Visible result:** Palette scrollable and usable, panel does not permanently
+overlay the editor.
+**Checkpoints:** Node is created, panel closes again, canvas remains usable.
+
+### J8 — Failure case: backend unreachable
+
+**Goal:** A user gets an understandable message on outage.
+**Steps:** Block network to `/api/workflows/*` → "Speichern".
+**Visible result:** Message "Speichern fehlgeschlagen", no white page, inputs
+remain intact.
+**Checkpoints:** Visible error message, editor still usable.
+
+---
+
+## 6. Test data
+
+Fixtures are **setup aids**, not the subject under test.
+
+- **J1** builds everything through the UI — no fixtures.
+- **J2–J8** may create a workflow via `PUT /api/workflows/{id}`, but verify
+  exclusively visible behavior.
+- IDs always unique: `e2e-<timestamp>-<random>`, deletion in `afterEach`.
+- Negative case (J5) starts with a workflow without an end node.
+
+Example minimal workflow:
 
 ```json
 {
@@ -203,7 +196,7 @@ Beispiel-Minimalworkflow:
 
 ---
 
-## 7. Testumgebung
+## 7. Test environment
 
 ```bash
 cd qoc
@@ -215,9 +208,9 @@ ENGINE_PROVIDER_SCRIPTED=true \
 mvn -pl quarkus quarkus:dev -Dquarkus.http.port=8091
 ```
 
-- aktueller React-Build (nicht der Legacy-Build),
-- SPA-Fallback aktiv, damit `/workflows/:id` direkt lädt,
-- Auth im Test aus (`config.js`: `oidcEnabled:false`).
+- current React build (not the legacy build),
+- SPA fallback active so `/workflows/:id` loads directly,
+- Auth off in tests (`config.js`: `oidcEnabled:false`).
 
 ```bash
 E2E_BASE_URL=http://localhost:8091
@@ -226,14 +219,14 @@ E2E_API_BASE=http://localhost:8091/api
 
 ---
 
-## 8. Playwright-Skizze (nutzernahe Selektoren)
+## 8. Playwright sketch (user-facing selectors)
 
 ```ts
 import { test, expect, request } from '@playwright/test';
 
 const API = process.env.E2E_API_BASE ?? 'http://localhost:8091/api';
 
-test('J1: Nutzer baut einen Workflow von null', async ({ page }) => {
+test('J1: User builds a workflow from scratch', async ({ page }) => {
   await page.goto('/editor');
 
   await page.getByRole('button', { name: 'Neu (Start+End)' }).click();
@@ -250,7 +243,7 @@ test('J1: Nutzer baut einen Workflow von null', async ({ page }) => {
   await expect(page.getByText(/Gespeichert/)).toBeVisible();
 });
 
-test('J5: Nutzer behebt einen Validierungsfehler', async ({ page }) => {
+test('J5: User fixes a validation error', async ({ page }) => {
   await page.goto('/editor');
   await page.getByRole('button', { name: 'Neu (Start+End)' }).click();
 
@@ -266,8 +259,8 @@ test('J5: Nutzer behebt einen Validierungsfehler', async ({ page }) => {
 });
 ```
 
-Verbindung per Handle-Drag bleibt technisch (Bounding-Boxen), ist aber die
-einzige Stelle ohne semantische Alternative:
+Connecting via handle drag remains technical (bounding boxes), but it is the only
+place without a semantic alternative:
 
 ```ts
 async function connect(page, sourceTestId: string, targetTestId: string) {
@@ -283,10 +276,10 @@ async function connect(page, sourceTestId: string, targetTestId: string) {
 
 ---
 
-## 9. Konfiguration
+## 9. Configuration
 
-Die bestehende Root-`playwright.config.js` zeigt noch auf die Legacy-UI
-(`:8071`). Empfehlung: getrennte Config.
+The existing root `playwright.config.js` still points at the legacy UI
+(`:8071`). Recommendation: separate config.
 
 ```js
 // playwright.workflow.config.js
@@ -310,35 +303,35 @@ npx playwright test --config=playwright.workflow.config.js
 
 ---
 
-## 10. Abnahmekriterien
+## 10. Acceptance criteria
 
-1. Die manuelle Checkliste (Abschnitt 4) ist vollständig in unter 10 Minuten
-   durchführbar, ohne API-Kenntnisse.
-2. Alle Journeys laufen headless grün, dreimal hintereinander ohne Flakes.
-3. Keine Test-Workflows bleiben zurück.
-4. Selektion folgt Abschnitt 3; `data-testid` nur an Canvas-Nodes/Handles.
-5. Fehler erzeugen Screenshot und Trace.
-6. Geprüft wird sichtbares Verhalten **und** die Persistenz nach Reload.
+1. The manual checklist (section 4) can be completed in under 10 minutes
+   without API knowledge.
+2. All journeys run headless green, three times in a row without flakes.
+3. No test workflows remain.
+4. Selection follows section 3; `data-testid` only on canvas nodes/handles.
+5. Errors produce screenshot and trace.
+6. Visible behavior **and** persistence after reload are verified.
 
 ---
 
-## 11. Risiken
+## 11. Risks
 
-| Risiko | Auswirkung | Gegenmaßnahme |
+| Risk | Impact | Mitigation |
 |---|---|---|
-| `alert()`/`confirm()` | blockiert Ablauf, nicht nutzerfreundlich | Toast/Inline (Abschnitt 2, Punkt 1) |
-| Icon-Buttons ohne Namen | weder Screenreader noch Test finden sie | `aria-label` ergänzen |
-| ReactFlow-Drag | Timing-anfällig | Handle-Bounding-Boxen, `steps`, ggf. Retry |
-| Legacy-Server auf `:8081` | Test prüft falsche UI | eigener Port `:8091` mit aktuellem Build |
-| Geteilte Datenbank | fremde Workflows in der Liste | File-Store oder eindeutige IDs + Cleanup |
-| LLM im Run | langsam/instabil | `ENGINE_PROVIDER_SCRIPTED=true` |
-| SPA-Deep-Link 404 | Navigation schlägt fehl | SPA-Fallback prüfen |
+| `alert()`/`confirm()` | blocks flow, not user-friendly | Toast/inline (section 2, point 1) |
+| Icon buttons without names | neither screen reader nor test finds them | add `aria-label` |
+| ReactFlow drag | timing-sensitive | handle bounding boxes, `steps`, retry if needed |
+| Legacy server on `:8081` | test checks wrong UI | own port `:8091` with current build |
+| Shared database | foreign workflows in the list | file store or unique IDs + cleanup |
+| LLM in run | slow/unstable | `ENGINE_PROVIDER_SCRIPTED=true` |
+| SPA deep link 404 | navigation fails | check SPA fallback |
 
 ---
 
-## 12. Offene Entscheidungen
+## 12. Open decisions
 
-1. Werden `alert()`/`confirm()` ersetzt (empfohlen, Voraussetzung für J5/J8)?
-2. Werden Rollen/Namen und `aria-label` ergänzt, oder übergangsweise
-   `data-testid` an allen Bedienelementen?
-3. Bleibt `tests/workflow-ui.spec.js` (Legacy-UI) bestehen oder wird es ersetzt?
+1. Will `alert()`/`confirm()` be replaced (recommended, prerequisite for J5/J8)?
+2. Will roles/names and `aria-label` be added, or will `data-testid` be used
+   on all controls as an interim solution?
+3. Does `tests/workflow-ui.spec.js` (legacy UI) remain or get replaced?

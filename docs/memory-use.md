@@ -1,333 +1,331 @@
-# Memory-Nutzung und DB-/File-Storage während der Task-Ausführung
+# Memory Usage and DB/File Storage During Task Execution
 
 > **Status:** 2026-11-05
-> **Bezug:** QOC Java-Engine unter `qoc/`.
-> **Rolle:** Analyse- und Referenzdokument, keine operative Spezifikation.
-> **Methode:** Code-Lesen im Working Tree. Alle Aussagen mit
-> `path:line`-Belegen; Interpretationen sind als solche markiert.
+> **Reference:** QOC Java Engine under `qoc/`.
+> **Role:** Analysis and reference document, not an operative specification.
+> **Method:** Reading code in the working tree. All statements include
+> `path:line` evidence; interpretations are marked as such.
 
-## 1. Ziel und Abgrenzung
+## 1. Goal and Scope
 
-Dieses Dokument beantwortet zwei Fragen für die Ausführung **eines einzelnen
-Tasks** (eines Prompt-Laufs):
+This document answers two questions for the execution of **a single task**
+(a single prompt run):
 
-1. **Wo wird JVM-Heap-Speicher gehalten?**
-2. **Wann und wo werden dabei Datenbank oder Dateisystem berührt?**
+1. **Where is JVM heap memory held?**
+2. **When and where are the database or file system touched?**
 
-Nicht Gegenstand sind:
+Not in scope:
 
-- konkrete Heap-Dumps oder Produktionsmessungen (die Werte sind
-  konfigurations- und lastabhängig),
-- Native-Image-Off-Heap-Verhalten,
-- das Verhalten des externen Modell-Providers.
+- concrete heap dumps or production measurements (values depend on
+  configuration and load),
+- native-image off-heap behavior,
+- the behavior of the external model provider.
 
-„Memory“ meint hier den Java-Heap: Listen, Strings, Byte-Arrays und
-In-Memory-Maps. Persistente Daten liegen je nach Konfiguration in SQLite oder
-PostgreSQL; Dateien liegen im Workspace oder im ephemeren Scratch-Verzeichnis.
+Here "memory" means the Java heap: lists, strings, byte arrays and
+in-memory maps. Persistent data resides in SQLite or PostgreSQL depending
+on configuration; files reside in the workspace or in the ephemeral scratch
+directory.
 
-## 2. Begriffe
+## 2. Terms
 
-| Begriff | Bedeutung |
+| Term | Meaning |
 |---|---|
-| **Task** | Ein Prompt-Lauf über `Engine.prompt` → `Engine.runPrompt`. |
-| **Step** | Ein Modellaufruf inklusive der zugehörigen Tool-Ausführungen. Ein Task besteht aus einem oder mehreren Steps. |
-| **Session** | Dauerhafte Aggregat-ID; besitzt Conversation, Journal, Inbox und optional einen Workspace. |
-| **History** | Persistierte Conversation-Messages einer Session. |
-| **Snapshot** | Pre-Turn-Kopie der Workspace-Dateien für `revert`. |
+| **Task** | A prompt run via `Engine.prompt` → `Engine.runPrompt`. |
+| **Step** | A model call including the associated tool executions. A task consists of one or more steps. |
+| **Session** | Persistent aggregate ID; owns a conversation, journal, inbox and optionally a workspace. |
+| **History** | Persisted conversation messages of a session. |
+| **Snapshot** | Pre-turn copy of workspace files for `revert`. |
 
-## 3. Ablauf eines Tasks
+## 3. Task Flow
 
 ```mermaid
 flowchart TD
     A[HTTP POST /api/... prompt] --> B[Admission]
     B --> C[Inbox + Session in DB]
     C --> D[User-Message in DB]
-    D --> E[Snapshot des Workspace in DB]
-    E --> F[Step-Schleife]
-    F --> G[Kontext aus DB laden]
-    G --> H[Modell-Call]
-    H --> I{Tool-Calls?}
-    I -- nein --> J[Assistant-Message in DB]
-    I -- ja --> K[Tool-Ausführung]
-    K --> L[Große Outputs in DB]
+    D --> E[Snapshot of Workspace in DB]
+    E --> F[Step loop]
+    F --> G[Load context from DB]
+    G --> H[Model call]
+    H --> I{Tool calls?}
+    I -- no --> J[Assistant message in DB]
+    I -- yes --> K[Tool execution]
+    K --> L[Large outputs in DB]
     L --> M{Overflow?}
-    M -- ja --> N[Compaction: DB-Read + DB-Write]
+    M -- yes --> N[Compaction: DB read + DB write]
     N --> G
-    M -- nein --> J
-    J --> O{Weiterer Step?}
-    O -- ja --> F
-    O -- nein --> P[Session/Journal in DB]
+    M -- no --> J
+    J --> O{Another step?}
+    O -- yes --> F
+    O -- no --> P[Session/Journal in DB]
 ```
 
-Die Step-Schleife steht in `quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java:1615`.
-Der Kontext wird pro Step neu aufgebaut
-(`Engine.java:1625`), auch nach einer Compaction noch einmal
-(`Engine.java:1643`).
+The step loop is in `quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java:1615`.
+Context is rebuilt per step (`Engine.java:1625`), including after a
+compaction (`Engine.java:1643`).
 
-## 4. Memory-Hotspots
+## 4. Memory Hotspots
 
-### 4.1 History wird pro Step vollständig geladen
+### 4.1 History Is Loaded in Full per Step
 
-`ContextBuilder.history` ruft `conversation.messages(session, from)` auf und
-faltet daraus die Nachrichtenliste
+`ContextBuilder.history` calls `conversation.messages(session, from)` and
+folds the result into the message list
 (`engine/src/main/java/de/augmentia/oc/engine/runtime/context/ContextBuilder.java:208-215`).
-Die Liste lebt für die Dauer des `prepared`-Objekts und wird an den
-Provider-Aufruf übergeben. Bei langen Sessions wächst dieser Anteil linear
-mit der Anzahl der Messages seit dem letzten Compaction-Checkpoint.
+The list lives for the lifetime of the `prepared` object and is passed to
+the provider call. For long sessions this share grows linearly with the
+number of messages since the last compaction checkpoint.
 
-**Besonderheit:** `prepare` wird bei einem Overflow-Step zweimal aufgerufen
-(`Engine.java:1625` und `Engine.java:1643`). Die erste History-Liste wird erst
-nach dem zweiten Aufruf garbage-collectable, sofern keine Referenz mehr
-besteht.
+**Special case:** `prepare` is called twice during an overflow step
+(`Engine.java:1625` and `Engine.java:1643`). The first history list only
+becomes garbage-collectable after the second call, once no references
+remain.
 
-### 4.2 Compaction lädt die gesamte History erneut
+### 4.2 Compaction Reloads the Entire History
 
-`CompactionService.compact` liest alle Messages ab `Seq.zero()`
+`CompactionService.compact` reads all messages from `Seq.zero()`
 (`engine/src/main/java/de/augmentia/oc/engine/runtime/compaction/CompactionService.java:117`),
-teilt sie in ein Fenster (`:118`) und baut daraus einen
-`StringBuilder`-Body für den Summary-Prompt. Der Peak liegt damit ungefähr
-bei „History + Summary-Body“, zusätzlich zu der bereits im Step gehaltenen
-History.
+splits them into a window (`:118`) and builds a `StringBuilder` body for
+the summary prompt. The peak is therefore roughly "History + Summary body",
+in addition to the history already held in the step.
 
-### 4.3 Große Tool-Outputs werden temporär im Heap gehalten
+### 4.3 Large Tool Outputs Are Temporarily Held in the Heap
 
-`ToolRuntime.bound` ruft `OutputBounding.boundStoring` auf
+`ToolRuntime.bound` calls `OutputBounding.boundStoring`
 (`engine/src/main/java/de/augmentia/oc/engine/runtime/tool/runtime/ToolRuntime.java:168-169`).
-Die Grenzen sind 2.000 Zeilen bzw. 50 KiB
+The limits are 2,000 lines or 50 KiB
 (`engine/src/main/java/de/augmentia/oc/engine/core/eval/OutputBounding.java:21-22`).
-Überschreitet ein Tool-Ergebnis diese Grenzen, hält `OutputBounding` den
-**vollständigen Text** als `String` im Heap, bis der Saver ihn als `byte[]`
-in den `ToolOutputStore` geschrieben hat
-(`OutputBounding.java:39`, `:34-40`). Erst danach wird der sichtbare Teil
-gebunden.
+When a tool result exceeds these limits, `OutputBounding` holds the **full
+text** as a `String` in the heap until the saver writes it as a `byte[]`
+into the `ToolOutputStore`
+(`OutputBounding.java:39`, `:34-40`). Only then is the visible part bound.
 
-### 4.4 Tool-Result-Cache
+### 4.4 Tool-Result Cache
 
-Bei gesetztem Idempotency-Key wird das serialisierte Tool-Ergebnis als
-`JsonValue` gelesen bzw. geschrieben
-(`ToolRuntime.java:75`, `:113`, `:121`, `:131`). Das ist zwar kein
-History-Wachstum, kann aber bei großen Tool-Outputs ebenfalls große
-JSON-Strings im Heap halten.
+When an idempotency key is set, the serialized tool result is read or
+written as a `JsonValue`
+(`ToolRuntime.java:75`, `:113`, `:121`, `:131`). This is not history
+growth, but it can also hold large JSON strings in the heap for large tool
+outputs.
 
-### 4.5 Workspace-Snapshot vor jedem Prompt
+### 4.5 Workspace Snapshot Before Every Prompt
 
-Vor dem eigentlichen Task wird der Workspace gescannt und in die DB
-gespeichert (`Engine.java:917-935`, Aufruf in `Engine.java:1421`).
+Before the actual task, the workspace is scanned and stored in the DB
+(`Engine.java:917-935`, invoked in `Engine.java:1421`).
 
-Grenzen:
+Limits:
 
-- maximal 2.000 Dateien (`Engine.java:908`),
-- maximal 1 MiB pro Datei (`Engine.java:909`),
-- maximal 20 MiB Gesamtgröße (`Engine.java:910`).
+- at most 2,000 files (`Engine.java:908`),
+- at most 1 MiB per file (`Engine.java:909`),
+- at most 20 MiB total size (`Engine.java:910`).
 
-`SqlSnapshots.capture` liest jede Datei über den `FileSystem`-Port in ein
-`byte[]` und schreibt sie in die Tabelle `snapshot_file`
+`SqlSnapshots.capture` reads each file through the `FileSystem` port into a
+`byte[]` and writes it into the `snapshot_file` table
 (`engine/src/main/java/de/augmentia/oc/engine/adapter/sql/SqlSnapshots.java:37-54`).
-Bei 20 MiB Gesamtbudget kann das pro Prompt ein kurzzeitiges Heap-Objekt in
-dieser Größenordnung erzeugen, zusätzlich zum JDBC-Batch.
+With a 20 MiB total budget this can create a short-lived heap object of
+that size per prompt, in addition to the JDBC batch.
 
-### 4.6 In-Memory-Registries und Maps
+### 4.6 In-Memory Registries and Maps
 
-| Struktur | Ort | Lebensdauer / Wachstum |
+| Structure | Location | Lifetime / Growth |
 |---|---|---|
-| `promptSlots` (Semaphore) | `Engine.java:375`, `:394` | begrenzt parallele Prompts (Default 16) |
-| `running` (`SessionId` → `Thread`) | `Engine.java:372-373` | pro laufendem Prompt; wird im `finally` entfernt (`Engine.java:1459`) |
-| `pausedPrompts` (`SessionId` → `String`) | `Engine.java:343` | bleibt nach einer Pause bis zum Resume |
-| `revertSnapshots` (`SessionId` → `CapturedSnapshot`) | `Engine.java:368` | letzter Snapshot pro Session |
-| `subagentDepths` | `Engine.java:1843` | pro Subagent-Baum |
-| `ProcessRegistry` | `engine/.../runtime/tool/shell/ProcessRegistry.java` | laufende Shell-Prozesse |
-| `BackgroundTasks` | `engine/.../runtime/tool/subagent/BackgroundTasks.java` | Hintergrund-Subagents |
-| `TodoTool` | `engine/.../runtime/tool/meta/TodoTool.java` | Todo-Liste pro Prozess/Lauf |
+| `promptSlots` (Semaphore) | `Engine.java:375`, `:394` | limits parallel prompts (default 16) |
+| `running` (`SessionId` → `Thread`) | `Engine.java:372-373` | per running prompt; removed in `finally` (`Engine.java:1459`) |
+| `pausedPrompts` (`SessionId` → `String`) | `Engine.java:343` | remains after a pause until resume |
+| `revertSnapshots` (`SessionId` → `CapturedSnapshot`) | `Engine.java:368` | last snapshot per session |
+| `subagentDepths` | `Engine.java:1843` | per subagent tree |
+| `ProcessRegistry` | `engine/.../runtime/tool/shell/ProcessRegistry.java` | running shell processes |
+| `BackgroundTasks` | `engine/.../runtime/tool/subagent/BackgroundTasks.java` | background subagents |
+| `TodoTool` | `engine/.../runtime/tool/meta/TodoTool.java` | todo list per process/run |
 
-### 4.7 Datei-Scan-Cache
+### 4.7 File-Scan Cache
 
-`CachedFileSystem` cached **nur** Glob-/Search-Ergebnisse, nicht
-Dateiinhalte. Der Cache ist auf 64 Einträge begrenzt und läuft nach 1 Sekunde
-ab (`engine/src/main/java/de/augmentia/oc/engine/adapter/fs/CachedFileSystem.java:18-19`).
-`read` und `readText` delegieren immer direkt an das Dateisystem (`:30-37`).
+`CachedFileSystem` caches **only** glob/search results, not file contents.
+The cache is limited to 64 entries and expires after 1 second
+(`engine/src/main/java/de/augmentia/oc/engine/adapter/fs/CachedFileSystem.java:18-19`).
+`read` and `readText` always delegate directly to the file system (`:30-37`).
 
-## 5. Datenbank-Zugriffe im Task-Verlauf
+## 5. Database Accesses During a Task
 
-Die folgenden Tabellen zeigen die Reihenfolge innerhalb eines Tasks. Die
-Ports sind in `engine/src/main/java/de/augmentia/oc/engine/core/port/store/`
-definiert; die konkreten Adapter liegen unter `adapter/sql` (PostgreSQL) und
-`adapter/sqlite` (SQLite).
+The ports are defined in
+`engine/src/main/java/de/augmentia/oc/engine/core/port/store/`; the concrete
+adapters live under `adapter/sql` (PostgreSQL) and `adapter/sqlite`
+(SQLite).
 
-### 5.1 Vor dem Step-Loop
+### 5.1 Before the Step Loop
 
-| Zeitpunkt | Operation | Speicherort | Beleg |
+| Point in time | Operation | Storage | Evidence |
 |---|---|---|---|
 | Admission | `sessionService.enqueue` → Journal | DB | `Engine.java:1537` |
 | Admission | `sessions.putInbox` | DB (`session_inbox`) | `Engine.java:1539` |
 | Admission | `sessionService.deliver` | DB (Journal/Inbox) | `Engine.java:1541` |
-| Admission | `sessions.put` (aktualisiertes `SessionInfo`) | DB (`session`) | `Engine.java:1543` |
-| Prompt-Start | `captureSnapshot` → `snapshots.capture` | DB (`snapshot`, `snapshot_file`) | `Engine.java:1421`, `:917-935` |
-| Prompt-Start | `conversation.insert` (User-Message) | DB (`message`) | `Engine.java:1550-1552` |
-| Prompt-Start | `conversation.nextSeq` | DB (Sequenz) | `Engine.java:1550` |
+| Admission | `sessions.put` (updated `SessionInfo`) | DB (`session`) | `Engine.java:1543` |
+| Prompt start | `captureSnapshot` → `snapshots.capture` | DB (`snapshot`, `snapshot_file`) | `Engine.java:1421`, `:917-935` |
+| Prompt start | `conversation.insert` (user message) | DB (`message`) | `Engine.java:1550-1552` |
+| Prompt start | `conversation.nextSeq` | DB (sequence) | `Engine.java:1550` |
 
-### 5.2 Pro Step
+### 5.2 Per Step
 
-| Zeitpunkt | Operation | Speicherort | Beleg |
+| Point in time | Operation | Storage | Evidence |
 |---|---|---|---|
-| Kontextaufbau | `instructionStore.state` (Compaction-Checkpoint) | DB | `ContextBuilder.java:195-205` |
-| Kontextaufbau | `instructionStore.blob` (Summary) | DB | `ContextBuilder.java:202` |
-| Kontextaufbau | `conversation.messages` (History) | DB | `ContextBuilder.java:215` |
-| Modell-Call | keine DB-/FS-Zugriffe | – | `Engine.java:1631` |
-| Tool-Ausführung | Tool-spezifisch (FS, HTTP, MCP, …) | FS/Netz | `ToolRuntime.java:88` |
-| Großer Tool-Output | `outputStore.save` | DB (`tool_output`) | `ToolRuntime.java:168-169` |
-| Idempotency-Key | `resultCache.find` / `store` | DB (`tool_result_cache`) | `ToolRuntime.java:75`, `:113` |
-| Overflow | `compaction.compact` → History laden | DB (`message`) | `CompactionService.java:117` |
-| Overflow | Summary-Body bilden | Heap | `CompactionService.java:120-145` |
+| Context build | `instructionStore.state` (compaction checkpoint) | DB | `ContextBuilder.java:195-205` |
+| Context build | `instructionStore.blob` (summary) | DB | `ContextBuilder.java:202` |
+| Context build | `conversation.messages` (history) | DB | `ContextBuilder.java:215` |
+| Model call | no DB/FS accesses | – | `Engine.java:1631` |
+| Tool execution | tool-specific (FS, HTTP, MCP, …) | FS/network | `ToolRuntime.java:88` |
+| Large tool output | `outputStore.save` | DB (`tool_output`) | `ToolRuntime.java:168-169` |
+| Idempotency key | `resultCache.find` / `store` | DB (`tool_result_cache`) | `ToolRuntime.java:75`, `:113` |
+| Overflow | `compaction.compact` → load history | DB (`message`) | `CompactionService.java:117` |
+| Overflow | build summary body | Heap | `CompactionService.java:120-145` |
 | Overflow | `instructions.putBlob` + `putState` | DB (`instruction_blob`, `instruction_state`) | `CompactionService.java:201-202` |
-| Assistant-Turn | `conversation.nextSeq` + `conversation.insert` | DB (`message`) | `Engine.java:1748-1753` |
+| Assistant turn | `conversation.nextSeq` + `conversation.insert` | DB (`message`) | `Engine.java:1748-1753` |
 
-### 5.3 Nach dem Step-Loop
+### 5.3 After the Step Loop
 
-| Zeitpunkt | Operation | Speicherort | Beleg |
+| Point in time | Operation | Storage | Evidence |
 |---|---|---|---|
-| Erfolg | `sessions.put` (Titel/Usage) | DB (`session`) | `Engine.java:1363-1373` |
-| Titel | `generateTitle` → `conversation.messages` + LLM + `sessions.put` | DB + Heap | `Engine.java:1363-1373`, `:1811-1813` |
+| Success | `sessions.put` (title/usage) | DB (`session`) | `Engine.java:1363-1373` |
+| Title | `generateTitle` → `conversation.messages` + LLM + `sessions.put` | DB + Heap | `Engine.java:1363-1373`, `:1811-1813` |
 | Pause | `pausedPrompts.put` | Heap | `Engine.java:1704` |
 | Pause | `sessionWorkspaces.setPausedPrompt` / `updateState` | DB/File | `Engine.java:1705-1708` |
 | Pause | `sessions.put` | DB | `Engine.java:1711` |
-| Ephemeral-Cleanup | `toolResultCache.deleteBySession` | DB | `Engine.java:1822-1823` |
-| Ephemeral-Cleanup | `sessionRetention.delete` | DB (Session + Journal) | `Engine.java:1825` |
-| Ephemeral-Cleanup | Workspace-Verzeichnis löschen | File | `Engine.java:1829-1833` |
-| Ephemeral-Cleanup | `sessionWorkspaces.deleteWorkspace` | DB/File | `Engine.java:1835` |
+| Ephemeral cleanup | `toolResultCache.deleteBySession` | DB | `Engine.java:1822-1823` |
+| Ephemeral cleanup | `sessionRetention.delete` | DB (Session + Journal) | `Engine.java:1825` |
+| Ephemeral cleanup | delete workspace directory | File | `Engine.java:1829-1833` |
+| Ephemeral cleanup | `sessionWorkspaces.deleteWorkspace` | DB/File | `Engine.java:1835` |
 
-> **Hinweis:** Die `ExecutionStarted`-/`ExecutionSucceeded`-Events werden im
-> engine-core-`Coordinator` geschrieben (`engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java:82`,
-> `:98-104`). Im aktuellen Quarkus-Adapter wird kein `Coordinator`
-> instanziiert; der produktive Pfad ist `Engine.prompt` → `Engine.runPrompt`.
-> Die Event-Typen sind daher vor allem für den engine-core-Pfad und Tests
-> relevant.
+> **Note:** The `ExecutionStarted`/`ExecutionSucceeded` events are written in
+> the engine-core `Coordinator`
+> (`engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java:82`,
+> `:98-104`). In the current Quarkus adapter no `Coordinator` is
+> instantiated; the productive path is `Engine.prompt` → `Engine.runPrompt`.
+> The event types are therefore mainly relevant for the engine-core path and
+> tests.
 
-## 6. File-Storage-Zugriffe im Task-Verlauf
+## 6. File-Storage Accesses During a Task
 
-| Zeitpunkt | Zugriff | Pfad / Ort | Beleg |
+| Point in time | Access | Path / Location | Evidence |
 |---|---|---|---|
-| Prompt-Start | Workspace-Scan für Snapshot | Workspace-Root, ohne `.`, `node_modules`, `target`, `data` | `Engine.java:937-980` |
-| Kontextaufbau | Instruktionen laden (`AGENTS.md` etc.) | Workspace + Home | `ContextBuilder.java:152-159` |
-| Kontextaufbau | Skill-Instruktionen | Workspace `skill/`, `skills/`, `.opencode/skills`, konfigurierte Pfade | `Engine.java:580-596` |
-| Tool `read` | Datei lesen | Workspace/erlaubter Pfad | `FileSystem.read` |
-| Tool `write` / `edit` / `patch` | Datei schreiben/ändern | Workspace/erlaubter Pfad | `FileSystem.write` |
-| Tool `glob` / `grep` | Verzeichnis scannen | Workspace/erlaubter Pfad | `FileSystem.glob` / `search`, kurz gecacht |
-| Tool `shell` | Prozess im Workspace | Workspace (Sandbox) | `ShellTool` / `ProcessRunner` |
-| Ephemeral-Mode | Scratch-Verzeichnis pro Session | `sessionWorkspaces.workspaceRoot` | `Engine.java:1523-1525` |
-| Snapshot-Restore | Dateien aus DB zurück in den Workspace | Workspace | `SqlSnapshots.restore` |
+| Prompt start | Workspace scan for snapshot | Workspace root, excluding `.`, `node_modules`, `target`, `data` | `Engine.java:937-980` |
+| Context build | Load instructions (`AGENTS.md`, etc.) | Workspace + Home | `ContextBuilder.java:152-159` |
+| Context build | Skill instructions | Workspace `skill/`, `skills/`, `.opencode/skills`, configured paths | `Engine.java:580-596` |
+| Tool `read` | Read file | Workspace/allowed path | `FileSystem.read` |
+| Tool `write` / `edit` / `patch` | Write/modify file | Workspace/allowed path | `FileSystem.write` |
+| Tool `glob` / `grep` | Scan directory | Workspace/allowed path | `FileSystem.glob` / `search`, briefly cached |
+| Tool `shell` | Process in workspace | Workspace (sandbox) | `ShellTool` / `ProcessRunner` |
+| Ephemeral mode | Scratch directory per session | `sessionWorkspaces.workspaceRoot` | `Engine.java:1523-1525` |
+| Snapshot restore | Files from DB back into workspace | Workspace | `SqlSnapshots.restore` |
 
-Wichtig: Der `CachedFileSystem`-Cache betrifft nur Verzeichnis-Scans. Ein
-wiederholtes `read` derselben Datei führt **jedes Mal** zu einem
-Dateisystem-Zugriff (`CachedFileSystem.java:39-47`).
+Important: the `CachedFileSystem` cache only covers directory scans. A
+repeated `read` of the same file triggers a file-system access **every
+time** (`CachedFileSystem.java:39-47`).
 
-## 7. Wann entsteht der größte Speicherdruck?
+## 7. When Does Memory Pressure Peak?
 
-Aus dem Code ergeben sich drei Peaks:
+Three peaks follow from the code:
 
-1. **Prompt-Start mit Snapshot:** Der Workspace-Scan plus `capture` kann bis
-   zu 20 MiB Dateiinhalte gleichzeitig in den Heap laden
-   (`Engine.java:908-910`, `SqlSnapshots.java:37-54`). Das passiert **vor**
-   dem ersten Modell-Call.
-2. **Langer Step mit History:** `contextBuilder.prepare` lädt die gesamte
-   History; bei einem Overflow kommt ein zweites `prepare` hinzu
-   (`Engine.java:1625`, `:1643`). Der Speicher wächst mit der Anzahl der
-   Messages, nicht mit der Anzahl der Steps.
-3. **Compaction:** `CompactionService.compact` lädt die History erneut und
-   baut den Summary-Body (`CompactionService.java:117-145`). Das ist der
-   größte einzelne Heap-Block nach dem Snapshot.
+1. **Prompt start with snapshot:** The workspace scan plus `capture` can
+   load up to 20 MiB of file contents into the heap simultaneously
+   (`Engine.java:908-910`, `SqlSnapshots.java:37-54`). This happens **before**
+   the first model call.
+2. **Long step with history:** `contextBuilder.prepare` loads the entire
+   history; on overflow a second `prepare` is added
+   (`Engine.java:1625`, `:1643`). Memory grows with the number of messages,
+   not the number of steps.
+3. **Compaction:** `CompactionService.compact` reloads the history and
+   builds the summary body (`CompactionService.java:117-145`). This is the
+   largest single heap block after the snapshot.
 
-## 8. Konfiguration und Limits
+## 8. Configuration and Limits
 
-| Eigenschaft | Default | Wirkung | Beleg |
+| Property | Default | Effect | Evidence |
 |---|---:|---|---|
-| `engine.max.concurrent.prompts` | 16 | begrenzt parallele Prompts und damit die Zahl gleichzeitig gehaltener Historien | `Engine.java:377-378` |
-| `engine.turn.max.tool-calls` | 64 | begrenzt Tool-Calls pro Task | `Engine.java:381-382` |
-| `engine.turn.max.tokens` | 0 (aus) | kumulatives Token-Budget pro Task | `Engine.java:385-386` |
-| `engine.turn.max.wall-minutes` | 30 | Wall-Clock-Budget pro Task | `Engine.java:388-389` |
-| `engine.revert.snapshot.enabled` | true | schaltet den Pre-Turn-Snapshot ab | `Engine.java:301-303` |
-| Snapshot-Dateien | 2.000 | Obergrenze pro Snapshot | `Engine.java:908` |
-| Snapshot-Dateigröße | 1 MiB | Obergrenze pro Datei | `Engine.java:909` |
-| Snapshot-Gesamtgröße | 20 MiB | Obergrenze pro Snapshot | `Engine.java:910` |
-| Output-Bounding | 2.000 Zeilen / 50 KiB | ab hier wird der Volltext in die DB ausgelagert | `OutputBounding.java:21-22` |
+| `engine.max.concurrent.prompts` | 16 | limits parallel prompts and thus the number of simultaneously held histories | `Engine.java:377-378` |
+| `engine.turn.max.tool-calls` | 64 | limits tool calls per task | `Engine.java:381-382` |
+| `engine.turn.max.tokens` | 0 (off) | cumulative token budget per task | `Engine.java:385-386` |
+| `engine.turn.max.wall-minutes` | 30 | wall-clock budget per task | `Engine.java:388-389` |
+| `engine.revert.snapshot.enabled` | true | disables the pre-turn snapshot | `Engine.java:301-303` |
+| Snapshot files | 2,000 | upper bound per snapshot | `Engine.java:908` |
+| Snapshot file size | 1 MiB | upper bound per file | `Engine.java:909` |
+| Snapshot total size | 20 MiB | upper bound per snapshot | `Engine.java:910` |
+| Output bounding | 2,000 lines / 50 KiB | above this the full text is offloaded to the DB | `OutputBounding.java:21-22` |
 
-## 9. Messpunkte für eine Laufzeitanalyse
+## 9. Measurement Points for Runtime Analysis
 
-Wer die tatsächliche Memory-Nutzung messen will, kann folgende Punkte
-kombinieren:
+To measure actual memory usage, the following points can be combined:
 
-1. **Heap-Histogramm** während eines laufenden Tasks:
-   `jcmd <pid> GC.class_histogram` oder JFR mit `jdk.ObjectAllocationSample`.
-2. **DB-Wachstum** pro Task: `tool_output`, `snapshot_file`, `message` und
-   `tool_result_cache` vor/nach dem Task zählen.
-3. **Logs**: `Engine.runPrompt` loggt Step-Nummer und Agent
-   (`Engine.java:1548`, `:1616`); `prompt finish` loggt Usage
+1. **Heap histogram** during a running task:
+   `jcmd <pid> GC.class_histogram` or JFR with `jdk.ObjectAllocationSample`.
+2. **DB growth** per task: count `tool_output`, `snapshot_file`, `message`
+   and `tool_result_cache` before/after the task.
+3. **Logs**: `Engine.runPrompt` logs step number and agent
+   (`Engine.java:1548`, `:1616`); `prompt finish` logs usage
    (`Engine.java:1435-1436`).
-4. **OpenTelemetry-Spans**: `engine.prompt`, `engine.step`, `compaction`,
-   `permission.assert` sind instrumentiert
+4. **OpenTelemetry spans**: `engine.prompt`, `engine.step`, `compaction`,
+   `permission.assert` are instrumented
    (`Engine.java:1415-1418`, `:1617-1620`, `:1634-1641`).
 
-## 10. Optimierungsansätze
+## 10. Optimization Approaches
 
-| Ansatz | Wirkung | Risiko |
+| Approach | Effect | Risk |
 |---|---|---|
-| Step-lokalen History-Cache einführen | vermeidet doppeltes `conversation.messages` bei Overflow | Cache-Invalidierung nach Tool-Writes |
-| Snapshot standardmäßig deaktivieren oder auf Diff beschränken | entfernt bis zu 20 MiB Heap/DB pro Prompt | `revert` kann Dateien nicht mehr wiederherstellen |
-| Snapshot-Dateien streamen statt als Batch | senkt den Heap-Peak | mehr DB-Roundtrips |
-| Compaction früher auslösen (kleineres Context-Window) | begrenzt History-Wachstum | mehr Summary-Calls |
-| Output-Bounding vor dem vollständigen Einlesen | senkt den Heap-Peak bei großen Tool-Outputs | Tool-spezifische Streaming-Unterstützung nötig |
-| TTL/Eviction für `pausedPrompts` und `revertSnapshots` | begrenzt Map-Wachstum bei vielen Sessions | Resume-/Revert-Semantik muss angepasst werden |
+| Introduce a step-local history cache | avoids duplicate `conversation.messages` on overflow | cache invalidation after tool writes |
+| Disable snapshots by default or limit to diff | removes up to 20 MiB heap/DB per prompt | `revert` can no longer restore files |
+| Stream snapshot files instead of batching | lowers the heap peak | more DB round trips |
+| Trigger compaction earlier (smaller context window) | bounds history growth | more summary calls |
+| Bound output before reading fully | lowers the heap peak for large tool outputs | requires tool-specific streaming support |
+| TTL/eviction for `pausedPrompts` and `revertSnapshots` | bounds map growth across many sessions | resume/revert semantics must be adjusted |
 
-## 11. Alternative Speicher (Analyse, nicht implementiert)
+## 11. Alternative Storage (Analysis, Not Implemented)
 
-Dieser Abschnitt ordnet die gespeicherten Daten alternativen Speicherarten zu
-und skizziert ein lokales Docker-Setup sowie günstige Cloud-Varianten. Die
-QOC-Ports bleiben dabei die Austauschgrenze; die genannten Adapter sind
-**Vorschläge**, kein Bestandteil des aktuellen Codes.
+This section maps the stored data to alternative storage types and sketches a
+local Docker setup plus inexpensive cloud variants. The QOC ports remain the
+exchange boundary; the adapters mentioned are **proposals**, not part of the
+current code.
 
-### 11.1 Datenklassen und passende Speicher
+### 11.1 Data Classes and Suitable Storage
 
-| Datenklasse | Aktuell | Geeigneter Alternativ-Speicher | Begründung |
+| Data class | Currently | Suitable alternative storage | Rationale |
 |---|---|---|---|
-| Journal-Events | DB | Append-only Log / Event-Store (Kafka, Redpanda, EventStoreDB, Pub/Sub, Kinesis) | Audit, Replay, sequentielles Schreiben |
-| Session-Metadaten | DB | Key-Value (DynamoDB, Redis, Cosmos DB) | kleine Records, hohe Skalierung |
-| Conversation-Messages | DB | Dokumenten-DB (MongoDB, DynamoDB) oder Event-Store | geordnete Liste pro Session |
-| Tool-Output (große Blobs) | DB (`tool_output`) | Objekt-Speicher (S3, GCS, MinIO, Azure Blob) + Metadaten-DB | Größe, Kosten, Content-Addressing |
-| Workspace-Snapshots | DB (`snapshot_file`) | Objekt-Speicher (versioniert) | bis 20 MiB, binär, selten gelesen |
-| Tool-Result-Cache | DB (`tool_result_cache`) | Redis/Valkey (TTL) | kurzlebig, Idempotency |
-| Compaction-Summaries | DB (`instruction_blob`) | Objekt-Speicher oder KV | Content-Addressing, selten gelesen |
-| Instruction-State | DB (`instruction_state`) | KV oder DB | klein, by Session |
-| Claims/Locks | DB (`claim`) | Redis (SETNX/Redlock) oder DB-Row-Lock | sehr kurzlebig, verteiltes Locking |
-| Approvals (async) | DB (`approval`) | DB + Queue (SQS, Pub/Sub) | durable + asynchrones Wecken |
-| Credentials | DB (`credential`) | Secret-Manager (Vault, KMS, Secrets Manager, Secret Manager) | sensible Daten, Rotation |
-| Skills/Instructions | FS + In-Memory | Git/Config-Store oder FS | read-only, versionierbar |
-| Scratch-Workspace | FS (ephemeral) | tmpfs, ephemere Volume oder S3/GCS-Prefix | kein Shared Space im Serverless-Modus |
-| In-Memory-Registries | Heap | verteiltes In-Memory (Hazelcast, Infinispan) | nur bei Multi-Instance nötig |
+| Journal events | DB | Append-only log / event store (Kafka, Redpanda, EventStoreDB, Pub/Sub, Kinesis) | audit, replay, sequential writes |
+| Session metadata | DB | Key-value (DynamoDB, Redis, Cosmos DB) | small records, high scale |
+| Conversation messages | DB | Document DB (MongoDB, DynamoDB) or event store | ordered list per session |
+| Tool output (large blobs) | DB (`tool_output`) | Object storage (S3, GCS, MinIO, Azure Blob) + metadata DB | size, cost, content addressing |
+| Workspace snapshots | DB (`snapshot_file`) | Object storage (versioned) | up to 20 MiB, binary, rarely read |
+| Tool-result cache | DB (`tool_result_cache`) | Redis/Valkey (TTL) | short-lived, idempotency |
+| Compaction summaries | DB (`instruction_blob`) | Object storage or KV | content addressing, rarely read |
+| Instruction state | DB (`instruction_state`) | KV or DB | small, by session |
+| Claims/locks | DB (`claim`) | Redis (SETNX/Redlock) or DB row lock | very short-lived, distributed locking |
+| Approvals (async) | DB (`approval`) | DB + queue (SQS, Pub/Sub) | durable + asynchronous wake-up |
+| Credentials | DB (`credential`) | Secret manager (Vault, KMS, Secrets Manager, Secret Manager) | sensitive data, rotation |
+| Skills/instructions | FS + in-memory | Git/config store or FS | read-only, versionable |
+| Scratch workspace | FS (ephemeral) | tmpfs, ephemeral volume or S3/GCS prefix | no shared space in serverless mode |
+| In-memory registries | Heap | Distributed in-memory (Hazelcast, Infinispan) | only needed for multi-instance |
 
-### 11.2 Top 5 nach Mehrwert
+### 11.2 Top 5 by Value
 
-| Rang | Maßnahme | Mehrwert | Aufwand |
+| Rank | Measure | Value | Effort |
 |---:|---|---|---|
-| 1 | Snapshots und Tool-Outputs in Objekt-Speicher | DB bleibt klein, Backups/Restore schneller, Kosten sinken | mittel |
-| 2 | Redis für Tool-Result-Cache und Claims | weniger DB-Last, TTL, verteiltes Locking | niedrig–mittel |
-| 3 | Secret-Manager für Credentials | Secrets verlassen die DB, Rotation/Audit | niedrig |
-| 4 | Event-Log für das Journal | Replay/Audit, Entkopplung der Read-Modelle | mittel–hoch |
-| 5 | Ephemere Scratch-Speicher | Serverless-/Worker-Kompatibilität, sauberes Cleanup | niedrig–mittel |
+| 1 | Snapshots and tool outputs in object storage | DB stays small, backups/restore faster, cost drops | medium |
+| 2 | Redis for tool-result cache and claims | less DB load, TTL, distributed locking | low–medium |
+| 3 | Secret manager for credentials | Secrets leave the DB, rotation/audit | low |
+| 4 | Event log for the journal | replay/audit, decouples read models | medium–high |
+| 5 | Ephemeral scratch storage | serverless/worker compatibility, clean cleanup | low–medium |
 
-### 11.3 Lokales Docker-Setup
+### 11.3 Local Docker Setup
 
-Minimal-Setup für die Top-5-Speicher:
+Minimal setup for the top-5 storage types:
 
-| Service | Image | Zweck | Port |
+| Service | Image | Purpose | Port |
 |---|---|---|---|
-| `postgres` | `postgres:16` | transaktionale DB (Session, Conversation, Journal) | 5432 |
-| `minio` | `minio/minio` | S3-kompatibler Objekt-Speicher | 9000/9001 |
-| `redis` | `redis:7-alpine` | Cache, Claims, TTL | 6379 |
-| `qoc` | eigenes Image | Engine | 8081 |
-| optional `redpanda` | `redpandadata/redpanda` | Event-Log (Kafka-API) | 9092 |
-| optional `vault` | `hashicorp/vault` | Secret-Manager | 8200 |
+| `postgres` | `postgres:16` | transactional DB (session, conversation, journal) | 5432 |
+| `minio` | `minio/minio` | S3-compatible object storage | 9000/9001 |
+| `redis` | `redis:7-alpine` | cache, claims, TTL | 6379 |
+| `qoc` | own image | engine | 8081 |
+| optional `redpanda` | `redpandadata/redpanda` | event log (Kafka API) | 9092 |
+| optional `vault` | `hashicorp/vault` | secret manager | 8200 |
 
-Beispiel-Compose (Auszug; die QOC-Variablen sind Zielbild, nicht aktueller
-Code):
+Compose example (excerpt; the QOC variables are the target image, not the
+current code):
 
 ```yaml
 services:
@@ -379,72 +377,73 @@ volumes:
   qocdata:
 ```
 
-Lokale Kostentreiber gibt es nicht; der Aufwand liegt in den Adaptern.
-Redpanda und Vault nur starten, wenn Event-Log bzw. Secret-Rotation getestet
-werden.
+There are no local cost drivers; the effort is in the adapters. Start
+Redpanda and Vault only when testing the event log or secret rotation.
 
-### 11.4 Günstiges GCP-Setup
+### 11.4 Inexpensive GCP Setup
 
-| Komponente | GCP-Service | Günstige Variante | Hinweis |
+| Component | GCP service | Inexpensive variant | Note |
 |---|---|---|---|
-| Compute | Cloud Run oder e2-micro VM | Cloud Run scale-to-zero; e2-micro Free Tier in `us-central1` | Dauerbetrieb eher VM |
-| Objekt-Speicher | Cloud Storage | Standard + Lifecycle-Regeln | Snapshots nach 7 Tagen löschen |
-| Cache/Claims | Memorystore for Redis | Basic Tier, kleinste Größe | für sehr günstig: Redis auf der VM |
-| Secrets | Secret Manager | Pay-per-Access | Injection als Env |
-| Event-Log | Pub/Sub | Pay-per-Message | nur bei Bedarf |
-| DB | Cloud SQL oder externe Free-DB (Neon/Supabase) | Cloud SQL klein oder extern | Kosten stark von DB abhängig |
-| Scratch | GCS-Prefix oder tmpfs | – | nicht durable |
+| Compute | Cloud Run or e2-micro VM | Cloud Run scale-to-zero; e2-micro Free Tier in `us-central1` | continuous operation better on VM |
+| Object storage | Cloud Storage | Standard + lifecycle rules | delete snapshots after 7 days |
+| Cache/claims | Memorystore for Redis | Basic Tier, smallest size | for very cheap: Redis on the VM |
+| Secrets | Secret Manager | Pay-per-access | inject as env |
+| Event log | Pub/Sub | Pay-per-message | only when needed |
+| DB | Cloud SQL or external free DB (Neon/Supabase) | small Cloud SQL or external | cost strongly depends on DB |
+| Scratch | GCS prefix or tmpfs | – | not durable |
 
-**Empfehlung:** eine e2-micro-VM mit Docker Compose (Postgres, MinIO, Redis,
-QOC) plus GCS-Bucket für Snapshots/Tool-Outputs. Das ist die günstigste
-Variante mit denselben Ports wie lokal.
+**Recommendation:** an e2-micro VM with Docker Compose (Postgres, MinIO,
+Redis, QOC) plus a GCS bucket for snapshots/tool outputs. This is the
+cheapest variant with the same ports as locally.
 
-### 11.5 Günstiges AWS-Setup
+### 11.5 Inexpensive AWS Setup
 
-| Komponente | AWS-Service | Günstige Variante | Hinweis |
+| Component | AWS service | Inexpensive variant | Note |
 |---|---|---|---|
-| Compute | ECS Fargate oder EC2 t4g.micro | t4g.micro Free Tier / Spot | Dauerbetrieb eher EC2 |
-| Objekt-Speicher | S3 | Standard + Lifecycle | alte Snapshots nach 7 Tagen löschen |
-| Cache/Claims | ElastiCache (Redis) | kleinste Node-Größe | für sehr günstig: Redis auf EC2 |
-| Secrets | Secrets Manager oder Parameter Store | Parameter Store Standard | kostenlos für Standard-Parameter |
-| Event-Log | SQS, EventBridge oder Kinesis | SQS pay-per-request | nur bei Bedarf |
-| DB | RDS oder externe Free-DB (Neon/Supabase) | RDS t4g.micro oder extern | Kosten stark von DB abhängig |
-| Scratch | S3-Prefix oder tmpfs | – | nicht durable |
+| Compute | ECS Fargate or EC2 t4g.micro | t4g.micro Free Tier / Spot | continuous operation better on EC2 |
+| Object storage | S3 | Standard + lifecycle | delete old snapshots after 7 days |
+| Cache/claims | ElastiCache (Redis) | smallest node size | for very cheap: Redis on EC2 |
+| Secrets | Secrets Manager or Parameter Store | Parameter Store Standard | free for standard parameters |
+| Event log | SQS, EventBridge or Kinesis | SQS pay-per-request | only when needed |
+| DB | RDS or external free DB (Neon/Supabase) | RDS t4g.micro or external | cost strongly depends on DB |
+| Scratch | S3 prefix or tmpfs | – | not durable |
 
-**Empfehlung:** eine t4g.micro-EC2-Instanz mit Docker Compose plus
-S3-Bucket und Parameter Store. Das entspricht dem lokalen Setup am nächsten
-und vermeidet managed Redis/Event-Log-Kosten.
+**Recommendation:** a t4g.micro EC2 instance with Docker Compose plus an S3
+bucket and Parameter Store. This is closest to the local setup and avoids
+managed Redis/event-log costs.
 
-### 11.6 Migrationspfad und Constraints
+### 11.6 Migration Path and Constraints
 
-1. **Objekt-Speicher:** `ToolOutputStore` und `SnapshotStore` gegen
-   S3/GCS/MinIO implementieren; die DB speichert URI + Metadaten.
-2. **Redis:** `ToolResultCache` und `ClaimStore` gegen Redis; TTL-basiert.
-3. **Secret-Manager:** `CredentialStore` gegen Vault, Secret Manager oder
-   Parameter Store.
-4. **Event-Log (optional):** Journal über Outbox-Pattern an Pub/Sub, SQS oder
-   Kafka anbinden; die DB bleibt zunächst Source of Truth.
-5. **Scratch:** `SessionWorkspaceStore` auf S3-Prefix oder tmpfs umstellen.
+1. **Object storage:** implement `ToolOutputStore` and `SnapshotStore`
+   against S3/GCS/MinIO; the DB stores URI + metadata.
+2. **Redis:** implement `ToolResultCache` and `ClaimStore` against Redis;
+   TTL-based.
+3. **Secret manager:** implement `CredentialStore` against Vault, Secret
+   Manager or Parameter Store.
+4. **Event log (optional):** connect the journal via the outbox pattern to
+   Pub/Sub, SQS or Kafka; the DB remains the source of truth initially.
+5. **Scratch:** switch `SessionWorkspaceStore` to an S3 prefix or tmpfs.
 
 Constraints:
 
-- **Transaktionen:** Journal, Session und Conversation müssen konsistent
-  bleiben; polyglotte Speicher erfordern Outbox/Saga.
-- **Native Image:** neue Adapter müssen in `NativeReflectionConfig` registriert
-  werden.
-- **Latenz:** Objekt-Speicher ist langsamer als DB; kleine, häufig gelesene
-  Daten (History) bleiben in der DB.
-- **Kosten:** Lifecycle-Regeln und TTL sind Pflicht, sonst wachsen
-  Objekt-Speicher und Cache unbegrenzt.
+- **Transactions:** journal, session and conversation must stay
+  consistent; polyglot storage requires outbox/saga.
+- **Native image:** new adapters must be registered in
+  `NativeReflectionConfig`.
+- **Latency:** object storage is slower than the DB; small, frequently read
+  data (history) stays in the DB.
+- **Cost:** lifecycle rules and TTL are mandatory, otherwise object storage
+  and cache grow without bound.
 
-## 12. Offene Punkte
+## 12. Open Points
 
-- Die tatsächlichen Heap- und DB-Größen sind lastabhängig; dieses Dokument
-  liefert die **Orte und Zeitpunkte**, keine absoluten Messwerte.
-- `SqlToolOutput` und `SqliteToolOutput` nehmen im Konstruktor ein
-  `directory`-Argument entgegen, speichern den Inhalt aber in der DB
+- Actual heap and DB sizes depend on load; this document provides the
+  **locations and points in time**, not absolute measurements.
+- `SqlToolOutput` and `SqliteToolOutput` accept a `directory` argument in
+  their constructor but store the content in the DB
   (`adapter/sql/SqlToolOutput.java:25-31`, `adapter/sqlite/SqliteToolOutput.java:25-31`).
-  Das Argument ist derzeit ungenutzt; eine spätere File-Variante ist damit
-  vorbereitet, aber nicht aktiv.
-- Die Snapshot-Erzeugung ist standardmäßig aktiv (`engine.revert.snapshot.enabled=true`)
-  und läuft vor **jedem** Prompt, nicht nur bei Datei-Änderungen.
+  The argument is currently unused; a later file variant is prepared but
+  not active.
+- Snapshot generation is active by default
+  (`engine.revert.snapshot.enabled=true`) and runs before **every** prompt,
+  not only on file changes.

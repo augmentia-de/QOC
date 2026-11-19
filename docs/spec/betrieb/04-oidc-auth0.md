@@ -1,21 +1,21 @@
-# 04 – OIDC mit Auth0 (spec-only)
+# 04 – OIDC with Auth0 (spec-only)
 
 > **Status:** spec-only
-> **Zweck:** Auth0 als OIDC-Provider für QOC (Web-App-Modus mit Session-Cookie).
+> **Purpose:** Auth0 as OIDC provider for QOC (web-app mode with session cookie).
 
-## 1. Auth0-Ressourcen
+## 1. Auth0 Resources
 
 1. **Application** (Regular Web Application)
-   - Callback URLs: lokale + produktive QOC-URLs + Callback-Pfad
-   - Logout URLs: lokale + produktive QOC-URLs
-   - Web Origins: lokale + produktive QOC-URLs
+   - Callback URLs: local + production QOC URLs + callback path
+   - Logout URLs: local + production QOC URLs
+   - Web Origins: local + production QOC URLs
 2. **API / Resource Server**
-   - Identifier/Audience, z. B. `https://qoc-api` oder `qoc-engine`
+   - Identifier/Audience, e.g. `https://qoc-api` or `qoc-engine`
    - Scopes: `openid`, `profile`, `email`, optional `qoc:read`, `qoc:edit`
-3. **Rollen**: `admin`, `user`
-4. **Action (Post-Login)**: Rollen in ID-/Access-Token einfügen
+3. **Roles**: `admin`, `user`
+4. **Action (Post-Login)**: insert roles into ID/access token
 
-## 2. QOC-Konfiguration
+## 2. QOC Configuration
 
 ```properties
 ENGINE_SECURITY_MODE=oidc
@@ -28,27 +28,27 @@ quarkus.oidc.token.audience=<api-identifier>
 quarkus.oidc.application-type=web-app
 ```
 
-Wichtig: `quarkus.oidc.enabled` ist eine Buildzeit-Eigenschaft.
+Note: `quarkus.oidc.enabled` is a build-time property.
 
-## 3. Code-Anpassungen
+## 3. Code Adjustments
 
-- `OidcPrincipalProducer`: Claim-Mapping für Auth0 (z. B. `https://qoc/roles`, `permissions`)
-- `SecurityConfig.mode()`: unterstützt bereits `ENGINE_SECURITY_MODE=oidc`
-- Auth0-Rollen → QOC-Rollen/Agentenrechten
-- `isOwner`/Autorisierung implementieren
+- `OidcPrincipalProducer`: claim mapping for Auth0 (e.g. `https://qoc/roles`, `permissions`)
+- `SecurityConfig.mode()`: already supports `ENGINE_SECURITY_MODE=oidc`
+- Auth0 roles → QOC roles/agent permissions
+- implement `isOwner`/authorization
 
-## 4. Testplan
+## 4. Test Plan
 
-1. Auth0-Testuser mit `admin` und `user` anlegen
-2. QOC mit OIDC-Env bauen und starten
-3. Browser-Login
-4. `/api/health`, `/api/config`, Dateioperationen prüfen
-5. Token-Claims und Rollen-Mapping prüfen
-6. Logout, Session-Ablauf, Re-Login
+1. Create Auth0 test users with `admin` and `user`
+2. Build and start QOC with OIDC env
+3. Browser login
+4. verify `/api/health`, `/api/config`, file operations
+5. verify token claims and role mapping
+6. Logout, session expiry, re-login
 
-## 5. Risiken
+## 5. Risks
 
-- Quarkus-Callback-Pfad und Session-Cookie-Verhalten
-- Auth0-Rollen-Claim-Namen müssen mit Code abgestimmt werden
-- Native Image muss OIDC-Klassen initialisieren
-- Basic Auth parallel: AuthMode-Auflösung testen
+- Quarkus callback path and session cookie behavior
+- Auth0 role claim names must be aligned with the code
+- Native image must initialize OIDC classes
+- Basic Auth in parallel: test AuthMode resolution

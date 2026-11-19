@@ -1,54 +1,54 @@
-# MCP-Tools in der UI — Integration (Quarkus-basiert)
+# MCP Tools in the UI — Integration (Quarkus-based)
 
-**Status:** Plan (2026-11-11) · Bezug: `Additional-Nodes.md`, `ReAct-Umsetzung.md`
-**Annahme:** Workflow-Runner läuft über Quarkus (`WorkflowResource`), `WorkflowRunnerMain` wird nicht mehr benötigt.
+**Status:** Plan (2026-11-11) · Reference: `Additional-Nodes.md`, `ReAct-Umsetzung.md`
+**Assumption:** The workflow runner runs via Quarkus (`WorkflowResource`); `WorkflowRunnerMain` is no longer needed.
 
-## Ziel
+## Goal
 
-Konfigurierte MCP-Tools sollen:
-1. In der UI als auswählbare Tools erscheinen (Agent-Node-Config, mcp_call-Node-Config)
-2. Dynamisch nachgeladen/reinitialisiert werden können (ohne Neustart)
-3. Als `mcp_call`-Node direkt aufrufbar sein
+Configured MCP tools should:
+1. Appear in the UI as selectable tools (Agent-Node config, mcp_call-Node config)
+2. Be dynamically reloadable/reinitializable (without restart)
+3. Be directly callable as an `mcp_call` node
 
-## Ist-Zustand (Quarkus)
+## Current State (Quarkus)
 
 ### Backend
-- `Engine` (Quarkus) besitzt `McpRegistry` → `McpServerManager` (MCP-Client-Registry)
-- MCP-Server aus `EngineConfig.mcpServers()` werden beim Startup geladen (`mcp.setup()`)
-- MCP-Tools werden in `ToolRegistry` registriert → `ToolSnapshot` → `ToolRuntime`
-- `McpServerResource` (`/mcp`) ist ein **MCP-Server** (exponiert QOC als MCP), nicht Client
-- **Keine** REST-Endpoints zum Auflisten von MCP-Servern/Tools für die UI
-- `Engine.mcp()` (McpRegistry) ist public → `mcp.manager()` liefert McpServerManager
-- `Engine.qocEngine()` liefert QocEngine für Workflow-Ausführung
+- `Engine` (Quarkus) owns `McpRegistry` → `McpServerManager` (MCP client registry)
+- MCP servers from `EngineConfig.mcpServers()` are loaded at startup (`mcp.setup()`)
+- MCP tools are registered in `ToolRegistry` → `ToolSnapshot` → `ToolRuntime`
+- `McpServerResource` (`/mcp`) is an **MCP server** (exposes QOC as MCP), not a client
+- **No** REST endpoints for listing MCP servers/tools for the UI
+- `Engine.mcp()` (McpRegistry) is public → `mcp.manager()` returns McpServerManager
+- `Engine.qocEngine()` returns QocEngine for workflow execution
 
 ### Frontend (React)
-- `api.ts`: `WorkflowApi`, `HealthApi`, `AgentApi` — **kein** `ToolApi` oder `McpApi`
-- `PropertyPanel.tsx`: Agent-Node zeigt `tools` als Freitext-Array
-- Kein Tool-Picker, kein MCP-Panel
-- Kein dynamisches Nachladen
+- `api.ts`: `WorkflowApi`, `HealthApi`, `AgentApi` — **no** `ToolApi` or `McpApi`
+- `PropertyPanel.tsx`: Agent node shows `tools` as a free-text array
+- No tool picker, no MCP panel
+- No dynamic reloading
 
-### QocEngine (Workflow-Ausführung)
-- Erstellt eigene interne `ToolRegistry` + `ToolSnapshot` (keine MCP-Tools)
-- MCP-Tools sind **nicht** im QocEngine-Snapshot → Agent-Nodes können sie zur Laufzeit nicht aufrufen
-- `mcp_call`-Node kann direkt `McpServerManager.client().callTool()` nutzen (umgeht QocEngine)
+### QocEngine (Workflow execution)
+- Creates its own internal `ToolRegistry` + `ToolSnapshot` (no MCP tools)
+- MCP tools are **not** in the QocEngine snapshot → Agent nodes cannot call them at runtime
+- The `mcp_call` node can use `McpServerManager.client().callTool()` directly (bypasses QocEngine)
 
-## Architektur
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Quarkus Engine                                             │
 │                                                              │
 │  ┌──────────────────┐                                        │
-│  │ McpRegistry      │  ← Bereits vorhanden                   │
-│  │  → McpServerMgr  │  ← MCP-Client-Registry                 │
-│  │  → McpServerConfig│  ← Aus EngineConfig (application.yml)  │
+│  │ McpRegistry      │  ← Already present                     │
+│  │  → McpServerMgr  │  ← MCP client registry                 │
+│  │  → McpServerConfig│  ← From EngineConfig (application.yml) │
 │  └────────┬─────────┘                                        │
 │           │                                                  │
 │           ▼                                                  │
 │  ┌──────────────────┐    ┌──────────────────┐                │
 │  │ ToolRegistry     │    │ /mcp/* REST      │                │
-│  │ (MCP-Tools       │    │ (NEU: für UI)    │                │
-│  │  bereits drin)   │    │                  │                │
+│  │ (MCP tools       │    │ (NEW: for UI)    │                │
+│  │  already in)     │    │                  │                │
 │  └────────┬─────────┘    └────────┬─────────┘                │
 │           │                       │                          │
 │           ▼                       ▼                          │
@@ -60,44 +60,44 @@ Konfigurierte MCP-Tools sollen:
 │  └──────────────────────────────────────────┘               │
 │                                                              │
 │  ┌──────────────────┐                                        │
-│  │ QocEngine        │  ← Für Workflow-Ausführung              │
-│  │ (kein MCP im     │  ← mcp_call-Nodes nutzen               │
-│  │  Snapshot)       │     McpServerManager direkt              │
+│  │ QocEngine        │  ← For workflow execution                │
+│  │ (no MCP in       │  ← mcp_call nodes use                   │
+│  │  snapshot)       │     McpServerManager directly            │
 │  └──────────────────┘                                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Status: Implementiert
+## Status: Implemented
 
-Option B (Callback-basierte Tool-Registrierung) wurde implementiert:
+Option B (callback-based tool registration) has been implemented:
 
-- `ToolDependencies` erhält ein `toolRegistrar`-Feld (`Consumer<ToolRegistry>`, Default no-op)
-- `QocEngine.create()` ruft `toolRegistrar.accept(registry)` auf, bevor der Snapshot genommen wird
-- Quarkus `Engine` übergibt einen Callback, der MCP-Tools aus `McpServerManager` in QocEngine's Registry registriert
-- → Agent-Nodes in Workflows können jetzt MCP-Tools zur Laufzeit aufrufen
+- `ToolDependencies` receives a `toolRegistrar` field (`Consumer<ToolRegistry>`, default no-op)
+- `QocEngine.create()` invokes `toolRegistrar.accept(registry)` before the snapshot is taken
+- Quarkus `Engine` passes a callback that registers MCP tools from `McpServerManager` into QocEngine's registry
+- → Agent nodes in workflows can now invoke MCP tools at runtime
 
-### Was implementiert wurde
+### What has been implemented
 
-| Komponente | Datei | Status |
+| Component | File | Status |
 |---|---|---|
 | `toolRegistrar` in `ToolDependencies` | `engine/.../wiring/ToolDependencies.java` | ✅ |
 | Callback in `QocEngine.create()` | `engine/.../runtime/QocEngine.java` | ✅ |
-| MCP-Tools in QocEngine-Callback | `quarkus/.../http/Engine.java` | ✅ |
-| `mcp()` Getter in Engine | `quarkus/.../http/Engine.java` | ✅ |
+| MCP tools in QocEngine callback | `quarkus/.../http/Engine.java` | ✅ |
+| `mcp()` getter in Engine | `quarkus/.../http/Engine.java` | ✅ |
 | `McpClientResource` (REST) | `quarkus/.../http/McpClientResource.java` | ✅ |
-| `mcp_call` Node-Typ | `DefaultNodeDispatcher.java` | ✅ |
-| `NodeData` erweitert (mcpServer, mcpTool, mcpArgs) | `WorkflowDefinition.java` | ✅ |
+| `mcp_call` node type | `DefaultNodeDispatcher.java` | ✅ |
+| `NodeData` extended (mcpServer, mcpTool, mcpArgs) | `WorkflowDefinition.java` | ✅ |
 | `GraphCompiler` VALID_NODE_TYPES | `GraphCompiler.java` | ✅ |
 | `remove()` in McpServerManager | `McpServerManager.java` | ✅ |
 | Frontend: ToolPicker, McpServers, api.ts | `workflow-ui/` | ✅ |
-| PropertyPanel: mcp_call Sektion | `PropertyPanel.tsx` | ✅ |
-| GraphEditor: mcp_call Node | `GraphEditor.tsx` | ✅ |
+| PropertyPanel: mcp_call section | `PropertyPanel.tsx` | ✅ |
+| GraphEditor: mcp_call node | `GraphEditor.tsx` | ✅ |
 
-## Backend-Änderungen (Quarkus)
+## Backend Changes (Quarkus)
 
-### 1. Neuer REST-Resource: `McpClientResource`
+### 1. New REST resource: `McpClientResource`
 
-Neue Datei: `quarkus/src/main/java/de/augmentia/oc/engine/http/McpClientResource.java`
+New file: `quarkus/src/main/java/de/augmentia/oc/engine/http/McpClientResource.java`
 
 ```java
 @Path("/api/mcp-client")
@@ -108,7 +108,7 @@ public class McpClientResource {
     @Inject
     Engine engine;
 
-    /** Liste aller MCP-Server mit Status. */
+    /** List of all MCP servers with status. */
     @GET
     @Path("/servers")
     public Response listServers() {
@@ -125,7 +125,7 @@ public class McpClientResource {
         return Response.ok(Map.of("servers", servers)).build();
     }
 
-    /** Tools eines bestimmten MCP-Servers. */
+    /** Tools of a specific MCP server. */
     @GET
     @Path("/servers/{name}/tools")
     public Response serverTools(@PathParam("name") String name) {
@@ -142,7 +142,7 @@ public class McpClientResource {
         return Response.ok(Map.of("server", name, "tools", result)).build();
     }
 
-    /** Re-Discover Tools für einen Server. */
+    /** Re-discover tools for a server. */
     @POST
     @Path("/servers/{name}/reload")
     public Response reloadServer(@PathParam("name") String name) {
@@ -156,7 +156,7 @@ public class McpClientResource {
         )).build();
     }
 
-    /** Neuen MCP-Server hinzufügen. */
+    /** Add a new MCP server. */
     @POST
     @Path("/servers")
     public Response addServer(Map<String, Object> config) {
@@ -165,19 +165,19 @@ public class McpClientResource {
         // Return status
     }
 
-    /** MCP-Server entfernen. */
+    /** Remove an MCP server. */
     @DELETE
     @Path("/servers/{name}")
     public Response removeServer(@PathParam("name") String name) {
-        // mcp.remove(name) — falls McpServerManager remove unterstützt
-        // Sonst: als "disabled" markieren
+        // mcp.remove(name) — if McpServerManager supports remove
+        // Otherwise: mark as "disabled"
     }
 }
 ```
 
 ### 2. `GET /api/tools` Endpoint
 
-Neuer Resource oder in `WorkflowResource`:
+New resource or in `WorkflowResource`:
 
 ```java
 @GET
@@ -185,8 +185,8 @@ Neuer Resource oder in `WorkflowResource`:
 public Response listTools() {
     List<Map<String, Object>> tools = new ArrayList<>();
 
-    // Built-in Tools (aus Engine's ToolRegistry oder hardcoded)
-    // MCP-Tools (aus McpServerManager)
+    // Built-in tools (from Engine's ToolRegistry or hardcoded)
+    // MCP tools (from McpServerManager)
     McpServerManager mgr = engine.mcp().manager();
     for (String serverName : mgr.serverNames()) {
         if (mgr.status(serverName) != McpServerStatus.CONNECTED) continue;
@@ -199,25 +199,25 @@ public Response listTools() {
         }
     }
 
-    // Built-in tools (aus ToolRegistry snapshot oder hardcoded Liste)
+    // Built-in tools (from ToolRegistry snapshot or hardcoded list)
     // ...
 
     return Response.ok(Map.of("tools", tools)).build();
 }
 ```
 
-**Hinweis:** Built-in Tools (file, web, shell, etc.) sind in `Engine`'s `ToolRegistry`. Um sie zu listen, könnte man `engine.toolSnapshot()` exponieren oder eine hardcoded Liste nutzen. Empfehlung: hardcoded Liste der bekannten built-in Tools, da `ToolSnapshot` nicht public ist.
+**Note:** Built-in tools (file, web, shell, etc.) live in `Engine`'s `ToolRegistry`. To list them, one could expose `engine.toolSnapshot()` or use a hardcoded list. Recommendation: use a hardcoded list of the known built-in tools, since `ToolSnapshot` is not public.
 
-### 3. MCP-Server-Config zur Laufzeit hinzufügen
+### 3. Adding MCP server config at runtime
 
-`McpServerManager.add(McpServerConfig)` existiert bereits. Für dynamisches Hinzufügen über die UI:
+`McpServerManager.add(McpServerConfig)` already exists. For dynamic addition via the UI:
 
 ```java
 @POST
 @Path("/servers")
 public Response addServer(Map<String, Object> body) {
     String name = (String) body.get("name");
-    String type = (String) body.get("type"); // "local" oder "remote"
+    String type = (String) body.get("type"); // "local" or "remote"
     McpServerConfig config;
     if ("local".equals(type)) {
         List<String> command = (List<String>) body.get("command");
@@ -234,12 +234,12 @@ public Response addServer(Map<String, Object> body) {
 }
 ```
 
-**Einschränkung:** `McpServerManager` hat kein `remove()`-Method. Für Entfernen: Server als "disabled" markieren oder `servers`-Map manipulieren (Reflection, nicht empfohlen). Empfehlung: `remove()`-Methode zu `McpServerManager` hinzufügen (neue Methode, keine Änderung bestehender).
+**Limitation:** `McpServerManager` has no `remove()` method. For removal: mark the server as "disabled" or manipulate the `servers` map (Reflection, not recommended). Recommendation: add a `remove()` method to `McpServerManager` (new method, no change to existing ones).
 
-### 4. `mcp_call`-Node-Typ
+### 4. `mcp_call` node type
 
-- `NodeData` erweitern: `mcpServer`, `mcpTool`, `mcpArgs`
-- `McpCallNodeHandler` implementieren (nutzt `engine.mcp().manager()`)
+- Extend `NodeData`: `mcpServer`, `mcpTool`, `mcpArgs`
+- Implement `McpCallNodeHandler` (uses `engine.mcp().manager()`)
 - `GraphCompiler` VALID_NODE_TYPES: `mcp_call`
 
 ```java
@@ -265,11 +265,11 @@ public class McpCallNodeHandler implements NodeHandler {
 }
 ```
 
-`NodeHandlerContext` erweitern: `McpServerManager mcpManager` (oder `Engine engine`).
+Extend `NodeHandlerContext`: `McpServerManager mcpManager` (or `Engine engine`).
 
-## Frontend-Änderungen
+## Frontend Changes
 
-### 1. API-Service erweitern (api.ts)
+### 1. Extend API service (api.ts)
 
 ```typescript
 export interface ToolInfo {
@@ -304,87 +304,87 @@ export const McpClientApi = {
 };
 ```
 
-### 2. ToolPicker-Komponente
+### 2. ToolPicker component
 
-Multi-Select-Dropdown für Agent-Node-Tools und mcp_call-Node-Tools:
+Multi-select dropdown for Agent-node tools and mcp_call-node tools:
 
-- Lädt Tools via `ToolApi.list()`
-- Gruppiert nach `source` (builtin / mcp:<server>)
-- Checkboxen oder Tag-basierte Auswahl
-- Zeigt Tool-Beschreibung als Tooltip
-- "Refresh"-Button
+- Loads tools via `ToolApi.list()`
+- Groups by `source` (builtin / mcp:<server>)
+- Checkboxes or tag-based selection
+- Shows tool description as tooltip
+- "Refresh" button
 
-### 3. McpServerPanel (neue Seite oder Settings-Tab)
+### 3. McpServerPanel (new page or settings tab)
 
-- Liste aller MCP-Server mit Status-Badge (grün/rot/grau)
-- "Reload"-Button pro Server
-- "Add Server"-Formular (Name, Type: local/remote, Command/URL)
-- "Remove"-Button
-- Expandierbar: zeigt Tools des Servers (via `getServerTools`)
+- List of all MCP servers with status badge (green/red/grey)
+- "Reload" button per server
+- "Add Server" form (Name, Type: local/remote, Command/URL)
+- "Remove" button
+- Expandable: shows the server's tools (via `getServerTools`)
 
-### 4. PropertyPanel-Änderungen
+### 4. PropertyPanel changes
 
-- **Agent-Node:** `tools` Feld → ToolPicker-Komponente statt Freitext
-  - Optional: Nur built-in Tools anzeigen (MCP-Tools nicht für Agent-Nodes)
-- **mcp_call-Node:** Server-Dropdown + Tool-Dropdown (aus `/mcp-client/servers/:name/tools`)
-  - `mcpArgs`: JSON-Editor mit Data-Piping-Unterstützung
+- **Agent node:** `tools` field → ToolPicker component instead of free text
+  - Optional: show only built-in tools (MCP tools not for Agent nodes)
+- **mcp_call node:** Server dropdown + Tool dropdown (from `/mcp-client/servers/:name/tools`)
+  - `mcpArgs`: JSON editor with data-piping support
 
-### 5. Dynamic Refresh
+### 5. Dynamic refresh
 
-- **Polling:** Alle 30 Sekunden `ToolApi.list()` aufrufen
-- **Manual Refresh:** "Refresh Tools"-Button im PropertyPanel und im McpServerPanel
-- **Nach Reload:** `McpClientApi.reloadServer()` → dann `ToolApi.list()` refetchen
+- **Polling:** call `ToolApi.list()` every 30 seconds
+- **Manual refresh:** "Refresh Tools" button in the PropertyPanel and in the McpServerPanel
+- **After reload:** `McpClientApi.reloadServer()` → then refetch `ToolApi.list()`
 
-## Dynamic Reinit — Ablauf
+## Dynamic Reinit — Flow
 
 ```
-1. Nutzer klickt "Reload" bei MCP-Server "github"
+1. User clicks "Reload" on MCP server "github"
    → POST /api/mcp-client/servers/github/reload
    → McpServerManager.reload("github")
-   → discover() → neue Tools
-   → Response: aktualisierte Tool-Liste
+   → discover() → new tools
+   → Response: updated tool list
 
 2. Frontend:
    → McpClientApi.reloadServer("github") resolves
-   → McpServerPanel aktualisiert Tool-Liste
-   → ToolPicker (falls offen) refetcht via ToolApi.list()
-   → Agent-Node-Tools werden aktualisiert
+   → McpServerPanel updates tool list
+   → ToolPicker (if open) refetches via ToolApi.list()
+   → Agent-node tools are updated
 
 3. Polling (30s):
-   → ToolApi.list() → neue Tools erscheinen automatisch
+   → ToolApi.list() → new tools appear automatically
 ```
 
-## Implementierungsschritte
+## Implementation Steps
 
-| # | Was | Datei(en) | Aufwand |
+| # | What | File(s) | Effort |
 |---|-----|-----------|---------|
-| 1 | `McpClientResource` erstellen (Quarkus JAX-RS) | Neue Datei | Mittel |
-| 2 | `GET /api/tools` Endpoint | WorkflowResource oder neue Resource | Gering |
-| 3 | `McpServerManager.remove()` Methode hinzufügen (engine) | McpServerManager.java | Gering |
-| 4 | `POST /api/mcp-client/servers` (add) + `DELETE` (remove) | McpClientResource | Gering |
-| 5 | `NodeHandlerContext` erweitern: `mcpManager` oder `engine` | NodeHandlerContext | Gering |
-| 6 | `McpCallNodeHandler` implementieren | Neuer Handler | Gering |
-| 7 | `NodeData` erweitern: `mcpServer`, `mcpTool`, `mcpArgs` | WorkflowDefinition.java | Gering |
-| 8 | `GraphCompiler` VALID_NODE_TYPES: `mcp_call` | GraphCompiler.java | Gering |
-| 9 | `ToolApi` + `McpClientApi` in api.ts | api.ts | Gering |
-| 10 | ToolPicker-Komponente | ToolPicker.tsx (neu) | Mittel |
-| 11 | McpServerPanel (Seite oder Settings-Tab) | McpServers.tsx (neu) | Mittel |
-| 12 | PropertyPanel: Agent-Node → ToolPicker | PropertyPanel.tsx | Mittel |
-| 13 | PropertyPanel: mcp_call-Node → Server/Tool Dropdowns | PropertyPanel.tsx | Mittel |
-| 14 | GraphEditor: nodeTypes registrieren (mcp_call) | GraphEditor.tsx | Gering |
-| 15 | Dynamic Refresh (Polling + Button) | ToolPicker, McpServerPanel | Gering |
-| 16 | Tests (Backend + Playwright) | — | Mittel |
+| 1 | Create `McpClientResource` (Quarkus JAX-RS) | New file | Medium |
+| 2 | `GET /api/tools` endpoint | WorkflowResource or new resource | Low |
+| 3 | Add `McpServerManager.remove()` method (engine) | McpServerManager.java | Low |
+| 4 | `POST /api/mcp-client/servers` (add) + `DELETE` (remove) | McpClientResource | Low |
+| 5 | Extend `NodeHandlerContext`: `mcpManager` or `engine` | NodeHandlerContext | Low |
+| 6 | Implement `McpCallNodeHandler` | New handler | Low |
+| 7 | Extend `NodeData`: `mcpServer`, `mcpTool`, `mcpArgs` | WorkflowDefinition.java | Low |
+| 8 | `GraphCompiler` VALID_NODE_TYPES: `mcp_call` | GraphCompiler.java | Low |
+| 9 | `ToolApi` + `McpClientApi` in api.ts | api.ts | Low |
+| 10 | ToolPicker component | ToolPicker.tsx (new) | Medium |
+| 11 | McpServerPanel (page or settings tab) | McpServers.tsx (new) | Medium |
+| 12 | PropertyPanel: Agent node → ToolPicker | PropertyPanel.tsx | Medium |
+| 13 | PropertyPanel: mcp_call node → Server/Tool dropdowns | PropertyPanel.tsx | Medium |
+| 14 | GraphEditor: register nodeTypes (mcp_call) | GraphEditor.tsx | Low |
+| 15 | Dynamic refresh (polling + button) | ToolPicker, McpServerPanel | Low |
+| 16 | Tests (backend + Playwright) | — | Medium |
 
 ## Native Deployment
 
-- `McpServerManager` nutzt `JdkHttpTransport` + `JdkProcessRunner` → native-kompatibel ✅
-- `McpClientResource` ist JAX-RS → native-kompatibel ✅
-- Quarkus Native Profile (`-Pnative`) existiert bereits
-- **Einschränkung:** MCP-Server mit stdio-Transport benötigt externen Prozess zur Laufzeit
+- `McpServerManager` uses `JdkHttpTransport` + `JdkProcessRunner` → native-compatible ✅
+- `McpClientResource` is JAX-RS → native-compatible ✅
+- Quarkus Native Profile (`-Pnative`) already exists
+- **Limitation:** MCP servers with stdio transport require an external process at runtime
 
-## Offene Fragen
+## Open Questions
 
-1. **Built-in Tools listen:** Soll `/api/tools` nur MCP-Tools oder auch built-in Tools (file, web, shell) listen? Empfehlung: Beide, gruppiert nach source.
-2. **ToolSnapshot für QocEngine:** Sollen MCP-Tools in QocEngine's Snapshot sein, damit Agent-Nodes sie nutzen können? Empfehlung: Ja, aber erfordert QocEngine-Änderung (neuer Parameter oder Pre-Discovery). Separates Ticket.
-3. **Polling-Intervall:** 30s? 60s? Empfehlung: 30s, konfigurierbar via `application.properties`.
-4. **MCP-Server-Config zur Laufzeit:** Sollen über die UI hinzugefügte Server persistiert werden (in `application.yml` oder DB)? Empfehlung: In-Memory für jetzt, Persistierung später.
+1. **Listing built-in tools:** Should `/api/tools` list only MCP tools or also built-in tools (file, web, shell)? Recommendation: both, grouped by source.
+2. **ToolSnapshot for QocEngine:** Should MCP tools be in QocEngine's snapshot so Agent nodes can use them? Recommendation: yes, but requires QocEngine changes (new parameter or pre-discovery). Separate ticket.
+3. **Polling interval:** 30s? 60s? Recommendation: 30s, configurable via `application.properties`.
+4. **MCP server config at runtime:** Should servers added via the UI be persisted (in `application.yml` or DB)? Recommendation: in-memory for now, persistence later.

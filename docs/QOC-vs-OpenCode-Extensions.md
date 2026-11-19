@@ -1,414 +1,416 @@
-# QOC vs. OpenCode – Erweiterungen (priorisiert)
+# QOC vs. OpenCode – Extensions (prioritized)
 
-> **Zweck:** Vollständige, priorisierte Inventur der echten QOC-Erweiterungen
-> gegenüber dem OpenCode-Referenzcode (`oc/`). Keine Portierungen von OC-Verhalten
-> werden als QOC-Erweiterung gezählt.
+> **Purpose:** Complete, prioritized inventory of the genuine QOC extensions
+> compared to the OpenCode reference code (`oc/`). Ports of OC behavior
+> are not counted as QOC extensions.
 >
 > **Status:** 2026-11-18  
-> **QOC-Referenz:** `qoc/` (HEAD `323ffdc7`)  
-> **OpenCode-Referenz:** `oc/` (HEAD `863ea41364`)  
-> **Methode:** direkte Codeinspektion beider Codebases; OC nur lesend.
+> **QOC reference:** `qoc/` (HEAD `323ffdc7`)  
+> **OpenCode reference:** `oc/` (HEAD `863ea41364`)  
+> **Method:** direct code inspection of both codebases; OC read-only only.
 
 ---
 
-## 1. Bewertungsschema
+## 1. Rating schema
 
-| Symbol | Bedeutung |
+| Symbol | Meaning |
 |---|---|
-| **V** | Nutzer-/Produktwert (1 = Nische, 5 = zentraler Differenzierer) |
-| **T** | Technische Tiefe (1 = Konfiguration/UI, 5 = Architektur/Runtime) |
-| **P0** | Sofort priorisieren / Kern-Differenzierer |
-| **P1** | Hoher Wert, aber nach P0 oder mit Vorarbeit |
-| **P2** | Konzept, Spezialfall oder erst nach Grundlagen |
+| **V** | User/product value (1 = niche, 5 = central differentiator) |
+| **T** | Technical depth (1 = configuration/UI, 5 = architecture/runtime) |
+| **P0** | Prioritize immediately / core differentiator |
+| **P1** | High value, but after P0 or with groundwork |
+| **P2** | Concept, special case, or only after fundamentals |
 | **Status** | `implemented`, `partial`, `concept` |
 
 ---
 
-## 2. Executive Summary
+## 2. Executive summary
 
-QOC ist nicht einfach eine Portierung von OpenCode nach Java. Die echten
-Mehrwerte liegen in vier Blöcken:
+QOC is not simply a port of OpenCode to Java. The genuine added value lies
+in four blocks:
 
-1. **Workflow-Plattform auf demselben Engine-Loop**  
-   ReactFlow-Graphen werden als `LoopMode.WORKFLOW` im selben `QocEngine`-Loop
-   ausgeführt, mit Journal-Replay, Resume, Recovery, Versionierung und
-   Prompt-zu-Workflow-Generierung.
+1. **Workflow platform on the same engine loop**  
+   ReactFlow graphs are executed as `LoopMode.WORKFLOW` inside the same
+   `QocEngine` loop, with journal replay, resume, recovery, versioning and
+   prompt-to-workflow generation.
 
-2. **Enterprise-Betrieb**  
-   PostgreSQL neben SQLite/Memory, OIDC/Proxy/RBAC/Ownership, DB-basierte
-   Agent- und Workflow-Definitionen und ReactFlow-UI.
+2. **Enterprise operations**  
+   PostgreSQL alongside SQLite/Memory, OIDC/Proxy/RBAC/Ownership, DB-based
+   agent and workflow definitions, and a ReactFlow UI.
 
-3. **Durable Human-in-the-Loop**  
-   Async Approvals/Questions mit Token, Deadline, E-Mail/UI, `paused_prompt`,
-   Resume und Recovery.
+3. **Durable human-in-the-loop**  
+   Async approvals/questions with token, deadline, e-mail/UI, `paused_prompt`,
+   resume and recovery.
 
-4. **Agent-Ökosystem und Verträge**  
-   A2A (Client + Server), MCP-Server-Exposition, strukturierte Outputs,
-   Node-Contracts, Context-Budget-Gates und SDLC-Graph-Invarianten.
+4. **Agent ecosystem and contracts**  
+   A2A (client + server), MCP server exposition, structured outputs,
+   node contracts, context-budget gates and SDLC graph invariants.
 
-Wichtige Korrektur gegenüber älteren Feature-Listen: QOC hat **keine
-deklarative Guardrail-Regel-Engine**. `GuardrailHooks` ruft einen externen
-Webhook auf und kann blockieren, umschreiben oder redigieren. Ebenso sind
-`subworkflow`- und `fork`-Nodes heute **strukturell/expandierend**, aber keine
-parallele oder geschachtelte Workflow-Ausführung.
+Important correction versus older feature lists: QOC has **no declarative
+guardrail rule engine**. `GuardrailHooks` calls an external webhook and
+can block, rewrite or redact. Likewise, `subworkflow` and `fork` nodes are
+today **structural/expanding**, not parallel or nested workflow execution.
 
 ---
 
-## 3. Prioritätsübersicht
+## 3. Priority overview
 
-| Prio | Extensions | Kernnutzen |
+| Prio | Extensions | Core benefit |
 |---|---|---|
-| **P0** | Workflow-Runner/Loop, durable Runs, Workflow-Generierung, OIDC/RBAC/Ownership, durable HITL, PostgreSQL, A2A | Produkt- und Enterprise-Differenzierer |
-| **P1** | MCP-Server, strukturierte Outputs, Node-Contracts/Context-Budget, Graph-Validierung/SDLC, Guardrail-Webhook, Resilience, Tool-Cache, erweitertes Toolset, Agent-Store, ReactFlow-UI, Classify | Nutzbarkeit, Robustheit, Integration |
-| **P2** | Runtime-Adaptation (Konzept), MCP-OAuth-Server (Stub), Temporal (Konzept) | Zukünftige, noch nicht produktive Fähigkeiten |
+| **P0** | Workflow runner/loop, durable runs, workflow generation, OIDC/RBAC/Ownership, durable HITL, PostgreSQL, A2A | Product and enterprise differentiators |
+| **P1** | MCP server, structured outputs, node contracts/context budget, graph validation/SDLC, guardrail webhook, resilience, tool cache, extended toolset, agent store, ReactFlow UI, classify | Usability, robustness, integration |
+| **P2** | Runtime adaptation (concept), MCP OAuth server (stub), Temporal (concept) | Future, not yet productive capabilities |
 
 ---
 
-## 4. Detaillierte Erweiterungen
+## 4. Detailed extensions
 
-### E01 – Workflow-Runner als zweiter Loop-Modus
+### E01 – Workflow runner as second loop mode
 
-- **V:** 5 / **T:** 5 / **Prio:** P0 / **Status:** implemented (mit Teilschritten)
-- **OC:** nur Agent-Loop, Subagents, ACP, MCP-Client.
-- **QOC:** `QocEngine.runPrompt(...)` wechselt per `workflowStepProvider != null && workflowContext != null`
-  auf `LoopMode.WORKFLOW`; `WorkflowStepProviderImpl` liefert pro Aufruf genau einen Node-Schritt.
-- **Evidenz:** `engine/.../runtime/QocEngine.java:42-44`, `workflow-runner/.../runner/WorkflowStepProviderImpl.java`,
+- **V:** 5 / **T:** 5 / **Prio:** P0 / **Status:** implemented (with partial steps)
+- **OC:** only agent loop, subagents, ACP, MCP client.
+- **QOC:** `QocEngine.runPrompt(...)` switches to `LoopMode.WORKFLOW` when
+  `workflowStepProvider != null && workflowContext != null`; `WorkflowStepProviderImpl`
+  delivers exactly one node step per call.
+- **Evidence:** `engine/.../runtime/QocEngine.java:42-44`, `workflow-runner/.../runner/WorkflowStepProviderImpl.java`,
   `workflow-runner/.../runner/DefaultNodeDispatcher.java`
-- **Nodes:** 16 Backend-Typen (`agent`, `context_agent_executor`, `decision`, `start`, `end`,
+- **Nodes:** 16 backend types (`agent`, `context_agent_executor`, `decision`, `start`, `end`,
   `fork`, `join`, `loop`, `hitl`, `subworkflow`, `compact`, `mcp_call`, `rest_call`, `classify`,
-  `guard`, `inject`). Der ReactFlow-Editor registriert derzeit 14 Typen; `guard`/`inject` sind
-  Backend-Typen, aber nicht in der Editor-Palette.
-- **Einschränkung:** `subworkflow` expandiert den Kindgraphen, führt ihn aber nicht als
-  geschachtelten Run aus; `fork`/`join` sind strukturell und nicht parallel.
+  `guard`, `inject`). The ReactFlow editor currently registers 14 types; `guard`/`inject` are
+  backend types but not in the editor palette.
+- **Limitation:** `subworkflow` expands the child graph but does not execute it as a
+  nested run; `fork`/`join` are structural, not parallel.
 
-### E02 – Durable Workflow-Runs (Journal, Resume, Recovery, Versioning)
+### E02 – Durable workflow runs (journal, resume, recovery, versioning)
 
 - **V:** 5 / **T:** 5 / **Prio:** P0 / **Status:** implemented
-- **OC:** Event-Log, Claims und Inbox existieren, aber keine Workflow-Run-Semantik.
-- **QOC:** Ein Run ist eine normale Session mit Titel `workflow:<id>`; Zustand liegt in
-  `WorkflowRun*`-Events. `WorkflowRunJournal.load(...)` replayt Node-Outputs, State, `currentNodeId`,
-  Child-Session-IDs, Resume-Count und Status. `WorkflowExecutor.resume(...)` lädt die passende
-  Definitionsversion über `definitionVersion`/`contentHash`, gibt einen stale Claim frei und setzt
-  am letzten erfolgreichen Node fort. `WorkflowRecovery` scannt bis zu 200 Runs.
-- **Evidenz:** `workflow-runner/.../runner/WorkflowRunJournal.java`,
+- **OC:** event log, claims and inbox exist, but no workflow-run semantics.
+- **QOC:** A run is a normal session titled `workflow:<id>`; state lives in
+  `WorkflowRun*` events. `WorkflowRunJournal.load(...)` replays node outputs, state,
+  `currentNodeId`, child session IDs, resume count and status.
+  `WorkflowExecutor.resume(...)` loads the matching definition version via
+  `definitionVersion`/`contentHash`, releases a stale claim and continues from the
+  last successful node. `WorkflowRecovery` scans up to 200 runs.
+- **Evidence:** `workflow-runner/.../runner/WorkflowRunJournal.java`,
   `workflow-runner/.../runner/WorkflowExecutor.java:148-203`,
-  `engine/.../core/model/SessionEvent.java` (WorkflowRun*-Events)
-- **Besonderheit:** bewusst **keine `workflow_run`-Tabelle**; Definition und Version sind getrennt
-  vom Run-State.
+  `engine/.../core/model/SessionEvent.java` (WorkflowRun*-events)
+- **Specialty:** deliberately **no `workflow_run` table**; definition and version are
+  separate from run state.
 
-### E03 – Prompt-zu-Workflow-Generierung
+### E03 – Prompt-to-workflow generation
 
 - **V:** 4 / **T:** 4 / **Prio:** P0 / **Status:** implemented
-- **OC:** keine Workflow-Generierung.
-- **QOC:** `WorkflowGenerator.generate(...)` orchestriert Prompt → LLM → Fences strippen → Steps
-  parsen → Graph bauen → validieren → Agenten persistieren → speichern. Agenten erhalten
-  `gen-<workflowId>-<agentId>`-IDs und werden im globalen Agent-Store gespeichert.
-- **Evidenz:** `workflow-runner/.../generate/WorkflowGenerator.java`,
+- **OC:** no workflow generation.
+- **QOC:** `WorkflowGenerator.generate(...)` orchestrates prompt → LLM → strip fences →
+  parse steps → build graph → validate → persist agents → save. Agents receive
+  `gen-<workflowId>-<agentId>` IDs and are stored in the global agent store.
+- **Evidence:** `workflow-runner/.../generate/WorkflowGenerator.java`,
   `workflow-runner/.../generate/WorkflowPlanParser.java`,
   `workflow-runner/.../generate/WorkflowBuilder.java`,
   `quarkus/.../http/WorkflowResource.java:146-172`
-- **Schalter:** `ENGINE_WORKFLOW_GENERATE_ENABLED` (Default aus).
+- **Switch:** `ENGINE_WORKFLOW_GENERATE_ENABLED` (default off).
 
-### E04 – PostgreSQL als Backend-Option
+### E04 – PostgreSQL as backend option
 
 - **V:** 4 / **T:** 4 / **Prio:** P0 / **Status:** implemented
-- **OC:** ausschließlich SQLite (`bun:sqlite`/`node:sqlite`/workerd), keine Netzwerk-DB.
-- **QOC:** `StorageKind` erlaubt pro Port `MEMORY`, `SQLITE`, `POSTGRES`; `StorageFactory` wählt
-  Adapter; Flyway-Migrationen V1–V12 für Postgres und SQLite; Postgres nutzt `jsonb`,
-  `timestamptz`, `bigserial`.
-- **Evidenz:** `engine/.../core/wiring/StorageKind.java`,
+- **OC:** exclusively SQLite (`bun:sqlite`/`node:sqlite`/workerd), no network DB.
+- **QOC:** `StorageKind` allows per port `MEMORY`, `SQLITE`, `POSTGRES`; `StorageFactory`
+  selects the adapter; Flyway migrations V1–V12 for Postgres and SQLite; Postgres uses
+  `jsonb`, `timestamptz`, `bigserial`.
+- **Evidence:** `engine/.../core/wiring/StorageKind.java`,
   `engine/.../adapter/StorageFactory.java`,
   `engine/src/main/resources/db/migration/V1__engine.sql` … `V12__mcp_server.sql`,
   `engine/src/main/resources/db/migration-sqlite/...`
-- **Hinweis:** OC-Referenz nutzt WAL-SQLite; QOC bietet zusätzlich Multi-Node-fähiges Postgres.
+- **Note:** the OC reference uses WAL-SQLite; QOC additionally offers multi-node-capable
+  Postgres.
 
-### E05 – OIDC, Trusted Proxy, RBAC und Ownership
+### E05 – OIDC, trusted proxy, RBAC and ownership
 
-- **V:** 5 / **T:** 4 / **Prio:** P0 / **Status:** implemented (konfigurationsabhängig)
-- **OC:** Basic Auth / lokale Passwort-Authentifizierung, keine OIDC/RBAC-Ownership-Semantik
-  für Workflows.
+- **V:** 5 / **T:** 4 / **Prio:** P0 / **Status:** implemented (configuration-dependent)
+- **OC:** basic auth / local password authentication, no OIDC/RBAC ownership semantics
+  for workflows.
 - **QOC:** `OidcPrincipalProducer` (JWT/OIDC), `TrustedProxyFilter`, `RolesAllowedFilter`,
-  `SecurityConfig` (NONE/BASIC/OIDC/PROXY/MCP_OAUTH), `SessionAccessGuard` mit Owner-/Admin-Checks,
-  Workflow-/Agent-Ownership in REST-Ressourcen.
-- **Evidenz:** `quarkus/.../http/security/OidcPrincipalProducer.java`,
+  `SecurityConfig` (NONE/BASIC/OIDC/PROXY/MCP_OAUTH), `SessionAccessGuard` with owner/admin
+  checks, workflow/agent ownership in REST resources.
+- **Evidence:** `quarkus/.../http/security/OidcPrincipalProducer.java`,
   `quarkus/.../http/security/TrustedProxyFilter.java`,
   `quarkus/.../http/security/RolesAllowedFilter.java`,
   `quarkus/.../http/security/SecurityConfig.java`,
   `quarkus/.../http/SessionAccessGuard.java`,
   `quarkus/.../http/WorkflowResource.java:78-137`
-- **Lücke:** `WorkflowResource` prüft Ownership bei Definitionen, aber nicht konsistent bei
-  `/workflows/runs`, `/workflows/runs/{runId}` und `/resume`. Das ist ein Sicherheits-/Konsistenzgap,
-  keine fertige Erweiterung.
+- **Gap:** `WorkflowResource` checks ownership for definitions, but not consistently for
+  `/workflows/runs`, `/workflows/runs/{runId}` and `/resume`. This is a security/
+  consistency gap, not a finished extension.
 
-### E06 – Durable async Approvals und Questions
+### E06 – Durable async approvals and questions
 
 - **V:** 5 / **T:** 4 / **Prio:** P0 / **Status:** implemented
-- **OC:** In-Memory `Permission`-Requests mit Deferred-Future; gespeicherte Approvals als
-  `permission`-Tabelle. Keine E-Mail-Reply-Links oder pausierte Sessions.
-- **QOC:** `DurableApprovalSource` persistiert `pending_approval` mit Single-Use-Token, Deadline,
-  Status und sendet über `NotificationChannel` (E-Mail). `DurableQuestionSource` macht dasselbe
-  für Fragen. `WebApprovalSource` kombiniert In-Memory-Future mit DB-Persistenz. Workflow-HITL
-  pausiert durabel via `NodeResult.paused(...)`.
-- **Evidenz:** `quarkus/.../http/DurableApprovalSource.java`,
+- **OC:** in-memory `Permission` requests with deferred future; stored approvals as
+  `permission` table. No e-mail reply links or paused sessions.
+- **QOC:** `DurableApprovalSource` persists `pending_approval` with single-use token,
+  deadline, status and sends via `NotificationChannel` (e-mail). `DurableQuestionSource`
+  does the same for questions. `WebApprovalSource` combines in-memory future with DB
+  persistence. Workflow HITL pauses durably via `NodeResult.paused(...)`.
+- **Evidence:** `quarkus/.../http/DurableApprovalSource.java`,
   `quarkus/.../http/DurableQuestionSource.java`,
   `quarkus/.../http/WebApprovalSource.java`,
   `quarkus/.../http/HttpApi.java:69-82`,
   `engine/src/main/resources/db/migration/V3__pending_approvals.sql`,
   `engine/src/main/resources/db/migration/V8__question_requests.sql`
-- **Caveat:** HITL-`approvalId` verwendet `System.identityHashCode(ctx)` und ist damit nicht stabil
-  über Prozessneustarts; die Pause selbst ist durabel, aber die ID-Stabilität ist fragil.
+- **Caveat:** HITL `approvalId` uses `System.identityHashCode(ctx)` and is therefore
+  not stable across process restarts; the pause itself is durable, but ID stability is
+  fragile.
 
-### E07 – A2A (Agent-to-Agent)
+### E07 – A2A (agent-to-agent)
 
 - **V:** 4 / **T:** 4 / **Prio:** P0 / **Status:** implemented
-- **OC:** kein A2A-Client/Server.
-- **QOC:** `A2ATool`/`A2AToolProvider` binden externe Agenten als Tools ein (Agent-Card-Cache,
-  Discovery). `QocAgentExecutor`, `A2AAgentCardProducer`, `A2ARouteGate` und `A2ASessionRegistry`
-  stellen einen opt-in JSON-RPC-A2A-Server bereit.
-- **Evidenz:** `engine/.../runtime/tool/a2a/A2ATool.java`,
+- **OC:** no A2A client/server.
+- **QOC:** `A2ATool`/`A2AToolProvider` bind external agents as tools (agent-card cache,
+  discovery). `QocAgentExecutor`, `A2AAgentCardProducer`, `A2ARouteGate` and
+  `A2ASessionRegistry` provide an opt-in JSON-RPC A2A server.
+- **Evidence:** `engine/.../runtime/tool/a2a/A2ATool.java`,
   `engine/.../runtime/tool/a2a/A2AToolProvider.java`,
   `quarkus/.../http/a2a/QocAgentExecutor.java`,
   `quarkus/.../http/a2a/A2AAgentCardProducer.java`
 - **UI:** `reactflow/src/pages/A2APage.tsx`.
 
-### E08 – MCP-Server-Exposition von QOC
+### E08 – MCP server exposition of QOC
 
 - **V:** 4 / **T:** 3 / **Prio:** P1 / **Status:** partial
-- **OC:** MCP-Client und MCP-Management-API, aber kein QOC-MCP-Server für Agent-Ausführung.
-- **QOC:** `McpServerResource` bietet JSON-RPC `initialize`, `tools/list`, `tools/call` mit den
-  Tools `qoc_run_agent` und `qoc_run_agent_with_config`, inkl. transienter Agenten, strukturiertem
-  Output und Registry-/Serverless-Rollen.
-- **Evidenz:** `quarkus/.../http/McpServerResource.java`,
+- **OC:** MCP client and MCP management API, but no QOC MCP server for agent execution.
+- **QOC:** `McpServerResource` offers JSON-RPC `initialize`, `tools/list`, `tools/call`
+  with the tools `qoc_run_agent` and `qoc_run_agent_with_config`, including transient
+  agents, structured output and registry/serverless roles.
+- **Evidence:** `quarkus/.../http/McpServerResource.java`,
   `quarkus/src/main/resources/application.properties` (`engine.mcp.server.*`)
-- **Grenzen:** nur Tools, keine Resources/Prompts/Sessions; OAuth-Endpoints
-  `/mcp/authorize` und `/mcp/callback` sind Stubs (`501 Not Implemented`).
+- **Limits:** only tools, no resources/prompts/sessions; OAuth endpoints `/mcp/authorize`
+  and `/mcp/callback` are stubs (`501 Not Implemented`).
 
-### E09 – Strukturierte Outputs
+### E09 – Structured outputs
 
-- **V:** 4 / **T:** 4 / **Prio:** P1 / **Status:** implemented (non-strict; strict als offener Plan)
-- **OC:** keine entsprechende `submit_result`-Mechanik gefunden.
-- **QOC:** LLM wird über synthetisches Tool `submit_result` gezwungen, ein Ergebnis zu liefern;
-  `EngineResult.structured()`/`NodeResult.structured` und
-  `StructuredOutputConverter.toMap(...)`. Schema-Konverter für Java-Records, Java-Source,
-  OpenAPI und YAML; Endpoints `/api/schema/from-class`, `/from-openapi`, `/validate`.
-- **Evidenz:** `docs/engineering/Structured-Output.md`,
+- **V:** 4 / **T:** 4 / **Prio:** P1 / **Status:** implemented (non-strict; strict as open plan)
+- **OC:** no corresponding `submit_result` mechanism found.
+- **QOC:** the LLM is forced to deliver a result via the synthetic tool `submit_result`;
+  `EngineResult.structured()`/`NodeResult.structured` and
+  `StructuredOutputConverter.toMap(...)`. Schema converters for Java records, Java source,
+  OpenAPI and YAML; endpoints `/api/schema/from-class`, `/from-openapi`, `/validate`.
+- **Evidence:** `docs/engineering/Structured-Output.md`,
   `workflow-runner/.../runner/StructuredOutputConverter.java`,
   `workflow-runner/.../runner/JavaRecordToJsonSchema.java`,
   `workflow-runner/.../runner/OpenApiToJsonSchema.java`,
   `workflow-runner/.../runner/YamlToJsonSchema.java`,
   `quarkus/.../http/McpServerResource.java:292-300`
-- **Offen:** Strict Mode (Constrained Decoding) ist geplant, aber nicht implementiert
+- **Open:** strict mode (constrained decoding) is planned but not implemented
   (`docs/plans/strict-structured-outputs.md`).
 
-### E10 – Node-Contracts, Context-Budget und Context-Policies
+### E10 – Node contracts, context budget and context policies
 
 - **V:** 4 / **T:** 4 / **Prio:** P1 / **Status:** implemented
-- **OC:** keine Workflow-Node-Contracts.
-- **QOC:** `ContextAssembler` mit `FULL`/`FOCUSED`/`ARTIFACTS`/`CUSTOM`; `ContextBudgetGate`
-  wirft `WorkflowBudgetExceededException`; `NodeContractValidator` prüft `outputContract`
-  (type, required, additionalProperties, enum, bounds, items). Template-Resolver unterstützt
-  `${node.output.field}` und `${state.key}` mit Strict-Modus.
-- **Evidenz:** `workflow-runner/.../runner/ContextAssembler.java`,
+- **OC:** no workflow node contracts.
+- **QOC:** `ContextAssembler` with `FULL`/`FOCUSED`/`ARTIFACTS`/`CUSTOM`; `ContextBudgetGate`
+  throws `WorkflowBudgetExceededException`; `NodeContractValidator` validates `outputContract`
+  (type, required, additionalProperties, enum, bounds, items). Template resolver supports
+  `${node.output.field}` and `${state.key}` with strict mode.
+- **Evidence:** `workflow-runner/.../runner/ContextAssembler.java`,
   `workflow-runner/.../runner/ContextBudgetGate.java`,
   `workflow-runner/.../runner/NodeContractValidator.java`,
   `workflow-runner/.../runner/TemplateResolver.java`
-- **Nutzen:** reduziert Context-Überlauf und macht Node-Datenfluss prüfbar.
+- **Benefit:** reduces context overflow and makes node data flow verifiable.
 
-### E11 – Graph-Validierung und SDLC-Invarianten
+### E11 – Graph validation and SDLC invariants
 
 - **V:** 3 / **T:** 4 / **Prio:** P1 / **Status:** implemented
-- **OC:** keine Workflow-Graphen.
-- **QOC:** `GraphCompiler` prüft Node-Typen, IDs, Edges, Agent-Refs, Templates, Zyklen,
-  Budget-Binding auf Zyklen (SDW-03) und Gate-Bypass (SDW-07). `validateTemplatesOnly(...)`
-  erlaubt Draft-Speicherung.
-- **Evidenz:** `workflow-runner/.../validation/GraphCompiler.java`,
+- **OC:** no workflow graphs.
+- **QOC:** `GraphCompiler` checks node types, IDs, edges, agent refs, templates, cycles,
+  budget binding on cycles (SDW-03) and gate bypass (SDW-07). `validateTemplatesOnly(...)`
+  allows draft saving.
+- **Evidence:** `workflow-runner/.../validation/GraphCompiler.java`,
   `docs/engineering/Workflow-SDLC.md`
-- **Korrektur:** Code verlangt mindestens einen `end`-Node, nicht exakt einen; Fork/Join sind
-  strukturell, nicht parallele Ausführung.
+- **Correction:** code requires at least one `end` node, not exactly one; fork/join are
+  structural, not parallel execution.
 
-### E12 – Externer Guardrail-Webhook
+### E12 – External guardrail webhook
 
 - **V:** 3 / **T:** 3 / **Prio:** P1 / **Status:** implemented
-- **OC:** Plugin-Hooks, aber keine Webhook-basierte Tool-Guardrail.
-- **QOC:** `GuardrailHooks` (before/after Tool-Call) ruft `WebhookClient` auf und unterstützt
-  `allow`, `block`, `deny`, `ask`, `redact`, `replace`, `rewrite`, Shadow-Mode und
-  Fail-Open/Closed. Agent-Config trägt `guardrailsInput`/`guardrailsOutput`.
-- **Evidenz:** `quarkus/.../guardrail/GuardrailHooks.java`,
+- **OC:** plugin hooks, but no webhook-based tool guardrail.
+- **QOC:** `GuardrailHooks` (before/after tool call) invokes `WebhookClient` and supports
+  `allow`, `block`, `deny`, `ask`, `redact`, `replace`, `rewrite`, shadow mode and
+  fail-open/closed. Agent config carries `guardrailsInput`/`guardrailsOutput`.
+- **Evidence:** `quarkus/.../guardrail/GuardrailHooks.java`,
   `quarkus/.../guardrail/WebhookClient.java`,
   `quarkus/.../guardrail/GuardrailRegistry.java`
-- **Korrektur:** Es gibt keine deklarative Regel-Engine und kein CDI-SPI für lokale Guardrails.
+- **Correction:** there is no declarative rule engine and no CDI SPI for local guardrails.
 
-### E13 – Resilience-Stack im Agent-Loop
+### E13 – Resilience stack in the agent loop
 
 - **V:** 3 / **T:** 3 / **Prio:** P1 / **Status:** implemented
-- **OC:** Retry/Backoff und Compaction vorhanden, aber kein Preflight/Triage/Loop-Detector
-  in dieser Form.
-- **QOC:** Preflight-Checker (DNS/HTTP/TTL), `TriageService`, `LoopDetector`, `WebhookAlerter`,
-  `RetryPolicy`, Step-Timeout, Turn-Budgets (Tool-Calls/Tokens/Wall-Time), Verify-on-Stop.
-  Verify-on-Stop erlaubt `CONTINUE`/`FAIL`/`WARN` vor Turn-Ende.
-- **Evidenz:** `engine/.../runtime/resilience/*`,
+- **OC:** retry/backoff and compaction exist, but no preflight/triage/loop-detector
+  in this form.
+- **QOC:** preflight checker (DNS/HTTP/TTL), `TriageService`, `LoopDetector`, `WebhookAlerter`,
+  `RetryPolicy`, step timeout, turn budgets (tool calls/tokens/wall time), verify-on-stop.
+  Verify-on-stop allows `CONTINUE`/`FAIL`/`WARN` before turn end.
+- **Evidence:** `engine/.../runtime/resilience/*`,
   `engine/.../runtime/QocEngine.java:48-183,1204-1230`,
   `engine/.../core/eval/VerifyRule.java`,
   `docs/plans/verify-on-stop-guards.md`
 
-### E14 – Tool-Result-Cache und Idempotenz
+### E14 – Tool result cache and idempotency
 
 - **V:** 3 / **T:** 2 / **Prio:** P1 / **Status:** implemented
-- **OC:** kein eigener Tool-Result-Cache-Port.
-- **QOC:** `ToolRuntime` nutzt `ToolResultCache` mit `IdempotencyKey`; Cache-Hit liefert
-  dekodiertes `ToolOutcome`; Ergebnisse werden nach Ausführung gespeichert. Tabelle
-  `tool_result_cache`.
-- **Evidenz:** `engine/.../runtime/tool/runtime/ToolRuntime.java:84-170`,
+- **OC:** no own tool result cache port.
+- **QOC:** `ToolRuntime` uses `ToolResultCache` with `IdempotencyKey`; cache hit returns
+  decoded `ToolOutcome`; results are stored after execution. Table `tool_result_cache`.
+- **Evidence:** `engine/.../runtime/tool/runtime/ToolRuntime.java:84-170`,
   `engine/src/main/resources/db/migration/V7__tool_result_cache.sql`
 
-### E15 – Erweitertes Toolset
+### E15 – Extended toolset
 
 - **V:** 3 / **T:** 2 / **Prio:** P1 / **Status:** implemented
-- **OC:** Shell, Read/Write/Edit/Patch, Glob/Grep, WebFetch/Search, Todo, Question, Worktree,
-  Subagent, MCP-Resources, Skill.
-- **QOC:** zusätzlich `email` (SMTP/IMAP mit Limits), `remote-shell` (SSH), `secure-rest`
-  (Allowlist/Credentials), Firecrawl, Check-Tools (`test_runner`, `hash_checker`),
-  `agent_create`/`agent_list`, `submit_result`, A2A-Tools, MCP-Call-Tools.
-- **Evidenz:** `engine/.../runtime/tool/email/EmailLimits.java`,
+- **OC:** shell, read/write/edit/patch, glob/grep, web fetch/search, todo, question, worktree,
+  subagent, MCP resources, skill.
+- **QOC:** additionally `email` (SMTP/IMAP with limits), `remote-shell` (SSH), `secure-rest`
+  (allowlist/credentials), Firecrawl, check tools (`test_runner`, `hash_checker`),
+  `agent_create`/`agent_list`, `submit_result`, A2A tools, MCP call tools.
+- **Evidence:** `engine/.../runtime/tool/email/EmailLimits.java`,
   `engine/.../runtime/tool/remote/*`,
   `engine/.../runtime/tool/web/*`,
   `quarkus/.../runtime/tool/agent/AgentCreateTool.java`,
   `workflow-runner/.../runner/CheckTools.java`
 
-### E16 – Globaler Agent-Store und Runtime-Agent-Authoring
+### E16 – Global agent store and runtime agent authoring
 
 - **V:** 4 / **T:** 3 / **Prio:** P1 / **Status:** implemented
-- **OC:** Agenten als Markdown/Config-Dateien; keine DB-basierte Agent-SSOT mit Ownership.
-- **QOC:** `AgentStore`/`AgentStorePort` persistiert Agenten als JSON (file/sqlite/postgres),
-  mit Owner-Filter, CRUD, Import/Export nach OpenCode-Markdown, generierte `gen-...`-Agenten
-  und Propagation in die Engine.
-- **Evidenz:** `workflow-runner/.../store/AgentStore.java`,
+- **OC:** agents as markdown/config files; no DB-based agent SSOT with ownership.
+- **QOC:** `AgentStore`/`AgentStorePort` persist agents as JSON (file/sqlite/postgres),
+  with owner filter, CRUD, import/export to OpenCode markdown, generated `gen-...` agents
+  and propagation into the engine.
+- **Evidence:** `workflow-runner/.../store/AgentStore.java`,
   `workflow-runner/.../store/AgentStorePort.java`,
   `quarkus/.../http/AgentStoreResource.java`,
   `quarkus/.../http/AgentCatalogue.java`
 
-### E17 – ReactFlow-UI und Workflow-Betriebsseiten
+### E17 – ReactFlow UI and workflow operations pages
 
 - **V:** 4 / **T:** 2 / **Prio:** P1 / **Status:** implemented
-- **OC:** TUI/Web-UI, aber keine ReactFlow-Workflow-Editor-Oberfläche.
-- **QOC:** `reactflow/` enthält Editor, Dashboard, Workflows, Runs, Agents, HITL, MCP-Servers,
-  A2A, Generate, Settings, Observe, Testbench, LLM-Trace.
-- **Evidenz:** `reactflow/src/EditorPage.tsx`,
+- **OC:** TUI/web UI, but no ReactFlow workflow editor surface.
+- **QOC:** `reactflow/` contains editor, dashboard, workflows, runs, agents, HITL, MCP servers,
+  A2A, generate, settings, observe, testbench, LLM trace.
+- **Evidence:** `reactflow/src/EditorPage.tsx`,
   `reactflow/src/pages/*.tsx`,
   `reactflow/src/services/workflowStore.ts`,
   `quarkus/src/main/resources/META-INF/resources/index.html`
 
-### E18 – Classify-Node (typisiertes Decision-Modell)
+### E18 – Classify node (typed decision model)
 
-- **V:** 3 / **T:** 3 / **Prio:** P1 / **Status:** implemented (externe API-Abhängigkeit)
-- **OC:** keine typisierte Decision-Classification.
-- **QOC:** `classify`-Node ruft `TypeSafeDecisionClient` auf, normalisiert yes/no/choice/scale,
-  berechnet Margin/Low-Margin und schreibt State-Deltas. Guard-Node kann `low_margin`-Pfade
-  begrenzen.
-- **Evidenz:** `workflow-runner/.../runner/TypeSafeDecisionClient.java`,
+- **V:** 3 / **T:** 3 / **Prio:** P1 / **Status:** implemented (external API dependency)
+- **OC:** no typed decision classification.
+- **QOC:** the `classify` node calls `TypeSafeDecisionClient`, normalizes yes/no/choice/scale,
+  computes margin/low-margin and writes state deltas. The guard node can bound
+  `low_margin` paths.
+- **Evidence:** `workflow-runner/.../runner/TypeSafeDecisionClient.java`,
   `workflow-runner/.../runner/DefaultNodeDispatcher.java:339-408`,
   `workflow-runner/.../runner/DefaultNodeDispatcher.java:299-331`
 
-### E19 – Workflow-spezifische Event-Typen und Journal-Replay
+### E19 – Workflow-specific event types and journal replay
 
 - **V:** 3 / **T:** 3 / **Prio:** P1 / **Status:** implemented
-- **OC:** generisches Event-Log vorhanden; keine Workflow-Run-Events.
+- **OC:** generic event log exists; no workflow-run events.
 - **QOC:** `SessionEvent.WorkflowRunStarted/NodeStarted/NodeCompleted/NodeFailed/RunResumed/
-  RunFinished/RunFailed` plus `JournalWorkflowEventSink`; Replay in `WorkflowRunJournal`.
-- **Evidenz:** `engine/.../core/model/SessionEvent.java`,
+  RunFinished/RunFailed` plus `JournalWorkflowEventSink`; replay in `WorkflowRunJournal`.
+- **Evidence:** `engine/.../core/model/SessionEvent.java`,
   `workflow-runner/.../runner/JournalWorkflowEventSink.java`,
   `workflow-runner/.../runner/WorkflowRunJournal.java`
-- **Hinweis:** Das Event-Sourcing selbst ist keine QOC-Erweiterung; die Workflow-Run-Events sind es.
+- **Note:** event sourcing itself is not a QOC extension; the workflow-run events are.
 
-### E20 – Runtime-Adaptation (Konzept)
+### E20 – Runtime adaptation (concept)
 
 - **V:** 4 / **T:** 1 / **Prio:** P2 / **Status:** concept
-- **OC:** keine vergleichbare Runtime-Plan-Adaption.
-- **QOC:** Dokumentiert `RequirementChecker`, `AdaptationPlan`, `RuntimePlan`, `PlanValidator`,
-  aber im Code nicht implementiert.
-- **Evidenz:** `docs/next/runtime-plan-adaptation.md`,
+- **OC:** no comparable runtime plan adaptation.
+- **QOC:** documents `RequirementChecker`, `AdaptationPlan`, `RuntimePlan`, `PlanValidator`,
+  but not implemented in code.
+- **Evidence:** `docs/next/runtime-plan-adaptation.md`,
   `docs/plans/runtime-plan-adaptation.md`
-- **Status:** nicht implementiert; nicht als fertige Erweiterung verkaufen.
+- **Status:** not implemented; do not sell as a finished extension.
 
-### E21 – MCP-OAuth-Server
+### E21 – MCP OAuth server
 
 - **V:** 3 / **T:** 1 / **Prio:** P2 / **Status:** concept/stub
-- **OC:** MCP-Client, keine OAuth-Serverrolle.
-- **QOC:** Konfiguration `engine.mcp.server.oauth.enabled` und `AuthMode.MCP_OAUTH` existieren,
-  aber `/mcp/authorize` und `/mcp/callback` liefern `501 Not Implemented`.
-- **Evidenz:** `quarkus/.../http/McpServerResource.java:165-186`
+- **OC:** MCP client, no OAuth server role.
+- **QOC:** configuration `engine.mcp.server.oauth.enabled` and `AuthMode.MCP_OAUTH` exist,
+  but `/mcp/authorize` and `/mcp/callback` return `501 Not Implemented`.
+- **Evidence:** `quarkus/.../http/McpServerResource.java:165-186`
 
-### E22 – Temporal-Integration
+### E22 – Temporal integration
 
 - **V:** 2 / **T:** 1 / **Prio:** P2 / **Status:** concept
-- **OC:** keine Temporal-Integration.
-- **QOC:** Dokumente und Pläne vorhanden, keine Implementierung im Runtime-Code.
-- **Evidenz:** `docs/engineering/ReactFlow-temporal.md`,
+- **OC:** no Temporal integration.
+- **QOC:** documents and plans exist, no implementation in runtime code.
+- **Evidence:** `docs/engineering/ReactFlow-temporal.md`,
   `docs/plans/Hybrid.md`
 
-### E23 – Quarkus/JVM-Betriebsmodell
+### E23 – Quarkus/JVM operations model
 
 - **V:** 3 / **T:** 2 / **Prio:** P2 / **Status:** implemented
-- **OC:** Bun/Node-basierte CLI und Server.
-- **QOC:** Quarkus 3.40, JVM/native Image, systemd/Docker-Deployment, Dev Services,
-  Profile für Memory/SQLite/Postgres.
-- **Evidenz:** `qoc/pom.xml`, `qoc/quarkus/pom.xml`,
+- **OC:** Bun/Node-based CLI and server.
+- **QOC:** Quarkus 3.40, JVM/native image, systemd/Docker deployment, dev services,
+  profiles for memory/SQLite/Postgres.
+- **Evidence:** `qoc/pom.xml`, `qoc/quarkus/pom.xml`,
   `docs/deployment/*.md`,
-  `docs/betrieb/*` (falls vorhanden)
-- **Hinweis:** Das ist ein Plattformunterschied, aber für Enterprise-Deployments relevant.
+  `docs/betrieb/*` (if present)
+- **Note:** this is a platform difference, but relevant for enterprise deployments.
 
 ---
 
-## 5. Nicht als QOC-Erweiterung gezählt (Baseline/Parität)
+## 5. Not counted as QOC extension (baseline/parity)
 
-Diese Fähigkeiten sind in OC bereits vorhanden oder werden von QOC portiert; sie sind
-keine QOC-spezifischen Mehrwerte:
+These capabilities already exist in OC or are ported by QOC; they are not
+QOC-specific added value:
 
-| Bereich | OC-Evidenz | QOC |
+| Area | OC evidence | QOC |
 |---|---|---|
-| Event-Log, Sequenzen, Claims, Resume-Counter | `packages/core/src/session/event.ts`, `execution.ts`, `inbox.ts` | portiert |
-| Session-Inbox (STEER/QUEUE) | `packages/core/src/session/inbox.ts` | portiert |
-| Compaction, Revert, Snapshots | `packages/core/src/session/compaction.ts`, `revert.ts` | portiert |
-| Skills (Scan, Frontmatter, Disclosure) | `packages/core/src/skill/*` | portiert |
-| Subagents/Tasks | `packages/core/src/tool/plugin/subagent.ts` | portiert |
-| ACP | `packages/cli/src/commands/commands.ts` (`acp`) | portiert |
-| MCP-Client | `packages/core/src/mcp/*`, `packages/server/src/handlers/mcp.ts` | portiert |
-| Permissions (deny/ask/allow, saved approvals) | `packages/core/src/permission.ts` | portiert |
-| Plugins/Hooks | `packages/core/src/plugin/*` | portiert |
-| SQLite/In-Memory-SQLite | `packages/core/src/database/sqlite.*.ts` | portiert (+ Postgres) |
-| Basic Auth | OC-Server-Auth | portiert (+ OIDC/Proxy) |
+| Event log, sequences, claims, resume counter | `packages/core/src/session/event.ts`, `execution.ts`, `inbox.ts` | ported |
+| Session inbox (STEER/QUEUE) | `packages/core/src/session/inbox.ts` | ported |
+| Compaction, revert, snapshots | `packages/core/src/session/compaction.ts`, `revert.ts` | ported |
+| Skills (scan, frontmatter, disclosure) | `packages/core/src/skill/*` | ported |
+| Subagents/tasks | `packages/core/src/tool/plugin/subagent.ts` | ported |
+| ACP | `packages/cli/src/commands/commands.ts` (`acp`) | ported |
+| MCP client | `packages/core/src/mcp/*`, `packages/server/src/handlers/mcp.ts` | ported |
+| Permissions (deny/ask/allow, saved approvals) | `packages/core/src/permission.ts` | ported |
+| Plugins/hooks | `packages/core/src/plugin/*` | ported |
+| SQLite/in-memory SQLite | `packages/core/src/database/sqlite.*.ts` | ported (+ Postgres) |
+| Basic auth | OC server auth | ported (+ OIDC/Proxy) |
 
 ---
 
-## 6. Korrekturen gegenüber `Features.md`
+## 6. Corrections versus `Features.md`
 
-| Stelle | Problem | Empfohlene Korrektur |
+| Location | Problem | Recommended correction |
 |---|---|---|
-| `Features.md` §2.4 „16 Node-Typen“ | stimmt für Backend, aber Editor registriert nur 14 | „16 Backend-Node-Typen (14 im Editor; `guard`/`inject` nur Backend)“ |
-| `Features.md` §2.4 „genau ein `end`“ | `GraphCompiler` verlangt mindestens einen `end` | „mindestens ein `end`-Node“ |
-| `Features.md` §3 „Guardrails: Deklarative Regeln, CDI-SPI“ | nur externer Webhook | „externer Webhook-Guardrail; keine deklarative Regel-Engine“ |
-| `Features.md` §4 „Owner-/Access-Guard“ für Runs | `/workflows/runs*` und `/resume` prüfen keine Ownership | Guard für Runs nachziehen oder Formulierung einschränken |
-| `Features.md` §2.4 „subworkflow: wird beim Start expandiert“ | keine geschachtelte Ausführung | „expandiert den Kindgraphen, führt ihn aber nicht als geschachtelten Run aus“ |
+| `Features.md` §2.4 "16 node types" | true for backend, but editor registers only 14 | "16 backend node types (14 in editor; `guard`/`inject` backend only)" |
+| `Features.md` §2.4 "exactly one `end`" | `GraphCompiler` requires at least one `end` | "at least one `end` node" |
+| `Features.md` §3 "Guardrails: declarative rules, CDI SPI" | only external webhook | "external webhook guardrail; no declarative rule engine" |
+| `Features.md` §4 "Owner/access guard" for runs | `/workflows/runs*` and `/resume` check no ownership | Add guard for runs or restrict wording |
+| `Features.md` §2.4 "subworkflow: expanded at start" | no nested execution | "expands the child graph, but does not execute it as a nested run" |
 
 ---
 
-## 7. Empfohlene Umsetzungsreihenfolge
+## 7. Recommended implementation order
 
-1. **P0 härten:** Ownership-Gap bei Workflow-Runs schließen (E05/E02), HITL-ID-Stabilität
-   (E06), Subworkflow-Ausführung oder klare Dokumentation (E01).
-2. **P1 produktisieren:** MCP-Server-Ressourcen/Prompts (E08), Strict Structured Output als
-   Option (E09), Context-/Contract-Gates in UI sichtbar machen (E10/E11).
-3. **P1 Betrieb:** Guardrail-Webhook-Dokumentation und Defaults (E12), Resilience-Metriken
-   (E13), Tool-Cache TTL/Invalidierung (E14).
-4. **P2 vorbereiten:** Runtime-Adaptation nur als Spezifikation (E20), MCP-OAuth (E21),
-   Temporal (E22) erst nach stabiler Workflow-Plattform.
+1. **Harden P0:** close ownership gap for workflow runs (E05/E02), HITL ID stability
+   (E06), subworkflow execution or clear documentation (E01).
+2. **Productize P1:** MCP server resources/prompts (E08), strict structured output as
+   an option (E09), make context/contract gates visible in UI (E10/E11).
+3. **P1 operations:** guardrail webhook documentation and defaults (E12), resilience metrics
+   (E13), tool cache TTL/invalidation (E14).
+4. **Prepare P2:** runtime adaptation only as specification (E20), MCP OAuth (E21),
+   Temporal (E22) only after a stable workflow platform.
 
 ---
 
-## 8. Kurzurteil
+## 8. Verdict
 
-Die stärksten QOC-Erweiterungen sind **Workflow-Runner auf demselben Engine-Loop**,
-**durable Runs/Resume/Recovery**, **OIDC/RBAC/Ownership**, **PostgreSQL**,
-**durable HITL** und **A2A**. Diese fünf (plus Workflow-Generierung) sollten als
-QOC-Kernnarrativ und Roadmap-Schwerpunkt behandelt werden. Alles andere ist
-wertvoll, aber sekundär oder noch konzeptionell.
+The strongest QOC extensions are **workflow runner on the same engine loop**,
+**durable runs/resume/recovery**, **OIDC/RBAC/ownership**, **PostgreSQL**,
+**durable HITL** and **A2A**. These five (plus workflow generation) should be
+treated as QOC core narrative and roadmap focus. Everything else is valuable,
+but secondary or still conceptual.

@@ -1,13 +1,13 @@
-# Research Agent – Asynchrone und parallele Recherche
+# Research Agent – Asynchronous and Parallel Research
 
 > **Status:** Design · 2026-11-04
-> **Zweck:** Architektur und Nutzung eines Research-Agents, der Web-Suche,
-> Fetch, Analyse, Zusammenfassung und Prüfung durchführt und Ergebnisse an
-> den Aufrufer zurückgibt. Unterstützt asynchrone und parallele Ausführung.
+> **Purpose:** Architecture and usage of a Research Agent that performs web search,
+> fetch, analysis, summarization, and verification, and returns results to the
+> caller. Supports asynchronous and parallel execution.
 
-## 1. Research-Agent als Agent-Definition
+## 1. Research Agent as Agent Definition
 
-Der Research-Agent ist ein Subagent mit spezifischen Tools:
+The Research Agent is a subagent with specific tools:
 
 ```markdown
 ---
@@ -23,37 +23,37 @@ permissions:
   read: allow
   write: ask
 ---
-Du bist ein Research-Agent. Deine Aufgabe:
-1. Suche im Web nach relevanten Informationen
-2. Hole die wichtigsten Quellen (webfetch)
-3. Analysiere und vergleiche die Ergebnisse
-4. Erstelle eine strukturierte Zusammenfassung
-5. Prüfe die Quellen auf Konsistenz und Aktualität
-6. Gib das Ergebnis als strukturierten Report zurück
+You are a Research Agent. Your task:
+1. Search the web for relevant information
+2. Fetch the most important sources (webfetch)
+3. Analyze and compare the results
+4. Create a structured summary
+5. Verify sources for consistency and currency
+6. Return the result as a structured report
 
-Antworte immer mit: Zusammenfassung, Quellen, Konfidenz-Score.
+Always respond with: Summary, Sources, Confidence Score.
 ```
 
-## 2. Drei Ausführungsmodi
+## 2. Three Execution Modes
 
-### Modus A: Synchron (ein Thema, blockierend)
+### Mode A: Synchronous (one topic, blocking)
 
-Aufrufer wartet auf das Ergebnis. Geeignet für kurze Recherchen (< 2 Min.).
+The caller waits for the result. Suitable for short research (< 2 min.).
 
-### Modus B: Asynchron (ein Thema, nicht blockierend)
+### Mode B: Asynchronous (one topic, non-blocking)
 
-`background=true` startet einen Daemon-Thread. Der Aufrufer erhält sofort eine
-Session-ID und kann per Polling (`GET /api/session/{id}/messages`) oder SSE
-(`GET /api/event`) das Ergebnis abholen.
+`background=true` starts a daemon thread. The caller immediately receives a
+session ID and can retrieve the result via polling (`GET /api/session/{id}/messages`)
+or SSE (`GET /api/event`).
 
-### Modus C: Parallel (zwei Themen gleichzeitig)
+### Mode C: Parallel (two topics simultaneously)
 
-Ein Orchestrator-Agent spawnt mehrere Research-Subagents parallel. Wenn der
-LLM-Provider parallele Tool-Calls unterstützt, werden die Subagents in einem
-Schritt gestartet. Die Engine führt sie parallel aus (max. 4 gleichzeitig,
-Semaphore in SubagentRunner).
+An orchestrator agent spawns multiple research subagents in parallel. If the
+LLM provider supports parallel tool calls, the subagents are started in a single
+step. The engine executes them in parallel (max. 4 at a time, semaphore in
+SubagentRunner).
 
-## 3. Orchestrator-Agent
+## 3. Orchestrator Agent
 
 ```markdown
 ---
@@ -62,39 +62,39 @@ mode: primary
 steps: 10
 toolAllow: [subagent]
 ---
-Du bist ein Research-Orchestrator. Wenn der User mehrere Themen nennt:
-1. Starte für jedes Thema einen Research-Subagent (parallel)
-2. Warte auf alle Ergebnisse
-3. Kombiniere und vergleiche die Ergebnisse
-4. Gib eine Gesamtzusammenfassung zurück
+You are a Research Orchestrator. When the user mentions multiple topics:
+1. Start a research subagent for each topic (in parallel)
+2. Wait for all results
+3. Combine and compare the results
+4. Return an overall summary
 ```
 
-## 4. Einschränkungen
+## 4. Constraints
 
-| Einschränkung | Auswirkung |
+| Constraint | Impact |
 |---|---|
-| Depth-Limit (2) | Orchestrator → Subagent, aber kein Subagent → Subagent |
-| Semaphore (4) | Max. 4 parallele Subagents pro Engine-Instanz |
-| Kein persistentes Ergebnis | Ergebnisse gehen verloren wenn Session gelöscht wird |
-| Kein Callback/Webhook | Kein Push bei Async-Completion; Polling oder SSE nötig |
+| Depth limit (2) | Orchestrator → Subagent, but no Subagent → Subagent |
+| Semaphore (4) | Max. 4 parallel subagents per engine instance |
+| No persistent result | Results are lost when the session is deleted |
+| No callback/webhook | No push on async completion; polling or SSE required |
 
-## 5. Empfohlene Implementierung
+## 5. Recommended Implementation
 
-1. Agent-Definitionen erstellen (research-agent, research-orchestrator)
-2. Testen mit einem LLM-Provider (parallele Tool-Calls)
-3. Optional: Callback/Webhook für async-Completion
-4. Optional: Ergebnisse in DB persistieren
+1. Create agent definitions (research-agent, research-orchestrator)
+2. Test with an LLM provider (parallel tool calls)
+3. Optional: callback/webhook for async completion
+4. Optional: persist results in a DB
 
-## 6. Was bereits implementiert ist
+## 6. What Is Already Implemented
 
 - SubagentTool (parallel, depth 2, semaphore 4)
-- Background-Subagent (`background=true`)
-- Session-Polling (`GET /api/session/{id}/messages`)
-- SSE-Stream (`GET /api/event`)
-- MCP-Tool `qoc_run_agent` und `qoc_run_agent_with_config`
+- Background subagent (`background=true`)
+- Session polling (`GET /api/session/{id}/messages`)
+- SSE stream (`GET /api/event`)
+- MCP tools `qoc_run_agent` and `qoc_run_agent_with_config`
 
-## 7. Was fehlt
+## 7. What Is Missing
 
-- Callback/Webhook bei Completion (2-3 Tage)
-- Ergebnis-Persistierung über Session hinaus (1-2 Tage)
-- Remote-Subagent via MCP (SubagentTool ist lokal)
+- Callback/webhook on completion (2-3 days)
+- Result persistence beyond the session (1-2 days)
+- Remote subagent via MCP (SubagentTool is local)

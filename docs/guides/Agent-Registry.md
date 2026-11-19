@@ -1,26 +1,26 @@
 # Agent Registry (Option A)
 
-Status: optional, implementiert (Registry-Rolle in QOC)
-Datum: 2026-11-04
+Status: optional, implemented (Registry role in QOC)
+Date: 2026-11-04
 
-Diese Variante betreibt QOC **nur als Agent-Registry** – ohne Ausführung von
-Prompts. Sie ist eine optionale Nutzungsart; der normale Server-/Serverless-
-Betrieb bleibt unverändert.
+This variant runs QOC **only as an Agent Registry** — without executing
+prompts. It is an optional usage mode; normal server/serverless
+operation remains unchanged.
 
-## 1. Zweck
+## 1. Purpose
 
-Eine oder mehrere QOC-Instanzen stellen den Agent-Katalog zentral bereit:
+One or more QOC instances provide the agent catalog centrally:
 
-- Agenten lesen (`GET /api/agent`, `GET /api/agent/{name}`)
-- Agenten anlegen/ändern/löschen (`POST/PUT/DELETE /api/agent`)
-- Serverless-Worker und VM-Worker holen ihre Agent-Config von dort
-- Kein Prompt-, Session- oder MCP-Tool-Betrieb auf der Registry
+- Read agents (`GET /api/agent`, `GET /api/agent/{name}`)
+- Create/update/delete agents (`POST/PUT/DELETE /api/agent`)
+- Serverless workers and VM workers fetch their agent config from there
+- No prompt, session, or MCP tool operation on the registry
 
-Das ist der kleinste Schritt in Richtung eines eigenständigen Agent-Registry-
-Service: Die Registry nutzt die vorhandene QOC-API und -Serialisierung, führt
-aber nichts aus.
+This is the smallest step towards a standalone agent-registry
+service: the registry uses the existing QOC API and serialization, but
+does not execute anything.
 
-## 2. Architektur
+## 2. Architecture
 
 ```
 Editor / Admin
@@ -31,13 +31,13 @@ QOC Registry (ENGINE_ROLE=registry)
       ├──────────────┬───────────────────┐
       ▼              ▼                   ▼
  QOC Serverless   QOC Worker (VM)     QOC Server
- (Fetch pro Call) (optional Fetch)    (optional Cache)
+ (Fetch per call) (optional Fetch)    (optional Cache)
 ```
 
-Die Registry ist **kein** MCP-Server und **kein** Executor. Sie liefert nur
-Agent-Definitionen.
+The registry is **not** an MCP server and **not** an executor. It only delivers
+agent definitions.
 
-## 3. Konfiguration
+## 3. Configuration
 
 ```env
 ENGINE_MODE=server
@@ -46,12 +46,12 @@ ENGINE_AGENT_AUTHORING_ENABLED=true
 ENGINE_SECURITY_MODE=oidc
 ```
 
-Wichtig:
+Important:
 
-- `ENGINE_MODE=server` (nicht `serverless`) – sonst würden Workspace-Agenten
-  ignoriert und Authoring wäre gesperrt.
-- `ENGINE_ROLE=registry` disables Ausführung, nicht das Authoring.
-- `ENGINE_AGENT_AUTHORING_ENABLED=true` muss gesetzt bleiben.
+- `ENGINE_MODE=server` (not `serverless`) — otherwise workspace agents
+  would be ignored and authoring would be locked.
+- `ENGINE_ROLE=registry` disables execution, not authoring.
+- `ENGINE_AGENT_AUTHORING_ENABLED=true` must remain set.
 
 ### Docker (optional)
 
@@ -60,24 +60,24 @@ cd deploy
 docker compose up -d qoc-registry
 ```
 
-Der Service nutzt das Profil `e2e` und ist fest auf Port `8074` gemappt
-(`ENGINE_MODE=server`, `ENGINE_ROLE=registry`, OIDC gegen Keycloak).
-Mit dem OIDC-Setup ist Keycloak Voraussetzung (`deploy/start-oidc.sh`).
+The service uses the `e2e` profile and is fixed to port `8074`
+(`ENGINE_MODE=server`, `ENGINE_ROLE=registry`, OIDC against Keycloak).
+With the OIDC setup, Keycloak is a prerequisite (`deploy/start-oidc.sh`).
 
-Die Registry läuft dann unter `http://localhost:8074`.
+The registry then runs at `http://localhost:8074`.
 
 ## 4. API
 
-| Methode | Pfad | Zweck |
+| Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/agent` | Liste (`id`, `name`, `hidden`) |
+| `GET` | `/api/agent` | List (`id`, `name`, `hidden`) |
 | `GET` | `/api/agent/{name}` | `{name, content?, config, hash?, updatedAt?}` |
-| `POST` | `/api/agent` | Agent aus Markdown anlegen (`qoc-admin`) |
-| `PUT` | `/api/agent/{name}` | Agent aktualisieren (`qoc-admin`) |
-| `DELETE` | `/api/agent/{name}` | Agent löschen (`qoc-admin`) |
-| `GET` | `/api/health` | u. a. `role=registry`, `mode=server` |
+| `POST` | `/api/agent` | Create agent from Markdown (`qoc-admin`) |
+| `PUT` | `/api/agent/{name}` | Update agent (`qoc-admin`) |
+| `DELETE` | `/api/agent/{name}` | Delete agent (`qoc-admin`) |
+| `GET` | `/api/health` | includes `role=registry`, `mode=server` |
 
-Nicht verfügbar (HTTP 503, `_tag=RegistryMode`):
+Not available (HTTP 503, `_tag=RegistryMode`):
 
 - `POST /api/run`
 - `POST /api/session`
@@ -85,11 +85,11 @@ Nicht verfügbar (HTTP 503, `_tag=RegistryMode`):
 - `POST /api/session/{id}/prompt`
 - `POST /api/session/{id}/command`
 - MCP `tools/call` (`/mcp`)
-- A2A-Ausführung (Executor lehnt ab)
+- A2A execution (executor rejects)
 
-## 5. Konsumenten
+## 5. Consumers
 
-Serverless-Worker oder VM-Worker zeigen auf die Registry:
+Serverless workers or VM workers point at the registry:
 
 ```env
 ENGINE_AGENT_SOURCE_URL=http://host.docker.internal:8074
@@ -97,56 +97,56 @@ ENGINE_AGENT_SOURCE_URL=http://host.docker.internal:8074
 ENGINE_AGENT_SOURCE_TOKEN=...
 ```
 
-Der Fetch nutzt weiterhin:
+The fetch still uses:
 
 ```text
 GET {ENGINE_AGENT_SOURCE_URL}/api/agent/{name}
-Authorization: Bearer <Token des aufrufenden MCP-Clients>
+Authorization: Bearer <Token of the calling MCP client>
 ```
 
-Damit ist die Registry der einzige Config-Lieferant; QOC-Runtimes führen nur
-aus.
+Thus the registry is the only config supplier; QOC runtimes only
+execute.
 
-## 6. Rollen und Sicherheit
+## 6. Roles and security
 
-- Authoring erfordert die Rolle `admin` oder `qoc-admin`
-  (`HttpApi.hasRole` akzeptiert beide).
-- `qoc-admin` wird im lokalen Keycloak-Setup an `bob` vergeben.
-- OIDC-Audience weiterhin `qoc-engine`.
-- Audit-Log für Agent-Writes ist vorhanden (`/api/audit`, `admin`).
-- Die Registry sollte **nicht** öffentlich ohne OIDC betrieben werden.
+- Authoring requires the role `admin` or `qoc-admin`
+  (`HttpApi.hasRole` accepts both).
+- `qoc-admin` is granted to `bob` in the local Keycloak setup.
+- OIDC audience remains `qoc-engine`.
+- Audit log for agent writes is available (`/api/audit`, `admin`).
+- The registry should **not** be operated publicly without OIDC.
 
-## 7. Grenzen dieser Variante
+## 7. Limits of this variant
 
-- Agent-Definitionen liegen weiterhin dateibasiert unter
-  `~/.config/opencode/agents` und in `settings.json`.
-- Keine Versionierung/ETag pro Agent (nur `hash`/`updatedAt`).
-- Keine eigene Editor-UI; die vorhandene QOC-UI wird mitgenutzt.
-- Keine Mandantentrennung über die bestehende Workspace-/User-Logik hinaus.
-- Einzelinstanz; keine HA-/DB-Versionierung.
+- Agent definitions are still file-based under
+  `~/.config/opencode/agents` and in `settings.json`.
+- No versioning/ETag per agent (only `hash`/`updatedAt`).
+- No dedicated editor UI; the existing QOC UI is reused.
+- No tenant separation beyond the existing workspace/user logic.
+- Single instance; no HA/DB versioning.
 
-## 8. Ausbaupfad zum eigenständigen Service
+## 8. Roadmap to a standalone service
 
-1. `AgentSource`-Port in QOC einführen (lokal + remote).
-2. Registry-Read-API als eigenständigen Dienst betreiben (Option B).
-3. Versionierung/ETag/If-None-Match ergänzen.
-4. Authoring-UI aus QOC herauslösen.
-5. Optional: Git-backed Registry (Option C).
+1. Introduce an `AgentSource` port in QOC (local + remote).
+2. Run the registry read API as a standalone service (Option B).
+3. Add versioning/ETag/If-None-Match.
+4. Extract the authoring UI from QOC.
+5. Optionally: Git-backed registry (Option C).
 
-## 9. Verifikation
+## 9. Verification
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8180/realms/qoc/protocol/openid-connect/token \
   -d grant_type=password -d client_id=qoc-cli \
   -d username=bob -d password=bob-password | jq -r .access_token)
 
-# Katalog
+# Catalog
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8074/api/agent
 
-# Agent lesen
+# Read agent
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8074/api/agent/plan
 
-# Ausführung muss 503 liefern
+# Execution must return 503
 curl -i -X POST http://localhost:8074/api/run \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"prompt":"test"}'
@@ -154,18 +154,18 @@ curl -i -X POST http://localhost:8074/api/run \
 
 ## 10. Tests
 
-- `RegistryModeTest`: Health zeigt `role=registry`; `/api/run` und
-  `/api/session` liefern 503; `/api/agent` bleibt verfügbar; MCP `tools/call`
-  liefert 503.
-- Bestehende Server-/Serverless-Tests bleiben unverändert.
+- `RegistryModeTest`: Health shows `role=registry`; `/api/run` and
+  `/api/session` return 503; `/api/agent` remains available; MCP `tools/call`
+  returns 503.
+- Existing server/serverless tests remain unchanged.
 
-## 11. Referenzen
+## 11. References
 
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/EngineConfig.java`
   (`engine.role`)
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/HttpApi.java`
-  (`registryBlocked`, Agent-Endpunkte)
+  (`registryBlocked`, Agent endpoints)
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/McpServerResource.java`
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/a2a/QocAgentExecutor.java`
-- `deploy/docker-compose.yml` (Service `qoc-registry`, Profil `e2e`)
+- `deploy/docker-compose.yml` (Service `qoc-registry`, profile `e2e`)
 - `docs/guides/deployment-modes.md`

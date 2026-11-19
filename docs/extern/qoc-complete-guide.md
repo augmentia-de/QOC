@@ -1,70 +1,71 @@
-# QOC – Gesamteinführung und Architektur-Übersicht
+# QOC – Complete Introduction and Architecture Overview
 
-> Ablage: `docs/qoc-complete-guide.md` (außerhalb des Git-Repos)
-> Sprache: Deutsch
-> Version: 2026-11 (Workflow-Version mit Structured Output, RBAC-Plan, In-Memory-Minimal-Modus)
+> Location: `docs/qoc-complete-guide.md` (outside the Git repo)
+> Language: English
+> Version: 2026-11 (workflow version with structured output, RBAC plan, in-memory minimal mode)
 
 ---
 
-## 1. Was ist QOC?
+## 1. What is QOC?
 
-**QOC** (Quarkus OpenCode) ist eine Java-Portierung des OpenCode-Frameworks –
-nicht als Kopie, sondern **spec-driven**. Erst Analyse, dann Spezifikation,
-dann Code. Die Spezifikation (`qoc/docs/spec/`) ist die fachliche Quelle der
-Wahrheit; die Implementierung folgt ihr.
+**QOC** (Quarkus OpenCode) is a Java port of the OpenCode framework –
+not a copy, but **spec-driven**. First analysis, then specification,
+then code. The specification (`qoc/docs/spec/`) is the authoritative
+source of domain truth; the implementation follows it.
 
-QOC ist ein **konfigurierbarer KI-Agent**, der als Worker in beliebigen
-Workflows eingesetzt werden kann. Er unterstützt:
+QOC is a **configurable AI agent** that can be used as a worker in
+arbitrary workflows. It supports:
 
-- **Arbitäre Agent-Definitionen** (System-Prompt, Modell, Tools, Guardrails,
-  Skills, Permissions, Structured Output).
-- **Tools** (Dateisystem, Shell, Web, E-Mail, MCP, Subagents, A2A).
-- **MCP-Integration** (als Client und Server).
-- **Zwei Betriebsmodi**: kurzlebige Sessions für One-off-Tasks (z. B. MCP)
-  und durable Multi-Turn-Sessions für längere Agent-Runs (Kontext,
-  Compaction, Resume).
+- **Arbitrary agent definitions** (system prompt, model, tools, guardrails,
+  skills, permissions, structured output).
+- **Tools** (file system, shell, web, email, MCP, subagents, A2A).
+- **MCP integration** (as client and server).
+- **Two operating modes**: short-lived sessions for one-off tasks (e.g. MCP)
+  and durable multi-turn sessions for longer agent runs (context,
+  compaction, resume).
 
-### 1.1 Abstammung von OpenCode
+### 1.1 Lineage from OpenCode
 
-QOC basiert auf der Analyse des OpenCode-Checkouts (`oc/`). OpenCode ist ein
-TypeScript/Node.js-Framework mit SQLite-Backend, WAL-Modus, eingebetteter
-Datenbank (`~/.local/share/opencode/opencode.db`), Git-Snapshots, Tool-Outputs
-auf dem Dateisystem und Markdown-basierten Agent-Definitionen.
+QOC is based on the analysis of the OpenCode checkout (`oc/`). OpenCode is a
+TypeScript/Node.js framework with a SQLite backend, WAL mode, embedded
+database (`~/.local/share/opencode/opencode.db`), Git snapshots, tool outputs
+on the file system, and Markdown-based agent definitions.
 
-QOC übernimmt die **Konzepte** (Session-Engine, Event-Sourcing, Permissions,
-Tools, MCP), aber nicht den Code. Die Implementierung ist spec-driven in Java 21
-mit Quarkus. Erkenntnisse aus OpenCode (z. B. `event_sequence`-Tabelle statt
-`history().size()`, Snapshots in Git statt in der DB, Tool-Outputs auf dem FS)
-fließen als Empfehlungen in die Architektur ein.
+QOC adopts the **concepts** (session engine, event sourcing, permissions,
+tools, MCP), but not the code. The implementation is spec-driven in Java 21
+with Quarkus. Insights from OpenCode (e.g. an `event_sequence` table
+instead of `history().size()`, snapshots in Git instead of in the DB, tool
+outputs on the FS) flow into the architecture as recommendations.
 
-### 1.2 Kern-Prinzipien
+### 1.2 Core principles
 
-1. **Spec-driven**: Die Spezifikation definiert die Semantik, nicht der Code.
-2. **Reine Core-Schicht**: `engine.core` ist reines Java – keine Quarkus-,
-   CDI-, Jackson- oder HTTP-Abhängigkeiten. Externe Technik lebt in
+1. **Spec-driven**: the specification defines the semantics, not the code.
+2. **Pure core layer**: `engine.core` is pure Java – no Quarkus, CDI,
+   Jackson, or HTTP dependencies. External technology lives in
    `engine.adapter.*`.
-3. **Ersetzbare Adapter**: SQL, HTTP, Prozesse, Dateisystem sind hinter Ports
-   gekapselt. Speicher-Backend (Postgres/SQLite/In-Memory) per Konfiguration.
-4. **Architekturregeln mit ArchUnit** abgesichert.
-5. **Least-Privilege als Default**: Permissions deny-by-default.
+3. **Replaceable adapters**: SQL, HTTP, processes, and the file system are
+   encapsulated behind ports. Storage backend (Postgres/SQLite/in-memory)
+   via configuration.
+4. **Architecture rules secured with ArchUnit**.
+5. **Least privilege by default**: permissions are deny-by-default.
 
 ---
 
-## 2. Architektur
+## 2. Architecture
 
-### 2.1 Schichtung
+### 2.1 Layering
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │  Quarkus Outer Skin (de.augmentia.oc.engine.http)   │
-│  REST-Endpoints, OIDC, SessionAccessGuard,           │
+│  REST endpoints, OIDC, SessionAccessGuard,           │
 │  WorkflowResource, AgentStoreResource, SchemaResource │
 ├─────────────────────────────────────────────────────┤
 │  QocEngine Facade (engine.runtime)                  │
 │  runPrompt, createSession, resolveAgentConfig,       │
 │  Step, ToolRuntime, ContextBuilder, CompactionService│
 ├─────────────────────────────────────────────────────┤
-│  engine.core (reines Java)                          │
+│  engine.core (pure Java)                            │
 │  Model, Ports, Contracts, Eval, JSON, Schema        │
 ├─────────────────────────────────────────────────────┤
 │  engine.adapter (sql, sqlite, memory, fs, http,     │
@@ -72,76 +73,77 @@ fließen als Empfehlungen in die Architektur ein.
 └─────────────────────────────────────────────────────┘
 ```
 
-### 2.2 Paketstruktur
+### 2.2 Package structure
 
-| Paket | Rolle |
+| Package | Role |
 |---|---|
-| `engine.core.model` | Werttypen (SessionId, AgentId, Message, Event, …) |
-| `engine.core.port.store` | Storage-Ports (SessionStore, Journal, ConversationStore, …) |
-| `engine.core.port.runtime` | Runtime-Ports (Clock, SessionWake, ApprovalSource, …) |
-| `engine.core.contract` | Tool, Provider, Step-Kontrakte |
-| `engine.core.eval` | Context-Evaluation, OutputBounding, CacheAffinity |
-| `engine.core.json` | JSON/Schema-Parser (`JsonSchema.parse`, `JsonValues`) |
+| `engine.core.model` | Value types (SessionId, AgentId, Message, Event, …) |
+| `engine.core.port.store` | Storage ports (SessionStore, Journal, ConversationStore, …) |
+| `engine.core.port.runtime` | Runtime ports (Clock, SessionWake, ApprovalSource, …) |
+| `engine.core.contract` | Tool, provider, step contracts |
+| `engine.core.eval` | Context evaluation, output bounding, cache affinity |
+| `engine.core.json` | JSON/schema parser (`JsonSchema.parse`, `JsonValues`) |
 | `engine.core.wiring` | `Stores`, `StorageConfig`, `StorageKind` |
 | `engine.runtime` | `QocEngine`, `Step`, `ToolRuntime`, `ContextBuilder`, `Coordinator` |
-| `engine.runtime.session` | Session-Service, Admission, Delivery, Recovery |
+| `engine.runtime.session` | Session service, admission, delivery, recovery |
 | `engine.runtime.tool` | Tools (fs, shell, web, mcp, subagent, structured) |
-| `engine.runtime.workflow` | WorkflowStepProvider, workflow-mode |
-| `engine.runtime.compaction` | Auto-Compaction |
-| `engine.adapter` | SQL, SQLite, Memory, FS, HTTP, Process, Time |
-| `engine.adapter.memory` | In-Memory-Adapter (minimal) |
-| `quarkus.http` | REST-Endpoints, Security, WorkflowResource |
+| `engine.runtime.workflow` | WorkflowStepProvider, workflow mode |
+| `engine.runtime.compaction` | Auto-compaction |
+| `engine.adapter` | SQL, SQLite, memory, FS, HTTP, process, time |
+| `engine.adapter.memory` | In-memory adapter (minimal) |
+| `quarkus.http` | REST endpoints, security, WorkflowResource |
 
-### 2.3 Technologien
+### 2.3 Technologies
 
-| Technologie | Version | Verwendung |
+| Technology | Version | Usage |
 |---|---|---|
-| Java | 21 | Sprache |
-| Quarkus | 3.40.1.1 | Outer Skin, REST, CDI, OIDC |
-| LangChain4j | (via Quarkus-Extension) | LLM-Provider-Integration |
+| Java | 21 | Language |
+| Quarkus | 3.40.1.1 | Outer skin, REST, CDI, OIDC |
+| LangChain4j | (via Quarkus extension) | LLM provider integration |
 | Maven | 3.9+ | Build |
-| Jackson | 2.18.2 | JSON-Serialisierung |
-| Flyway | (Quarkus-Extension) | DB-Migrationen |
-| ArchUnit | (Test) | Architekturregeln |
+| Jackson | 2.18.2 | JSON serialization |
+| Flyway | (Quarkus extension) | DB migrations |
+| ArchUnit | (test) | Architecture rules |
 | JaCoCo | 0.8.12 | Coverage (≥ 80 %) |
-| swagger-parser | 2.1.22 | OpenAPI-Import |
-| bubblewrap (bwrap) | System | Shell-Sandbox |
-| React + Vite + TypeScript + Tailwind | 19 | Workflow-UI |
-| ReactFlow | – | Graph-Editor |
-| Temporal | 1.40.0 (geplant) | Workflow-Durability |
+| swagger-parser | 2.1.22 | OpenAPI import |
+| bubblewrap (bwrap) | system | Shell sandbox |
+| React + Vite + TypeScript + Tailwind | 19 | Workflow UI |
+| ReactFlow | – | Graph editor |
+| Temporal | 1.40.0 (planned) | Workflow durability |
 
 ---
 
-## 3. Session-Engine
+## 3. Session engine
 
-### 3.1 Session-Lebenszyklus
+### 3.1 Session lifecycle
 
-1. **Erstellung**: `SessionService.create(location, agent, model, now)` →
-   `SessionId` (zufällig, `ses_` + 64 Hex) + `SessionCreated`-Event im Journal.
-2. **Execution**: `QocEngine.runPrompt(session, ...)` → Claim erwerben →
-   Preflight → Prompt speichern → Context bauen → Step ausführen → Events
-   publizieren → Compaction → Claim freigeben.
-3. **Resume**: Bei Crash → `recover()` scannt offene Claims und setzt
-   Execution fort.
-4. **Löschung**: `deleteSession` entfernt Session, Inbox, Conversation,
-   Claims, Workspaces, Instructions.
+1. **Creation**: `SessionService.create(location, agent, model, now)` →
+   `SessionId` (random, `ses_` + 64 hex) + `SessionCreated` event in the
+   journal.
+2. **Execution**: `QocEngine.runPrompt(session, …)` → acquire claim →
+   preflight → store prompt → build context → execute step → publish events
+   → compaction → release claim.
+3. **Resume**: on crash → `recover()` scans open claims and continues
+   execution.
+4. **Deletion**: `deleteSession` removes session, inbox, conversation,
+   claims, workspaces, instructions.
 
-### 3.2 Kern-Komponenten
+### 3.2 Core components
 
-- **SessionStore / SessionReader**: Session-Metadaten (Agent, Location, Titel,
-  Owner, Tokens, Cost).
-- **ConversationStore**: Nachrichten-History (append-only, gapless seq).
-- **Journal**: Event-Sourcing (Write-Ahead-Log). Pro Aggregat `ArrayList<StoredEvent>`
-  + `AtomicLong seq`.
-- **ClaimStore**: At most one execution per session (`putIfAbsent`).
-- **SessionWorkspaceStore**: Execution-Mode, Workspace-Root, Instance-ID, retain.
-- **CompactionService**: Auto-Kompaktierung langer Histories.
-- **InstructionStore**: Instruction-Einträge und Blobs (content-addressed).
+- **SessionStore / SessionReader**: session metadata (agent, location, title,
+  owner, tokens, cost).
+- **ConversationStore**: message history (append-only, gapless seq).
+- **Journal**: event sourcing (write-ahead log). Per aggregate
+  `ArrayList<StoredEvent>` + `AtomicLong seq`.
+- **ClaimStore**: at most one execution per session (`putIfAbsent`).
+- **SessionWorkspaceStore**: execution mode, workspace root, instance id, retain.
+- **CompactionService**: auto-compaction of long histories.
+- **InstructionStore**: instruction entries and blobs (content-addressed).
 
-### 3.3 Event-Sourcing
+### 3.3 Event sourcing
 
-Events sind die Quelle der Wahrheit. Projektionen (Session, Conversation)
-sind Read-Models. Events:
+Events are the source of truth. Projections (session, conversation) are
+read models. Events:
 `SessionCreated`, `ExecutionStarted`, `ToolCalled`, `ToolSuccess`,
 `ExecutionSucceeded`/`Failed`/`Paused`, `SessionForked`,
 `WorkflowRunStarted`, `WorkflowNodeStarted`/`Completed`/`Failed`,
@@ -151,227 +153,231 @@ sind Read-Models. Events:
 
 ## 4. Tools
 
-### 4.1 Eingebaute Tools
+### 4.1 Built-in tools
 
-| Tool | Beschreibung |
+| Tool | Description |
 |---|---|
-| `read` | Datei/Verzeichnis lesen (mit Artifact-Store für große Outputs) |
-| `grep` | Regex-Suche in Dateien |
-| `write` / `edit` | Datei schreiben/bearbeiten |
-| `bash` / `shell` | Shell-Befehle (sandboxed via bwrap) |
-| `glob` | Datei-Pattern-Suche |
-| `web_fetch` | HTTP-Fetch |
-| `subagent` / `task` | Subagent-Delegation (Child-Session) |
-| `submit_result` | Structured Output (JSON Schema) |
-| `question` | Frage an den User |
-| `email` (imap/smtp) | E-Mail lesen/senden |
-| `mcp_*` | MCP-Server-Tools |
-| `a2a_*` | A2A-Agenten |
+| `read` | Read file/directory (with artifact store for large outputs) |
+| `grep` | Regex search in files |
+| `write` / `edit` | Write/edit file |
+| `bash` / `shell` | Shell commands (sandboxed via bwrap) |
+| `glob` | File pattern search |
+| `web_fetch` | HTTP fetch |
+| `subagent` / `task` | Subagent delegation (child session) |
+| `submit_result` | Structured output (JSON schema) |
+| `question` | Question to the user |
+| `email` (imap/smtp) | Read/send email |
+| `mcp_*` | MCP server tools |
+| `a2a_*` | A2A agents |
 
-### 4.2 Tool-Runtime
+### 4.2 Tool runtime
 
-- **Permission-Gate**: Jeder Tool-Call wird geprüft (least-privilege/allow-all).
-- **Output-Bounding**: Große Outputs werden trunciert (2.000 Zeilen / 50 KiB),
-  der volle Text als Artifact gespeichert.
-- **Idempotenz**: Tool-Result-Cache verhindert Doppel-Ausführung bei Retries.
-- **Hooks**: `beforeToolCall` / `afterToolCall` für Audit/Transformation.
+- **Permission gate**: every tool call is checked (least-privilege/allow-all).
+- **Output bounding**: large outputs are truncated (2,000 lines / 50 KiB),
+  the full text is stored as an artifact.
+- **Idempotency**: tool result cache prevents duplicate execution on retries.
+- **Hooks**: `beforeToolCall` / `afterToolCall` for audit/transformation.
 
 ---
 
-## 5. Permissions & Security
+## 5. Permissions & security
 
-### 5.1 Modi
+### 5.1 Modes
 
-| Modus | Beschreibung |
+| Mode | Description |
 |---|---|
-| `none` | Kein Login; lokaler Admin (Loopback) |
+| `none` | No login; local admin (loopback) |
 | `basic` | HTTP Basic Auth (`OPENCODE_SERVER_PASSWORD`) |
-| `oidc` | OIDC (Keycloak/Auth0), Rollen aus JWT |
-| `proxy` | Trusted-Proxy-Auth (nginx/LB) |
-| `mcp_oauth` | OAuth für MCP-Server |
+| `oidc` | OIDC (Keycloak/Auth0), roles from JWT |
+| `proxy` | Trusted-proxy auth (nginx/LB) |
+| `mcp_oauth` | OAuth for MCP servers |
 
-### 5.2 Permission-Default
+### 5.2 Permission default
 
-- `least-privilege` (deny-by-default) oder `allow-all` (OpenCode-kompatibel).
-- Ask-Mode: `deny` / `allow` / `interactive`.
+- `least-privilege` (deny-by-default) or `allow-all` (OpenCode-compatible).
+- Ask mode: `deny` / `allow` / `interactive`.
 
-### 5.3 Shell-Sandbox
+### 5.3 Shell sandbox
 
-- bwrap (bubblewrap) mit `workspace-write`-Modus.
-- In Docker deaktiviert (unprivilegiert) — Grenze aus Mounts.
-- Seccomp-Deny-Liste gegen `ptrace`, `mount`, `unshare`, etc.
+- bwrap (bubblewrap) with `workspace-write` mode.
+- Disabled in Docker (unprivileged) — boundary comes from mounts.
+- Seccomp deny list against `ptrace`, `mount`, `unshare`, etc.
 
-### 5.4 Container-Hardening
+### 5.4 Container hardening
 
-Read-only Root-FS, targeted Mounts, tmpfs, `cap_drop ALL`,
+Read-only root FS, targeted mounts, tmpfs, `cap_drop ALL`,
 `no-new-privileges`, `pids_limit`, non-root UID 1000.
 
 ---
 
 ## 6. Provider
 
-- **HTTP-Provider**: OpenAI-kompatibel (`/chat/completions`).
-- **Scripted-Provider**: Für Tests/Dev (kein echter LLM-Call).
-- **Modell-Konfiguration**: `engine.model.provider`, `engine.model.id`,
+- **HTTP provider**: OpenAI-compatible (`/chat/completions`).
+- **Scripted provider**: for tests/dev (no real LLM call).
+- **Model configuration**: `engine.model.provider`, `engine.model.id`,
   `engine.turn.max.tokens`.
-- **Retry-Policy**: max 3 Versuche, Delays 10s/30s.
-- **Preflight-Checks**: DNS, HTTP (konfigurierbar).
+- **Retry policy**: max 3 attempts, delays 10s/30s.
+- **Preflight checks**: DNS, HTTP (configurable).
 
 ---
 
-## 7. Persistence (Storage)
+## 7. Persistence (storage)
 
 ### 7.1 Backends
 
-| Backend | Konfiguration | Verwendung |
+| Backend | Configuration | Usage |
 |---|---|---|
-| Postgres | `engine.storage=postgres` | Multi-Node, Production |
-| SQLite | `engine.storage=sqlite` | Single-Node, WAL |
-| In-Memory | `engine.storage=memory` | Embedded, Tests, Helper |
+| Postgres | `engine.storage=postgres` | Multi-node, production |
+| SQLite | `engine.storage=sqlite` | Single-node, WAL |
+| In-memory | `engine.storage=memory` | Embedded, tests, helper |
 
-### 7.2 Storage-Factory
+### 7.2 Storage factory
 
-`StorageFactory.create(config, memoryState, dataSource, clock, fileSystem)` wählt
-pro Port das Backend. Per-Port-Overrides möglich (Zwischenstufen).
+`StorageFactory.create(config, memoryState, dataSource, clock, fileSystem)`
+selects the backend per port. Per-port overrides possible (intermediate
+stages).
 
-### 7.3 In-Memory-Minimal-Modus
+### 7.3 In-memory minimal mode
 
-Nur 6 Stores echt (Session, Conversation, Journal, Claim, Workspace, ToolOutput).
-Restliche 5 Ports sind No-Ops. Budget: 300 MiB (nur Tool-Outputs LRU-begrenzt).
+Only 6 stores are real (session, conversation, journal, claim, workspace,
+tool output). The remaining 5 ports are no-ops. Budget: 300 MiB (only tool
+outputs LRU-bounded).
 
-### 7.4 Workflow-Storage
+### 7.4 Workflow storage
 
 `engine.workflow.storage`: `auto` | `file` | `memory` | `postgres` | `sqlite`.
-File-basiert: JSON-Dateien in `wf-data/`, Version-Snapshots.
+File-based: JSON files in `wf-data/`, version snapshots.
 
 ---
 
-## 8. Workflow-Orchestrierung
+## 8. Workflow orchestration
 
-### 8.1 Datenmodell
+### 8.1 Data model
 
-- `WorkflowDefinition`: Nodes (id, type, position, data) + Edges (source, target) + Agents.
-- Node-Typen: `start`, `end`, `agent`, `decision`, `fork`, `join`, `loop`,
+- `WorkflowDefinition`: nodes (id, type, position, data) + edges (source,
+  target) + agents.
+- Node types: `start`, `end`, `agent`, `decision`, `fork`, `join`, `loop`,
   `hitl`, `subworkflow`, `mcp_call`, `llm_eval`, `llm_summarize`.
 - `Agent`: name, version, model, systemPrompt, tools, guardrails, hooks,
   jsonOutput, active, responseSchema.
 
 ### 8.2 Execution
 
-- `WorkflowExecutor.executeRun(def, input)` → topologische Sortierung (Kahn)
-  → pro Knoten `dispatch()` → `runAgent()` für Agent-Knoten → Journal-Events.
-- `runId = sessionId` (keine separate Run-ID).
-- Agent-Knoten erzeugen Child-Sessions.
-- Resume: `WorkflowExecutor.resume(runId)` → Replay ab Checkpoint.
-- HITL: `hitl`-Knoten pausieren; Fortsetzung via Signal.
+- `WorkflowExecutor.executeRun(def, input)` → topological sort (Kahn) →
+  per node `dispatch()` → `runAgent()` for agent nodes → journal events.
+- `runId = sessionId` (no separate run id).
+- Agent nodes create child sessions.
+- Resume: `WorkflowExecutor.resume(runId)` → replay from checkpoint.
+- HITL: `hitl` nodes pause; continuation via signal.
 
-### 8.3 Structured Output
+### 8.3 Structured output
 
-- `responseSchema` (JSON Schema) an Agent/Node.
-- LLM wird via `submit_result`-Tool zur strukturierten Ausgabe gezwungen.
-- Ergebnis in `EngineResult.structured()` / `NodeResult.structured`.
-- Converter: `JavaRecordToJsonSchema`, `OpenApiToJsonSchema`.
+- `responseSchema` (JSON schema) on agent/node.
+- LLM is forced to structured output via the `submit_result` tool.
+- Result in `EngineResult.structured()` / `NodeResult.structured`.
+- Converters: `JavaRecordToJsonSchema`, `OpenApiToJsonSchema`.
 - Endpoints: `/api/schema/from-class`, `/from-openapi`, `/validate`.
 
-### 8.4 3-Säulen-Modell
+### 8.4 Three-pillar model
 
-1. **Deterministische Nodes**: Regeln, Routing, Transformation, 0 Tokens.
-2. **Subagent-Nodes**: Isolierte ReAct-Loops, nur Endergebnis zurück.
-3. **Context-Agenten**: Kuratierter Gesamtüberblick, optimales Caching.
+1. **Deterministic nodes**: rules, routing, transformation, 0 tokens.
+2. **Subagent nodes**: isolated ReAct loops, only final result returned.
+3. **Context agents**: curated overall view, optimal caching.
 
 ---
 
-## 9. UI (Workflow-UI)
+## 9. UI (workflow UI)
 
 - React 19 + Vite + TypeScript + Tailwind + ReactFlow.
-- Seiten: Dashboard, Workflows (GraphEditor), Agents, Runs, Observe, Testbench,
+- Pages: Dashboard, Workflows (GraphEditor), Agents, Runs, Observe, Testbench,
   Settings, MCP Servers.
-- GraphEditor: Drag & Drop, Custom Node Types, Property Panel, Auto-Layout (elkjs).
-- SSE-Streaming für Live-Updates.
+- GraphEditor: drag & drop, custom node types, property panel, auto-layout
+  (elkjs).
+- SSE streaming for live updates.
 
 ---
 
 ## 10. Deployment
 
-### 10.1 Docker-Varianten
+### 10.1 Docker variants
 
-| Service | Profil | Port | Charakteristik |
+| Service | Profile | Port | Characteristics |
 |---|---|---|---|
-| qoc-dev | dev | 8070 | Hot-Reload |
-| qoc-local | local | 8071 | Server-Stack (Postgres) |
-| qoc-memory | memory | 8082 | In-Memory, keine DB |
-| qoc-secure | secure | 8075 | Gehärtet, Least-Privilege |
-| qoc-native | native | 8077 | Native-Image (GraalVM) |
+| qoc-dev | dev | 8070 | Hot reload |
+| qoc-local | local | 8071 | Server stack (Postgres) |
+| qoc-memory | memory | 8082 | In-memory, no DB |
+| qoc-secure | secure | 8075 | Hardened, least privilege |
+| qoc-native | native | 8077 | Native image (GraalVM) |
 
-### 10.2 Native Image
+### 10.2 Native image
 
 - Mandrel 25, Quarkus 3.40.
-- workflow-runner ist Library (kein Uber-JAR).
-- slf4j-api statt slf4j-simple.
+- workflow-runner is a library (no uber-JAR).
+- slf4j-api instead of slf4j-simple.
 
 ---
 
-## 11. Testing & Qualität
+## 11. Testing & quality
 
-- **Unit-Tests**: 950+ (Engine), 11+ (Workflow-Runner).
-- **ArchUnit**: Architekturregeln (keine Quarkus-Imports in core, etc.).
-- **JaCoCo**: Coverage-Gate ≥ 80 % (aktuell 72 % — vorbestehend).
-- **TCK**: Contract-Tests für Storage-Adapter (geplant).
-
----
-
-## 12. Erweiterungs-Vision
-
-### 12.1 Context Caching
-
-- `CacheAffinity` sendet Session-Headers (bereits).
-- `cacheKey`-Feld vorhanden, aber kein Provider-Adapter konsumiert es.
-- Geplant: OpenAI `prompt_cache_key`, Anthropic `cache_control`.
-
-### 12.2 RBAC + Systemuser
-
-- Rollen: `admin`, `user`, `system`, `viewer`.
-- Systemuser: Service-Account für Automation.
-- Ownership: `ownerId` auf Workflow/Agent.
-- OIDC-Integration für Workflows (siehe `Workflow-OIDC.md`-Plan).
-
-### 12.3 Weitere
-
-- `transform`-Knoten (Daten-Transformation ohne LLM/MCP).
-- Per-Säule-Metriken (OpenTelemetry).
-- Subagent-Session-Cleanup (ephemeral).
-- Automatische Kuratierung (Summarize-Nodes).
-- Temporal-Integration (Workflow-Durability, HITL via Signals).
-- Redis-Hot-Tier (Multi-Node).
+- **Unit tests**: 950+ (engine), 11+ (workflow runner).
+- **ArchUnit**: architecture rules (no Quarkus imports in core, etc.).
+- **JaCoCo**: coverage gate ≥ 80 % (currently 72 % — pre-existing).
+- **TCK**: contract tests for storage adapters (planned).
 
 ---
 
-## 13. Offene Fragen
+## 12. Extension vision
 
-- Multi-Node vs. Single-Node (SQLite)?
-- Event-Sourcing-Projektion (Conversation ableitbar)?
-- Retention (Events/History)?
-- Credentials in Secret-Manager?
-- Git-Snapshots vs. content-addressed FS?
+### 12.1 Context caching
+
+- `CacheAffinity` sends session headers (already).
+- `cacheKey` field exists, but no provider adapter consumes it.
+- Planned: OpenAI `prompt_cache_key`, Anthropic `cache_control`.
+
+### 12.2 RBAC + system user
+
+- Roles: `admin`, `user`, `system`, `viewer`.
+- System user: service account for automation.
+- Ownership: `ownerId` on workflow/agent.
+- OIDC integration for workflows (see `Workflow-OIDC.md` plan).
+
+### 12.3 Further
+
+- `transform` node (data transformation without LLM/MCP).
+- Per-pillar metrics (OpenTelemetry).
+- Subagent session cleanup (ephemeral).
+- Automatic curation (summarize nodes).
+- Temporal integration (workflow durability, HITL via signals).
+- Redis hot tier (multi-node).
 
 ---
 
-## 14. Referenzen
+## 13. Open questions
 
-| Thema | Pfad |
+- Multi-node vs. single-node (SQLite)?
+- Event-sourcing projection (conversation derivable)?
+- Retention (events/history)?
+- Credentials in secret manager?
+- Git snapshots vs. content-addressed FS?
+
+---
+
+## 14. References
+
+| Topic | Path |
 |---|---|
-| Spezifikation | `qoc/docs/spec/` |
+| Specification | `qoc/docs/spec/` |
 | Roadmap | `qoc/docs/ROADMAP.md` |
-| Open Questions | `qoc/docs/open-questions.md` |
-| Storage-Analyse | `qoc/docs/engineering/Storage-alternative.md` |
-| In-Memory | `qoc/docs/engineering/InMemory.md` |
-| Multi-Memory | `qoc/docs/engineering/Multi-Memory.md` |
+| Open questions | `qoc/docs/open-questions.md` |
+| Storage analysis | `qoc/docs/engineering/Storage-alternative.md` |
+| In-memory | `qoc/docs/engineering/InMemory.md` |
+| Multi-memory | `qoc/docs/engineering/Multi-Memory.md` |
 | Workflow | `qoc/docs/engineering/Workflow.md` |
-| Structured Output | `qoc/docs/engineering/Structured-Output.md` |
-| Native Deployment | `qoc/docs/engineering/Native-Deployment.md` |
-| Security Hardening | `qoc/docs/deployment/06-security-hardening.md` |
+| Structured output | `qoc/docs/engineering/Structured-Output.md` |
+| Native deployment | `qoc/docs/engineering/Native-Deployment.md` |
+| Security hardening | `qoc/docs/deployment/06-security-hardening.md` |
 | CONFIG | `qoc/docs/CONFIG.md` |
-| Permission-Interviewer | `qoc/docs/Agent-Permission-Interviewer.md` |
-| LinkedIn Follow-up | `2oc/docs/linkedin-followup-2026-11.md` |
-| 3-Pillars Vision | `2oc/docs/linkedin-3-pillars-vision.md` |
-| Workflow-vs-Agent-Loop | `2oc/docs/qoc-engine-workflow-vs-agent-loop.md` |
+| Permission interviewer | `qoc/docs/Agent-Permission-Interviewer.md` |
+| LinkedIn follow-up | `2oc/docs/linkedin-followup-2026-11.md` |
+| 3-pillars vision | `2oc/docs/linkedin-3-pillars-vision.md` |
+| Workflow vs. agent loop | `2oc/docs/qoc-engine-workflow-vs-agent-loop.md` |

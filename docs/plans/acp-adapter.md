@@ -1,13 +1,13 @@
-# Plan: ACP (Agent Client Protocol) Adapter für QOC
+# Plan: ACP (Agent Client Protocol) Adapter for QOC
 
 **Status:** Plan (2026-11-15)
-**Bezug:** `oc/packages/cli/src/acp/` (OpenCode ACP-Referenzimplementierung),
-`oc/services/www/src/docs/content/acp.mdx` (Protokoll-Dokumentation)
+**Reference:** `oc/packages/cli/src/acp/` (OpenCode ACP reference implementation),
+`oc/services/www/src/docs/content/acp.mdx` (protocol documentation)
 
-## 1. Ist ACP bidirektional?
+## 1. Is ACP bidirectional?
 
-**Ja.** ACP basiert auf JSON-RPC 2.0 über stdio (ndjson). Beide Seiten können
-Requests und Notifications senden:
+**Yes.** ACP is based on JSON-RPC 2.0 over stdio (ndjson). Both sides can send
+Requests and Notifications:
 
 - **Client → Agent:** `initialize`, `session/new`, `session/prompt`, `session/cancel`,
   `session/load`, `session/list`, `session/delete`, `session/resume`, `session/fork`,
@@ -15,15 +15,15 @@ Requests und Notifications senden:
 - **Agent → Client:** `session/update` (Notifications), `session/requestPermission`,
   `elicitation/create`, `extNotification`
 
-Das ist bidirektional. QOC muss **beide Seiten** implementieren:
-- **Server-Seite (Agent):** empfängt Client-Requests, antwortet mit QOC-Daten
-- **Client-Seite:** sendet Agent→Client-Notifications/Requests (sessionUpdate, requestPermission, elicitation)
+This is bidirectional. QOC must implement **both sides**:
+- **Server side (Agent):** receives Client requests, responds with QOC data
+- **Client side:** sends Agent→Client notifications/requests (sessionUpdate, requestPermission, elicitation)
 
-## 2. Architektur-Entscheidung
+## 2. Architecture decision
 
-QOC hat bereits eine HTTP/SSE-API (`/api/session`, `/api/run`). ACP ist ein
-alternatives Transport-Protokoll. Die ACP-Schicht ist ein **Adapter** über
-QOC's bestehende Engine-API — keine neue Business-Logik.
+QOC already has an HTTP/SSE API (`/api/session`, `/api/run`). ACP is an
+alternative transport protocol. The ACP layer is an **adapter** on top of
+QOC's existing engine API — no new business logic.
 
 ```
 ┌─────────────────────────────────────┐
@@ -32,51 +32,51 @@ QOC's bestehende Engine-API — keine neue Business-Logik.
 └──────────────┬──────────────────────┘
                │ ndjson (stdin/stdout)
 ┌──────────────┴──────────────────────┐
-│  QOC ACP Adapter (neu)              │
+│  QOC ACP Adapter (new)              │
 │  - AcpServer: JSON-RPC Dispatcher   │
 │  - AcpSessionManager: Session-Mapping│
 │  - AcpTransport: stdio read/write    │
 └──────────────┬──────────────────────┘
                │ QOC Engine API
 ┌──────────────┴──────────────────────┐
-│  QOC Engine (bestehend)             │
-│  - Session, Agent, Run, Tools       │
+│  QOC Engine (existing)              │
+│  - Session, Agent, Run, Tools        │
 └─────────────────────────────────────┘
 ```
 
-## 3. ACP-Methoden-Mapping (Client → Agent)
+## 3. ACP method mapping (Client → Agent)
 
-| ACP-Methode | QOC-Äquivalent | Status |
+| ACP method | QOC equivalent | Status |
 |---|---|---|
-| `initialize` | Health/Config | Neu implementieren |
-| `authenticate` | OIDC (optional) | Neu implementieren |
-| `session/new` | `POST /api/session` | Mapping nötig |
-| `session/prompt` | `POST /api/run` | Mapping nötig |
-| `session/cancel` | Abort-Run | Neu implementieren |
-| `session/load` | `GET /api/session/{id}` | Mapping nötig |
-| `session/list` | `GET /api/session` (oder store.list) | Mapping nötig |
-| `session/delete` | `DELETE /api/session/{id}` | Mapping nötig |
-| `session/resume` | `POST /api/workflows/runs/{id}/resume` | Mapping nötig |
-| `session/close` | Session cleanup | Neu implementieren |
-| `session/fork` | Fork-Session | Neu implementieren |
-| `session/set_config_option` | Agent-Config update | Mapping nötig |
-| `session/set_mode` | Plan/Build-Mode switch | Mapping nötig |
+| `initialize` | Health/Config | Implement new |
+| `authenticate` | OIDC (optional) | Implement new |
+| `session/new` | `POST /api/session` | Mapping needed |
+| `session/prompt` | `POST /api/run` | Mapping needed |
+| `session/cancel` | Abort-Run | Implement new |
+| `session/load` | `GET /api/session/{id}` | Mapping needed |
+| `session/list` | `GET /api/session` (or store.list) | Mapping needed |
+| `session/delete` | `DELETE /api/session/{id}` | Mapping needed |
+| `session/resume` | `POST /api/workflows/runs/{id}/resume` | Mapping needed |
+| `session/close` | Session cleanup | Implement new |
+| `session/fork` | Fork-Session | Implement new |
+| `session/set_config_option` | Agent-Config update | Mapping needed |
+| `session/set_mode` | Plan/Build-Mode switch | Mapping needed |
 
-## 4. Agent → Client Notifications/Requests
+## 4. Agent → Client notifications/requests
 
-| ACP (Agent→Client) | QOC-Äquivalent | Status |
+| ACP (Agent→Client) | QOC equivalent | Status |
 |---|---|---|
-| `session/update` (TextDelta, ToolCall, etc.) | SSE-Events / Live-Sink | Mapping nötig |
-| `session/requestPermission` | HITL-Approval (PendingApprovalStore) | Mapping nötig |
-| `elicitation/create` | Question-Tool (web UI modal) | Mapping nötig |
+| `session/update` (TextDelta, ToolCall, etc.) | SSE-Events / Live-Sink | Mapping needed |
+| `session/requestPermission` | HITL-Approval (PendingApprovalStore) | Mapping needed |
+| `elicitation/create` | Question-Tool (web UI modal) | Mapping needed |
 | `extNotification` | Custom events | Optional |
 
-## 5. Komponenten (neu zu erstellen)
+## 5. Components (to be created)
 
 ```
 quarkus/src/main/java/de/augmentia/oc/engine/acp/
 ├── AcpServer.java              # JSON-RPC Dispatcher (stdin/stdout)
-├── AcpTransport.java           # ndjson read/write über stdin/stdout
+├── AcpTransport.java           # ndjson read/write over stdin/stdout
 ├── AcpSessionManager.java      # ACP-Session ↔ QOC-Session Mapping
 ├── AcpMethodHandler.java       # Method-Dispatch (initialize, session/*, etc.)
 ├── AcpEventTranslator.java     # QOC-Events → ACP session/update Notifications
@@ -84,75 +84,75 @@ quarkus/src/main/java/de/augmentia/oc/engine/acp/
 └── AcpElicitationBridge.java   # QOC Question-Tool → ACP elicitation/create
 ```
 
-## 6. Implementierungsschritte
+## 6. Implementation steps
 
-### Phase 1: Transport + Dispatcher (2 Tage)
+### Phase 1: Transport + Dispatcher (2 days)
 1. `AcpTransport`: stdin/stdout ndjson reader/writer (java.io)
 2. `AcpServer`: JSON-RPC 2.0 Dispatcher (parse request, dispatch, write response)
 3. `Initialize`-Handler: capabilities, version, auth methods
-4. CLI-Entry: `qoc acp` (oder `java -jar qoc.jar acp`) startet ACP-Modus
+4. CLI-Entry: `qoc acp` (or `java -jar qoc.jar acp`) starts ACP mode
 
-### Phase 2: Session-Mapping (2 Tage)
+### Phase 2: Session-Mapping (2 days)
 5. `AcpSessionManager`: ACP-Session-ID ↔ QOC-Session-ID
 6. `session/new` → QOC `createSession`
-7. `session/prompt` → QOC `run` (mit Streaming über session/update)
+7. `session/prompt` → QOC `run` (with streaming via session/update)
 8. `session/cancel` → QOC abort
 9. `session/load`, `session/list`, `session/delete`
 
-### Phase 3: Event-Translation (2 Tage)
+### Phase 3: Event-Translation (2 days)
 10. `AcpEventTranslator`: QOC Live-Sink → ACP `session/update` Notifications
     - TextDelta → `session/update` (text content)
     - ToolCall → `session/update` (tool call status)
     - ToolResult → `session/update` (tool result)
-11. Streaming über stdio (ndjson)
+11. Streaming over stdio (ndjson)
 
-### Phase 4: Permission + Elicitation (2 Tage)
+### Phase 4: Permission + Elicitation (2 days)
 12. `AcpPermissionBridge`: QOC PendingApproval → ACP `requestPermission`
     - QOC's HITL-Approval → ACP permission request
-    - Antwort → QOC approval decision
+    - Response → QOC approval decision
 13. `AcpElicitationBridge`: QOC Question-Tool → ACP `elicitation/create`
 
-### Phase 5: Advanced Features (2 Tage)
+### Phase 5: Advanced Features (2 days)
 14. `session/resume`, `session/fork`, `session/close`
 15. `session/set_config_option`, `session/set_mode`
 16. `authenticate` (OIDC)
 17. MCP-Server-Passthrough (ACP's `mcpServers` in `session/new`)
 
-### Phase 6: Tests (2 Tage)
+### Phase 6: Tests (2 days)
 18. Unit-Tests: JSON-RPC parsing, method dispatch, session mapping
-19. Integration-Tests: End-to-End ACP-Session über stdio
-20. Compatibility-Tests gegen ACP-SDK (TypeScript)
+19. Integration-Tests: End-to-End ACP-Session over stdio
+20. Compatibility-Tests against ACP-SDK (TypeScript)
 
-## 7. Abhängigkeiten
+## 7. Dependencies
 
-- Keine neuen Backend-Dependencies (JSON-RPC parsing mit Jackson, bereits vorhanden)
-- CLI-Entry-Point: entweder neues Main-Argument oder separates `acp`-Subcommand
-- MCP-Server-Passthrough: ACP's `mcpServers` config muss auf QOC's McpServerConfig gemappt werden
+- No new backend dependencies (JSON-RPC parsing with Jackson, already available)
+- CLI-Entry-Point: either a new Main argument or a separate `acp` subcommand
+- MCP-Server-Passthrough: ACP's `mcpServers` config must be mapped to QOC's McpServerConfig
 
-## 8. Risiken
+## 8. Risks
 
-- **Protokoll-Versionierung:** ACP entwickelt sich weiter. Version-Check in `initialize` nötig.
-- **Streaming-Performance:** ndjson über stdio kann bei großen Outputs langsam sein. Buffering empfohlen.
-- **Bidirektionale Deadlocks:** Agent→Client-Requests (permission) blockieren den Agent-Thread. Async-Handling nötig.
-- **MCP-Passthrough:** ACP-Clients können MCP-Server konfigurieren. QOC muss diese dynamisch registrieren.
+- **Protocol versioning:** ACP continues to evolve. Version check in `initialize` needed.
+- **Streaming performance:** ndjson over stdio can be slow for large outputs. Buffering recommended.
+- **Bidirectional deadlocks:** Agent→Client requests (permission) block the agent thread. Async handling needed.
+- **MCP-Passthrough:** ACP clients can configure MCP servers. QOC must register these dynamically.
 
-## 9. Aufwand
+## 9. Effort
 
-| Phase | Aufwand |
+| Phase | Effort |
 |---|---|
-| Phase 1: Transport + Dispatcher | 2 Tage |
-| Phase 2: Session-Mapping | 2 Tage |
-| Phase 3: Event-Translation | 2 Tage |
-| Phase 4: Permission + Elicitation | 2 Tage |
-| Phase 5: Advanced Features | 2 Tage |
-| Phase 6: Tests | 2 Tage |
-| **Gesamt** | **12 Tage** |
+| Phase 1: Transport + Dispatcher | 2 days |
+| Phase 2: Session-Mapping | 2 days |
+| Phase 3: Event-Translation | 2 days |
+| Phase 4: Permission + Elicitation | 2 days |
+| Phase 5: Advanced Features | 2 days |
+| Phase 6: Tests | 2 days |
+| **Total** | **12 days** |
 
-## 10. Offene Fragen
+## 10. Open questions
 
-1. Soll ACP als eigenständiger Modus (`qoc acp`) oder als HTTP-Endpoint (`/api/acp`) implementiert werden?
-   → Empfehlung: Eigenständiger Modus (stdio), analog zu OpenCode. HTTP-Endpoint als Fallback.
-2. Soll QOC's bestehende REST-API parallel zu ACP bestehen bleiben?
-   → Empfehlung: Ja. ACP ist ein zusätzlicher Transport, kein Ersatz.
-3. Wie wird die Authentifizierung (OIDC) in ACP-Modus gehandhabt?
-   → Empfehlung: `authenticate`-Methode mit Device-Code-Flow (analog OpenCode).
+1. Should ACP be implemented as a standalone mode (`qoc acp`) or as an HTTP endpoint (`/api/acp`)?
+   → Recommendation: Standalone mode (stdio), analogous to OpenCode. HTTP endpoint as fallback.
+2. Should QOC's existing REST API remain alongside ACP?
+   → Recommendation: Yes. ACP is an additional transport, not a replacement.
+3. How is authentication (OIDC) handled in ACP mode?
+   → Recommendation: `authenticate` method with Device-Code-Flow (analogous to OpenCode).

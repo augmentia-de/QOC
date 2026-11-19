@@ -1,29 +1,29 @@
-# ReAct-Umsetzung — Schrittweiser Implementierungsweg
+# ReAct Implementation — Step-by-Step Implementation Plan
 
-**Status:** Plan (2026-11-11) · Bezug: `ReAct-Workflow.md` (Architektur), `ReAct.txt` (Original-Konversation)
-**Ziel:** Hybrid-Engine in QOC schrittweise umsetzen — deterministische Pfadsteuerung + LLM-basierte Agent-Nodes, testbar in isolierten Schritten.
-
----
-
-## Prinzip
-
-Jeder Schritt muss **isolierbar implementierbar und testbar** sein, ohne dass die nachfolgenden Schritte bereits existieren. Die Reihenfolge folgt den Datenabhängigkeiten: wer Daten liefert, muss zuerst existieren.
+**Status:** Plan (2026-11-11) · Reference: `ReAct-Workflow.md` (architecture), `ReAct.txt` (original conversation)
+**Goal:** Incrementally implement the hybrid engine in QOC — deterministic path control + LLM-based agent nodes, testable in isolated steps.
 
 ---
 
-## Schritt 0 — Voraussetzung: Bestehende Tests grün halten
+## Principle
 
-**Was:** `mvn test` im `workflow-runner` muss grün sein (TopologicalSort, ConditionEvaluator, WorkflowExecutor, WorkflowStore).
-
-**Test:** Bestehende Unit-Tests + E2E-Script `scripts/e2e-workflow-test.sh`.
-
-**Warum zuerst:** Jeder nachfolgende Schritt baut darauf auf; Regressionen müssen sofort sichtbar sein.
+Every step must be **implementable and testable in isolation**, without the subsequent steps already existing. The order follows data dependencies: whoever provides data must exist first.
 
 ---
 
-## Schritt 1 — `WorkflowDefinition.Edge` um `condition` erweitern
+## Step 0 — Prerequisite: keep existing tests green
 
-**Was:** Optionales `condition`-Feld in `Edge`-Record (analog zu `NodeData.branches`, aber auf Edge-Ebene).
+**What:** `mvn test` in `workflow-runner` must be green (TopologicalSort, ConditionEvaluator, WorkflowExecutor, WorkflowStore).
+
+**Test:** Existing unit tests + E2E script `scripts/e2e-workflow-test.sh`.
+
+**Why first:** Every subsequent step builds on this; regressions must be visible immediately.
+
+---
+
+## Step 1 — Extend `WorkflowDefinition.Edge` with `condition`
+
+**What:** Optional `condition` field in the `Edge` record (analogous to `NodeData.branches`, but at the edge level).
 
 ```java
 public record Edge(String id, String source, String target, String type, String condition) {
@@ -37,25 +37,25 @@ public record Edge(String id, String source, String target, String type, String 
 }
 ```
 
-**Warum zuerst:** Reine Datenmodell-Änderung, keine Logik. Backend liest/schreibt das Feld. Frontend kann es später nutzen. Keine Abhängigkeit zu anderen Schritten.
+**Why first:** Pure data-model change, no logic. The backend reads/writes the field. The frontend can use it later. No dependency on other steps.
 
-**Testbar:** Unit-Test: JSON mit `condition`-Feld deserialisieren, prüfen dass Feld gesetzt ist. Round-Trip: serialisieren → deserialisieren → vergleichen.
+**Testable:** Unit test: deserialize JSON with a `condition` field, verify the field is set. Round-trip: serialize → deserialize → compare.
 
-**Aufwand:** Sehr gering. **Risiko:** Minimal (additives Feld, `@JsonIgnoreProperties`).
+**Effort:** Very low. **Risk:** Minimal (additive field, `@JsonIgnoreProperties`).
 
 ---
 
-## Schritt 2 — `WorkflowContext` einführen (ohne Logik-Änderung)
+## Step 2 — Introduce `WorkflowContext` (without logic changes)
 
-**Was:** Neues Class `WorkflowContext` im `workflowrunner.runner`-Paket:
+**What:** New class `WorkflowContext` in the `workflowrunner.runner` package:
 
 ```java
 public class WorkflowContext {
-    // Strukturierte Outputs pro Node-ID (für Data-Piping und Conditions)
+    // Structured outputs per node ID (for data piping and conditions)
     private final Map<String, Object> nodeOutputs = new HashMap<>();
-    // Globale State-Variablen (z. B. lastStatus, lastResult, forkResults)
+    // Global state variables (e.g. lastStatus, lastResult, forkResults)
     private final Map<String, Object> workflowState = new HashMap<>();
-    // Aktuelle Position im React-Flow-Graphen
+    // Current position in the React-Flow graph
     private String currentNodeId;
 
     public void setNodeOutput(String nodeId, Object output) { nodeOutputs.put(nodeId, output); }
@@ -68,22 +68,22 @@ public class WorkflowContext {
 }
 ```
 
-**Hinweis zur Chat-Historie:** `WorkflowContext` enthält **keine** Chat-Historie (`List<Message>`). Der Grund: Jeder Agent-Node ruft `QocEngine.runPrompt()` auf, der intern seine eigene `ConversationStore` (DB-backed) und `ContextBuilder` nutzt. Die Chat-Historie wird dort verwaltet, nicht im Workflow-Kontext. `WorkflowContext` hält nur Workflow-spezifischen State (Node-Outputs, globale Variablen, Graph-Position).
+**Note on chat history:** `WorkflowContext` contains **no** chat history (`List<Message>`). Reason: every agent node calls `QocEngine.runPrompt()`, which internally uses its own `ConversationStore` (DB-backed) and `ContextBuilder`. Chat history is managed there, not in the workflow context. `WorkflowContext` holds only workflow-specific state (node outputs, global variables, graph position).
 
-**Warum jetzt:** Wird von Schritt 3–7 genutzt. Muss existieren, bevor `nodeResults` umgestellt wird.
+**Why now:** Used by steps 3–7. Must exist before `nodeResults` is refactored.
 
-**Testbar:** Unit-Test: Outputs setzen/lesen, State setzen/lesen, `null`-Handling. Keine Abhängigkeit zu WorkflowExecutor.
+**Testable:** Unit test: set/read outputs, set/read state, `null` handling. No dependency on WorkflowExecutor.
 
-**Aufwand:** Gering. **Risiko:** Minimal.
+**Effort:** Low. **Risk:** Minimal.
 
 ---
 
-## Schritt 3 — `EngineResult.structured()` nutzen (bereits vorhanden)
+## Step 3 — Use `EngineResult.structured()` (already available)
 
-**Was:** `QocEngine.runPrompt()` liefert bereits `EngineResult` mit einem `structured`-Feld (`Option<JsonValue>`). Dieses Feld muss in `NodeDispatcher` genutzt werden, um strukturierte Outputs an `WorkflowContext` weiterzugeben. Es muss **nicht** neu implementiert werden — nur genutzt.
+**What:** `QocEngine.runPrompt()` already returns `EngineResult` with a `structured` field (`Option<JsonValue>`). This field must be used in `NodeDispatcher` to pass structured outputs to `WorkflowContext`. It does **not** need to be reimplemented — only used.
 
 ```java
-// EngineResult.java (bereits vorhanden in engine-Modul)
+// EngineResult.java (already present in engine module)
 public record EngineResult(
     String text,
     String finish,
@@ -94,15 +94,15 @@ public record EngineResult(
     boolean retryable,
     boolean paused,
     String approvalId,
-    Option<JsonValue> structured   // BEREITS VORHANDEN
+    Option<JsonValue> structured   // ALREADY PRESENT
 ) { ... }
 ```
 
-`JsonValue` ist ein sealed interface: `Obj(Map<String, JsonValue>)`, `Arr(List<JsonValue>)`, `Str(String)`, `Num(BigDecimal)`, `Bool(boolean)`, `Null()`.
+`JsonValue` is a sealed interface: `Obj(Map<String, JsonValue>)`, `Arr(List<JsonValue>)`, `Str(String)`, `Num(BigDecimal)`, `Bool(boolean)`, `Null()`.
 
-Wenn `AgentConfig.jsonOutput == true` und das LLM eine valide JSON-Antwort liefert, wird diese als `JsonValue.Obj` in `structured` gesetzt. Sonst `Option.none()`.
+When `AgentConfig.jsonOutput == true` and the LLM returns a valid JSON response, it is set as `JsonValue.Obj` in `structured`. Otherwise `Option.none()`.
 
-**Konvertierung zu Map:** Im `NodeDispatcher` muss `Option<JsonValue>` zu `Map<String, Object>` konvertiert werden:
+**Conversion to Map:** In `NodeDispatcher`, `Option<JsonValue>` must be converted to `Map<String, Object>`:
 
 ```java
 private Map<String, Object> toMap(Option<JsonValue> structured) {
@@ -136,32 +136,32 @@ private Object toJavaObject(JsonValue val) {
 }
 ```
 
-**Warum jetzt:** Voraussetzung für Schritt 4 (Agent-Node liefert strukturierten Output). Kann unabhängig vom WorkflowExecutor implementiert und getestet werden.
+**Why now:** Prerequisite for step 4 (agent node returns structured output). Can be implemented and tested independently of the WorkflowExecutor.
 
-**Testbar:**
-- Unit-Test mit Mock-Provider: LLM liefert `{"status":"SUCCESS","data":"..."}` → `structured()` enthält `JsonValue.Obj`, Konvertierung liefert Map.
-- LLM liefert invalides JSON → `structured()` ist `Option.none()`, `.text()` enthält Rohantwort.
-- `jsonOutput=false` → `structured()` ist `Option.none()`.
+**Testable:**
+- Unit test with mock provider: LLM returns `{"status":"SUCCESS","data":"..."}` → `structured()` contains `JsonValue.Obj`, conversion yields Map.
+- LLM returns invalid JSON → `structured()` is `Option.none()`, `.text()` contains the raw response.
+- `jsonOutput=false` → `structured()` is `Option.none()`.
 
-**Aufwand:** Mittel. **Risiko:** Mittel (Provider-Adapter muss JSON-Mode unterstützen; Fallback bei Parse-Fehler).
+**Effort:** Medium. **Risk:** Medium (provider adapter must support JSON mode; fallback on parse failure).
 
-**Abhängigkeit:** Keine (QocEngine ist unabhängig vom WorkflowExecutor).
+**Dependency:** None (`QocEngine` is independent of `WorkflowExecutor`).
 
 ---
 
-## Schritt 4 — `WorkflowExecutor` auf `WorkflowContext` umstellen (String → Object)
+## Step 4 — Switch `WorkflowExecutor` to `WorkflowContext` (String → Object)
 
-**Was:** `nodeResults: Map<String, String>` → `nodeResults: Map<String, Object>` (oder `Map<String, WorkflowNodeResult>`). Agent-Node speichert nicht nur `.text()` sondern auch `.structured()` (via `toMap()`) im Kontext.
+**What:** `nodeResults: Map<String, String>` → `nodeResults: Map<String, Object>` (or `Map<String, WorkflowNodeResult>`). The agent node stores not only `.text()` but also `.structured()` (via `toMap()`) in the context.
 
 ```java
-// Neues Record
+// New record
 public record NodeResult(String text, Map<String, Object> structured) {
     public String text() { return text; }
     public Object get(String key) { return structured != null ? structured.get(key) : null; }
 }
 ```
 
-Agent-Node:
+Agent node:
 ```java
 EngineResult result = engine.runPrompt(prefixedName, nodeInput, config);
 Map<String, Object> structured = toMap(result.structured());
@@ -170,26 +170,26 @@ nodeResults.put(nodeId, nodeResult);
 ctx.setNodeOutput(nodeId, structured != null ? structured : result.text());
 ```
 
-**Warum jetzt:** Baut auf Schritt 2 + 3. Macht strukturierte Outputs im Workflow verfügbar.
+**Why now:** Builds on steps 2 + 3. Makes structured outputs available in the workflow.
 
-**Testbar:**
-- Bestehender E2E-Test muss weiterhin grün sein (Text-Pfad unverändert).
-- Neuer Unit-Test: Agent-Node mit `jsonOutput=true` → `nodeResults.get(nodeId)` ist `NodeResult` mit `.structured()` Map.
-- Neuer Unit-Test: Agent-Node mit `jsonOutput=false` → `.structured()` ist `null`, `.text()` enthält Antwort.
+**Testable:**
+- Existing E2E test must still be green (text path unchanged).
+- New unit test: agent node with `jsonOutput=true` → `nodeResults.get(nodeId)` is a `NodeResult` with a `.structured()` Map.
+- New unit test: agent node with `jsonOutput=false` → `.structured()` is `null`, `.text()` contains the response.
 
-**Aufwand:** Mittel. **Risiko:** Mittel (bestehende Tests müssen angepasst werden, da `nodeResults` jetzt `Object` statt `String` ist).
+**Effort:** Medium. **Risk:** Medium (existing tests must be adjusted because `nodeResults` is now `Object` instead of `String`).
 
-**Abhängigkeit:** Schritt 2 (WorkflowContext), Schritt 3 (`EngineResult.structured()` nutzen).
+**Dependency:** Step 2 (WorkflowContext), Step 3 (use `EngineResult.structured()`).
 
 ---
 
-## Schritt 5 — Template-Resolver (Data-Piping) im WorkflowExecutor
+## Step 5 — Template resolver (data piping) in `WorkflowExecutor`
 
-**Was:** Vor Ausführung eines Agent-Nodes: `nodeInput` und Parameter durch `resolveTemplate()` auflösen.
+**What:** Before executing an agent node: resolve `nodeInput` and parameters via `resolveTemplate()`.
 
 ```java
 private Object resolveTemplate(String template, WorkflowContext ctx) {
-    // Pattern: ${node_id.output} oder ${node_id.output.field} oder ${node_id.output.nested.path}
+    // Pattern: ${node_id.output} or ${node_id.output.field} or ${node_id.output.nested.path}
     Pattern p = Pattern.compile("\\$\\{([a-zA-Z0-9_]+)\\.output(\\.([a-zA-Z0-9_.]+))?\\}");
     Matcher m = p.matcher(template);
     if (m.find()) {
@@ -218,82 +218,82 @@ private Object resolveNestedProperty(Object target, String path) {
 }
 ```
 
-**Warum jetzt:** Baut auf Schritt 4 (Node-Outputs im Kontext). Kann als eigenständige Utility-Klasse implementiert und getestet werden, bevor der WorkflowExecutor sie nutzt.
+**Why now:** Builds on step 4 (node outputs in context). Can be implemented as a standalone utility class and tested before the WorkflowExecutor uses it.
 
-**Testbar:**
-- Unit-Test `TemplateResolverTest`: `${node_1.output}` → ganzer Output, `${node_1.output.status}` → Feld, `${node_1.output.user.email}` → verschachtelt, fehlender Node → `null`, kein Platzhalter → Original-String.
-- Integration: Workflow mit 2 Agent-Nodes, wobei Node 2 `${node_1.output.data}` als Input nutzt.
+**Testable:**
+- Unit test `TemplateResolverTest`: `${node_1.output}` → entire output, `${node_1.output.status}` → field, `${node_1.output.user.email}` → nested, missing node → `null`, no placeholder → original string.
+- Integration: workflow with 2 agent nodes, where node 2 uses `${node_1.output.data}` as input.
 
-**Aufwand:** Gering–Mittel. **Risiko:** Gering (reine String-Verarbeitung, isolierbar).
+**Effort:** Low–Medium. **Risk:** Low (pure string processing, isolable).
 
-**Abhängigkeit:** Schritt 4 (WorkflowContext mit nodeOutputs).
-
----
-
-## Schritt 6 — `ConditionEvaluator` auf `WorkflowContext` umstellen
-
-**Was:** `ConditionEvaluator.matches(String condition, String context)` → `ConditionEvaluator.matches(String condition, WorkflowContext ctx)`.
-
-Neue Bedingungssyntax:
-- `contains:arg` → wie bisher (auf String-Kontext)
-- `status == 'SUCCESS'` → prüft `ctx.getState("lastStatus")` oder `ctx.getNodeOutput(nodeId)`
-- `node_1.output.classification == 'VIP_ORDER'` → prüft strukturierten Output
-
-**Warum jetzt:** Baut auf Schritt 2 + 4 (WorkflowContext + Node-Outputs). Kann parallel zu Schritt 5 entwickelt werden (keine Abhängigkeit).
-
-**Testbar:**
-- Unit-Test: `status == 'SUCCESS'` mit `ctx.setState("lastStatus", "SUCCESS")` → true.
-- Unit-Test: `node_1.output.classification == 'VIP_ORDER'` mit `ctx.setNodeOutput("node_1", Map.of("classification", "VIP_ORDER"))` → true.
-- Rückwärtskompatibilität: `contains:foo` mit String-Kontext → true (Fallback).
-
-**Aufwand:** Mittel. **Risiko:** Mittel (bestehende ConditionEvaluator-Tests müssen angepasst werden).
-
-**Abhängigkeit:** Schritt 2 (WorkflowContext).
+**Dependency:** Step 4 (WorkflowContext with nodeOutputs).
 
 ---
 
-## Schritt 7 — LLM-Node-Typen (`llm_eval`, `llm_summarize`)
+## Step 6 — Switch `ConditionEvaluator` to `WorkflowContext`
 
-**Was:** Neue Node-Typen im `WorkflowExecutor`-Switch:
+**What:** `ConditionEvaluator.matches(String condition, String context)` → `ConditionEvaluator.matches(String condition, WorkflowContext ctx)`.
+
+New condition syntax:
+- `contains:arg` → as before (on string context)
+- `status == 'SUCCESS'` → checks `ctx.getState("lastStatus")` or `ctx.getNodeOutput(nodeId)`
+- `node_1.output.classification == 'VIP_ORDER'` → checks structured output
+
+**Why now:** Builds on steps 2 + 4 (WorkflowContext + node outputs). Can be developed in parallel with step 5 (no dependency).
+
+**Testable:**
+- Unit test: `status == 'SUCCESS'` with `ctx.setState("lastStatus", "SUCCESS")` → true.
+- Unit test: `node_1.output.classification == 'VIP_ORDER'` with `ctx.setNodeOutput("node_1", Map.of("classification", "VIP_ORDER"))` → true.
+- Backward compatibility: `contains:foo` with string context → true (fallback).
+
+**Effort:** Medium. **Risk:** Medium (existing ConditionEvaluator tests must be adjusted).
+
+**Dependency:** Step 2 (WorkflowContext).
+
+---
+
+## Step 7 — LLM node types (`llm_eval`, `llm_summarize`)
+
+**What:** New node types in the `WorkflowExecutor` switch:
 
 ```java
 case "llm_eval" -> {
-    String prompt = resolveTemplate(node.data().title(), ctx); // oder node.data().exitCondition()
-    // ... prompt aus node.data
+    String prompt = resolveTemplate(node.data().title(), ctx); // or node.data().exitCondition()
+    // ... prompt from node.data
     EngineResult result = engine.runPrompt(prefixedName, prompt, config);
-    // Strukturiertes Ergebnis parsen
+    // Parse structured result
     Map<String, Object> structured = toMap(result.structured());
     ctx.setNodeOutput(nodeId, structured != null ? structured : result.text());
     ctx.setState("lastStatus", structured != null ? structured.get("status") : "SUCCESS");
     nodeResults.put(nodeId, new NodeResult(result.text(), structured));
 }
 case "llm_summarize" -> {
-    // Sammle Daten aus Vorgängern via ${...}
-    String inputData = resolveTemplate(node.data().defaultTarget(), ctx); // oder spezifisches Feld
-    String prompt = "Fasse zusammen: " + inputData;
+    // Collect data from predecessors via ${...}
+    String inputData = resolveTemplate(node.data().defaultTarget(), ctx); // or specific field
+    String prompt = "Summarize: " + inputData;
     EngineResult result = engine.runPrompt(prefixedName, prompt, config);
     ctx.setNodeOutput(nodeId, result.text());
     nodeResults.put(nodeId, new NodeResult(result.text(), null));
 }
 ```
 
-**Warum jetzt:** Baut auf Schritt 3–6 (EngineResult.structured, WorkflowContext, Template-Resolver, ConditionEvaluator). Kann erst implementiert werden, wenn die vorherigen Schritte stehen.
+**Why now:** Builds on steps 3–6 (`EngineResult.structured`, `WorkflowContext`, template resolver, `ConditionEvaluator`). Can only be implemented once the previous steps are in place.
 
-**Testbar:**
-- Unit-Test mit Mock-Engine: `llm_eval`-Node → `ctx.getNodeOutput(nodeId)` enthält Map.
-- Integration: Workflow mit `llm_eval`-Node gefolgt von Decision-Node mit Edge-Bedingung auf `node_eval.output.classification`.
+**Testable:**
+- Unit test with mock engine: `llm_eval` node → `ctx.getNodeOutput(nodeId)` contains a Map.
+- Integration: workflow with an `llm_eval` node followed by a decision node with an edge condition on `node_eval.output.classification`.
 
-**Aufwand:** Gering–Mittel. **Risiko:** Gering (nutzt bestehende Infrastruktur).
+**Effort:** Low–Medium. **Risk:** Low (uses existing infrastructure).
 
-**Abhängigkeit:** Schritt 3, 4, 5, 6.
+**Dependency:** Steps 3, 4, 5, 6.
 
 ---
 
-## Schritt 8 — Fork/Join implementieren
+## Step 8 — Implement Fork/Join
 
-**Was:**
-- **Fork**: Parallele Ausführung mehrerer Branches. In synchronem Modus: sequentiell mit separaten Kontexten, Ergebnisse sammeln.
-- **Join**: Warten auf alle eingehenden Branches, Ergebnisse mergen (z. B. in eine Map oder Liste).
+**What:**
+- **Fork**: parallel execution of multiple branches. In synchronous mode: sequentially with separate contexts, collecting results.
+- **Join**: wait for all incoming branches, merge results (e.g. into a Map or List).
 
 ```java
 case "fork" -> {
@@ -316,21 +316,21 @@ case "join" -> {
 }
 ```
 
-**Warum jetzt:** Baut auf Schritt 4 (WorkflowContext). Kann parallel zu Schritt 7 entwickelt werden.
+**Why now:** Builds on step 4 (`WorkflowContext`). Can be developed in parallel with step 7.
 
-**Testbar:**
-- Unit-Test: Fork mit 2 Branches → beide ausgeführt, Ergebnisse in `forkResults`.
-- Unit-Test: Join mit 2 eingehenden Nodes → merged Map enthält beide.
+**Testable:**
+- Unit test: fork with 2 branches → both executed, results in `forkResults`.
+- Unit test: join with 2 incoming nodes → merged Map contains both.
 
-**Aufwand:** Mittel–Hoch. **Risiko:** Mittel (Parallelisierung in synchronem Modus ist vereinfacht; in Temporal echte Parallelität).
+**Effort:** Medium–High. **Risk:** Medium (parallelization in synchronous mode is simplified; real parallelism in Temporal).
 
-**Abhängigkeit:** Schritt 4 (WorkflowContext).
+**Dependency:** Step 4 (WorkflowContext).
 
 ---
 
-## Schritt 9 — Loop implementieren (Body-Steps)
+## Step 9 — Implement Loop (body steps)
 
-**Was:** Loop-Node führt `bodySteps` (Liste von Node-IDs) wiederholt aus, bis `exitCondition` erfüllt ist oder `maxIterations` erreicht.
+**What:** A loop node executes `bodySteps` (list of node IDs) repeatedly until `exitCondition` is satisfied or `maxIterations` is reached.
 
 ```java
 case "loop" -> {
@@ -339,7 +339,7 @@ case "loop" -> {
     List<String> body = node.data().bodySteps();
     for (int i = 0; i < maxIter; i++) {
         for (String bodyNodeId : body) {
-            // Ausführen des Body-Nodes (rekursiv oder inline)
+            // Execute the body node (recursively or inline)
         }
         if (exitCond != null && !exitCond.isBlank() && ConditionEvaluator.matches(exitCond, ctx)) {
             break;
@@ -349,124 +349,124 @@ case "loop" -> {
 }
 ```
 
-**Warum jetzt:** Baut auf Schritt 6 (ConditionEvaluator auf WorkflowContext) und Schritt 8 (Dispatch-Refactoring für rekursive Ausführung).
+**Why now:** Builds on step 6 (`ConditionEvaluator` on `WorkflowContext`) and step 8 (dispatch refactoring for recursive execution).
 
-**Testbar:**
-- Unit-Test: Loop mit 3 Iterationen, Exit-Condition nach 2. Iteration → bricht nach 2 ab.
-- Unit-Test: Loop ohne Exit-Condition → läuft maxIterations durch.
+**Testable:**
+- Unit test: loop with 3 iterations, exit condition after 2nd iteration → breaks after 2.
+- Unit test: loop without exit condition → runs through `maxIterations`.
 
-**Aufwand:** Mittel. **Risiko:** Mittel (rekursive Ausführung kann komplex werden).
+**Effort:** Medium. **Risk:** Medium (recursive execution can get complex).
 
-**Abhängigkeit:** Schritt 4, 6, 8.
+**Dependency:** Steps 4, 6, 8.
 
 ---
 
-## Schritt 10 — Subworkflow-Expansion
+## Step 10 — Subworkflow expansion
 
-**Was:** `SubWorkflowExpander` expandiert Subworkflow-Nodes vor der Ausführung in den Hauptgraphen. Agent-Configs werden gemergt.
+**What:** `SubWorkflowExpander` expands subworkflow nodes into the main graph before execution. Agent configs are merged.
 
 ```java
 public class SubWorkflowExpander {
     public static WorkflowDefinition expand(WorkflowDefinition def, WorkflowStore store) {
-        // Für jeden subworkflow-Node: lade referenzierten Workflow,
-        // merge Nodes/Edges/Agents in den Hauptgraphen
+        // For each subworkflow node: load referenced workflow,
+        // merge nodes/edges/agents into the main graph
     }
 }
 ```
 
-**Warum jetzt:** Baut auf Schritt 1 (Edge-Condition) und Schritt 4 (WorkflowContext). Sollte nach den Kern-Features implementiert werden.
+**Why now:** Builds on step 1 (edge condition) and step 4 (`WorkflowContext`). Should be implemented after the core features.
 
-**Testbar:**
-- Unit-Test: Workflow mit Subworkflow-Node → expandiert zu flachem Graphen mit allen Nodes.
-- Unit-Test: Agent-Configs des Subworkflows werden in `agents[]` gemergt.
+**Testable:**
+- Unit test: workflow with a subworkflow node → expands to a flat graph with all nodes.
+- Unit test: agent configs of the subworkflow are merged into `agents[]`.
 
-**Aufwand:** Mittel–Hoch. **Risiko:** Mittel.
+**Effort:** Medium–High. **Risk:** Medium.
 
-**Abhängigkeit:** Schritt 1, 4.
-
----
-
-## Schritt 12 — Frontend: Edge-Conditions + Data-Piping-UI
-
-**Was:**
-- `PropertyPanel`: Edge-Condition-Editor (z. B. Dropdown für Operatoren + Wert).
-- `GraphEditor`: Data-Piping-Hints in Node-Properties (z. B. `${node_1.output.status}`).
-- `toBackend()`/`fromBackend()`: `condition`-Feld auf Edges serialisieren.
-
-**Warum jetzt:** Baut auf Schritt 1 (Edge.condition im Datenmodell). Kann parallel zu Backend-Schritten entwickelt werden.
-
-**Testbar:**
-- Playwright E2E: Edge mit Condition erstellen, speichern, neu laden → Condition erhalten.
-- Playwright E2E: Data-Piping-Platzhalter eingeben, speichern, neu laden → erhalten.
-
-**Aufwand:** Mittel. **Risiko:** Gering.
-
-**Abhängigkeit:** Schritt 1.
+**Dependency:** Steps 1, 4.
 
 ---
 
-## Abhängigkeitsgraph
+## Step 12 — Frontend: edge conditions + data-piping UI
+
+**What:**
+- `PropertyPanel`: edge condition editor (e.g. dropdown for operators + value).
+- `GraphEditor`: data-piping hints in node properties (e.g. `${node_1.output.status}`).
+- `toBackend()`/`fromBackend()`: serialize the `condition` field on edges.
+
+**Why now:** Builds on step 1 (`Edge.condition` in the data model). Can be developed in parallel with backend steps.
+
+**Testable:**
+- Playwright E2E: create an edge with a condition, save, reload → condition retained.
+- Playwright E2E: enter a data-piping placeholder, save, reload → retained.
+
+**Effort:** Medium. **Risk:** Low.
+
+**Dependency:** Step 1.
+
+---
+
+## Dependency graph
 
 ```
-Schritt 0 (Tests grün)
+Step 0 (tests green)
   │
-  ├── Schritt 1 (Edge.condition) ──────────────────────┐
+  ├── Step 1 (Edge.condition) ──────────────────────┐
   │                                                    │
-  ├── Schritt 2 (WorkflowContext) ──┐                  │
+  ├── Step 2 (WorkflowContext) ──┐                  │
   │                                 │                  │
-  ├── Schritt 3 (EngineResult.structured nutzen) ──┐    │
+  ├── Step 3 (use EngineResult.structured) ──┐    │
   │                                               │    │
   │   ┌───────────────────────────────────────────┘    │
   │   │                                                │
-  │   ├── Schritt 4 (Executor → WorkflowContext) ──┐   │
+  │   ├── Step 4 (Executor → WorkflowContext) ──┐   │
   │   │                                            │   │
-  │   ├── Schritt 5 (Template-Resolver) ──────────┤   │
+  │   ├── Step 5 (Template resolver) ──────────┤   │
   │   │                                            │   │
-  │   └── Schritt 6 (ConditionEvaluator → State) ─┤   │
+  │   └── Step 6 (ConditionEvaluator → State) ─┤   │
   │                                                │   │
   │   ┌────────────────────────────────────────────┘   │
   │   │                                                │
-  │   ├── Schritt 7 (LLM-Node-Typen) ──────────────┤   │
+  │   ├── Step 7 (LLM node types) ──────────────┤   │
   │   │                                            │   │
-  │   ├── Schritt 8 (Fork/Join) ──────────────────┤   │
+  │   ├── Step 8 (Fork/Join) ──────────────────┤   │
   │   │                                            │   │
-  │   └── Schritt 9 (Loop Body-Steps) ────────────┤   │
+  │   └── Step 9 (Loop body steps) ────────────┤   │
   │                                                │   │
   │   ┌────────────────────────────────────────────┘   │
   │   │                                                │
-  │   └── Schritt 10 (Subworkflow-Expansion) ──────┘   │
+  │   └── Step 10 (Subworkflow expansion) ──────┘   │
   │                                                    │
-  └── Schritt 12 (Frontend: Edge-Cond + Data-Piping) ──┘
+  └── Step 12 (Frontend: edge cond + data piping) ──┘
 ```
 
 ---
 
-## Empfohlene Sprint-Planung
+## Recommended sprint planning
 
-| Sprint | Schritte | Ziel |
+| Sprint | Steps | Goal |
 |---|---|---|
-| **Sprint 1** | 0, 1, 2, 3 | Datenmodell + Kontext + Structured Output (isoliert testbar) |
-| **Sprint 2** | 4, 5, 6 | Executor auf State umstellen + Data-Piping + Conditions (Kern-Integration) |
-| **Sprint 3** | 7, 8, 9 | LLM-Nodes + Fork/Join + Loop (Workflow-Semantik vervollständigen) |
-| **Sprint 4** | 10, 12 | Subworkflow + Frontend (End-to-End) |
+| **Sprint 1** | 0, 1, 2, 3 | Data model + context + structured output (isolatedly testable) |
+| **Sprint 2** | 4, 5, 6 | Switch executor to state + data piping + conditions (core integration) |
+| **Sprint 3** | 7, 8, 9 | LLM nodes + fork/join + loop (complete workflow semantics) |
+| **Sprint 4** | 10, 12 | Subworkflow + frontend (end-to-end) |
 
 ---
 
-## Minimaler "Quick Win" (1–2 Tage)
+## Minimal "quick win" (1–2 days)
 
-Wenn nur ein kleiner Schritt möglich ist, empfehle ich **Schritt 1 + 5**:
-- `Edge.condition` hinzufügen (Datenmodell)
-- Template-Resolver als Utility-Klasse implementieren + Unit-Tests
+If only a small step is possible, I recommend **steps 1 + 5**:
+- Add `Edge.condition` (data model)
+- Implement the template resolver as a utility class + unit tests
 
-Das bringt sofort Data-Piping-Fähigkeit (`${node_1.output}`) in den WorkflowExecutor, ohne die bestehende String-basierte Ausführung zu brechen (der Resolver gibt bei fehlendem Platzhalter den Original-String zurück).
+This immediately brings data-piping capability (`${node_1.output}`) into the WorkflowExecutor without breaking the existing string-based execution (the resolver returns the original string when no placeholder is found).
 
 ---
 
-## Teststrategie pro Schritt
+## Test strategy per step
 
-| Schritt | Testart | Testdatei (neu/erweitert) |
+| Step | Test type | Test file (new/extended) |
 |---|---|---|
-| 0 | Regression | Bestehende Tests |
+| 0 | Regression | Existing tests |
 | 1 | Unit | `WorkflowDefinitionTest` |
 | 2 | Unit | `WorkflowContextTest` |
 | 3 | Unit + Mock | `QocEngineStructuredOutputTest` |
@@ -483,26 +483,24 @@ Das bringt sofort Data-Piping-Fähigkeit (`${node_1.output}`) in den WorkflowExe
 
 ---
 
-## TODO — Temporal-bezogene Aufgaben (später, als optionale Schicht)
+## TODO — Temporal-related tasks (later, as an optional layer)
 
-Die folgenden Aufgaben wurden aus dem Implementierungsweg entfernt und werden
-in einem späteren Schritt (nach stabiler synchroner Ausführung) hinzugefügt.
-Sie können über DB-Tracing und eigene Komponenten implementiert werden.
+The following tasks were removed from the implementation path and will be added in a later step (after stable synchronous execution). They can be implemented via DB tracing and custom components.
 
-- **DB-Tracing / Event-History:** Workflow-Events (Node gestartet, Node beendet, Fehler) in die Datenbank schreiben, um Ausführungen nachvollziehbar zu machen und Crash-Recovery zu ermöglichen.
-- **Crash-Recovery / Checkpoint-Resume:** Letzten Checkpoint aus DB laden und Workflow ab dort fortsetzen (ohne Temporal-Replay).
-- **HITL-Signals:** Asynchrones Warten auf Human-Input — Node pausiert, Run-Status = `paused`, UI zeigt Approval-Dialog, bei Approval → Resume.
-- **Saga / Kompensation:** Rollback-Kette bei Fehlern — Kompensations-Logik in Nodes definieren (z. B. `compensate`-Callback).
-- **Durable Execution Wrapper:** Temporal (oder eigene Queue) als optionale Ausführungs-Schicht um die Engine wickeln — Engine bleibt Temporal-frei, Temporal übernimmt nur Durability.
-- **Multi-Node-Skalierung:** Verteilte Ausführung über mehrere Worker (nur bei Bedarf).
-- **Temporal-UI-Integration:** Run-History und Event-Inspection in der UI (optional, kann durch eigene Run-Views ersetzt werden).
+- **DB tracing / event history:** Write workflow events (node started, node finished, error) to the database to make executions traceable and enable crash recovery.
+- **Crash recovery / checkpoint resume:** Load the last checkpoint from the DB and continue the workflow from there (without Temporal replay).
+- **HITL signals:** Asynchronous waiting for human input — the node pauses, run status = `paused`, the UI shows an approval dialog, on approval → resume.
+- **Saga / compensation:** Rollback chain on errors — define compensation logic in nodes (e.g. `compensate` callback).
+- **Durable execution wrapper:** Wrap Temporal (or a custom queue) as an optional execution layer around the engine — the engine stays Temporal-free; Temporal only handles durability.
+- **Multi-node scaling:** Distributed execution across multiple workers (only when needed).
+- **Temporal UI integration:** Run history and event inspection in the UI (optional, can be replaced by custom run views).
 
 ---
 
-## Referenzen
+## References
 
-- Architektur-Dokument: `qoc/docs/engineering/ReAct-Workflow.md`
-- Original-Konversation: `qoc/docs/ReAct.txt`
+- Architecture document: `qoc/docs/engineering/ReAct-Workflow.md`
+- Original conversation: `qoc/docs/ReAct.txt`
 - QocEngine: `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/QocEngine.java`
 - WorkflowExecutor: `qoc/workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/runner/WorkflowExecutor.java`
 - WorkflowDefinition: `qoc/workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/model/WorkflowDefinition.java`
@@ -512,38 +510,38 @@ Sie können über DB-Tracing und eigene Komponenten implementiert werden.
 
 ---
 
-## Runner → getNextStep Transformation (Analyse)
+## Runner → getNextStep transformation (analysis)
 
-### Welche Runner-Funktionen sind noch nötig?
+### Which runner functions are still needed?
 
-| Komponente | Noch nötig? | Begründung |
+| Component | Still needed? | Rationale |
 |---|---|---|
-| **TopologicalSort** | ⚠️ Teilweise | `sort()` wird durch getNextStep ersetzt. Aber `incomingSources()` und `outgoingTargets()` werden von getNextStep genutzt. Cycle-Detection bleibt für Validierung. |
-| **ConditionEvaluator** | ✅ Ja, aber erweitern | Aktuell String-basiert (`contains:`, `equals:`). Muss auf `WorkflowContext` umgestellt werden (State-basierte Conditions wie `status == 'SUCCESS'`). |
-| **SubWorkflowExpander** | ✅ Ja | Flattet Sub-Workflows vor der Ausführung. Unabhängig von der Execution-Strategie. |
-| **GraphCompiler** | ✅ Ja | Validierung (Node-Typen, Edges, Agent-Refs, Cycles). Unabhängig. |
-| **WorkflowStore** | ✅ Ja | JSON-Persistenz. Unabhängig. |
-| **WorkflowExecutor** | ❌ Ersetzen | Wird durch `NextStepProvider` + `WorkflowLoop` ersetzt. |
-| **RunAgentActivity** | ❌ Entfernt | Temporal entfernt. |
-| **ReactFlowWorkflowImpl** | ❌ Entfernt | Temporal entfernt. |
+| **TopologicalSort** | ⚠️ Partially | `sort()` is replaced by getNextStep. But `incomingSources()` and `outgoingTargets()` are used by getNextStep. Cycle detection remains for validation. |
+| **ConditionEvaluator** | ✅ Yes, but extended | Currently string-based (`contains:`, `equals:`). Must be switched to `WorkflowContext` (state-based conditions like `status == 'SUCCESS'`). |
+| **SubWorkflowExpander** | ✅ Yes | Flattens sub-workflows before execution. Independent of the execution strategy. |
+| **GraphCompiler** | ✅ Yes | Validation (node types, edges, agent refs, cycles). Independent. |
+| **WorkflowStore** | ✅ Yes | JSON persistence. Independent. |
+| **WorkflowExecutor** | ❌ Replaced | Replaced by `NextStepProvider` + `WorkflowLoop`. |
+| **RunAgentActivity** | ❌ Removed | Temporal removed. |
+| **ReactFlowWorkflowImpl** | ❌ Removed | Temporal removed. |
 
-### Warum TopologicalSort nicht ausreicht
+### Why TopologicalSort is not enough
 
-Der aktuelle `WorkflowExecutor` nutzt `TopologicalSort.sort()`:
+The current `WorkflowExecutor` uses `TopologicalSort.sort()`:
 
 ```java
 List<String> order = TopologicalSort.sort(def);  // Linear, DAG-only
-for (String nodeId : order) { ... }  // Sequentiell, keine Verzweigung
+for (String nodeId : order) { ... }  // Sequential, no branching
 ```
 
-**Probleme:**
-1. **Keine Verzweigung:** TopologicalSort liefert eine lineare Reihenfolge. Bei Decision-Nodes (mehrere ausgehende Edges) werden alle Nachfolger in die Reihenfolge aufgenommen — auch die, die nicht gewählt werden.
-2. **Keine Loops:** TopologicalSort erkennt Cycles als Fehler. Aber Loop-Nodes (bodySteps + exitCondition) sind explizit Cycles.
-3. **Keine dynamische Pfadwahl:** Der Kontext (z. B. Ergebnis eines Agent-Nodes) beeinflusst, welcher Pfad genommen wird. TopologicalSort berücksichtigt das nicht.
+**Problems:**
+1. **No branching:** TopologicalSort returns a linear order. For decision nodes (multiple outgoing edges), all successors are included in the order — even those that are not chosen.
+2. **No loops:** TopologicalSort treats cycles as errors. But loop nodes (bodySteps + exitCondition) are explicitly cycles.
+3. **No dynamic path choice:** The context (e.g. the result of an agent node) influences which path is taken. TopologicalSort does not account for this.
 
-### NextStepProvider — Die neue Kernklasse
+### NextStepProvider — the new core class
 
-`NextStepProvider` ersetzt `WorkflowExecutor` und `TopologicalSort.sort()`. Er liest den Workflow-Graphen und den `WorkflowContext` und bestimmt den nächsten Node.
+`NextStepProvider` replaces `WorkflowExecutor` and `TopologicalSort.sort()`. It reads the workflow graph and the `WorkflowContext` and determines the next node.
 
 #### Interface
 
@@ -555,7 +553,7 @@ public interface NextStepProvider {
 }
 ```
 
-#### Implementierung (GraphNextStepProvider)
+#### Implementation (GraphNextStepProvider)
 
 ```java
 public class GraphNextStepProvider implements NextStepProvider {
@@ -564,14 +562,14 @@ public class GraphNextStepProvider implements NextStepProvider {
     public String getNextNodeId(WorkflowDefinition def, WorkflowContext ctx) {
         String currentId = ctx.getCurrentNodeId();
 
-        // Fall 1: Workflow-Start
+        // Case 1: workflow start
         if (currentId == null) {
             String startNodeId = findStartNode(def);
             ctx.setCurrentNodeId(startNodeId);
             return startNodeId;
         }
 
-        // Fall 2: Finde ausgehende Edges
+        // Case 2: find outgoing edges
         List<WorkflowDefinition.Edge> outgoing = new ArrayList<>();
         for (WorkflowDefinition.Edge e : def.edges()) {
             if (e.source().equals(currentId)) outgoing.add(e);
@@ -579,14 +577,14 @@ public class GraphNextStepProvider implements NextStepProvider {
 
         if (outgoing.isEmpty()) return "DONE";
 
-        // Fall 3: Linearer Pfad
+        // Case 3: linear path
         if (outgoing.size() == 1) {
             String target = outgoing.get(0).target();
             ctx.setCurrentNodeId(target);
             return target;
         }
 
-        // Fall 4: Verzweigung — prüfe Edge-Conditions
+        // Case 4: branching — check edge conditions
         for (WorkflowDefinition.Edge e : outgoing) {
             if (e.condition() != null && !e.condition().isBlank()
                     && ConditionEvaluator.matches(e.condition(), ctx)) {
@@ -595,7 +593,7 @@ public class GraphNextStepProvider implements NextStepProvider {
             }
         }
 
-        // Fallback: defaultTarget des Nodes oder erste Edge
+        // Fallback: defaultTarget of the node or first edge
         WorkflowDefinition.Node currentNode = findNode(def, currentId);
         if (currentNode != null && currentNode.data() != null
                 && currentNode.data().defaultTarget() != null
@@ -646,36 +644,36 @@ public class GraphNextStepProvider implements NextStepProvider {
 }
 ```
 
-#### Was NextStepProvider aus dem Runner übernimmt
+#### What NextStepProvider takes from the runner
 
-| Runner-Funktion | NextStepProvider-Äquivalent |
+| Runner function | NextStepProvider equivalent |
 |---|---|
-| `TopologicalSort.sort()` | `getNextNodeId()` — navigiert dynamisch statt linear |
-| `TopologicalSort.incomingSources()` | `getIncomingSources()` — für Join-Nodes |
-| `TopologicalSort.outgoingTargets()` | `getOutgoingTargets()` — für Fork-Nodes |
-| `ConditionEvaluator.matches()` | Erweitert für `WorkflowContext` |
-| `WorkflowExecutor` Dispatch-Logik | Bleibt im `WorkflowLoop` (Node-Ausführung) |
+| `TopologicalSort.sort()` | `getNextNodeId()` — navigates dynamically instead of linearly |
+| `TopologicalSort.incomingSources()` | `getIncomingSources()` — for join nodes |
+| `TopologicalSort.outgoingTargets()` | `getOutgoingTargets()` — for fork nodes |
+| `ConditionEvaluator.matches()` | Extended for `WorkflowContext` |
+| `WorkflowExecutor` dispatch logic | Remains in `WorkflowLoop` (node execution) |
 
-### Ansatz: QocEngine-Loop erweitern (kein separater WorkflowLoop)
+### Approach: extend the QocEngine loop (no separate WorkflowLoop)
 
-**Entscheidung:** Statt eines separaten `WorkflowLoop` wird der bestehende `QocEngine.runPrompt()`-Loop erweitert. Der Loop wird **session-typabhängig**:
-- `sessionType == "agent"` → LLM-Calls (bestehend, unverändert)
-- `sessionType == "workflow"` → deterministische `getNextStep()`-Aufrufe
+**Decision:** Instead of a separate `WorkflowLoop`, the existing `QocEngine.runPrompt()` loop is extended. The loop becomes **session-type-dependent**:
+- `sessionType == "agent"` → LLM calls (existing, unchanged)
+- `sessionType == "workflow"` → deterministic `getNextStep()` calls
 
-**Warum:** QocEngine hat bereits einen vollständigen Agent-Loop (while-Schleife, Retry, Loop-Detection, Compaction, Turn-Policy, Resilience). Diesen neu zu implementieren würde Duplikation und Inkonsistenz erzeugen.
+**Why:** QocEngine already has a complete agent loop (while loop, retry, loop detection, compaction, turn policy, resilience). Reimplementing this would create duplication and inconsistency.
 
-#### Erweiterung von QocEngine.runPrompt()
+#### Extension of QocEngine.runPrompt()
 
-Neue optionale Parameter: `WorkflowDefinition workflowDef` und `WorkflowContext workflowCtx`. Wenn beide nicht null sind, läuft der Loop im **Workflow-Mode**.
+New optional parameters: `WorkflowDefinition workflowDef` and `WorkflowContext workflowCtx`. When both are non-null, the loop runs in **workflow mode**.
 
-Im Workflow-Mode:
-1. `getNextStep(workflowDef, workflowCtx)` wird aufgerufen statt `step.run()`
-2. getNextStep liefert eine `AssistantMessage` mit `ToolCall(s)` (subagentTool)
-3. Die Tool-Calls werden wie bisher ausgeführt (ToolRuntime oder NodeDispatcher)
-4. Observations werden in den WorkflowContext geschrieben
-5. Bei `isFinished == true` bricht der Loop ab
+In workflow mode:
+1. `getNextStep(workflowDef, workflowCtx)` is called instead of `step.run()`
+2. getNextStep returns an `AssistantMessage` with `ToolCall(s)` (subagentTool)
+3. The tool calls are executed as before (ToolRuntime or NodeDispatcher)
+4. Observations are written to the WorkflowContext
+5. When `isFinished == true`, the loop aborts
 
-#### getNextStep als Methode
+#### getNextStep as a method
 
 ```java
 public AssistantMessage getNextStep(WorkflowDefinition def, WorkflowContext ctx) {
@@ -689,7 +687,7 @@ public AssistantMessage getNextStep(WorkflowDefinition def, WorkflowContext ctx)
 
     List<Edge> outgoing = findOutgoingEdges(def, currentId);
     if (outgoing.isEmpty()) {
-        return new AssistantMessage("Workflow beendet.", List.of(), true);
+        return new AssistantMessage("Workflow finished.", List.of(), true);
     }
 
     if (outgoing.size() == 1) {
@@ -731,33 +729,33 @@ private AssistantMessage createSubagentToolCall(String nodeId, WorkflowDefinitio
     args.put("nodeId", nodeId);
 
     return new AssistantMessage(
-        "Führe Workflow-Node [" + nodeId + "] aus (Typ: " + node.type() + ")",
+        "Execute workflow node [" + nodeId + "] (type: " + node.type() + ")",
         List.of(new ToolCall("call_" + nodeId, "subagentTool", args)),
         false
     );
 }
 ```
 
-#### NodeDispatcher als subagentTool-Handler
+#### NodeDispatcher as subagentTool handler
 
-Der `NodeDispatcher` wird als Handler für das `subagentTool` registriert. Wenn der Loop einen `subagentTool`-Call ausführt, delegiert er an den NodeDispatcher, der basierend auf `nodeType` die richtige Logik ausführt.
+The `NodeDispatcher` is registered as the handler for the `subagentTool`. When the loop executes a `subagentTool` call, it delegates to the NodeDispatcher, which runs the correct logic based on `nodeType`.
 
-#### Vorteile
+#### Advantages
 
-1. **Keine Duplikation:** Bestehende Resilience (Retry, Loop-Detection, Compaction, Turn-Policy, Preflight, Webhook) gilt für beide Modi.
-2. **Einheitlicher Loop:** Ein Loop für Agent-Mode und Workflow-Mode.
-3. **ReAct-kompatibel:** getNextStep gibt AssistantMessage (mit ToolCall) zurück — exakt wie im ReAct-Pattern.
-4. **SubagentTool als universeller Ausführer:** Jeder Node wird als subagentTool-Call ausgeführt.
+1. **No duplication:** Existing resilience (retry, loop detection, compaction, turn policy, preflight, webhook) applies to both modes.
+2. **Unified loop:** One loop for agent mode and workflow mode.
+3. **ReAct-compatible:** getNextStep returns an AssistantMessage (with ToolCall) — exactly as in the ReAct pattern.
+4. **SubagentTool as universal executor:** Every node is executed as a subagentTool call.
 
-#### QocEngine-Änderungen
+#### QocEngine changes
 
-| Änderung | Beschreibung |
+| Change | Description |
 |---|---|
-| `runPrompt()` Signatur | Neue optionale Parameter: `WorkflowDefinition workflowDef`, `WorkflowContext workflowCtx` |
-| Loop-Branch | `if (workflowDef != null)` → getNextStep-Pfad, sonst LLM-Pfad |
-| getNextStep() | Neue Methode in QocEngine (oder als Callback/Strategy) |
-| WorkflowContext | Muss an QocEngine übergeben werden |
-| NodeDispatcher | Wird als Tool-Handler für subagentTool genutzt |
+| `runPrompt()` signature | New optional parameters: `WorkflowDefinition workflowDef`, `WorkflowContext workflowCtx` |
+| Loop branch | `if (workflowDef != null)` → getNextStep path, otherwise LLM path |
+| getNextStep() | New method in QocEngine (or as callback/strategy) |
+| WorkflowContext | Must be passed to QocEngine |
+| NodeDispatcher | Used as tool handler for subagentTool |
 
 ```java
 public class WorkflowLoop {
@@ -800,7 +798,7 @@ public class WorkflowLoop {
                 ctx.setState("lastStatus", result.structured().get("status"));
             }
 
-            // Loop-Node: bodySteps abarbeiten
+            // Loop node: process bodySteps
             if ("loop".equals(node.type())) {
                 int maxIter = node.data().maxIterations();
                 String exitCond = node.data().exitCondition();
@@ -821,7 +819,7 @@ public class WorkflowLoop {
                 }
             }
 
-            // Fork-Node: parallele Branches
+            // Fork node: parallel branches
             if ("fork".equals(node.type())) {
                 List<String> targets = nextStep.getOutgoingTargets(def, nodeId);
                 Map<String, Object> forkResults = new HashMap<>();
@@ -858,7 +856,7 @@ public class WorkflowLoop {
 }
 ```
 
-### NodeDispatcher — Node-Ausführung (extrahiert aus WorkflowExecutor)
+### NodeDispatcher — node execution (extracted from WorkflowExecutor)
 
 ```java
 public interface NodeDispatcher {
@@ -952,7 +950,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
 }
 ```
 
-### ConditionEvaluator — Erweitert für WorkflowContext
+### ConditionEvaluator — extended for WorkflowContext
 
 ```java
 public final class ConditionEvaluator {
@@ -964,7 +962,7 @@ public final class ConditionEvaluator {
 
         String c = condition.trim();
 
-        // State-basierte Conditions: "status == 'SUCCESS'"
+        // State-based conditions: "status == 'SUCCESS'"
         if (c.contains("==")) {
             String[] parts = c.split("==");
             String left = parts[0].trim();
@@ -975,7 +973,7 @@ public final class ConditionEvaluator {
                 return right.equals(String.valueOf(val));
             }
 
-            // Node-Output-basiert: "node_1.output.classification == 'VIP_ORDER'"
+            // Node-output-based: "node_1.output.classification == 'VIP_ORDER'"
             if (left.startsWith("node_") && left.contains(".output")) {
                 String[] pathParts = left.split("\\.");
                 String nodeId = pathParts[0];
@@ -990,7 +988,7 @@ public final class ConditionEvaluator {
             }
         }
 
-        // Legacy String-basierte Conditions (Fallback)
+        // Legacy string-based conditions (fallback)
         String ctxStr = ctx.getState("lastResult") != null
                 ? ctx.getState("lastResult").toString() : "";
         int colon = c.indexOf(':');
@@ -1009,47 +1007,47 @@ public final class ConditionEvaluator {
 }
 ```
 
-### WorkflowLoop vs. WorkflowExecutor — Vergleich
+### WorkflowLoop vs. WorkflowExecutor — comparison
 
-| Aspekt | WorkflowExecutor (alt) | WorkflowLoop (neu) |
+| Aspect | WorkflowExecutor (old) | WorkflowLoop (new) |
 |---|---|---|
-| Navigation | TopologicalSort (linear, DAG) | NextStepProvider (dynamisch, Graph-basiert) |
-| Verzweigung | Decision-Nodes nur (branches in NodeData) | Alle Nodes mit mehreren ausgehenden Edges |
-| Loops | Loop-Node mit bodySteps (Stub) | Loop-Node mit echter Iteration + Exit-Condition |
-| Fork/Join | Stubs | Echte parallele Ausführung + Merge |
-| Sub-Workflows | Stub | Rekursive Expansion + Ausführung |
-| Data-Piping | Nein (nur String-Kontext) | Template-Resolver (`${node_X.output.field}`) |
+| Navigation | TopologicalSort (linear, DAG) | NextStepProvider (dynamic, graph-based) |
+| Branching | Decision nodes only (branches in NodeData) | All nodes with multiple outgoing edges |
+| Loops | Loop node with bodySteps (stub) | Loop node with real iteration + exit condition |
+| Fork/Join | Stubs | Real parallel execution + merge |
+| Sub-workflows | Stub | Recursive expansion + execution |
+| Data piping | No (string context only) | Template resolver (`${node_X.output.field}`) |
 | State | `Map<String, String>` | `WorkflowContext` (structured outputs) |
-| Conditions | String-basiert | State-basiert (strukturierte Outputs) |
+| Conditions | String-based | State-based (structured outputs) |
 
-### Migrationspfad
+### Migration path
 
 ```
-Phase 1: NextStepProvider + WorkflowContext + ConditionEvaluator (State-basiert)
-  → Unit-Tests: Navigation, Conditions, State
-Phase 2: WorkflowLoop + NodeDispatcher (portiert aus WorkflowExecutor)
-  → Integration-Tests: einfache Workflows (start → agent → end)
-Phase 3: Template-Resolver + Data-Piping
-  → Integration-Tests: Workflows mit Data-Piping
-Phase 4: LLM-Node-Typen (llm_eval, llm_summarize)
-  → Integration-Tests: Hybrid-Workflows
-Phase 5: Fork/Join + Loop + Sub-Workflow (echte Implementierung)
-  → Integration-Tests: Komplexe Workflows
-Phase 6: HTTP-Server + Checkpoint (Crash-Recovery)
-  → E2E-Tests
+Phase 1: NextStepProvider + WorkflowContext + ConditionEvaluator (state-based)
+  → Unit tests: navigation, conditions, state
+Phase 2: WorkflowLoop + NodeDispatcher (ported from WorkflowExecutor)
+  → Integration tests: simple workflows (start → agent → end)
+Phase 3: Template resolver + data piping
+  → Integration tests: workflows with data piping
+Phase 4: LLM node types (llm_eval, llm_summarize)
+  → Integration tests: hybrid workflows
+Phase 5: Fork/Join + Loop + Sub-workflow (real implementation)
+  → Integration tests: complex workflows
+Phase 6: HTTP server + checkpoint (crash recovery)
+  → E2E tests
 ```
 
-### Zusammenfassung
+### Summary
 
-**Welche Runner-Funktionen bleiben:**
-- `TopologicalSort` → `incomingSources()`, `outgoingTargets()` (als Hilfsmethoden in NextStepProvider)
-- `ConditionEvaluator` → erweitert für `WorkflowContext`
-- `SubWorkflowExpander` → unverändert
-- `GraphCompiler` → unverändert (ggf. `llm_eval`/`llm_summarize` zu VALID_NODE_TYPES hinzufügen)
-- `WorkflowStore` → unverändert
+**Runner functions that remain:**
+- `TopologicalSort` → `incomingSources()`, `outgoingTargets()` (as helper methods in NextStepProvider)
+- `ConditionEvaluator` → extended for `WorkflowContext`
+- `SubWorkflowExpander` → unchanged
+- `GraphCompiler` → unchanged (possibly add `llm_eval`/`llm_summarize` to VALID_NODE_TYPES)
+- `WorkflowStore` → unchanged
 
-**Was ersetzt wird:**
+**What is replaced:**
 - `WorkflowExecutor` → `NextStepProvider` + `WorkflowLoop` + `NodeDispatcher`
 - `TopologicalSort.sort()` → `NextStepProvider.getNextNodeId()`
 
-**Kernprinzip:** Statt linearer Topological-Sort-Navigation wird der Graph dynamisch durch `getNextNodeId()` navigiert. Der `WorkflowContext` hält den State. `ConditionEvaluator` prüft gegen strukturierte Outputs. `NodeDispatcher` führt jeden Node aus. Der Loop iteriert bis `getNextNodeId()` "DONE" liefert.
+**Core principle:** Instead of linear topological-sort navigation, the graph is navigated dynamically via `getNextNodeId()`. The `WorkflowContext` holds the state. `ConditionEvaluator` checks against structured outputs. `NodeDispatcher` executes each node. The loop iterates until `getNextNodeId()` returns "DONE".

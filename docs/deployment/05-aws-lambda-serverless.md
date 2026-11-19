@@ -1,18 +1,18 @@
-# AWS Lambda – Serverless Mode (geplant)
+# AWS Lambda – Serverless Mode (planned)
 
 > **Status:** spec-only
-> **Quelle:** `guides/deployment-modes.md`
+> **Source:** `guides/deployment-modes.md`
 
-## Einschränkungen
+## Limitations
 
-- Max. 15 Minuten pro Invocation
-- Keine dauerhaften Hintergrund-Subagents
-- Keine PTY-Shell-Sessions
-- EFS für persistenten Cache/Workspace nötig
-- Concurrency idealerweise 1 (Sessions/Event-Feed prozesslokal)
-- SSE nur eingeschränkt nutzbar
+- Max. 15 minutes per invocation
+- No persistent background subagents
+- No PTY shell sessions
+- EFS required for persistent cache/workspace
+- Concurrency ideally 1 (sessions/event feed are process-local)
+- SSE only limited use
 
-## Konfiguration
+## Configuration
 
 ```properties
 ENGINE_MODE=serverless
@@ -28,13 +28,13 @@ ENGINE_MAX_CONCURRENT_PROMPTS=1
 ENGINE_TURN_MAX_WALL_MINUTES=10
 ```
 
-## Agent-Synchronisation
+## Agent Synchronization
 
-Serverless lädt Agenten dynamisch vom Server (GCP VM) über eine
-OIDC-geschützte API. Siehe `guides/deployment-modes.md` §2.
+Serverless loads agents dynamically from the server (GCP VM) via an
+OIDC-protected API. See `guides/deployment-modes.md` §2.
 
-## MCP-Zugriff
+## MCP Access
 
-Serverless soll über MCP erreichbar sein mit einem zusätzlichen Tool
-`qoc_run_agent_with_config` (stateless Subagent-Run mit Agent-Konfiguration).
-Siehe `guides/deployment-modes.md` §3.3.
+Serverless should be reachable via MCP with an additional tool
+`qoc_run_agent_with_config` (stateless subagent run with agent configuration).
+See `guides/deployment-modes.md` §3.3.

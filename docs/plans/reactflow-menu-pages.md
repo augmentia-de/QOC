@@ -1,111 +1,111 @@
-# Plan: reactflow Workflow-UI — fehlende Menüpunkte & Seiten portieren
+# Plan: reactflow Workflow-UI — missing menu items & pages porting
 
-## Kontext
-- reactflow-Projekt liegt in `qoc/reactflow/` (TypeScript, Zustand, Mobile, SchemaSource, FieldTree).
-- Bereits implementiert: Editor (Kern), Validate, Run, Save/Load, Undo/Redo, Output-Contract, Context-Refs, LabeledEdge, Mobile.
-- Fehlend: Routing + 10 Seiten (Workflows, Agents, MCP Servers, Generate, Runs, Observe, HITL, Testbench, Settings, Dashboard).
-- QOC-Referenz: `qoc/workflow-ui/src/pages/*.tsx` + `qoc/workflow-ui/src/services/api.ts`.
+## Context
+- reactflow project lives in `qoc/reactflow/` (TypeScript, Zustand, Mobile, SchemaSource, FieldTree).
+- Already implemented: Editor (core), Validate, Run, Save/Load, Undo/Redo, Output-Contract, Context-Refs, LabeledEdge, Mobile.
+- Missing: Routing + 10 pages (Workflows, Agents, MCP Servers, Generate, Runs, Observe, HITL, Testbench, Settings, Dashboard).
+- QOC reference: `qoc/workflow-ui/src/pages/*.tsx` + `qoc/workflow-ui/src/services/api.ts`.
 
-## Ziel
-reactflow als vollständigen Ersatz der QOC workflow-ui: alle Menüpunkte, analoge Overlays/Seiten, getestet, deployed.
+## Goal
+reactflow as a complete replacement for the QOC workflow-ui: all menu items, analogous overlays/pages, tested, deployed.
 
-## Ist-Zustand reactflow
-- Single-Page (`App.tsx`), kein Routing.
-- Nutzt `Api` (localStorage + optional QOC-API), `QocApi` (validate/run).
-- Node-Editor vollständig (Palette, Drag, Connect, Validate, JSON, Agent-Config-Overlay).
+## Current state of reactflow
+- Single page (`App.tsx`), no routing.
+- Uses `Api` (localStorage + optional QOC-API), `QocApi` (validate/run).
+- Node editor fully implemented (Palette, Drag, Connect, Validate, JSON, Agent-Config-Overlay).
 - Mobile: NodeListView + BottomSheet (minimal).
-- Kein Routing, keine weiteren Seiten.
+- No routing, no further pages.
 
-## Soll-Zustand
-- React-Router mit Routes für alle Seiten.
-- Top-Nav (Desktop) + BottomNav (Mobile) wie QOC.
-- Jede Seite portiert aus QOC, angepasst an reactflow-Styling (inline styles, dunkles Theme).
-- Backend-Anbindung über `QocApi` (Auth-Header `X-QOC-User`).
+## Target state
+- React Router with routes for all pages.
+- Top-Nav (Desktop) + BottomNav (Mobile) as in QOC.
+- Each page ported from QOC, adapted to reactflow styling (inline styles, dark theme).
+- Backend connection via `QocApi` (Auth header `X-QOC-User`).
 
-## Phasen
+## Phases
 
-### Phase 1: Routing + Layout (0.5 Tag)
-- [ ] `react-router-dom` installieren.
-- [ ] `App.tsx` in Layout-Komponente + Routes aufteilen.
-- [ ] Top-Nav (Desktop) + BottomNav (Mobile) mit Links zu allen Seiten.
-- [ ] Dashboard als Startseite (`/`).
-- [ ] Editor als `/editor` (bestehende App-Logik).
-- [ ] Workflows als `/workflows` + `/workflows/:id`.
+### Phase 1: Routing + Layout (0.5 day)
+- [ ] Install `react-router-dom`.
+- [ ] Split `App.tsx` into layout component + routes.
+- [ ] Top-Nav (Desktop) + BottomNav (Mobile) with links to all pages.
+- [ ] Dashboard as start page (`/`).
+- [ ] Editor as `/editor` (existing app logic).
+- [ ] Workflows as `/workflows` + `/workflows/:id`.
 
-### Phase 2: Workflows-Seite portieren (1 Tag)
-- [ ] `src/pages/Workflows.tsx` aus QOC portieren.
+### Phase 2: Port Workflows page (1 day)
+- [ ] Port `src/pages/Workflows.tsx` from QOC.
 - [ ] API: `QocApi.workflows.list/get/create/delete`.
-- [ ] "Neuer Workflow" + "Löschen" + Link zu Detail.
-- [ ] Detail-Seite (`/workflows/:id`): GraphEditor + JSON-Tab + Validate/Save/Run (wie QOC WorkflowDetail).
-- [ ] Auto-Load bei Route-Change.
+- [ ] "New Workflow" + "Delete" + link to detail.
+- [ ] Detail page (`/workflows/:id`): GraphEditor + JSON tab + Validate/Save/Run (like QOC WorkflowDetail).
+- [ ] Auto-load on route change.
 
-### Phase 3: Agents-Seite portieren (1 Tag)
-- [ ] `src/pages/Agents.tsx` aus QOC portieren.
+### Phase 3: Port Agents page (1 day)
+- [ ] Port `src/pages/Agents.tsx` from QOC.
 - [ ] CRUD: list, create, edit, delete via `QocApi.agents`.
-- [ ] Agent-Formular: ID, Name, Model, Temperature, MaxTokens, TopP, SystemPrompt, Tools, JSON Output, Response Schema (SchemaSource).
-- [ ] Built-in Agents (build/plan) als read-only markieren.
+- [ ] Agent form: ID, Name, Model, Temperature, MaxTokens, TopP, SystemPrompt, Tools, JSON Output, Response Schema (SchemaSource).
+- [ ] Mark built-in agents (build/plan) as read-only.
 
-### Phase 4: MCP Servers-Seite portieren (1 Tag)
-- [ ] `src/pages/McpServers.tsx` aus QOC portieren.
+### Phase 4: Port MCP Servers page (1 day)
+- [ ] Port `src/pages/McpServers.tsx` from QOC.
 - [ ] API: listServers, getServerTools, reloadServer, addServer, removeServer.
-- [ ] Tool-Preview (expand/collapse mit Tool-Liste).
-- [ ] Add-Server-Formular (remote/local).
-- [ ] Auto-Refresh alle 30s.
+- [ ] Tool preview (expand/collapse with tool list).
+- [ ] Add-server form (remote/local).
+- [ ] Auto-refresh every 30s.
 
-### Phase 5: Generate-Seite portieren (0.5 Tag)
-- [ ] `src/pages/Generate.tsx` aus QOC portieren.
-- [ ] `POST /workflows/generate` mit Prompt.
-- [ ] Ergebnis-Anzeige (Workflow-ID).
+### Phase 5: Port Generate page (0.5 day)
+- [ ] Port `src/pages/Generate.tsx` from QOC.
+- [ ] `POST /workflows/generate` with prompt.
+- [ ] Result display (Workflow-ID).
 
-### Phase 6: Runs + Observe portieren (1 Tag)
-- [ ] `src/pages/Runs.tsx` aus QOC portieren.
-- [ ] API: `GET /api/workflows/runs`, `GET /api/workflows/runs/:id`, terminate, SSE-Stream.
-- [ ] Auto-Refresh Toggle.
-- [ ] `src/pages/Observe.tsx` portieren (Live-Monitoring, 5s Refresh).
+### Phase 6: Port Runs + Observe (1 day)
+- [ ] Port `src/pages/Runs.tsx` from QOC.
+- [ ] API: `GET /api/workflows/runs`, `GET /api/workflows/runs/:id`, terminate, SSE stream.
+- [ ] Auto-refresh toggle.
+- [ ] Port `src/pages/Observe.tsx` (live monitoring, 5s refresh).
 
-### Phase 7: HITL + Testbench portieren (1 Tag)
-- [ ] `src/pages/HITL.tsx` portieren.
+### Phase 7: Port HITL + Testbench (1 day)
+- [ ] Port `src/pages/HITL.tsx`.
 - [ ] API: `GET /api/session/:id/permission`, `POST .../reply`.
-- [ ] `src/pages/Testbench.tsx` portieren.
+- [ ] Port `src/pages/Testbench.tsx`.
 - [ ] API: `GET /api/workflows/:id`, `POST /api/workflows/run`.
 
-### Phase 8: Settings portieren (0.5 Tag)
-- [ ] `src/pages/Settings.tsx` portieren.
-- [ ] MCP-Server-Setup + Tool-Preview als eigene Sektion (User-Wunsch #3).
-- [ ] Backend-URL, Theme (localStorage).
+### Phase 8: Port Settings (0.5 day)
+- [ ] Port `src/pages/Settings.tsx`.
+- [ ] MCP server setup + tool preview as its own section (user request #3).
+- [ ] Backend URL, theme (localStorage).
 
-### Phase 9: Dashboard portieren (0.5 Tag)
-- [ ] `src/pages/Dashboard.tsx` portieren.
-- [ ] Health-Check, Workflow/Run-Zähler.
+### Phase 9: Port Dashboard (0.5 day)
+- [ ] Port `src/pages/Dashboard.tsx`.
+- [ ] Health check, workflow/run counters.
 
-### Phase 10: Validierung & Tests (1 Tag)
-- [ ] `npm run build` fehlerfrei.
-- [ ] `npm run build:qoc` deployed nach quarkus resources.
-- [ ] Puppeteer-Smoke-Test: alle Routes laden, CRUD funktioniert.
-- [ ] `mvn -pl quarkus package` grün.
+### Phase 10: Validation & Tests (1 day)
+- [ ] `npm run build` error-free.
+- [ ] `npm run build:qoc` deployed to quarkus resources.
+- [ ] Puppeteer smoke test: all routes load, CRUD works.
+- [ ] `mvn -pl quarkus package` green.
 
-### Phase 11: Git (0.5 Tag)
-- [ ] Commit pro Phase.
-- [ ] Finaler Commit + Push (nur wenn User es anweist).
+### Phase 11: Git (0.5 day)
+- [ ] Commit per phase.
+- [ ] Final commit + push (only when user instructs).
 
-## Geschätzter Gesamtaufwand
-- Phase 1–5: 3–4 Tage (Kern)
-- Phase 6–9: 2–3 Tage (Features)
-- Phase 10–11: 1 Tag (Test + Deploy)
-- **Total: 6–8 Tage**
+## Estimated total effort
+- Phase 1–5: 3–4 days (core)
+- Phase 6–9: 2–3 days (features)
+- Phase 10–11: 1 day (test + deploy)
+- **Total: 6–8 days**
 
-## Priorisierung (User-Wunsch)
-1. Workflows (Load/List + Detail) — bereits teilweise vorhanden (Overlay)
+## Prioritization (user request)
+1. Workflows (Load/List + Detail) — partially already present (overlay)
 2. Agents — CRUD + SchemaSource
-3. MCP Servers + Tool-Preview (auf Settings-Seite)
+3. MCP Servers + Tool-Preview (on Settings page)
 4. Generate, Runs, Observe, HITL, Testbench, Settings, Dashboard
 
-## Abhängigkeiten
-- react-router-dom (neu)
-- axios (optional, fetch reicht)
-- QOC-Backend muss laufen (8090)
+## Dependencies
+- react-router-dom (new)
+- axios (optional, fetch suffices)
+- QOC backend must be running (8090)
 
-## Offene Fragen
-- Soll die alte `workflow-ui/` entfernt werden oder als Fallback bleiben?
-- Soll MCP-Server-Setup auf Settings-Seite ODER eigene Seite?
-- Soll Testbench in Production oder nur Dev?
+## Open questions
+- Should the old `workflow-ui/` be removed or kept as fallback?
+- Should MCP server setup live on the Settings page OR its own page?
+- Should Testbench run in production or dev only?

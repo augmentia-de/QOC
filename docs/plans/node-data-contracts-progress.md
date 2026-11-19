@@ -1,130 +1,130 @@
-# Fortschritt: Node-Datenverträge & Context-Ökonomie
+# Progress: Node Data Contracts & Context Economy
 
-**Stand:** 2026-11-15
+**Status:** 2026-11-15
 **Plan:** `docs/plans/node-data-contracts-and-context-economy.md`
-**Test-Spec:** Abschnitt 9 des Plans
+**Test spec:** Section 9 of the plan
 
 ---
 
-## Abgeschlossen
+## Completed
 
-### Phase 0 — Node-Datenvertrag (KERN) ✅
+### Phase 0 — Node Data Contract (CORE) ✅
 
 **Commit:** `3eafb65`
-**Dateien:**
-- `workflow-runner/.../model/WorkflowDefinition.java` — `NodeData` erweitert um `outputContract`, `contextRefs` (+ Backwards-Compat-Konstruktor)
-- `workflow-runner/.../runner/NodeContractValidator.java` (neu) — minimaler JSON-Schema-Validator
-- `workflow-runner/.../runner/ContractViolationException.java` (neu) — typisierte Exception mit `path()`/`kind()`
-- `workflow-runner/.../runner/DefaultNodeDispatcher.java` — `dispatch()` wrapt `dispatchImpl()` + `validateOutputContract()`; `context_agent_executor` liest `contextRefs` aus `NodeData`
-- `workflow-runner/.../runner/ContextAssembler.java` — Node-Outputs in `<node-output id="...">`-Delimiters
-- `workflow-runner/.../store/WorkflowDefaults.java` — aktualisiert auf neue Arity
+**Files:**
+- `workflow-runner/.../model/WorkflowDefinition.java` — `NodeData` extended with `outputContract`, `contextRefs` (+ backwards-compat constructor)
+- `workflow-runner/.../runner/NodeContractValidator.java` (new) — minimal JSON Schema validator
+- `workflow-runner/.../runner/ContractViolationException.java` (new) — typed exception with `path()`/`kind()`
+- `workflow-runner/.../runner/DefaultNodeDispatcher.java` — `dispatch()` wraps `dispatchImpl()` + `validateOutputContract()`; `context_agent_executor` reads `contextRefs` from `NodeData`
+- `workflow-runner/.../runner/ContextAssembler.java` — node outputs in `<node-output id="...">` delimiters
+- `workflow-runner/.../store/WorkflowDefaults.java` — updated to new arity
 
 **Tests:**
-- Build grün: workflow-runner (95 Tests), engine (1110 Tests)
-- Keine neuen Test-Klassen (Phase 0 Tests in `NodeDataContractTest` noch nicht implementiert — geplant)
+- Build green: workflow-runner (95 tests), engine (1110 tests)
+- No new test classes (Phase 0 tests in `NodeDataContractTest` not yet implemented — planned)
 
 ---
 
-### Phase 4 — Prompt-Injection-Defense ✅
+### Phase 4 — Prompt Injection Defense ✅
 
 **Commit:** `3eafb65`
-**Dateien:**
-- `engine/.../runtime/context/ConversationFolding.java` — Tool-Results in `<tool-result name="..." id="...">`-Delimiters gewickelt (Completed + Failed)
+**Files:**
+- `engine/.../runtime/context/ConversationFolding.java` — tool results wrapped in `<tool-result name="..." id="...">` delimiters (Completed + Failed)
 
 **Tests:**
-- `ConversationFoldingCoverageTest` — 2 Assertions aktualisiert (begründet: Delimiter-Wrapping ist Design-Änderung)
+- `ConversationFoldingCoverageTest` — 2 assertions updated (justified: delimiter wrapping is a design change)
 
 ---
 
-### Phase 1 — Semantische Tool-Outcomes + hasMore ✅
+### Phase 1 — Semantic Tool Outcomes + hasMore ✅
 
 **Commit:** `b5e52ea`
-**Dateien:**
-- `engine/.../core/contract/tool/ToolOutcome.java` — neue Varianten: `Empty`, `InvalidArgument`, `Unavailable`
-- `engine/.../runtime/tool/runtime/ToolOutcomeJson.java` — Encode/Decode für neue Typen
-- `engine/.../runtime/tool/fs/GrepTool.java` — `hasMore` in Metadata
-- `engine/.../runtime/tool/fs/ReadTool.java` — `hasMore` in Metadata (beide Pfade)
-- `engine/.../runtime/tool/fs/GlobTool.java` — `hasMore` in Metadata
-- `engine/.../core/ToolOutcomeSemanticTest.java` (neu, 9 Tests)
+**Files:**
+- `engine/.../core/contract/tool/ToolOutcome.java` — new variants: `Empty`, `InvalidArgument`, `Unavailable`
+- `engine/.../runtime/tool/runtime/ToolOutcomeJson.java` — Encode/Decode for new types
+- `engine/.../runtime/tool/fs/GrepTool.java` — `hasMore` in metadata
+- `engine/.../runtime/tool/fs/ReadTool.java` — `hasMore` in metadata (both paths)
+- `engine/.../runtime/tool/fs/GlobTool.java` — `hasMore` in metadata
+- `engine/.../core/ToolOutcomeSemanticTest.java` (new, 9 tests)
 
 **Tests:**
-- `ToolOutcomeSemanticTest` — 9 Tests grün
-- `FsToolsTest` — 18 Tests grün (keine Regression)
+- `ToolOutcomeSemanticTest` — 9 tests green
+- `FsToolsTest` — 18 tests green (no regression)
 
 ---
 
-### Phase 5 — Visual Context-Refs + Output-Contract Selektoren (UI) ✅
+### Phase 5 — Visual Context-Refs + Output-Contract Selectors (UI) ✅
 
 **Commit:** `f63167b`
-**Dateien:**
-- `workflow-ui/src/types/workflow.ts` — `NodeData` erweitert um `outputContract`, `contextRefs`
-- `workflow-ui/src/components/PropertyPanel.tsx` — Context-Refs Checkbox-Liste + Output-Contract SchemaSource für `agent`- und `context_agent_executor`-Nodes
+**Files:**
+- `workflow-ui/src/types/workflow.ts` — `NodeData` extended with `outputContract`, `contextRefs`
+- `workflow-ui/src/components/PropertyPanel.tsx` — Context-Refs checkbox list + Output-Contract SchemaSource for `agent` and `context_agent_executor` nodes
 
-**Tests:** Build grün (tsc + vite)
+**Tests:** Build green (tsc + vite)
 
 ---
 
-### Phase 7 — Contract-Validierung (Generator) ✅
+### Phase 7 — Contract Validation (Generator) ✅
 
 **Commits:** `9940936`, `f238164`
-**Dateien:**
-- `workflow-runner/.../generate/WorkflowContractValidator.java` — deterministische Prüfung + LLM-basierter semantischer Pass (`validateWithLlm`)
-- `workflow-runner/.../generate/WorkflowGenerator.java` — beide Pässe integriert (best-effort, non-blocking)
+**Files:**
+- `workflow-runner/.../generate/WorkflowContractValidator.java` — deterministic check + LLM-based semantic pass (`validateWithLlm`)
+- `workflow-runner/.../generate/WorkflowGenerator.java` — both passes integrated (best-effort, non-blocking)
 
-**Hinweis:** LLM-Pass ist best-effort (swallowed exceptions). Test-Klasse `WorkflowGeneratorContractValidationTest` noch nicht implementiert.
+**Note:** LLM pass is best-effort (swallowed exceptions). Test class `WorkflowGeneratorContractValidationTest` not yet implemented.
 
 ---
 
 ## Status
 
-Alle 8 Phasen sind (mindestens teilweise) implementiert. Empfehlungen aus den offenen Fragen umgesetzt:
-- #2: `strict`-Flag in `NodeData` (Default: false = warn + continue, true = abort)
-- #3: `contextRefs` werden automatisch aus Graph-Edges abgeleitet (`TopologicalSort.incomingSources`)
-- #5: Output-Limit konfigurierbar via System-Property `qoc.output.max-bytes` (Default: 50 KB)
+All 8 phases are (at least partially) implemented. Recommendations from open questions implemented:
+- #2: `strict` flag in `NodeData` (Default: false = warn + continue, true = abort)
+- #3: `contextRefs` are automatically derived from graph edges (`TopologicalSort.incomingSources`)
+- #5: Output limit configurable via system property `qoc.output.max-bytes` (Default: 50 KB)
 
-Verbleibende Follow-ups: Test-Klassen (NodeDataContractTest, etc.) und vollständige Integration (Config-Flags statt System-Properties, per-Agent outputLimit in AgentConfig).
+Remaining follow-ups: Test classes (NodeDataContractTest, etc.) and full integration (config flags instead of system properties, per-agent outputLimit in AgentConfig).
 
-### Phase 0b — Feingranulare Feld-Auswahl + strukturierter Initial-Input ✅ (Backend)
+### Phase 0b — Fine-grained Field Selection + Structured Initial Input ✅ (Backend)
 
-**Dateien:**
-- `workflow-runner/.../model/WorkflowDefinition.java` — `inputSchema` Feld (+ Backwards-Compat-Konstruktoren)
-- `workflow-runner/.../runner/WorkflowContext.java` — `initialInput` Feld + Getter/Setter + Persistierung in `restore()`
-- `workflow-runner/.../runner/ContextRefResolver.java` (neu) — Auflösung + Validierung von Pfad-Refs
-- `workflow-runner/.../runner/ContextAssembler.java` — `appendCustom` nutzt `ContextRefResolver`; Feld-Rendering via `<context-value>`
-- `workflow-runner/.../validation/GraphCompiler.java` — `validateContextRefs` + reservierte Node-Namen
-- `workflow-runner/.../runner/WorkflowExecutor.java` — `tryParseJson` + `inputSchema`-Validierung via `NodeContractValidator`
+**Files:**
+- `workflow-runner/.../model/WorkflowDefinition.java` — `inputSchema` field (+ backwards-compat constructors)
+- `workflow-runner/.../runner/WorkflowContext.java` — `initialInput` field + getter/setter + persistence in `restore()`
+- `workflow-runner/.../runner/ContextRefResolver.java` (new) — resolution + validation of path refs
+- `workflow-runner/.../runner/ContextAssembler.java` — `appendCustom` uses `ContextRefResolver`; field rendering via `<context-value>`
+- `workflow-runner/.../validation/GraphCompiler.java` — `validateContextRefs` + reserved node names
+- `workflow-runner/.../runner/WorkflowExecutor.java` — `tryParseJson` + `inputSchema` validation via `NodeContractValidator`
 
 **Tests:**
-- `ContextRefResolverTest` — 11 Tests grün
-- `ContextAssemblerTest` — 5 Tests grün (inkl. Feld-Auswahl)
-- `GraphCompilerTest` — +2 Tests (reservierte Node-Namen, unbekannte Nodes in contextRefs)
+- `ContextRefResolverTest` — 11 tests green
+- `ContextAssemblerTest` — 5 tests green (incl. field selection)
+- `GraphCompilerTest` — +2 tests (reserved node names, unknown nodes in contextRefs)
 
-**Offen (UI):**
-- Phase 5b Feld-Selektor (JSON-Tree mit Checkboxen) noch nicht implementiert.
+**Open (UI):**
+- Phase 5b field selector (JSON tree with checkboxes) not yet implemented.
 
-**Verbleibende Follow-ups:** NodeDataContractTest (P0-1..P0-13), vollständige Integration (Config-Flags statt System-Properties, per-Agent outputLimit).
+**Remaining follow-ups:** NodeDataContractTest (P0-1..P0-13), full integration (config flags instead of system properties, per-agent outputLimit).
 
-**Phase 3 (Strict Structured Outputs):** Detaillierte Anleitung in `docs/plans/strict-structured-outputs.md` (Status: Offen). Drei Optionen analysiert: Option 1 (aktuelle Umsetzung, non-strict + eigene Validierung), Option 2 mit Weg A (response_format) — nicht empfohlen, Weg B (strict auf ToolSpecification) — empfohlen, aber offen (erfordert Schema-Anpassungen + echtes API-Testing).
+**Phase 3 (Strict Structured Outputs):** Detailed instructions in `docs/plans/strict-structured-outputs.md` (Status: Open). Three options analyzed: Option 1 (current implementation, non-strict + own validation), Option 2 with Path A (response_format) — not recommended, Path B (strict on ToolSpecification) — recommended but open (requires schema adjustments + real API testing).
 
-**UI (2026-11-16, vierte Runde):**
-- PropertyPanel zeigt jetzt pro Vorgänger-Node (wenn `outputContract.properties` vorhanden) Checkboxen für Top-Level-Felder (`nodeId.field`).
-- Texteingabe für beliebige Pfade (nodeId.field, initial.field, state.key, lastResult.field) bleibt.
+**UI (2026-11-16, fourth round):**
+- PropertyPanel now shows checkboxes per predecessor node (when `outputContract.properties` present) for top-level fields (`nodeId.field`).
+- Text input for arbitrary paths (nodeId.field, initial.field, state.key, lastResult.field) remains.
 
-**UI (2026-11-16, sechste Runde):**
-- Vollständiger rekursiver JSON-Tree-Feld-Selektor (`FieldTree`-Komponente): beliebige Verschachtelungstiefe, Checkboxen pro Feld, Pfade werden als `nodeId.a.b.c` zu `contextRefs` hinzugefügt.
+**UI (2026-11-16, sixth round):**
+- Full recursive JSON tree field selector (`FieldTree` component): arbitrary nesting depth, checkbox per field, paths added as `nodeId.a.b.c` to `contextRefs`.
 
-**Zusätzlich implementiert (2026-11-16, dritte Runde):**
-- `WorkflowContractValidatorTest` — 7 Tests (Namenskonvention, fehlender Output-Contract, fehlender System-Prompt, LLM-Parse, null-Caller, null-Def).
+**Additionally implemented (2026-11-16, third round):**
+- `WorkflowContractValidatorTest` — 7 tests (naming convention, missing output contract, missing system prompt, LLM parse, null caller, null def).
 
-**Zusätzlich implementiert (2026-11-16, fünfte Runde):**
-- `NodeDataContractTest` — 11 Tests (Contract-Validierung valid/invalid/missing/additional/enum, no-contract passthrough, contextRefs field filtering, unknown ref, template type check/mismatch).
-- Phase 5b UI: rekursiver JSON-Tree-Feld-Selektor (Top-Level + verschachtelte Felder) in PropertyPanel.
+**Additionally implemented (2026-11-16, fifth round):**
+- `NodeDataContractTest` — 11 tests (contract validation valid/invalid/missing/additional/enum, no-contract passthrough, contextRefs field filtering, unknown ref, template type check/mismatch).
+- Phase 5b UI: recursive JSON tree field selector (top-level + nested fields) in PropertyPanel.
 
-## Offene Fragen (aus dem Plan)
+## Open Questions (from the plan)
 
-1. Soll `outputContract` verpflichtend oder optional sein? → Empfehlung: optional (Default = kein Contract → Legacy).
-2. Soll Contract-Verstoß den Workflow abbrechen oder nur warnen? → Empfehlung: abbrechen bei `strict: true`-Flag, sonst warnen + weiter.
-3. Sollen `contextRefs` automatisch aus Graph-Edges abgeleitet werden? → Empfehlung: ja, als Default.
-4. Enum-Conversion in Tools: case-insensitive oder strict? (Phase 1, P1-15)
-5. Offloading-Schwellenwert: global oder per-Agent? (Phase 2)
-6. ChatContextReducer: default aktiviert oder opt-in? (Phase 6)
+1. Should `outputContract` be mandatory or optional? → Recommendation: optional (Default = no contract → Legacy).
+2. Should contract violations abort the workflow or only warn? → Recommendation: abort with `strict: true` flag, otherwise warn + continue.
+3. Should `contextRefs` be derived automatically from graph edges? → Recommendation: yes, as default.
+4. Enum conversion in tools: case-insensitive or strict? (Phase 1, P1-15)
+5. Offloading threshold: global or per-agent? (Phase 2)
+6. ChatContextReducer: default enabled or opt-in? (Phase 6)

@@ -110,8 +110,8 @@ public final class ToolExecutor {
             // 1. name resolution IN THE SNAPSHOT
             definition = snapshot.require(call.name());
             if (definition == null) {
-                return failed(new ToolFailure("Tool '" + call.name() + "' ist in dieser Session nicht verfügbar. "
-                        + "Bitte verwende ein verfügbares Tool und versuche es erneut.") { });
+                return failed(new ToolFailure("Tool '" + call.name() + "' is not available in this session. "
+                        + "Please use an available tool and try again.") { });
             }
 
             // 2. pre-hook (may fail)

@@ -1,71 +1,72 @@
-# Einheitliche Speicher-Konfiguration
+# Unified Storage Configuration
 
 > **Status:** 2026-11-14
-> **Geltung:** `qoc/` — Java 21 / Quarkus 3.40
+> **Scope:** `qoc/` — Java 21 / Quarkus 3.40
 
-## 1. Grundprinzip: `engine.storage` steuert alles
+## 1. Core Principle: `engine.storage` Controls Everything
 
-Ein einziger Schalter bestimmt das Backend für alle **Daten**-Oberflächen:
+A single switch determines the backend for all **data** surfaces:
 
 ```properties
-engine.storage=memory   # oder: file, sqlite, postgres
+engine.storage=memory   # or: file, sqlite, postgres
 ```
 
-| `engine.storage` | Engine-Runtime | Workflows | Agents | MCP-Server | QOC-Agents |
+| `engine.storage` | Engine Runtime | Workflows | Agents | MCP Servers | QOC Agents |
 |---|---|---|---|---|---|
-| `memory` | In-Memory (ephemeral) | In-Memory | In-Memory | Runtime-Registry (ephemeral) | Import aus MD → Memory |
+| `memory` | In-Memory (ephemeral) | In-Memory | In-Memory | Runtime Registry (ephemeral) | Import from MD → Memory |
 | `file` | In-Memory (ephemeral) | File (JSON) | File (JSON) | File (JSON) | File (MD) |
 | `sqlite` | SQLite DB | SQLite DB | SQLite DB | File (JSON) | Import → SQLite |
 | `postgres` | Postgres DB | Postgres DB | Postgres DB | File (JSON) | Import → Postgres |
 
-### Warum Runtime bei `file` in-memory bleibt
+### Why the Runtime Stays In-Memory under `file`
 
-Die Engine-Runtime (Sessions, Journal, Snapshots, Tool-Outputs) hat keinen
-File-Backend. Bei `engine.storage=file` wird die Runtime wie bei `memory`
-behandelt (kein Datasource, keine Crash-Recovery). Workflows, Agents und
-MCP-Server nutzen Dateien.
+The Engine Runtime (sessions, journal, snapshots, tool outputs) has no
+file backend. Under `engine.storage=file`, the runtime is treated like
+`memory` (no datasource, no crash recovery). Workflows, agents and
+MCP servers use files.
 
-## 2. Konfiguration vs. Daten
+## 2. Configuration vs. Data
 
-| Oberfläche | Art | Backend | Begründung |
+| Surface | Type | Backend | Rationale |
 |---|---|---|---|
-| `EngineConfig` (Provider, Model, Permissions, Agent-Defaults) | Konfiguration | Datei (JSON/properties) | Konfiguration ≠ Daten |
-| `application.properties` | Konfiguration | Datei | Quarkus-Standard |
-| QOC-Agents (Markdown) | Templates | Datei (MD) | Templates, nicht Runtime-Daten |
-| MCP-Server-Defaults (Config) | Konfiguration | Datei (JSON) | Initiale Server-Liste |
-| Engine-Runtime | Daten | Memory/DB | Sessions, Journal |
-| Workflow-Definitionen | Daten | Memory/File/DB | Nutzerdaten |
-| Agent-Definitionen (SSOT) | Daten | Memory/File/DB | Nutzerdaten |
-| MCP-Server (UI-registriert) | Daten | File (JSON) | Runtime-Registrierungen |
+| `EngineConfig` (provider, model, permissions, agent defaults) | Configuration | File (JSON/properties) | Configuration ≠ data |
+| `application.properties` | Configuration | File | Quarkus standard |
+| QOC Agents (Markdown) | Templates | File (MD) | Templates, not runtime data |
+| MCP Server Defaults (config) | Configuration | File (JSON) | Initial server list |
+| Engine Runtime | Data | Memory/DB | Sessions, journal |
+| Workflow Definitions | Data | Memory/File/DB | User data |
+| Agent Definitions (SSOT) | Data | Memory/File/DB | User data |
+| MCP Servers (UI-registered) | Data | File (JSON) | Runtime registrations |
 
-## 3. Override-Möglichkeiten
+## 3. Override Options
 
-`engine.workflow.storage` und `engine.agent.storage` können den Default
-überschreiben (`auto` folgt `engine.storage`):
+`engine.workflow.storage` and `engine.agent.storage` can override the
+default (`auto` follows `engine.storage`):
 
 ```properties
 engine.storage=postgres
-engine.workflow.storage=file      # Workflows in Dateien, Runtime in DB
+engine.workflow.storage=file      # Workflows in files, runtime in DB
 engine.agent.storage=memory      # Agents in-memory (ephemeral)
 ```
 
 ## 4. File-First, DB-Override
 
-Beim Start werden Dateien **zuerst** geladen, DB-Daten haben **Vorrang**:
+At startup, files are loaded **first**, DB data takes **precedence**:
 
-- **Agents:** `WorkflowRecovery.importQocAgents()` importiert Config- und
-  Markdown-Agents in den Agent-Store, aber nur wenn `store.get(id) == null`
-  (DB-Daten werden nicht überschrieben).
-- **Workflows:** `WorkflowRecovery.importFileWorkflows()` scannt `wf-data/`
-  für `*.json`-Dateien und importiert fehlende Workflows (DB hat Vorrang).
-- **MCP-Server:** `McpRegistry.setup()` lädt persistierte Server aus
-  `mcp-servers.json` (UI-registrierte Server überleben Neustarts).
+- **Agents:** `WorkflowRecovery.importQocAgents()` imports config and
+  Markdown agents into the agent store, but only when
+  `store.get(id) == null` (DB data is not overwritten).
+- **Workflows:** `WorkflowRecovery.importFileWorkflows()` scans
+  `wf-data/` for `*.json` files and imports missing workflows (DB
+  takes precedence).
+- **MCP Servers:** `McpRegistry.setup()` loads persisted servers from
+  `mcp-servers.json` (UI-registered servers survive restarts).
 
-## 5. MCP-Server
+## 5. MCP Servers
 
-### Konfiguration (Datei)
+### Configuration (File)
 
-In `settings.json` oder über Umgebungsvariablen:
+In `settings.json` or via environment variables:
 
 ```json
 {
@@ -76,27 +77,27 @@ In `settings.json` oder über Umgebungsvariablen:
 }
 ```
 
-Relative URLs (`/api/test/mcp`) werden automatisch zum Port aufgelöst:
-`http://localhost:<port>/api/test/mcp`. Keine Port-Angabe nötig.
+Relative URLs (`/api/test/mcp`) are resolved to the port automatically:
+`http://localhost:<port>/api/test/mcp`. No port specification needed.
 
-### Runtime-Registrierung (UI/REST)
+### Runtime Registration (UI/REST)
 
 ```bash
-# Hinzufügen
+# Add
 curl -X POST http://localhost:8080/api/mcp-client/servers \
   -H "Content-Type: application/json" \
   -d '{"name":"test","type":"remote","url":"/api/test/mcp"}'
 
-# Löschen
+# Delete
 curl -X DELETE http://localhost:8080/api/mcp-client/servers/test
 ```
 
-UI: `/workflow/mcp-servers` — Add/Remove/Reload mit Status-Anzeige.
+UI: `/workflow/mcp-servers` — Add/Remove/Reload with status display.
 
-Persistenz: registrierte Server werden in `./mcp-servers.json` gespeichert
-und beim nächsten Start geladen.
+Persistence: registered servers are stored in `./mcp-servers.json`
+and loaded on the next start.
 
-## 6. Agent-Berechtigungen (RBAC)
+## 6. Agent Permissions (RBAC)
 
 ### Config (settings.json / application.properties)
 
@@ -112,12 +113,12 @@ und beim nächsten Start geladen.
 
 ### Defaults (`normalizeRoles`)
 
-| Agent-Name | Default `rolesAllowed` |
+| Agent Name | Default `rolesAllowed` |
 |---|---|
-| `build`, `plan` | `["*"]` (alle) |
-| Sonstige | `["admin"]` (nur Admin) |
+| `build`, `plan` | `["*"]` (all) |
+| Others | `["admin"]` (admin only) |
 
-### Markdown-Frontmatter (QOC-Agents)
+### Markdown Frontmatter (QOC Agents)
 
 ```yaml
 ---
@@ -126,37 +127,37 @@ rolesAllowed: [admin, editor]
 ---
 ```
 
-`QocAgentConverter` überträgt `rolesAllowed` in den Agent-Store.
+`QocAgentConverter` transfers `rolesAllowed` into the agent store.
 
-### Workflow-Runner-Prüfung
+### Workflow Runner Check
 
 `DefaultNodeDispatcher.agentAllowed()`:
-- `*` in `rolesAllowed` → alle dürfen
-- Leere Liste → nur Owner + Admin
-- Admin-Principal → immer erlaubt
+- `*` in `rolesAllowed` → everyone allowed
+- Empty list → owner + admin only
+- Admin principal → always allowed
 
-## 7. Umgebungsvariablen
+## 7. Environment Variables
 
-| Variable | Default | Wirkung |
+| Variable | Default | Effect |
 |---|---|---|
 | `ENGINE_STORAGE` | `postgres` | memory / file / sqlite / postgres |
 | `ENGINE_DB_KIND` | `postgresql` | sqlite / postgresql |
 | `ENGINE_WORKFLOW_STORAGE` | `auto` | auto / memory / file / sqlite / postgres |
-| `ENGINE_WORKFLOW_STORAGE_DIR` | `./wf-data` | Verzeichnis für Workflow-JSON-Dateien |
+| `ENGINE_WORKFLOW_STORAGE_DIR` | `./wf-data` | Directory for workflow JSON files |
 | `ENGINE_AGENT_STORAGE` | `auto` | auto / memory / file / sqlite / postgres |
-| `QOC_MCP_SERVERS_FILE` | `./mcp-servers.json` | Persistenzdatei für MCP-Server |
+| `QOC_MCP_SERVERS_FILE` | `./mcp-servers.json` | Persistence file for MCP servers |
 
-## 8. Offene Punkte
+## 8. Open Items
 
-- **MCP-Server DB-Persistenz:** Aktuell JSON-File. DB-Modus könnte eine
-  `mcp_server`-Tabelle nutzen (Migration V12). *(Offen — JSON-File ist das
-  dokumentierte Design; DB-Persistenz wäre ein Enhancement.)*
-- **RBAC least-privilege Default als Config-Key:** ✅ Implementiert via
-  `engine.agent.default-roles` (Default: `admin`). Hardcoded-Fallback für
-  `build`/`plan` bleibt `*`.
-- **Echter File-Journal für Runtime:** Bei `file`-Modus ist die Runtime
-  in-memory (kein Crash-Recovery). Ein File-Journal wäre für Offline-Nutzung
-  wünschenswert. *(Offen — komplex, erfordert File-Journal-Implementierung.)*
-- **Bessere Config-Möglichkeit:** UI-basierte Konfiguration für Agents,
-  Permissions und MCP-Server (aktuell nur JSON/Properties). *(Offen — großer
-  Umfang, erfordert umfangreiche UI-Arbeit.)*
+- **MCP Server DB persistence:** Currently JSON file. DB mode could use
+  an `mcp_server` table (Migration V12). *(Open — JSON file is the
+  documented design; DB persistence would be an enhancement.)*
+- **RBAC least-privilege default as config key:** ✅ Implemented via
+  `engine.agent.default-roles` (Default: `admin`). Hardcoded fallback for
+  `build`/`plan` remains `*`.
+- **Real file journal for runtime:** In `file` mode the runtime is
+  in-memory (no crash recovery). A file journal would be desirable for
+  offline use. *(Open — complex, requires file journal implementation.)*
+- **Better configuration option:** UI-based configuration for agents,
+  permissions and MCP servers (currently only JSON/Properties). *(Open —
+  large scope, requires extensive UI work.)*

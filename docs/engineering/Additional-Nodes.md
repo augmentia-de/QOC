@@ -1,17 +1,17 @@
-# Additional Nodes — Dynamische Node-Registrierung
+# Additional Nodes — Dynamic Node Registration
 
-**Status:** Plan (2026-11-11) · Bezug: `ReAct-Umsetzung.md`, `ReAct-Workflow.md`
+**Status:** Plan (2026-11-11) · Reference: `ReAct-Umsetzung.md`, `ReAct-Workflow.md`
 
 ## Problem
 
-`DefaultNodeDispatcher` hat einen **monolithischen switch-Statement**. Jeder neue Node-Typ erfordert:
-1. Änderung in `DefaultNodeDispatcher` (neuer case)
-2. Änderung in `GraphCompiler` (VALID_NODE_TYPES)
-3. Änderung im Frontend (Node-Komponente + PropertyPanel + types)
+`DefaultNodeDispatcher` has a **monolithic switch statement**. Every new node type requires:
+1. A change in `DefaultNodeDispatcher` (new case)
+2. A change in `GraphCompiler` (VALID_NODE_TYPES)
+3. A change in the frontend (node component + PropertyPanel + types)
 
-Das ist nicht skalierbar und verstößt gegen das Open/Closed-Prinzip.
+This is not scalable and violates the Open/Closed principle.
 
-## Lösung: NodeHandler-Registry (analog zu ToolRegistry)
+## Solution: NodeHandler Registry (analogous to ToolRegistry)
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -38,24 +38,24 @@ Das ist nicht skalierbar und verstößt gegen das Open/Closed-Prinzip.
 │  └── EmailReadNodeHandler                            │
 │                                                      │
 │  Custom Handlers (via SPI/ServiceLoader):            │
-│  └── MyCustomNodeHandler (von Nutzer bereitgestellt) │
+│  └── MyCustomNodeHandler (provided by the user)     │
 └─────────────────────────────────────────────────────┘
 ```
 
-## Implementierung
+## Implementation
 
-### 1. NodeHandler-Interface
+### 1. NodeHandler Interface
 
 ```java
 public interface NodeHandler {
-    /** Der Node-Typ, den dieser Handler verarbeitet. */
+    /** The node type handled by this handler. */
     String type();
 
-    /** Führt den Node aus und gibt das Ergebnis zurück. */
+    /** Executes the node and returns the result. */
     NodeResult handle(WorkflowDefinition.Node node, WorkflowDefinition def,
                       WorkflowContext ctx, String input, NodeHandlerContext context);
 
-    /** Validiert die Node-Konfiguration. */
+    /** Validates the node configuration. */
     default List<String> validate(WorkflowDefinition.Node node) {
         return List.of();
     }
@@ -127,7 +127,7 @@ public class NodeHandlerRegistry {
 }
 ```
 
-### 4. Beispiel: AgentNodeHandler
+### 4. Example: AgentNodeHandler
 
 ```java
 public class AgentNodeHandler implements NodeHandler {
@@ -169,10 +169,10 @@ public class AgentNodeHandler implements NodeHandler {
 }
 ```
 
-### 5. Beispiel: Custom Node Handler (vom Nutzer)
+### 5. Example: Custom Node Handler (provided by the user)
 
 ```java
-// In einem separaten Modul oder JAR
+// In a separate module or JAR
 public class SlackNotifyNodeHandler implements NodeHandler {
     @Override
     public String type() { return "slack_notify"; }
@@ -189,72 +189,72 @@ public class SlackNotifyNodeHandler implements NodeHandler {
 }
 ```
 
-Registrierung via `META-INF/services/de.augmentia.qoc.workflowrunner.runner.NodeHandler`:
+Registration via `META-INF/services/de.augmentia.qoc.workflowrunner.runner.NodeHandler`:
 ```
 com.example.SlackNotifyNodeHandler
 ```
 
-### Vorteile gegenüber switch-Statement
+### Advantages over the switch statement
 
-| Aspekt | switch-Statement | NodeHandler-Registry |
+| Aspect | switch statement | NodeHandler Registry |
 |---|---|---|
-| **Open/Closed** | ❌ Muss geändert werden | ✅ Offen für Erweiterung |
-| **Testbarkeit** | ❌ Monolithisch | ✅ Jeder Handler einzeln testbar |
-| **Custom Nodes** | ❌ Nicht möglich | ✅ Via ServiceLoader |
-| **Validierung** | ❌ Zentral in GraphCompiler | ✅ Pro Handler |
-| **Wartbarkeit** | ❌ Wächst mit jedem Node-Typ | ✅ Jeder Handler ist klein |
-| **Frontend-Kopplung** | ❌ Node-Typen hardcoded | ✅ Frontend kann Typen aus Registry laden |
+| **Open/Closed** | ❌ Must be modified | ✅ Open for extension |
+| **Testability** | ❌ Monolithic | ✅ Each handler individually testable |
+| **Custom Nodes** | ❌ Not possible | ✅ Via ServiceLoader |
+| **Validation** | ❌ Centralized in GraphCompiler | ✅ Per handler |
+| **Maintainability** | ❌ Grows with every node type | ✅ Each handler is small |
+| **Frontend coupling** | ❌ Node types hardcoded | ✅ Frontend can load types from the registry |
 
-### Frontend-Integration
+### Frontend integration
 
-Der Frontend kann die verfügbaren Node-Typen vom Backend laden:
+The frontend can load the available node types from the backend:
 
 ```typescript
 // GET /node-types → ["agent", "decision", "start", "end", ..., "slack_notify"]
 const { data } = await api.get('/node-types');
 ```
 
-PropertyPanel rendert dann dynamisch die Config-Felder basierend auf dem Node-Typ (via Schema/JSON-Schema).
+The PropertyPanel then renders the config fields dynamically based on the node type (via schema/JSON-Schema).
 
-### Implementierungsschritte
+### Implementation steps
 
-| Schritt | Was | Aufwand |
+| Step | What | Effort |
 |---|---|---|
-| 1 | `NodeHandler`-Interface + `NodeHandlerContext`-Record | Gering |
-| 2 | `NodeHandlerRegistry` mit ServiceLoader | Gering |
-| 3 | Built-in Handler extrahieren (Agent, Decision, Start, End, ...) | Mittel |
-| 4 | `DefaultNodeDispatcher` → nutzt Registry statt switch | Gering |
-| 5 | `GraphCompiler` → nutzt Registry für VALID_NODE_TYPES | Gering |
-| 6 | `WorkflowRunnerMain` → Registry erstellen, an Dispatcher übergeben | Gering |
-| 7 | Frontend: `/node-types` Endpoint + dynamische Node-Liste | Mittel |
-| 8 | Tests | Mittel |
+| 1 | `NodeHandler` interface + `NodeHandlerContext` record | Low |
+| 2 | `NodeHandlerRegistry` with ServiceLoader | Low |
+| 3 | Extract built-in handlers (Agent, Decision, Start, End, ...) | Medium |
+| 4 | `DefaultNodeDispatcher` → uses registry instead of switch | Low |
+| 5 | `GraphCompiler` → uses registry for VALID_NODE_TYPES | Low |
+| 6 | `WorkflowRunnerMain` → create registry, pass to dispatcher | Low |
+| 7 | Frontend: `/node-types` endpoint + dynamic node list | Medium |
+| 8 | Tests | Medium |
 
-### Empfehlung
+### Recommendation
 
-Die NodeHandler-Registry ist der richtige Ansatz. Sie:
-- Entfernt den monolithischen switch-Statement
-- Ermöglicht Custom Nodes ohne Code-Änderung
-- Ist konsistent mit dem bestehenden `ToolRegistry`-Pattern in engine
-- Macht jeden Node-Typ einzeln testbar
+The NodeHandler registry is the right approach. It:
+- Removes the monolithic switch statement
+- Enables custom nodes without code changes
+- Is consistent with the existing `ToolRegistry` pattern in engine
+- Makes every node type individually testable
 
 ---
 
-## Dynamische Tools via Webhooks — ohne Kern-Rebuild
+## Dynamic Tools via Webhooks — without a core rebuild
 
-### Kurze Antwort: Ja, mit Einschränkungen
+### Short answer: Yes, with limitations
 
-Es gibt drei Stufen der Dynamik, die ohne Rebuild möglich sind:
+There are three levels of dynamism achievable without a rebuild:
 
-### Stufe 1: Generischer `webhook`-Node (kein Rebuild nötig)
+### Level 1: Generic `webhook` node (no rebuild needed)
 
-Ein **eingebauter Node-Typ** `webhook` (oder `http_request`), der beliebige URLs aufruft:
+A **built-in node type** `webhook` (or `http_request`) that calls arbitrary URLs:
 
 ```json
 {
   "id": "notify_slack",
   "type": "webhook",
   "data": {
-    "title": "Slack Benachrichtigung",
+    "title": "Slack notification",
     "url": "https://hooks.slack.com/services/xxx",
     "method": "POST",
     "headers": { "Content-Type": "application/json" },
@@ -264,22 +264,22 @@ Ein **eingebauter Node-Typ** `webhook` (oder `http_request`), der beliebige URLs
 }
 ```
 
-**Vorteil:** Sofort nutzbar, keine Code-Änderung. Der NodeHandler ist im Kern eingebaut.
-**Nachteil:** Nur HTTP-Calls, keine komplexe Logik.
+**Advantage:** Immediately usable, no code changes. The handler is built into the core.
+**Disadvantage:** HTTP calls only, no complex logic.
 
-**Implementierung:** Ein `WebhookNodeHandler` im Kern, der `java.net.http.HttpClient` nutzt (bereits in engine vorhanden via `HttpTransport`).
+**Implementation:** A `WebhookNodeHandler` in the core that uses `java.net.http.HttpClient` (already present in engine via `HttpTransport`).
 
-### Stufe 2: Dynamische Registrierung zur Laufzeit (ohne Rebuild)
+### Level 2: Dynamic registration at runtime (without rebuild)
 
-Die `NodeHandlerRegistry` hat bereits `register(type, handler)`. Man kann zur Laufzeit neue Handler hinzufügen:
+The `NodeHandlerRegistry` already has `register(type, handler)`. New handlers can be added at runtime:
 
 ```java
-// Runtime-Registrierung (z. B. beim Start oder via API)
+// Runtime registration (e.g. at startup or via API)
 registry.register(new SlackNotifyNodeHandler());
 registry.register(new JiraCreateTicketNodeHandler());
 ```
 
-**API-Endpoint (neu):**
+**API endpoint (new):**
 ```
 POST /node-types
 {
@@ -289,168 +289,169 @@ POST /node-types
 }
 ```
 
-**Wie es funktioniert:**
-1. JAR wird in einen `plugins/`-Ordner gelegt
-2. `URLClassLoader` lädt die Klasse
-3. `registry.register()` fügt den Handler hinzu
-4. Frontend lädt verfügbare Typen via `GET /node-types`
+**How it works:**
+1. The JAR is placed in a `plugins/` folder
+2. `URLClassLoader` loads the class
+3. `registry.register()` adds the handler
+4. The frontend loads available types via `GET /node-types`
 
-**Vorteil:** Beliebige Java-Logik nachrüstbar.
-**Nachteil:** JAR-Deployment, kein reines Webhook.
+**Advantage:** Arbitrary Java logic can be retrofitted.
+**Disadvantage:** JAR deployment, not a pure webhook.
 
-### Stufe 3: Webhook-basierte Tool-Registrierung (rein konfigurativ)
+### Level 3: Webhook-based tool registration (purely configurative)
 
-Externe Systeme können neue "Tools" (nicht Node-Typen) via Webhook registrieren:
+External systems can register new "tools" (not node types) via webhook:
 
 ```
 POST /tools/register
 {
   "name": "send_slack_message",
-  "description": "Sendet eine Slack-Nachricht",
+  "description": "Sends a Slack message",
   "webhookUrl": "https://my-service.com/slack",
   "inputSchema": { "channel": "string", "message": "string" },
   "outputSchema": { "ok": "boolean", "ts": "string" }
 }
 ```
 
-Der Kern erstellt intern einen `WebhookToolHandler`, der:
-1. Den Input als JSON an die Webhook-URL sendet
-2. Das Ergebnis als `NodeResult` zurückgibt
-3. Data-Piping (`${node.output.field}`) unterstützt
+The core internally creates a `WebhookToolHandler` that:
+1. Sends the input as JSON to the webhook URL
+2. Returns the result as a `NodeResult`
+3. Supports data piping (`${node.output.field}`)
 
-**Vorteil:** Kein Code, keine JARs — rein über API konfigurierbar.
-**Nachteil:** Nur request/response, keine komplexe Logik.
+**Advantage:** No code, no JARs — purely configurable via API.
+**Disadvantage:** Only request/response, no complex logic.
 
-### Vergleich
+### Comparison
 
-| Stufe | Was | Rebuild? | Komplexität | Flexibilität |
+| Level | What | Rebuild? | Complexity | Flexibility |
 |---|---|---|---|---|
-| **1. webhook-Node** | Eingebauter HTTP-Node | Nein | Gering | Mittel (nur HTTP) |
-| **2. JAR-Plugin** | ServiceLoader + URLClassLoader | Nein | Mittel | Hoch (beliebige Java-Logik) |
-| **3. Webhook-Tool** | API-registrierte HTTP-Tools | Nein | Gering | Mittel (request/response) |
+| **1. webhook node** | Built-in HTTP node | No | Low | Medium (HTTP only) |
+| **2. JAR plugin** | ServiceLoader + URLClassLoader | No | Medium | High (arbitrary Java logic) |
+| **3. Webhook tool** | API-registered HTTP tools | No | Low | Medium (request/response) |
 
-### Empfohlener Ansatz: Stufe 1 + 3 kombiniert
+### Recommended approach: Level 1 + 3 combined
 
-1. **Eingebauter `webhook`-Node** (Stufe 1) für einfache HTTP-Calls
-2. **Dynamische Tool-Registrierung** (Stufe 3) für wiederverwendbare HTTP-Tools
-3. **ServiceLoader** (Stufe 2) als Fallback für komplexe Java-Logik
+1. **Built-in `webhook` node** (Level 1) for simple HTTP calls
+2. **Dynamic tool registration** (Level 3) for reusable HTTP tools
+3. **ServiceLoader** (Level 2) as a fallback for complex Java logic
 
-### Frontend-Integration
+### Frontend integration
 
 ```
-PropertyPanel → Node-Typ: [webhook ▼]
+PropertyPanel → Node type: [webhook ▼]
   ├── URL: [https://hooks.slack.com/...]
   ├── Method: [POST ▼]
-  ├── Headers: [JSON-Editor]
-  ├── Body Template: [textarea] (mit ${...} Data-Piping)
+  ├── Headers: [JSON editor]
+  ├── Body Template: [textarea] (with ${...} data piping)
   └── Timeout: [10s]
 ```
 
-Der Nutzer kann beliebige Webhooks konfigurieren, ohne den Kern zu ändern.
+The user can configure arbitrary webhooks without changing the core.
 
-### Was bereits vorhanden ist
+### What already exists
 
-- `NodeHandlerRegistry.register()` — dynamische Registrierung zur Laufzeit ✅
-- `ServiceLoader` — automatische Discovery von Custom Handlers ✅
-- `HttpTransport` / `JdkHttpTransport` — HTTP-Calls in engine ✅
-- `TemplateResolver` — Data-Piping (`${node.output.field}`) ✅
-- `/node-types` Endpoint (geplant) — Frontend kann verfügbare Typen laden
+- `NodeHandlerRegistry.register()` — dynamic registration at runtime ✅
+- `ServiceLoader` — automatic discovery of custom handlers ✅
+- `HttpTransport` / `JdkHttpTransport` — HTTP calls in engine ✅
+- `TemplateResolver` — data piping (`${node.output.field}`) ✅
+- `/node-types` endpoint (planned) — frontend can load available types
 
-### Fazit
+### Conclusion
 
-**Ja, beliebige Tools können nachträglich via API oder Webhook hinzugefügt werden**, ohne den Kern neu zu bauen. Der Kern muss nur **einmal** den `webhook`-Node und die dynamische Registrierung implementieren. Danach können beliebige Tools via API oder Webhook hinzugefügt werden.
+**Yes, arbitrary tools can be added later via API or webhook** without rebuilding the core. The core only needs to implement the `webhook` node and dynamic registration **once**. After that, arbitrary tools can be added via API or webhook.
 
 ---
 
 ## Native Deployment (GraalVM)
 
-### Kurzantwort
+### Short answer
 
-| Mechanismus | JVM-Modus | Native (GraalVM) |
+| Mechanism | JVM mode | Native (GraalVM) |
 |---|---|---|
-| **Stufe 1: webhook-Node** (eingebauter HTTP-Handler) | ✅ | ✅ |
-| **Stufe 2: JAR-Plugins** (ServiceLoader + URLClassLoader) | ✅ | ❌ |
-| **Stufe 3: Webhook-Tool-Registrierung** (API, konfigurativ) | ✅ | ✅ (wenn nur konfiguriert, keine neuen Klassen) |
+| **Level 1: webhook node** (built-in HTTP handler) | ✅ | ✅ |
+| **Level 2: JAR plugins** (ServiceLoader + URLClassLoader) | ✅ | ❌ |
+| **Level 3: Webhook tool registration** (API, configurative) | ✅ | ✅ (when only configured, no new classes) |
 
-### Warum Stufe 2 in Native nicht funktioniert
+### Why Level 2 does not work in Native
 
-GraalVM Native Image ist eine **Ahead-of-Time (AOT)**-Kompilierung:
-- Alle Klassen müssen zur **Build-Zeit** bekannt sein
-- Es gibt **keinen Bytecode-Interpreter** zur Laufzeit
-- `URLClassLoader`, `Class.forName("com.example.X")` für unbekannte Klassen schlagen fehl
-- `ServiceLoader` funktioniert nur für Klassen, die im Image enthalten sind
+GraalVM Native Image is an **Ahead-of-Time (AOT)** compilation:
+- All classes must be known at **build time**
+- There is **no bytecode interpreter** at runtime
+- `URLClassLoader`, `Class.forName("com.example.X")` for unknown classes fail
+- `ServiceLoader` only works for classes contained in the image
 
-→ **Beliebige JARs zur Laufzeit laden ist in Native Image grundsätzlich nicht möglich.**
+→ **Loading arbitrary JARs at runtime is fundamentally impossible in Native Image.**
 
-### Was in Native funktioniert
+### What works in Native
 
-#### ✅ Stufe 1: webhook-Node
-- Ist im Kern eingebaut (`WebhookNodeHandler` ist Teil des Images)
-- Nutzt `java.net.http.HttpClient` (in GraalVM enthalten)
-- Keine neuen Klassen zur Laufzeit → funktioniert
+#### ✅ Level 1: webhook node
+- Built into the core (`WebhookNodeHandler` is part of the image)
+- Uses `java.net.http.HttpClient` (included in GraalVM)
+- No new classes at runtime → works
 
-#### ✅ Stufe 3: Webhook-Tool-Registrierung (konfigurativ)
-- Wenn `POST /tools/register` nur **Konfiguration** speichert (URL, Schema, Headers)
-- und intern den **eingebauten** `WebhookNodeHandler` mit diesen Parametern nutzt
-- → funktioniert in Native
+#### ✅ Level 3: Webhook tool registration (configurative)
+- When `POST /tools/register` only stores **configuration** (URL, schema, headers)
+- and internally uses the **built-in** `WebhookNodeHandler` with those parameters
+- → works in Native
 
-#### ❌ Stufe 2: JAR-Plugins
+#### ❌ Level 2: JAR plugins
 - `URLClassLoader.loadClass()` → `ClassNotFoundException` in Native
-- ServiceLoader findet nur Klassen im Image
-- → **nicht möglich** in Native
+- ServiceLoader only finds classes in the image
+- → **not possible** in Native
 
-### Empfehlung für Native-kompatibles Design
+### Recommendation for a Native-compatible design
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  Native-kompatible Architektur                       │
+│  Native-compatible architecture                      │
 │                                                      │
 │  ┌─────────────────┐    ┌──────────────────────┐    │
-│  │ Eingebaute       │    │ Dynamische           │    │
-│  │ Handler (im Image)│    │ Konfiguration        │    │
-│  │                  │    │ (zur Laufzeit)       │    │
+│  │ Built-in         │    │ Dynamic              │    │
+│  │ handlers         │    │ configuration        │    │
+│  │ (in image)       │    │ (at runtime)         │    │
+│  │                  │    │                      │    │
 │  │ • webhook        │◄───│ • URL, Method,       │    │
 │  │ • agent          │    │   Headers, Body      │    │
 │  │ • decision       │    │ • Schema, Timeout    │    │
 │  │ • email_send     │    │                      │    │
-│  │ • email_fetch    │    │ → Keine neuen Klassen│    │
-│  │ • email_read     │    │ → Native-kompatibel  │    │
+│  │ • email_fetch    │    │ → No new classes     │    │
+│  │ • email_read     │    │ → Native-compatible  │    │
 │  └─────────────────┘    └──────────────────────┘    │
 │                                                      │
-│  JAR-Plugins (Stufe 2): NUR im JVM-Modus            │
-│  → Für Native: Vorab als eingebaute Handler         │
-│    kompilieren (Build-Zeit)                         │
+│  JAR plugins (Level 2): JVM mode only               │
+│  → For Native: compile as built-in handlers          │
+│    ahead of time (build time)                        │
 └─────────────────────────────────────────────────────┘
 ```
 
-### Konkrete Konsequenzen
+### Concrete consequences
 
-1. **Für Native Builds:** Nur Stufe 1 + 3 nutzen. Alle Node-Typen müssen zur Build-Zeit im Image sein.
-2. **Für JVM-Modus:** Alle drei Stufen verfügbar, inkl. dynamische JAR-Plugins.
-3. **Hybrid-Ansatz:** Wenn Native benötigt wird, können Custom Nodes als **GraalVM Reachability Metadata** eingebunden werden (Build-Zeit), aber nicht zur Laufzeit hinzugefügt.
-4. **Quarkus Native Profile** (`-Pnative`) existiert bereits im `quarkus/pom.xml` — das zeigt, dass Native ein explizites Ziel ist.
+1. **For Native builds:** Use only Level 1 + 3. All node types must be in the image at build time.
+2. **For JVM mode:** All three levels available, including dynamic JAR plugins.
+3. **Hybrid approach:** If Native is needed, custom nodes can be embedded as **GraalVM Reachability Metadata** (build time), but not added at runtime.
+4. **Quarkus Native Profile** (`-Pnative`) already exists in `quarkus/pom.xml` — showing that Native is an explicit goal.
 
 ---
 
-## MCP-Integration in Workflows
+## MCP Integration in Workflows
 
-### Kurze Antwort: Ja, MCP-Client-Registry existiert bereits
+### Short answer: Yes, the MCP client registry already exists
 
-Es gibt **keine** Notwendigkeit, eine neue Registry zu bauen. Die Infrastruktur ist vorhanden:
+There is **no** need to build a new registry. The infrastructure is present:
 
-| Komponente | Ort | Rolle |
+| Component | Location | Role |
 |---|---|---|
-| `McpServerManager` | `engine/.../mcp/` | **MCP-Client-Registry** — verwaltet Server, entdeckt Tools, liefert `McpClient` pro Server |
-| `McpRegistry` | `quarkus/.../http/` | Wrapper um `McpServerManager` + A2A-Integration |
-| `McpRegistrar` | `engine/.../mcp/` | Registriert MCP-Tools in `ToolRegistry` |
-| `McpClient` | `engine/.../mcp/` | Client-Interface (`listTools`, `callTool`, `listResources`, ...) |
-| `McpServerConfig` | `engine/.../mcp/` | Konfiguration (local stdio + remote HTTP/SSE) |
+| `McpServerManager` | `engine/.../mcp/` | **MCP client registry** — manages servers, discovers tools, provides `McpClient` per server |
+| `McpRegistry` | `quarkus/.../http/` | Wrapper around `McpServerManager` + A2A integration |
+| `McpRegistrar` | `engine/.../mcp/` | Registers MCP tools in `ToolRegistry` |
+| `McpClient` | `engine/.../mcp/` | Client interface (`listTools`, `callTool`, `listResources`, ...) |
+| `McpServerConfig` | `engine/.../mcp/` | Configuration (local stdio + remote HTTP/SSE) |
 
-### Wie MCP in Workflows genutzt werden kann
+### How MCP can be used in workflows
 
-#### Option A: Über Agent-Nodes (bereits möglich)
+#### Option A: Via agent nodes (already possible)
 
-MCP-Tools sind im `ToolRegistry` registriert. Agent-Nodes, die QocEngine nutzen, haben Zugriff auf diese Tools:
+MCP tools are registered in `ToolRegistry`. Agent nodes using QocEngine have access to these tools:
 
 ```json
 {
@@ -463,11 +464,11 @@ MCP-Tools sind im `ToolRegistry` registriert. Agent-Nodes, die QocEngine nutzen,
 }
 ```
 
-Der Agent ruft MCP-Tools über QocEngine's ToolRuntime auf — **kein neuer Node-Typ nötig**.
+The agent calls MCP tools via QocEngine's ToolRuntime — **no new node type needed**.
 
-#### Option B: Dedizierter `mcp_call`-Node (direkter Aufruf)
+#### Option B: Dedicated `mcp_call` node (direct invocation)
 
-Für Workflows, die MCP-Tools **ohne LLM** aufrufen wollen (deterministisch):
+For workflows that want to call MCP tools **without an LLM** (deterministic):
 
 ```json
 {
@@ -484,7 +485,7 @@ Für Workflows, die MCP-Tools **ohne LLM** aufrufen wollen (deterministisch):
 }
 ```
 
-**Implementierung:** Ein `McpCallNodeHandler`, der `McpServerManager.client(server).callTool(tool, args)` aufruft.
+**Implementation:** An `McpCallNodeHandler` that calls `McpServerManager.client(server).callTool(tool, args)`.
 
 ```java
 public class McpCallNodeHandler implements NodeHandler {
@@ -511,23 +512,23 @@ public class McpCallNodeHandler implements NodeHandler {
 }
 ```
 
-#### Option C: MCP über HTTP-Webhook (Streamable HTTP)
+#### Option C: MCP via HTTP webhook (Streamable HTTP)
 
-MCP unterstützt **Streamable HTTP** als Transport. Ein MCP-Server kann also über HTTP erreicht werden — aber MCP ist **kein einfacher Webhook**:
+MCP supports **Streamable HTTP** as a transport. An MCP server can therefore be reached over HTTP — but MCP is **not a simple webhook**:
 
-| Aspekt | Webhook (Stufe 1) | MCP (Streamable HTTP) |
+| Aspect | Webhook (Level 1) | MCP (Streamable HTTP) |
 |---|---|---|
-| **Protokoll** | HTTP POST, beliebiges JSON | JSON-RPC 2.0 über HTTP |
-| **Discovery** | Keine (URL bekannt) | `tools/list`, `resources/list` |
-| **Auth** | Beliebig (Headers) | OAuth 2.0, API Keys |
-| **Streaming** | Nein | SSE für Notifications |
-| **Tool-Call** | HTTP POST mit Body | `tools/call` JSON-RPC |
+| **Protocol** | HTTP POST, arbitrary JSON | JSON-RPC 2.0 over HTTP |
+| **Discovery** | None (URL known) | `tools/list`, `resources/list` |
+| **Auth** | Arbitrary (headers) | OAuth 2.0, API keys |
+| **Streaming** | No | SSE for notifications |
+| **Tool call** | HTTP POST with body | `tools/call` JSON-RPC |
 
-→ Ein MCP-Server kann **nicht** einfach als Webhook-Node aufgerufen werden. Die JSON-RPC-Protokollschicht fehlt.
+→ An MCP server **cannot** simply be called as a webhook node. The JSON-RPC protocol layer is missing.
 
-**Lösung:** `McpCallNodeHandler` (Option B) nutzt den bestehenden `McpClient`, der das Protokoll abstrahiert.
+**Solution:** `McpCallNodeHandler` (Option B) uses the existing `McpClient`, which abstracts the protocol.
 
-### Architektur: MCP in Workflows
+### Architecture: MCP in workflows
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -535,8 +536,8 @@ MCP unterstützt **Streamable HTTP** als Transport. Ein MCP-Server kann also üb
 │                                                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────┐  │
 │  │ Agent Node   │  │ mcp_call Node│  │ webhook  │  │
-│  │ (LLM + Tools)│  │ (direkt,     │  │ Node     │  │
-│  │              │  │  ohne LLM)   │  │ (HTTP)   │  │
+│  │ (LLM + Tools)│  │ (direct,     │  │ Node     │  │
+│  │              │  │  without LLM)│  │ (HTTP)   │  │
 │  └──────┬───────┘  └──────┬───────┘  └────┬─────┘  │
 │         │                  │               │        │
 │         ▼                  ▼               ▼        │
@@ -550,29 +551,29 @@ MCP unterstützt **Streamable HTTP** als Transport. Ein MCP-Server kann also üb
 └─────────────────────────────────────────────────────┘
 ```
 
-### Native Deployment
+### Native deployment
 
-`McpServerManager` nutzt:
-- `HttpTransport` (JdkHttpTransport) → native-kompatibel ✅
-- `ProcessRunner` (JdkProcessRunner) → native-kompatibel ✅ (für stdio-Server)
-- `CredentialStore` (optional) → native-kompatibel ✅
+`McpServerManager` uses:
+- `HttpTransport` (JdkHttpTransport) → native-compatible ✅
+- `ProcessRunner` (JdkProcessRunner) → native-compatible ✅ (for stdio servers)
+- `CredentialStore` (optional) → native-compatible ✅
 
-→ MCP-Integration funktioniert in Native Builds.
+→ MCP integration works in Native builds.
 
-### Implementierungsschritte
+### Implementation steps
 
-| Schritt | Was | Aufwand |
+| Step | What | Effort |
 |---|---|---|
-| 1 | `McpCallNodeHandler` implementieren | Gering |
-| 2 | `NodeData` erweitern: `mcpServer`, `mcpTool`, `mcpArgs` | Gering |
-| 3 | `GraphCompiler` VALID_NODE_TYPES: `mcp_call` | Gering |
-| 4 | `McpServerManager` an `NodeHandlerContext` übergeben | Gering |
-| 5 | Frontend: `McpCallNode.tsx` + PropertyPanel-Sektion | Mittel |
-| 6 | Tests | Mittel |
+| 1 | Implement `McpCallNodeHandler` | Low |
+| 2 | Extend `NodeData`: `mcpServer`, `mcpTool`, `mcpArgs` | Low |
+| 3 | `GraphCompiler` VALID_NODE_TYPES: `mcp_call` | Low |
+| 4 | Pass `McpServerManager` to `NodeHandlerContext` | Low |
+| 5 | Frontend: `McpCallNode.tsx` + PropertyPanel section | Medium |
+| 6 | Tests | Medium |
 
-### Empfehlung
+### Recommendation
 
-- **Agent-Nodes** (Option A) für LLM-gesteuerte MCP-Aufrufe — bereits möglich
-- **`mcp_call`-Node** (Option B) für deterministische MCP-Aufrufe ohne LLM
-- **Keine neue Registry** — `McpServerManager` existiert bereits als MCP-Client-Registry
-- **MCP ≠ Webhook** — MCP ist ein Protokoll, kein einfacher HTTP-Call; daher separater Node-Typ nötig
+- **Agent nodes** (Option A) for LLM-driven MCP calls — already possible
+- **`mcp_call` node** (Option B) for deterministic MCP calls without an LLM
+- **No new registry** — `McpServerManager` already exists as the MCP client registry
+- **MCP ≠ webhook** — MCP is a protocol, not a simple HTTP call; therefore a separate node type is needed

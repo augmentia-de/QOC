@@ -1,46 +1,45 @@
-# SAGA – Durable Multi-Step Execution mit Kompensationen
+# SAGA – Durable Multi-Step Execution with Compensations
 
-> **Zweck:** Erklärt, wie ein SAGA-Task in QOC ausgeführt, persistiert,
-> wiederhergestellt und kompensiert wird. Basis sind die Konzepte aus
-> [`Task-Orchestration.md`](./Task-Orchestration.md) §6 und die bestehende
-> Recovery-Implementierung in `engine/runtime/execution/Recovery.java`.
+> **Purpose:** Explains how a SAGA task is executed, persisted, recovered, and
+> compensated in QOC. Based on the concepts in
+> [`Task-Orchestration.md`](./Task-Orchestration.md) §6 and the existing
+> recovery implementation in `engine/runtime/execution/Recovery.java`.
 >
-> **Status:** 2026-11-10 – Konzept + Speicheranforderungen dokumentiert;
-> `Recovery` ist verdrahtet, ein eigener `SagaStore` existiert noch nicht.
+> **Status:** 2026-11-10 – Concept + storage requirements documented;
+> `Recovery` is wired up, a dedicated `SagaStore` does not yet exist.
 >
-> **Code-Referenzen:**
-> - `engine/runtime/execution/Recovery.java` – Crash-Recovery (Claims)
-> - `engine/runtime/execution/Coordinator.java` – Claim-Acquire/Release
-> - `engine/runtime/QocEngine.java` – `recover()`, Claim-Guard in `runPrompt`
-> - `quarkus/.../http/Engine.java` – Aufruf von `qocEngine.recover()` beim Start
-> - `temporal/.../workflow/SagaWorkflowImpl.java` – Temporal-Beispiel (toy)
+> **Code references:**
+> - `engine/runtime/execution/Recovery.java` – Crash recovery (Claims)
+> - `engine/runtime/execution/Coordinator.java` – Claim acquire/release
+> - `engine/runtime/QocEngine.java` – `recover()`, Claim guard in `runPrompt`
+> - `quarkus/.../http/Engine.java` – invocation of `qocEngine.recover()` at startup
+> - `temporal/.../workflow/SagaWorkflowImpl.java` – Temporal example (toy)
 
 ---
 
-## 1. Was ist eine SAGA in QOC?
+## 1. What is a SAGA in QOC?
 
-Eine SAGA ist ein **Multi-Step-Task**, bei dem jeder Schritt eine
-**Kompensation** (Undo-Aktion) haben kann. Schlägt ein Schritt fehl, werden
-die Kompensationen der bereits abgeschlossenen Schritte in **umgekehrter
-Reihenfolge** ausgeführt.
+A SAGA is a **multi-step task**, where each step can have a
+**compensation** (undo action). If a step fails, the compensations of the
+already completed steps are executed in **reverse order**.
 
 ```
 Saga: [Step1, Step2, Step3]
-  Step1 OK  → Comp1 registriert
-  Step2 OK  → Comp2 registriert
-  Step3 FAIL → Comp2 → Comp1 (rückwärts)
-  → Saga FAILED (mit Compensations-Status)
+  Step1 OK  → Comp1 registered
+  Step2 OK  → Comp2 registered
+  Step3 FAIL → Comp2 → Comp1 (backwards)
+  → Saga FAILED (with compensation status)
 ```
 
-Eigenschaften:
+Properties:
 
-- **Durable**: Zustand muss Neustart überleben.
-- **At-least-once mit Idempotenz**: Schritte und Kompensationen dürfen bei
-  Recovery erneut angestoßen werden, müssen aber idempotent sein.
-- **Journal-basiert**: Jeder Übergang wird als Event protokolliert.
-- **Claim-geschützt**: Genau eine aktive Execution pro Session/Saga.
+- **Durable**: State must survive restarts.
+- **At-least-once with idempotency**: Steps and compensations may be
+  re-triggered during recovery, but must be idempotent.
+- **Journal-based**: Every transition is logged as an event.
+- **Claim-protected**: Exactly one active execution per session/saga.
 
-## 2. Datenmodell
+## 2. Data Model
 
 ```java
 public record SagaStep(
@@ -55,18 +54,18 @@ public record SagaExecution(
     List<String> completedSteps, List<String> compensationsRun, SagaState state) {}
 ```
 
-Zustände (`SagaState`):
+States (`SagaState`):
 
 ```
-RUNNING → (Fehler) → COMPENSATING → (Kompensationen durch) → FAILED | COMPLETED
-CANCELLED (manuell)
-ORPHANED (nach Crash, vor Recovery)
-MANUAL_INTERVENTION (Kompensation fehlgeschlagen)
+RUNNING → (error) → COMPENSATING → (compensations done) → FAILED | COMPLETED
+CANCELLED (manual)
+ORPHANED (after crash, before recovery)
+MANUAL_INTERVENTION (compensation failed)
 ```
 
-## 3. Journal-Events für SAGA
+## 3. Journal Events for SAGA
 
-Alle Übergänge werden als `SessionEvent`/`Payload` im Journal festgehalten:
+All transitions are recorded as `SessionEvent`/`Payload` in the journal:
 
 ```
 SagaStarted
@@ -81,50 +80,50 @@ SagaFailed
 SagaCancelled
 ```
 
-Zusätzlich die normalen Execution-Events:
+Plus the normal execution events:
 
 ```
 ExecutionStarted
 ExecutionSucceeded
 ExecutionFailed
 ExecutionInterrupted
-SyntheticRaised   (Recovery-Hinweis an das Modell)
+SyntheticRaised   (recovery hint to the model)
 ```
 
-Das Journal ist die **Quelle der Wahrheit**. Projektionen (Session, Conversation,
-Saga-State) sind Read-Models.
+The journal is the **source of truth**. Projections (Session, Conversation,
+Saga-State) are read models.
 
-## 4. Benötigte Storage-Stores
+## 4. Required Storage Stores
 
-### P0 – vor jedem Side-Effect durable
+### P0 – durable before every side effect
 
-| Store | Tabellen | Begründung |
+| Store | Tables | Rationale |
 |---|---|---|
-| `journal` | `event`, `event_sequence` | Timeline, Replay, Recovery-Entscheidung |
-| `claims` | `session_claim`, `resume_counter` | Genau eine aktive Execution; Crash-Erkennung |
-| `sessions` + `sessionReader` | `session`, `session_inbox` | Identität, Agent, Location, Inbox |
-| `conversation` | `session_message` | Kontext für jeden Step |
-| **neuer `SagaStore`** | siehe §5 | Materialisierter Zustand für schnelle Recovery |
-| **durablers `IdempotencyStore`** | siehe §6 | Exactly-once für Forward-/Compensation-Schritte |
+| `journal` | `event`, `event_sequence` | Timeline, replay, recovery decisions |
+| `claims` | `session_claim`, `resume_counter` | Exactly one active execution; crash detection |
+| `sessions` + `sessionReader` | `session`, `session_inbox` | Identity, agent, location, inbox |
+| `conversation` | `session_message` | Context for each step |
+| **new `SagaStore`** | see §5 | Materialized state for fast recovery |
+| **durable `IdempotencyStore`** | see §6 | Exactly-once for forward/compensation steps |
 
-### P1 – muss Neustart überleben
+### P1 – must survive restart
 
-| Store | Tabellen | Begründung |
+| Store | Tables | Rationale |
 |---|---|---|
-| `approvals` | `saved_approval`, `pending_approval` | HITL-Steps |
-| `instructions` | `instruction_state`, `instruction_entry`, `instruction_blob` | Reproduzierbarkeit |
-| `workspaces` | Spalten in `session` | Workspace pro Step, Pause-Zustand |
-| `credentials` | `credential` | Externe Aufrufe |
+| `approvals` | `saved_approval`, `pending_approval` | HITL steps |
+| `instructions` | `instruction_state`, `instruction_entry`, `instruction_blob` | Reproducibility |
+| `workspaces` | columns in `session` | Workspace per step, pause state |
+| `credentials` | `credential` | External calls |
 
-### P2 – unkritisch / ableitbar
+### P2 – non-critical / derivable
 
-| Store | Tabellen | Begründung |
+| Store | Tables | Rationale |
 |---|---|---|
-| `snapshots` | `snapshot`, `snapshot_file` | Datei-Kompensation / Revert |
-| `tool-outputs` | `tool_output` | Evidenz, nicht Zustand |
-| `tool-cache` | `tool_result_cache` | Performance; keine Dauer-Garantie |
+| `snapshots` | `snapshot`, `snapshot_file` | File compensation / revert |
+| `tool-outputs` | `tool_output` | Evidence, not state |
+| `tool-cache` | `tool_result_cache` | Performance; no durability guarantee |
 
-## 5. Vorschlag: SagaStore-Schema
+## 5. Proposal: SagaStore Schema
 
 ```sql
 create table saga_definition (
@@ -168,18 +167,18 @@ create table saga_compensation (
 );
 ```
 
-Das Journal bleibt die Quelle der Wahrheit; `saga_execution`/`saga_step` sind
-materialisierte Read-Models für schnelle Recovery.
+The journal remains the source of truth; `saga_execution`/`saga_step` are
+materialized read models for fast recovery.
 
-## 6. Idempotenz – nicht den Tool-Cache benutzen
+## 6. Idempotency – do not use the tool cache
 
-`tool_result_cache` ist **keine** Dauer-Garantie:
+`tool_result_cache` is **not** a durability guarantee:
 
-- nur gefüllt, wenn ein `IdempotencyKey` gesetzt ist
-- wird nach 1 Tag gelöscht (`RetentionService`)
-- kann im Memory-Modus fehlen
+- only populated when an `IdempotencyKey` is set
+- deleted after 1 day (`RetentionService`)
+- may be missing in memory mode
 
-Für SAGA brauchst du eine eigene Tabelle:
+SAGA requires its own table:
 
 ```sql
 create table idempotency_record (
@@ -193,110 +192,108 @@ create table idempotency_record (
 );
 ```
 
-Regel: **Vor** jedem Side-Effect `STARTED` schreiben, danach
-`SUCCEEDED`/`FAILED`. Bei Recovery wird `STARTED` gefunden und die Aktion
-nicht blind wiederholt.
+Rule: Write `STARTED` **before** every side effect, then
+`SUCCEEDED`/`FAILED`. During recovery, a `STARTED` record is found and the
+action is not blindly repeated.
 
-## 7. Kompensations-Regeln
+## 7. Compensation Rules
 
-1. Jeder abgeschlossene Step kann eine Kompensation haben.
-2. Bei Fehler: Kompensationen in **umgekehrter** Reihenfolge.
-3. Kompensationen müssen **idempotent** sein.
-4. Kompensationen werden im Journal protokolliert
+1. Every completed step may have a compensation.
+2. On failure: compensations in **reverse** order.
+3. Compensations must be **idempotent**.
+4. Compensations are recorded in the journal
    (`SagaCompensationStarted/Ended`).
-5. Wenn eine Kompensation fehlschlägt: `SagaCompensationFailed` →
-   Zustand `MANUAL_INTERVENTION` + Alert.
+5. If a compensation fails: `SagaCompensationFailed` → state
+   `MANUAL_INTERVENTION` + alert.
 
-## 8. Restart-/Recovery-Ablauf
+## 8. Restart/Recovery Flow
 
-### Claim-basierte Recovery (existiert)
+### Claim-based recovery (exists)
 
-`Recovery.recover()` iteriert über offene Claims:
+`Recovery.recover()` iterates over open claims:
 
-1. `claims.open()` lesen.
-2. Ist die Session in diesem Prozess aktiv → überspringen.
-3. `resumeAttempts >= MAX_RESUME_ATTEMPTS` (10) → `ExecutionFailed`, Claim freigeben.
-4. Sonst: `SyntheticRaised` („server was restarted“) appenden, Claim freigeben,
-   dann `runPrompt` mit dem synthetischen Prompt ausführen.
-5. `runPrompt` erwirbt einen neuen Claim und läuft normal.
+1. Read `claims.open()`.
+2. If the session is active in this process → skip.
+3. `resumeAttempts >= MAX_RESUME_ATTEMPTS` (10) → `ExecutionFailed`, release claim.
+4. Otherwise: append `SyntheticRaised` ("server was restarted"), release claim,
+   then run `runPrompt` with the synthetic prompt.
+5. `runPrompt` acquires a new claim and runs normally.
 
-### SAGA-Recovery (zu implementieren)
+### SAGA recovery (to be implemented)
 
 1. `select * from saga_execution where state in ('RUNNING','COMPENSATING')`.
-2. Lease/Claim per CAS auf `owner_id` + Heartbeat erwerben.
-3. Step-Status aus `saga_step` und Journal rekonstruieren.
-4. `RUNNING` → ab `current_step` fortsetzen; vor jedem Step
-   `SagaStepStarted` + Idempotency-Key persistieren.
-5. Fehler → `state = COMPENSATING`; Kompensationen rückwärts; jede
-   Kompensation durable protokollieren.
-6. Kompensation fehlgeschlagen → `SagaCompensationFailed`,
-   Zustand `MANUAL_INTERVENTION`, Alert.
+2. Acquire lease/claim via CAS on `owner_id` + heartbeat.
+3. Reconstruct step status from `saga_step` and journal.
+4. `RUNNING` → resume from `current_step`; before each step persist
+   `SagaStepStarted` + idempotency key.
+5. On error → `state = COMPENSATING`; compensations backwards; persist each
+   compensation durably.
+6. Compensation failed → `SagaCompensationFailed`, state
+   `MANUAL_INTERVENTION`, alert.
 7. Terminal: `SagaCompleted`/`SagaFailed`/`SagaCancelled`.
 
-### Aktueller Stand
+### Current State
 
-- `Recovery` ist verdrahtet (`QocEngine.recover()`, Aufruf in
-  `Engine.wire()`), nutzt aber `stores.claims()` und `Coordinator`.
-- `QocEngine.runPrompt` erwirbt/freigibt Claims; Execution-Events werden
-  appendet (`ExecutionStarted`, `ExecutionSucceeded`, `ExecutionFailed`).
-- `QocEngine.recover()` führt offene Claims mit synthetischem Prompt fort.
-- Es gibt **keinen** `SagaStore` und **keine** Saga-Events in `SessionEvent`.
-- SAGA ist nur als Temporal-Beispiel vorhanden (`SagaWorkflowImpl`).
+- `Recovery` is wired up (`QocEngine.recover()`, invocation in
+  `Engine.wire()`), but uses `stores.claims()` and `Coordinator`.
+- `QocEngine.runPrompt` acquires/releases claims; execution events are
+  appended (`ExecutionStarted`, `ExecutionSucceeded`, `ExecutionFailed`).
+- `QocEngine.recover()` resumes open claims with a synthetic prompt.
+- There is **no** `SagaStore` and **no** saga events in `SessionEvent`.
+- SAGA exists only as a Temporal example (`SagaWorkflowImpl`).
 
 ## 9. Alternative: Temporal
 
-Wenn SAGA über Temporal läuft, ist **Temporal selbst** der durable Store:
+If SAGA runs via Temporal, **Temporal itself** is the durable store:
 
-- Workflow-History, Retries, Timer, Signals, Activity-Ergebnisse liegen in
+- Workflow history, retries, timers, signals, and activity results live in
   Temporal.
-- QOC braucht dann nur `journal` + `conversation` für Trace und Agent-Kontext.
-- Kein QOC-`SagaStore` nötig.
-- Der vorhandene `SagaWorkflowImpl` ist aber nur ein Beispiel und nicht an die
-  QOC-Engine angebunden.
+- QOC then only needs `journal` + `conversation` for trace and agent context.
+- No QOC `SagaStore` needed.
+- The existing `SagaWorkflowImpl` is only an example and is not connected to
+  the QOC engine.
 
-## 10. Konfiguration für durable Runs
+## 10. Configuration for Durable Runs
 
 ```properties
-ENGINE_STORAGE=postgres          # oder sqlite
+ENGINE_STORAGE=postgres          # or sqlite
 ENGINE_RECOVERY_ENABLED=true
-ENGINE_AUDIT_RETENTION_DAYS=0   # keine Event-Löschung
-SESSION_RETENTION_DAYS=0        # keine Session-Löschung / kein Paused-Sweep
+ENGINE_AUDIT_RETENTION_DAYS=0   # no event deletion
+SESSION_RETENTION_DAYS=0        # no session deletion / no paused sweep
 ENGINE_REVERT_SNAPSHOT=true
 ```
 
-Hinweis: `SESSION_RETENTION_DAYS=0` deaktiviert den gesamten
-`RetentionService`-Executor, also auch Audit-Purge und Paused-Sweep. Das ist
-für SAGA/Dauerläufe gewünscht.
+Note: `SESSION_RETENTION_DAYS=0` disables the entire
+`RetentionService` executor, including audit purge and paused sweep. This is
+desired for SAGA/long-running tasks.
 
-## 11. Risiken und Trade-offs
+## 11. Risks and Trade-offs
 
-| Thema | Risiko | Gegenmaßnahme |
+| Topic | Risk | Mitigation |
 |---|---|---|
-| At-least-once | doppelte Side-Effects | Idempotenz-Keys + `idempotency_record` |
-| Claim-Leakage | Session nach Crash blockiert | `Recovery` + `MAX_RESUME_ATTEMPTS` |
-| Kompensation fehlgeschlagen | manuelle Intervention | `SagaCompensationFailed` + Alert |
-| Retention | Zustände werden gelöscht | Retention auf 0 |
-| Multi-Node | SQLite nicht teilbar | Phase 4: Redis/etcd/Kafka |
+| At-least-once | duplicate side effects | Idempotency keys + `idempotency_record` |
+| Claim leakage | session blocked after crash | `Recovery` + `MAX_RESUME_ATTEMPTS` |
+| Compensation failed | manual intervention | `SagaCompensationFailed` + alert |
+| Retention | states get deleted | retention set to 0 |
+| Multi-node | SQLite not shareable | Phase 4: Redis/etcd/Kafka |
 
-## 12. Offene Fragen
+## 12. Open Questions
 
-1. Soll SAGA in QOC selbst oder in Temporal implementiert werden?
-2. Wird `SagaStore` als eigener Port oder als Projektion aus dem Journal
-   modelliert?
-3. Wie werden Kompensationen definiert – durch den Agenten, den User oder
-   Code?
-4. Soll `IdempotencyStore` den `ToolResultCache` ersetzen oder ergänzen?
-5. Sollen Snapshots für Datei-Kompensation genutzt werden oder explizite
-   Compensation-Skripte?
+1. Should SAGA be implemented in QOC itself or in Temporal?
+2. Is `SagaStore` modeled as its own port or as a projection from the journal?
+3. How are compensations defined – by the agent, the user, or code?
+4. Should `IdempotencyStore` replace or complement `ToolResultCache`?
+5. Should snapshots be used for file compensation or explicit compensation
+   scripts?
 
-## 13. Quellen
+## 13. Sources
 
-| Thema | Pfad |
+| Topic | Path |
 |---|---|
-| SAGA-Konzept | `qoc/docs/engineering/Task-Orchestration.md` §6 |
-| Storage-Prioritäten | `qoc/docs/engineering/Storage-alternative.md` §4 |
-| Recovery-Implementierung | `qoc/engine/.../execution/Recovery.java` |
+| SAGA concept | `qoc/docs/engineering/Task-Orchestration.md` §6 |
+| Storage priorities | `qoc/docs/engineering/Storage-alternative.md` §4 |
+| Recovery implementation | `qoc/engine/.../execution/Recovery.java` |
 | Coordinator/Claims | `qoc/engine/.../execution/Coordinator.java` |
-| QocEngine-Recovery | `qoc/engine/.../runtime/QocEngine.java` (`recover()`) |
-| Temporal-Saga | `qoc/temporal/.../workflow/SagaWorkflowImpl.java` |
+| QocEngine recovery | `qoc/engine/.../runtime/QocEngine.java` (`recover()`) |
+| Temporal saga | `qoc/temporal/.../workflow/SagaWorkflowImpl.java` |
 | Retention | `qoc/quarkus/.../http/RetentionService.java` |

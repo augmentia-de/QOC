@@ -104,15 +104,15 @@ handling can be implemented without changing the tool contract.
 
 ---
 
-## 9. Geplante Erweiterung: Serverless-Modus (spec-only)
+## 9. Planned extension: Serverless mode (spec-only)
 
-Im Serverless-Modus (AWS Lambda) soll ein zweites Tool verfügbar sein:
+In serverless mode (AWS Lambda), a second tool should be available:
 
 ### `qoc_run_agent_with_config`
 
-- Lädt vor der Ausführung eine Agentenkonfiguration
-- Führt einen kompletten Subagent-Run stateless aus
-- Löscht den Agenten nach der Ausführung wieder
+- Loads an agent configuration before execution
+- Runs a complete subagent run statelessly
+- Deletes the agent again after execution
 
 Input:
 
@@ -129,20 +129,20 @@ Input:
 }
 ```
 
-Ablauf:
-1. Agentenkonfiguration validieren
-2. Temporären Agenten anlegen
-3. `reloadConfig()` ausführen
-4. Subagent-Run starten
-5. Ergebnis erfassen
-6. Temporären Agenten löschen
-7. `reloadConfig()` ausführen
-8. Ergebnis zurückgeben
+Flow:
+1. Validate the agent configuration
+2. Create a temporary agent
+3. Execute `reloadConfig()`
+4. Start the subagent run
+5. Capture the result
+6. Delete the temporary agent
+7. Execute `reloadConfig()`
+8. Return the result
 
-Zusätzliche `_meta`-Felder:
+Additional `_meta` fields:
 - `agentCreated`
 - `agentDeleted`
 
-Diese Erweiterung ist spec-only und wird in `guides/deployment-modes.md`
-beschrieben. Invariante M-01 gilt für den Standard-Modus; im Serverless-Modus
-wird M-01 zu "mindestens `qoc_run_agent`, optional `qoc_run_agent_with_config`".
+This extension is spec-only and is described in `guides/deployment-modes.md`.
+Invariant M-01 applies to standard mode; in serverless mode, M-01 becomes
+"at least `qoc_run_agent`, optionally `qoc_run_agent_with_config`".

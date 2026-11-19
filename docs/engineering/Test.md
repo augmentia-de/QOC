@@ -1,59 +1,58 @@
-# Manueller Testplan für QOC
+# Manual Test Plan for QOC
 
-> **Zweck:** Konkreter, aufeinander aufbauender Testplan für die manuelle
-> Abnahme der QOC-Engine – **UI-basiert**, über die HTTP-API, als
-> **Docker-Dev-Container (ohne OIDC)** und als **Serverless-Deployment**
-> (Cloud Run/Lambda). OIDC wird getrennt davon auf T2 (Auth0) bzw. T6
-> (Keycloak) getestet – **entweder Docker-Dev ohne OIDC oder OIDC-Umgebung**,
-> nicht kombiniert. Enthält pro Stufe Schritte, Erwartungen, Beweise und
-> eine explizite Liste der Grenzfälle, die **nicht sinnvoll manuell**
-> testbar sind.
+> **Purpose:** Concrete, incremental test plan for the manual acceptance of the
+> QOC engine – **UI-based**, via the HTTP API, as a
+> **Docker-Dev container (without OIDC)** and as a **serverless deployment**
+> (Cloud Run/Lambda). OIDC is tested separately on T2 (Auth0) and T6
+> (Keycloak) – **either Docker-Dev without OIDC or an OIDC environment**,
+> not combined. Each stage contains steps, expectations, evidence and an
+> explicit list of edge cases that are **not sensibly testable manually**.
 >
 > **Status:** 2026-11-09
 >
-> **Referenzen:** [`spec/qualitaet/01-tests.md`](../spec/qualitaet/01-tests.md)
-> (automatisierte Testarten), [`Core.md`](./Core.md),
+> **References:** [`spec/qualitaet/01-tests.md`](../spec/qualitaet/01-tests.md)
+> (automated test types), [`Core.md`](./Core.md),
 > [`Async-use.md`](./Async-use.md), [`security.md`](../security.md).
 
-## 1. Geltungsbereich
+## 1. Scope
 
-Dieser Plan deckt die **manuell prüfbaren** Funktionen ab:
+This plan covers the **manually verifiable** functions:
 
-- **UI-basiert:** Login, Sessions, Chat, Tool-Karten, Permissions, Fragen,
-  Dateibaum, Workspace, Agent-Modal, Tasks, LLM-Trace, Logout
+- **UI-based:** Login, sessions, chat, tool cards, permissions, questions,
+  file tree, workspace, agent modal, tasks, LLM trace, logout
 - Health/UI/Auth (None, Basic, OIDC)
-- Sessions, Prompts, Streaming
-- Datei- und Shell-Tools
-- Permissions und Fragen
-- Workspace, Agents, Skills
-- Subagents und Background-Tasks
-- Compaction, Revert, Fork, Move
-- Persistenz/Neustart
-- Provider-Fehler
-- Sicherheit und Grenzen
-- **Docker-Dev ohne OIDC** (Compose, UI-Track)
-- **OIDC getrennt:** T2 (Auth0) und T6 (Keycloak) – nicht mit Docker-Dev
-  kombiniert
-- **Serverless** (Cloud Run/Lambda): MCP-Endpoint, ephemere Sessions,
-  Agent-Fetch, Cold Start, Limits
-- optionale Integrationen (MCP, A2A, E-Mail, Webhooks)
+- Sessions, prompts, streaming
+- File and shell tools
+- Permissions and questions
+- Workspace, agents, skills
+- Subagents and background tasks
+- Compaction, revert, fork, move
+- Persistence/restart
+- Provider errors
+- Security and boundaries
+- **Docker-Dev without OIDC** (Compose, UI track)
+- **OIDC separately:** T2 (Auth0) and T6 (Keycloak) – not combined with
+  Docker-Dev
+- **Serverless** (Cloud Run/Lambda): MCP endpoint, ephemeral sessions,
+  agent fetch, cold start, limits
+- optional integrations (MCP, A2A, email, webhooks)
 
-**Nicht** Teil dieses Plans: Last-, Fuzz-, Race- und Crash-Tests (siehe §6).
+**Not** part of this plan: load, fuzz, race and crash tests (see §6).
 
-## 2. Testumgebungen
+## 2. Test environments
 
-| Umgebung | Zweck | Zugang |
+| Environment | Purpose | Access |
 |---|---|---|
-| **T1 – Lokal (Dev)** | schnelle Funktionsprüfung | `mvn quarkus:dev`, `http://localhost:8080` |
-| **T2 – GCP-VM** | Produktionsnahe Abnahme, Auth0-OIDC, nginx | `https://test.schippel.info` |
-| **T3 – Lokal mit Stub-Provider** | deterministische Tool-/Perm-Tests | `ENGINE_PROVIDER_SCRIPTED=true` (falls konfiguriert) |
-| **T4 – Docker-Dev (UI)** | Hot-Reload-Container, UI-Track | `docker compose --profile dev up qoc-dev`, `http://localhost:8070` |
-| **T5 – Docker-Dev-Native** | Native-Image im Container, **ohne OIDC** | `--profile dev-native`, `http://localhost:8081` |
-| **T6 – Lokaler OIDC-Stack** | Keycloak + OIDC + UI (Compose, **kein Dev-Container**) | `./deploy/start-oidc.sh`, `http://localhost:8071` |
-| **T7 – Serverless lokal** | Serverless-Rolle im Container | `--profile minimal`, `http://localhost:8072` |
-| **T8 – Serverless Cloud** | Cloud Run / Lambda, OIDC, `/mcp` | `deploy/gcp-cloudrun-serverless/deploy.sh` bzw. `deploy/aws-lambda-serverless/deploy.sh` |
+| **T1 – Local (Dev)** | fast functional check | `mvn quarkus:dev`, `http://localhost:8080` |
+| **T2 – GCP-VM** | production-like acceptance, Auth0-OIDC, nginx | `https://test.schippel.info` |
+| **T3 – Local with stub provider** | deterministic tool/perm tests | `ENGINE_PROVIDER_SCRIPTED=true` (if configured) |
+| **T4 – Docker-Dev (UI)** | hot-reload container, UI track | `docker compose --profile dev up qoc-dev`, `http://localhost:8070` |
+| **T5 – Docker-Dev-Native** | native image in container, **without OIDC** | `--profile dev-native`, `http://localhost:8081` |
+| **T6 – Local OIDC stack** | Keycloak + OIDC + UI (Compose, **no Dev container**) | `./deploy/start-oidc.sh`, `http://localhost:8071` |
+| **T7 – Serverless local** | serverless role in container | `--profile minimal`, `http://localhost:8072` |
+| **T8 – Serverless cloud** | Cloud Run / Lambda, OIDC, `/mcp` | `deploy/gcp-cloudrun-serverless/deploy.sh` or `deploy/aws-lambda-serverless/deploy.sh` |
 
-### 2.1 T1 starten
+### 2.1 Start T1
 
 ```bash
 cd qoc
@@ -64,7 +63,7 @@ mvn quarkus:dev
 - UI: `http://localhost:8080/`
 - Health: `http://localhost:8080/api/health/live`
 
-### 2.2 T2 prüfen
+### 2.2 Check T2
 
 ```bash
 gcloud compute ssh torsten@quad-e2micro --zone=us-central1-a \
@@ -75,7 +74,7 @@ gcloud compute ssh torsten@quad-e2micro --zone=us-central1-a \
 - Logs: `sudo journalctl -u qoc -f`
 - Env: `sudo cat /etc/qoc/env`
 
-### 2.3 T4 – Docker-Dev (UI-Track)
+### 2.3 T4 – Docker-Dev (UI track)
 
 ```bash
 cd qoc/deploy
@@ -84,11 +83,11 @@ docker compose logs -f qoc-dev
 ```
 
 - UI: `http://localhost:8070/`
-- Kein Login (Standard-`qoc-dev`), `ENGINE_PERMISSION_DEFAULT=allow-all`
-  → keine Permission-Dialoge (M6 auf T1/T2/T6 testen)
-- Hot-Reload: Quellcode-Mount `..:/app`
+- No login (default `qoc-dev`), `ENGINE_PERMISSION_DEFAULT=allow-all`
+  → no permission dialogs (M6 tested on T1/T2/T6)
+- Hot-reload: source mount `..:/app`
 
-### 2.4 T5 – Docker-Dev-Native (ohne OIDC)
+### 2.4 T5 – Docker-Dev-Native (without OIDC)
 
 ```bash
 cd qoc/deploy
@@ -96,39 +95,39 @@ docker compose --profile dev-native up -d qoc-dev-native
 ```
 
 - UI: `http://localhost:8081/`
-- Kein Login (lokaler Admin-Modus)
-- Dient nur dazu, das Native-Image im Container zu prüfen; OIDC läuft
-  ausschließlich über T2/T6.
+- No login (local admin mode)
+- Only serves to check the native image in the container; OIDC runs
+  exclusively via T2/T6.
 
-### 2.5 T6 – Lokaler OIDC-Stack (Keycloak)
+### 2.5 T6 – Local OIDC stack (Keycloak)
 
 ```bash
 cd qoc
-cp deploy/.env.example deploy/.env   # einmalig, OPENAI_API_KEY setzen
-SKIP_BUILD=true ./deploy/start-oidc.sh   # oder ohne SKIP_BUILD für Neu-Build
+cp deploy/.env.example deploy/.env   # once, set OPENAI_API_KEY
+SKIP_BUILD=true ./deploy/start-oidc.sh   # or without SKIP_BUILD for a fresh build
 ```
 
 - Keycloak: `http://localhost:8180` (Admin `admin`/`admin`)
 - QOC-UI: `http://localhost:8071`
-- Test-User:
-  - `alice` / `alice-password` (Rolle `qoc-user`)
-  - `bob` / `bob-password` (Rolle `qoc-admin`)
-- Konsole: `docker logs -f qoc-local`, `docker logs -f keycloak-local`
+- Test users:
+  - `alice` / `alice-password` (role `qoc-user`)
+  - `bob` / `bob-password` (role `qoc-admin`)
+- Console: `docker logs -f qoc-local`, `docker logs -f keycloak-local`
 
-### 2.6 T7 – Serverless lokal
+### 2.6 T7 – Serverless local
 
 ```bash
 cd qoc/deploy
-docker compose --profile e2e up -d qoc-registry   # Agent-Quelle, Port 8074
+docker compose --profile e2e up -d qoc-registry   # agent source, port 8074
 docker compose --profile minimal up -d qoc-minimal
 ```
 
-- Serverless-Rolle: `http://localhost:8072`
+- Serverless role: `http://localhost:8072`
 - `ENGINE_MODE=serverless`, `ENGINE_AGENT_SOURCE_URL=http://host.docker.internal:8074`
-- OIDC aktiv (`*oidc-env`), `/mcp` geschützt
+- OIDC active (`*oidc-env`), `/mcp` protected
 - Logs: `docker logs -f qoc-minimal`
 
-### 2.7 T8 – Serverless Cloud
+### 2.7 T8 – Serverless cloud
 
 **GCP Cloud Run:**
 
@@ -141,7 +140,7 @@ export ENGINE_OIDC_AUDIENCE=qoc-engine
 ./deploy/gcp-cloudrun-serverless/deploy.sh
 ```
 
-- Service-URL und `/mcp`-Endpoint werden am Ende ausgegeben.
+- Service URL and `/mcp` endpoint are printed at the end.
 - `ENGINE_MODE=serverless`, `ENGINE_WORKSPACE=/tmp/workspace`,
   `ENGINE_MAX_CONCURRENT_PROMPTS=1`, `ENGINE_TURN_MAX_WALL_MINUTES=10`.
 
@@ -154,90 +153,90 @@ export ENGINE_OIDC_ISSUER=https://dev-1kxf4iy7txwbmdks.us.auth0.com/
 ./deploy/aws-lambda-serverless/deploy.sh
 ```
 
-- Function-URL + `/mcp`; Timeout 300 s, 512 MB, `/tmp` als Workspace.
+- Function URL + `/mcp`; timeout 300 s, 512 MB, `/tmp` as workspace.
 
-> **Wichtig:** Serverless hat **keine** UI im klassischen Sinn und **kein**
-> SSE. Getestet wird der MCP-Endpoint mit Bearer-Token. Die UI läuft auf
-> T2/T6 und ruft den Serverless-Endpoint nur als Tool/Agent auf.
+> **Important:** Serverless has **no** classic UI and **no** SSE. The MCP
+> endpoint is tested with a bearer token. The UI runs on T2/T6 and only calls
+> the serverless endpoint as a tool/agent.
 
-## 3. Voraussetzungen und Testdaten
+## 3. Prerequisites and test data
 
-| Voraussetzung | T1 | T2 (GCP-VM) | T4/T5 (Docker-Dev) | T6 (Keycloak) | T7/T8 (Serverless) |
+| Prerequisite | T1 | T2 (GCP-VM) | T4/T5 (Docker-Dev) | T6 (Keycloak) | T7/T8 (Serverless) |
 |---|---|---|---|---|---|
-| LLM-Key gesetzt | `OPENAI_API_KEY` | `/etc/qoc/env` | `deploy/.env` | `deploy/.env` | Deploy-Env |
-| Workspace | Projektverzeichnis | `/data/workspace` | `../data/workspace` | `../data/workspace` | `/tmp/workspace` (ephemer) |
-| Auth | lokal ohne Login oder Basic | Auth0-OIDC | keins | Keycloak-OIDC | OIDC (Bearer) |
-| Test-User | – | `admin@qoc.test` / `login` | – | `alice`/`alice-password`, `bob`/`bob-password` | Auth0-Testuser oder Keycloak |
-| Scratch-Verzeichnis | `qoc-test-<datum>` | `/data/workspace/qoc-test-<datum>` | `data/workspace/qoc-test-<datum>` | `data/workspace/qoc-test-<datum>` | `/tmp/workspace/qoc-test-<datum>` |
+| LLM key set | `OPENAI_API_KEY` | `/etc/qoc/env` | `deploy/.env` | `deploy/.env` | Deploy env |
+| Workspace | project directory | `/data/workspace` | `../data/workspace` | `../data/workspace` | `/tmp/workspace` (ephemeral) |
+| Auth | local without login or Basic | Auth0-OIDC | none | Keycloak-OIDC | OIDC (Bearer) |
+| Test user | – | `admin@qoc.test` / `login` | – | `alice`/`alice-password`, `bob`/`bob-password` | Auth0 test user or Keycloak |
+| Scratch directory | `qoc-test-<date>` | `/data/workspace/qoc-test-<date>` | `data/workspace/qoc-test-<date>` | `data/workspace/qoc-test-<date>` | `/tmp/workspace/qoc-test-<date>` |
 
-**Vor jedem Durchlauf:**
+**Before each run:**
 
-1. Neue Session anlegen (keine Alt-Session wiederverwenden).
-2. Bei T2/T6 (OIDC): in DevTools `sessionStorage.clear()` und neu einloggen.
-3. Scratch-Verzeichnis anlegen und am Ende löschen.
-4. Logs/SSE vor dem Test öffnen.
-5. Bei Serverless: ephemere Session nach dem Call prüfen (Cleanup).
+1. Create a new session (do not reuse an old session).
+2. For T2/T6 (OIDC): `sessionStorage.clear()` in DevTools and log in again.
+3. Create the scratch directory and delete it at the end.
+4. Open logs/SSE before the test.
+5. For serverless: check ephemeral session after the call (cleanup).
 
-## 4. Konventionen
+## 4. Conventions
 
-| Feld | Bedeutung |
+| Field | Meaning |
 |---|---|
-| **ID** | `M-<stufe>-<nr>`, z. B. `M4-03` |
-| **Prio** | P0 = blockierend, P1 = wichtig, P2 = optional |
-| **Beweis** | Screenshot, `curl`-Ausgabe, Log-Zeile oder SSE-Mitschnitt |
-| **Bestanden** | Erwartung exakt erfüllt; Abweichung = Fehler mit Reproduktion |
+| **ID** | `M-<stage>-<nr>`, e.g. `M4-03` |
+| **Prio** | P0 = blocking, P1 = important, P2 = optional |
+| **Evidence** | screenshot, `curl` output, log line or SSE recording |
+| **Passed** | expectation exactly met; deviation = error with reproduction |
 
-**Test-Tracks:**
+**Test tracks:**
 
-| Track | Umgebung | Fokus | Werkzeuge |
+| Track | Environment | Focus | Tools |
 |---|---|---|---|
-| **UI** | T1/T2/T4/T5/T6 | Bedienung im Browser (T4/T5 ohne Login, T2/T6 mit OIDC) | Chrome/Firefox, DevTools |
-| **API** | T1/T2/T6/T7 | Endpunkte, Statuscodes, SSE | `curl`, `jq` |
-| **Deploy** | T4/T5/T7/T8 | Container, OIDC (T2/T6), Serverless | Docker, `gcloud`, `aws` |
+| **UI** | T1/T2/T4/T5/T6 | browser operation (T4/T5 without login, T2/T6 with OIDC) | Chrome/Firefox, DevTools |
+| **API** | T1/T2/T6/T7 | endpoints, status codes, SSE | `curl`, `jq` |
+| **Deploy** | T4/T5/T7/T8 | containers, OIDC (T2/T6), serverless | Docker, `gcloud`, `aws` |
 
-**Testartefakte:** `evidence/M<stufe>/<id>-<kurz>.txt|png|log`
+**Test artifacts:** `evidence/M<stage>/<id>-<short>.txt|png|log`
 
-## 5. Teststufen (aufeinander aufbauend)
+## 5. Test stages (incremental)
 
 ```
 M0 Smoke
  └─ M1 Auth
      └─ M2 Sessions
          └─ M3 Prompt & Streaming
-             ├─ M4 Datei-Tools
-             ├─ M5 Shell & Prozesse
-             ├─ M6 Permissions & Fragen
-             └─ M7 Workspace & Dateien
-                 └─ M8 Agents & Skills
-                     └─ M9 Subagents & Tasks
-                         └─ M10 Kontext (Compaction/Revert/Fork/Move)
-                             ├─ M11 Integrationen (optional)
-                             ├─ M12 Provider-Fehler
-                             └─ M13 Persistenz & Neustart
-                                 └─ M14 Sicherheit
-                                     └─ M15 Grenzen & Performance
-                                         ├─ M16 UI-Track (Browser, T4 ohne Login)
+             ├─ M4 File tools
+             ├─ M5 Shell & processes
+             ├─ M6 Permissions & questions
+             └─ M7 Workspace & files
+                 └─ M8 Agents & skills
+                     └─ M9 Subagents & tasks
+                         └─ M10 Context (compaction/revert/fork/move)
+                             ├─ M11 Integrations (optional)
+                             ├─ M12 Provider errors
+                             └─ M13 Persistence & restart
+                                 └─ M14 Security
+                                     └─ M15 Limits & performance
+                                         ├─ M16 UI track (browser, T4 without login)
                                          ├─ M17 OIDC (T2 Auth0 / T6 Keycloak)
-                                         ├─ M18 Docker-Dev-Native (ohne OIDC)
+                                         ├─ M18 Docker-Dev-Native (without OIDC)
                                          └─ M19 Serverless (Cloud Run/Lambda)
 ```
 
-**Regel:** Eine Stufe gilt erst als bestanden, wenn alle P0-Fälle grün sind.
-P1/P2 dürfen dokumentiert offen bleiben.
+**Rule:** A stage counts as passed only when all P0 cases are green.
+P1/P2 may remain documented as open.
 
 ---
 
 ## M0 – Smoke (P0)
 
-| ID | Schritt | Erwartung | Beweis |
+| ID | Step | Expectation | Evidence |
 |---|---|---|---|
-| M0-01 | UI öffnen | Seite lädt, Login-Button sichtbar | Screenshot |
-| M0-02 | `/api/health/live` mit Token | `200 {"status":"UP"}` | curl |
-| M0-03 | `/api/health/ready` mit Token | `200` wenn bereit, sonst `503` | curl |
-| M0-04 | `/api/health/live` ohne Token (OIDC) | `401` + `WWW-Authenticate: Bearer` | curl |
-| M0-05 | SSE `/api/event` mit Token | Verbindung bleibt offen, Events kommen | `curl -N` |
-| M0-06 | `/config.js` | enthält `issuer`, `clientId`, `audience` | curl |
-| M0-07 | Browser-Konsole | keine unbehandelten Fehler | Screenshot |
+| M0-01 | open UI | page loads, login button visible | screenshot |
+| M0-02 | `/api/health/live` with token | `200 {"status":"UP"}` | curl |
+| M0-03 | `/api/health/ready` with token | `200` if ready, otherwise `503` | curl |
+| M0-04 | `/api/health/live` without token (OIDC) | `401` + `WWW-Authenticate: Bearer` | curl |
+| M0-05 | SSE `/api/event` with token | connection stays open, events arrive | `curl -N` |
+| M0-06 | `/config.js` | contains `issuer`, `clientId`, `audience` | curl |
+| M0-07 | browser console | no unhandled errors | screenshot |
 
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" https://test.schippel.info/api/health/live
@@ -245,38 +244,38 @@ curl -s -H "Authorization: Bearer $TOKEN" https://test.schippel.info/api/health/
 
 ---
 
-## M1 – Authentifizierung (P0)
+## M1 – Authentication (P0)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M1-01 | Login klicken → Auth0 | Redirect zu Auth0, nach Login zurück zur App |
-| M1-02 | Nach Login | Button „Logout", API-Calls 200 |
-| M1-03 | Logout | Token gelöscht, API-Calls 401 |
-| M1-04 | Falsches Passwort | Auth0-Fehler, kein Token |
-| M1-05 | T1 Basic-Modus: falsches Passwort | 401, `WWW-Authenticate: Basic` |
-| M1-06 | T1 Basic-Modus: richtiges Passwort | 200 |
-| M1-07 | `/api/metrics` ohne `admin`-Rolle | 403 |
-| M1-08 | `/api/audit` ohne `admin`-Rolle | 403 |
-| M1-09 | Andere Session-ID als Fremd-User | 403/404, kein Datenleck |
-| M1-10 | Token abgelaufen (DevTools manipulieren) | 401, erneuter Login nötig |
+| M1-01 | click login → Auth0 | redirect to Auth0, back to app after login |
+| M1-02 | after login | "Logout" button, API calls 200 |
+| M1-03 | logout | token deleted, API calls 401 |
+| M1-04 | wrong password | Auth0 error, no token |
+| M1-05 | T1 Basic mode: wrong password | 401, `WWW-Authenticate: Basic` |
+| M1-06 | T1 Basic mode: correct password | 200 |
+| M1-07 | `/api/metrics` without `admin` role | 403 |
+| M1-08 | `/api/audit` without `admin` role | 403 |
+| M1-09 | foreign user's session ID | 403/404, no data leak |
+| M1-10 | token expired (manipulate via DevTools) | 401, re-login required |
 
-**Hinweis:** OIDC-Token liegt in `sessionStorage` (`qoc.accessToken`).
+**Note:** OIDC token is stored in `sessionStorage` (`qoc.accessToken`).
 
 ---
 
 ## M2 – Sessions (P0)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M2-01 | Neue Session anlegen | `id` in Antwort, Session in Liste |
-| M2-02 | Session-Liste laden | neue Session erscheint |
-| M2-03 | Session öffnen | leere Message-Liste, Status „bereit" |
-| M2-04 | Agent wechseln (idle) | 200, Agent-Name aktualisiert |
-| M2-05 | Agent wechseln (running) | 409 `SessionRunningError` |
-| M2-06 | Ungültiger Agent | 400/403 |
-| M2-07 | Unbekannte Session | 404 |
-| M2-08 | Session löschen | 200, aus Liste entfernt |
-| M2-09 | Doppeltes Löschen | 404/200 idempotent (dokumentieren) |
+| M2-01 | create new session | `id` in response, session in list |
+| M2-02 | load session list | new session appears |
+| M2-03 | open session | empty message list, status "ready" |
+| M2-04 | switch agent (idle) | 200, agent name updated |
+| M2-05 | switch agent (running) | 409 `SessionRunningError` |
+| M2-06 | invalid agent | 400/403 |
+| M2-07 | unknown session | 404 |
+| M2-08 | delete session | 200, removed from list |
+| M2-09 | double delete | 404/200 idempotent (document) |
 
 ```bash
 curl -s -X POST https://test.schippel.info/api/session \
@@ -285,75 +284,75 @@ curl -s -X POST https://test.schippel.info/api/session \
 
 ---
 
-## M3 – Prompt und Streaming (P0)
+## M3 – Prompt and streaming (P0)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M3-01 | Einfacher Prompt („Antworte mit OK") | Antwort erscheint, Status zurück auf „bereit" |
-| M3-02 | SSE beobachten | `message`, `text`, `finish`-Events in Reihenfolge |
-| M3-03 | Tool-Call auslösen („Lies README.md") | Tool-Karte + Ergebnis, danach Antwort |
-| M3-04 | Seite neu laden | History bleibt erhalten |
-| M3-05 | Zweiten Prompt senden | neue Antwort, History wächst |
-| M3-06 | Leeren Prompt senden | 400 |
-| M3-07 | Prompt während laufendem Turn | 409 `SessionBusyError` |
-| M3-08 | Interrupt während Turn | Status „interrupted", keine hängende Anzeige |
-| M3-09 | Sehr langer Prompt | Grenze wird respektiert (Fehler oder Truncation) |
-| M3-10 | SSE-Reconnect nach Netzwerkabbruch | Events ab `after`-Sequenz, keine Duplikate |
+| M3-01 | simple prompt ("Reply with OK") | answer appears, status back to "ready" |
+| M3-02 | observe SSE | `message`, `text`, `finish` events in order |
+| M3-03 | trigger tool call ("Read README.md") | tool card + result, then answer |
+| M3-04 | reload page | history remains |
+| M3-05 | send second prompt | new answer, history grows |
+| M3-06 | send empty prompt | 400 |
+| M3-07 | prompt during running turn | 409 `SessionBusyError` |
+| M3-08 | interrupt during turn | status "interrupted", no hanging display |
+| M3-09 | very long prompt | limit is respected (error or truncation) |
+| M3-10 | SSE reconnect after network drop | events from `after` sequence, no duplicates |
 
 ---
 
-## M4 – Datei-Tools (P0)
+## M4 – File tools (P0)
 
-Vorbereitung: Scratch-Datei `qoc-test-<datum>/a.txt` mit bekanntem Inhalt.
+Preparation: scratch file `qoc-test-<date>/a.txt` with known content.
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M4-01 | `read` auf `a.txt` | Inhalt exakt |
-| M4-02 | `write` auf neue Datei | Datei existiert mit Inhalt |
-| M4-03 | `edit` (ersetzen) | nur Zielstelle geändert |
-| M4-04 | `patch` (Multi-Hunk) | alle Hunks korrekt |
-| M4-05 | `glob`/`grep` | korrekte Treffer, keine Fremddateien |
-| M4-06 | `read` auf nicht existierende Datei | typisierter Fehler an das Modell |
-| M4-07 | Pfad `../../etc/passwd` | verweigert/kein Inhalt außerhalb Workspace |
-| M4-08 | Symlink nach außen | verweigert (kein Escape) |
-| M4-09 | Binärdatei | sauberer Fehler oder Base64, kein Absturz |
-| M4-10 | Große Datei (> 1 MB) | Limit greift, klare Meldung |
+| M4-01 | `read` on `a.txt` | content exactly |
+| M4-02 | `write` new file | file exists with content |
+| M4-03 | `edit` (replace) | only target location changed |
+| M4-04 | `patch` (multi-hunk) | all hunks correct |
+| M4-05 | `glob`/`grep` | correct matches, no foreign files |
+| M4-06 | `read` non-existent file | typed error to the model |
+| M4-07 | path `../../etc/passwd` | denied/no content outside workspace |
+| M4-08 | symlink to outside | denied (no escape) |
+| M4-09 | binary file | clean error or Base64, no crash |
+| M4-10 | large file (> 1 MB) | limit applies, clear message |
 
 ---
 
-## M5 – Shell und Prozesse (P0)
+## M5 – Shell and processes (P0)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M5-01 | `echo hello` | Ausgabe `hello`, Exit 0 |
-| M5-02 | `sleep 60` starten | Prozess läuft, UI bleibt bedienbar |
-| M5-03 | Prozessliste `/processes` | Prozess sichtbar |
-| M5-04 | Prozess killen | Prozess beendet, Status aktualisiert |
-| M5-05 | Kommando mit Exit ≠ 0 | Exit-Code und stderr sichtbar |
-| M5-06 | Timeout-Kommando | Timeout-Fehler, kein hängender Step |
-| M5-07 | Schreibversuch außerhalb Workspace (Sandbox `workspace-write`) | verweigert |
-| M5-08 | Interrupt während Shell | Prozess wird beendet/abgebrochen |
+| M5-01 | `echo hello` | output `hello`, exit 0 |
+| M5-02 | start `sleep 60` | process runs, UI stays usable |
+| M5-03 | process list `/processes` | process visible |
+| M5-04 | kill process | process terminated, status updated |
+| M5-05 | command with exit ≠ 0 | exit code and stderr visible |
+| M5-06 | timeout command | timeout error, no hanging step |
+| M5-07 | write attempt outside workspace (sandbox `workspace-write`) | denied |
+| M5-08 | interrupt during shell | process terminated/aborted |
 
 ---
 
-## M6 – Permissions und Fragen (P0)
+## M6 – Permissions and questions (P0)
 
-> **Umgebung:** T1/T2/T6 mit `ENGINE_PERMISSION_DEFAULT=least-privilege`.
-> T4 (`qoc-dev`) läuft mit `allow-all` und löst keine Permission-Dialoge aus.
+> **Environment:** T1/T2/T6 with `ENGINE_PERMISSION_DEFAULT=least-privilege`.
+> T4 (`qoc-dev`) runs with `allow-all` and triggers no permission dialogs.
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M6-01 | Aktion mit Ask-Regel (z. B. `shell`) | Permission-Dialog erscheint |
-| M6-02 | `ONCE` antworten | Aktion läuft einmal |
-| M6-03 | `ALWAYS` antworten | Aktion läuft, Approval gespeichert |
-| M6-04 | Gespeichertes Approval erneut nutzen | keine erneute Nachfrage |
-| M6-05 | `REJECT` ohne Feedback | Aktion abgelehnt, Modell informiert |
-| M6-06 | `REJECT` mit Feedback | Feedback kommt beim Modell an |
-| M6-07 | Deny-Regel + gespeichertes Allow | **Deny gewinnt** |
-| M6-08 | `question`-Tool | Frage-Panel, Antwort `selected`/`text` |
-| M6-09 | Frage-Timeout/headless | konfiguriertes Verhalten (deny/retry) |
-| M6-10 | Kind-Session-Permission (`includeChildren=true`) | Kind-Anfrage sichtbar |
-| M6-11 | Antwort auf unbekannte Request-ID | 404 |
+| M6-01 | action with Ask rule (e.g. `shell`) | permission dialog appears |
+| M6-02 | answer `ONCE` | action runs once |
+| M6-03 | answer `ALWAYS` | action runs, approval stored |
+| M6-04 | reuse stored approval | no repeated prompt |
+| M6-05 | `REJECT` without feedback | action rejected, model informed |
+| M6-06 | `REJECT` with feedback | feedback reaches the model |
+| M6-07 | Deny rule + stored Allow | **Deny wins** |
+| M6-08 | `question` tool | question panel, answer `selected`/`text` |
+| M6-09 | question timeout/headless | configured behavior (deny/retry) |
+| M6-10 | child-session permission (`includeChildren=true`) | child request visible |
+| M6-11 | reply to unknown request ID | 404 |
 
 ```bash
 curl -s -X POST .../api/session/$SID/permission/$REQ/reply \
@@ -363,107 +362,107 @@ curl -s -X POST .../api/session/$SID/permission/$REQ/reply \
 
 ---
 
-## M7 – Workspace und Dateien (P1)
+## M7 – Workspace and files (P1)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M7-01 | Dateibaum laden | korrekte Struktur |
-| M7-02 | Datei anzeigen | Inhalt, UTF-8 korrekt |
-| M7-03 | Datei herunterladen | Bytes identisch |
-| M7-04 | Verzeichnis herunterladen | ZIP/Archiv vollständig |
-| M7-05 | Workspace wechseln (neu) | Verzeichnis wird angelegt, UI lädt neu |
-| M7-06 | Workspace wechseln (ungültig) | 400, aktueller Workspace bleibt |
-| M7-07 | Worktree anlegen/listen/entfernen (falls aktiviert) | konsistente Liste, keine Reste |
+| M7-01 | load file tree | correct structure |
+| M7-02 | view file | content, UTF-8 correct |
+| M7-03 | download file | bytes identical |
+| M7-04 | download directory | ZIP/archive complete |
+| M7-05 | switch workspace (new) | directory created, UI reloads |
+| M7-06 | switch workspace (invalid) | 400, current workspace remains |
+| M7-07 | create/list/remove worktree (if enabled) | consistent list, no leftovers |
 
 ---
 
-## M8 – Agents und Skills (P1)
+## M8 – Agents and skills (P1)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M8-01 | Agent-Liste | Default + konfigurierte Agents |
-| M8-02 | Agent anlegen (UI/API) | erscheint in Liste |
-| M8-03 | Agent ändern | Änderung wirksam |
-| M8-04 | Agent löschen | aus Liste entfernt |
-| M8-05 | Session auf Agent umschalten | Agent wird verwendet |
-| M8-06 | Skill-Liste | sichtbare/erlaubte Skills |
-| M8-07 | Skill per Prompt laden | Inhalt im Kontext, keine Fehler |
-| M8-08 | Ungültiges Skill-Frontmatter | Skill wird ignoriert, kein Crash |
-| M8-09 | Config-Reload | Änderungen ohne Neustart sichtbar |
+| M8-01 | agent list | default + configured agents |
+| M8-02 | create agent (UI/API) | appears in list |
+| M8-03 | modify agent | change effective |
+| M8-04 | delete agent | removed from list |
+| M8-05 | switch session to agent | agent is used |
+| M8-06 | skill list | visible/allowed skills |
+| M8-07 | load skill via prompt | content in context, no errors |
+| M8-08 | invalid skill frontmatter | skill ignored, no crash |
+| M8-09 | config reload | changes visible without restart |
 
 ---
 
-## M9 – Subagents und Background-Tasks (P1)
+## M9 – Subagents and background tasks (P1)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M9-01 | Synchroner Subagent | Ergebnis als Tool-Output |
-| M9-02 | `subagent(background=true)` | sofort `taskId`, Parent läuft weiter |
-| M9-03 | Task-Liste (`/tasks`) | Task mit Status `RUNNING` |
-| M9-04 | `task wait` (kurz) | Ergebnis oder Timeout |
-| M9-05 | `task wait` (lang) | Ergebnis nach Abschluss |
-| M9-06 | `task cancel` | Status `CANCELLED` |
-| M9-07 | 5. gleichzeitiger Subagent | 5. wartet/abgelehnt (Limit 4) |
-| M9-08 | Depth > 2 | abgelehnt |
-| M9-09 | Subagent-Fehler | Task `FAILED`, Fehler sichtbar |
-| M9-10 | Parent-Session löschen | Kind-Tasks werden beendet |
-| M9-11 | SSE `SubagentStarted/Finished` | Events erscheinen in Reihenfolge |
+| M9-01 | synchronous subagent | result as tool output |
+| M9-02 | `subagent(background=true)` | immediate `taskId`, parent continues |
+| M9-03 | task list (`/tasks`) | task with status `RUNNING` |
+| M9-04 | `task wait` (short) | result or timeout |
+| M9-05 | `task wait` (long) | result after completion |
+| M9-06 | `task cancel` | status `CANCELLED` |
+| M9-07 | 5th concurrent subagent | 5th waits/rejected (limit 4) |
+| M9-08 | depth > 2 | rejected |
+| M9-09 | subagent error | task `FAILED`, error visible |
+| M9-10 | delete parent session | child tasks terminated |
+| M9-11 | SSE `SubagentStarted/Finished` | events appear in order |
 
 ---
 
-## M10 – Kontext: Compaction, Revert, Fork, Move (P1)
+## M10 – Context: compaction, revert, fork, move (P1)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M10-01 | Lange Konversation | Auto-Compaction, Zusammenfassung |
-| M10-02 | Manuelle Compaction | Summary ersetzt alten Kontext |
-| M10-03 | Revert | Nachrichten ab Punkt entfernt, Dateien zurückgesetzt (falls konfiguriert) |
-| M10-04 | Fork | neue Session mit kopierter History |
-| M10-05 | Move | Session wechselt Workspace/Location |
-| M10-06 | Titel-Generierung | Titel wird gesetzt |
-| M10-07 | Todo-Liste | Einträge erscheinen/aktualisieren |
-| M10-08 | Compaction-Fehler | Step schlägt typisiert fehl, kein Datenverlust |
+| M10-01 | long conversation | auto-compaction, summary |
+| M10-02 | manual compaction | summary replaces old context |
+| M10-03 | revert | messages from point removed, files reset (if configured) |
+| M10-04 | fork | new session with copied history |
+| M10-05 | move | session switches workspace/location |
+| M10-06 | title generation | title is set |
+| M10-07 | todo list | entries appear/update |
+| M10-08 | compaction error | step fails typed, no data loss |
 
 ---
 
-## M11 – Integrationen (P2, nur wenn aktiviert)
+## M11 – Integrations (P2, only if enabled)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M11-01 | `/api/mcp` | konfigurierte Server |
-| M11-02 | MCP-Status | `connected`/`error` korrekt |
-| M11-03 | MCP-Authorize/Callback | Token wird übernommen |
-| M11-04 | `/api/a2a` | Remote-Agents gelistet |
-| M11-05 | A2A-Aufruf | Ergebnis oder typisierter Fehler |
-| M11-06 | E-Mail lesen/senden (falls aktiviert) | korrekte Limits/Empfänger |
-| M11-07 | Webhook-Trigger (falls aktiviert) | Session wird geweckt, Antwort sichtbar |
+| M11-01 | `/api/mcp` | configured servers |
+| M11-02 | MCP status | `connected`/`error` correct |
+| M11-03 | MCP authorize/callback | token taken over |
+| M11-04 | `/api/a2a` | remote agents listed |
+| M11-05 | A2A call | result or typed error |
+| M11-06 | read/send email (if enabled) | correct limits/recipients |
+| M11-07 | webhook trigger (if enabled) | session woken, answer visible |
 
 ---
 
-## M12 – Provider-Fehler und Resilienz (P1)
+## M12 – Provider errors and resilience (P1)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M12-01 | Ungültiger API-Key | 502/503, klare Fehlermeldung |
-| M12-02 | Rate-Limit simulieren | Retry mit Backoff, danach Fehler |
-| M12-03 | Provider-Timeout | typisierter Fehler, Session bleibt nutzbar |
-| M12-04 | Netzwerk trennen (DevTools offline) | Retry/Fehler, keine hängende UI |
-| M12-05 | Modell wechseln | nächster Prompt nutzt neues Modell |
-| M12-06 | Preflight-Fehler (DB/Key) | Start/Health meldet Problem |
+| M12-01 | invalid API key | 502/503, clear error message |
+| M12-02 | simulate rate limit | retry with backoff, then error |
+| M12-03 | provider timeout | typed error, session remains usable |
+| M12-04 | disconnect network (DevTools offline) | retry/error, no hanging UI |
+| M12-05 | switch model | next prompt uses new model |
+| M12-06 | preflight error (DB/key) | start/health reports problem |
 
 ---
 
-## M13 – Persistenz und Neustart (P0 für T2)
+## M13 – Persistence and restart (P0 for T2)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M13-01 | Seite neu laden | Session + History bleiben |
-| M13-02 | `systemctl restart qoc` | Service wieder `active` |
-| M13-03 | Nach Neustart Session öffnen | History vollständig |
-| M13-04 | Prompt während Neustart | Claim-Recovery: Session wird fortgesetzt oder typisiert fehlgeschlagen |
-| M13-05 | Gespeicherte Approvals nach Neustart | weiterhin wirksam |
-| M13-06 | Verwaiste Background-Tasks nach Neustart | als beendet/verloren markiert, kein Zombie |
-| M13-07 | Audit/Journal | Events konsistent, keine Lücken |
+| M13-01 | reload page | session + history remain |
+| M13-02 | `systemctl restart qoc` | service `active` again |
+| M13-03 | open session after restart | history complete |
+| M13-04 | prompt during restart | claim recovery: session continues or fails typed |
+| M13-05 | stored approvals after restart | still effective |
+| M13-06 | orphaned background tasks after restart | marked ended/lost, no zombie |
+| M13-07 | audit/journal | events consistent, no gaps |
 
 ```bash
 sudo systemctl restart qoc && sleep 6 && systemctl is-active qoc
@@ -471,196 +470,199 @@ sudo systemctl restart qoc && sleep 6 && systemctl is-active qoc
 
 ---
 
-## M14 – Sicherheit (P0)
+## M14 – Security (P0)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M14-01 | API ohne Token | 401 |
-| M14-02 | Fremde Session-ID raten | 403/404 |
-| M14-03 | Pfad-Traversal (`../`, URL-encoded) | verweigert |
-| M14-04 | Symlink-Escape | verweigert |
-| M14-05 | Shell-Injection-Versuch (z. B. `; rm -rf`) | nur als Argument/Literal, kein ungewollter Effekt |
-| M14-06 | XSS in Prompt/Dateiname (`<script>`) | wird escaped dargestellt |
-| M14-07 | Secrets im UI/Log | keine API-Keys/Token im Klartext |
-| M14-08 | Credential-Liste | Secrets maskiert |
-| M14-09 | Admin-Endpunkte als Nicht-Admin | 403 |
-| M14-10 | Fehlermeldungen | keine Stacktraces/Interna an den Client |
+| M14-01 | API without token | 401 |
+| M14-02 | guess foreign session ID | 403/404 |
+| M14-03 | path traversal (`../`, URL-encoded) | denied |
+| M14-04 | symlink escape | denied |
+| M14-05 | shell injection attempt (e.g. `; rm -rf`) | treated as argument/literal only, no unintended effect |
+| M14-06 | XSS in prompt/filename (`<script>`) | displayed escaped |
+| M14-07 | secrets in UI/log | no API keys/tokens in plaintext |
+| M14-08 | credential list | secrets masked |
+| M14-09 | admin endpoints as non-admin | 403 |
+| M14-10 | error messages | no stack traces/internals to client |
 
 ---
 
-## M15 – Grenzen und Performance (P2, manuell)
+## M15 – Limits and performance (P2, manual)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M15-01 | 20 Sessions anlegen | Liste reagiert flüssig |
-| M15-02 | Datei > 1 MB anzeigen | Limit/Fehler, kein UI-Freeze |
-| M15-03 | Tool-Output > Limit | Truncation mit Marker/Datei |
-| M15-04 | SSE 10 Minuten offen | Verbindung stabil, Heartbeat/Reconnect |
-| M15-05 | 4 parallele Subagents | keine Überschreitung |
-| M15-06 | Sehr langer Prompt (100k Zeichen) | 400/Limit, kein OOM |
-| M15-07 | Viele Nachrichten in einer Session | Scroll/History bleibt bedienbar |
+| M15-01 | create 20 sessions | list responds smoothly |
+| M15-02 | display file > 1 MB | limit/error, no UI freeze |
+| M15-03 | tool output > limit | truncation with marker/file |
+| M15-04 | SSE open 10 minutes | connection stable, heartbeat/reconnect |
+| M15-05 | 4 parallel subagents | no exceedance |
+| M15-06 | very long prompt (100k chars) | 400/limit, no OOM |
+| M15-07 | many messages in one session | scroll/history stays usable |
 
 ---
 
-## M16 – UI-Track (Browser, ohne curl) (P0)
+## M16 – UI track (browser, no curl) (P0)
 
-Voraussetzung: T1, T2 oder T6 (T4 `qoc-dev` läuft mit `ENGINE_PERMISSION_DEFAULT=allow-all` und ist für M16-05…07 nicht geeignet). Alle Schritte **nur** über die Oberfläche.
+Prerequisite: T1, T2 or T6 (T4 `qoc-dev` runs with
+`ENGINE_PERMISSION_DEFAULT=allow-all` and is unsuitable for M16-05…07). All
+steps **only** via the UI.
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M16-01 | Login-Button klicken (OIDC) | Auth0/Keycloak-Login, Rückkehr zur App |
-| M16-02 | Session-Dropdown → neue Session | neue Session erscheint, Chat leer |
-| M16-03 | Prompt eingeben + senden (Ctrl+Enter) | Antwort streamt, Status „bereit" |
-| M16-04 | Tool-Call auslösen („Lies README.md") | Tool-Karte mit Ergebnis |
-| M16-05 | Permission-Modal: `ONCE` | Aktion läuft einmal |
-| M16-06 | Permission-Modal: `ALWAYS` | Aktion läuft, keine erneute Nachfrage |
-| M16-07 | Permission-Modal: `REJECT` + Feedback | Aktion abgelehnt, Feedback sichtbar |
-| M16-08 | `question`-Tool auslösen | Frage-Panel, Antwort senden |
-| M16-09 | Dateibaum öffnen, Datei anklicken | Inhalt im Viewer |
-| M16-10 | Datei herunterladen | Download identisch |
-| M16-11 | Workspace-Menü → wechseln | UI lädt neu, Workspace korrekt |
-| M16-12 | Agent-Modal: Agent anlegen/ändern/löschen | Liste aktualisiert |
-| M16-13 | Task-Liste/Status/Cancel (falls UI vorhanden) | Zustände korrekt |
-| M16-14 | LLM-Trace-Panel öffnen | Request/Response sichtbar |
-| M16-15 | SSE-Verbindung trennen (DevTools offline) | Banner „SSE getrennt", Reconnect |
-| M16-16 | Logout | Token weg, API-Calls 401, Login-Button |
-| M16-17 | Mobile Layout (Fenster schmal) | Resizer/Sidebar funktionieren |
-| M16-18 | Browser-Konsole | keine unbehandelten Fehler |
+| M16-01 | click login (OIDC) | Auth0/Keycloak login, return to app |
+| M16-02 | session dropdown → new session | new session appears, chat empty |
+| M16-03 | enter + send prompt (Ctrl+Enter) | answer streams, status "ready" |
+| M16-04 | trigger tool call ("Read README.md") | tool card with result |
+| M16-05 | permission modal: `ONCE` | action runs once |
+| M16-06 | permission modal: `ALWAYS` | action runs, no repeated prompt |
+| M16-07 | permission modal: `REJECT` + feedback | action rejected, feedback visible |
+| M16-08 | trigger `question` tool | question panel, send answer |
+| M16-09 | open file tree, click file | content in viewer |
+| M16-10 | download file | download identical |
+| M16-11 | workspace menu → switch | UI reloads, workspace correct |
+| M16-12 | agent modal: create/modify/delete | list updated |
+| M16-13 | task list/status/cancel (if UI available) | states correct |
+| M16-14 | open LLM trace panel | request/response visible |
+| M16-15 | disconnect SSE (DevTools offline) | banner "SSE disconnected", reconnect |
+| M16-16 | logout | token gone, API calls 401, login button |
+| M16-17 | mobile layout (narrow window) | resizer/sidebar work |
+| M16-18 | browser console | no unhandled errors |
 
 ## M17 – OIDC (T2 Auth0 / T6 Keycloak) (P0)
 
-**Getrennt von Docker-Dev.** Entweder T2 (Auth0 auf der GCP-VM) oder T6
-(lokaler Keycloak-Stack) – nicht der Dev-Container.
+**Separate from Docker-Dev.** Either T2 (Auth0 on the GCP VM) or T6 (local
+Keycloak stack) – not the dev container.
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M17-01 | T6: `start-oidc.sh` ausführen | Keycloak + QOC starten, Health 200 |
-| M17-02 | T6: Keycloak-Admin `http://localhost:8180/admin` | Login `admin`/`admin` |
-| M17-03 | QOC-UI öffnen (T2 `https://test.schippel.info`, T6 `http://localhost:8071`) | lädt, Login-Button |
-| M17-04 | Login `alice`/`alice-password` (T6) bzw. Auth0-Testuser (T2) | Rückkehr, API-Calls 200 |
-| M17-05 | Token in DevTools prüfen | `iss` korrekt, `aud` enthält `qoc-engine` |
-| M17-06 | `/api/health` mit Token | 200 |
-| M17-07 | `/api/metrics` als Nicht-Admin | 403 |
-| M17-08 | Login `bob`/`bob-password` (T6) bzw. Admin (T2) | `/api/metrics` 200 |
-| M17-09 | SSE in DevTools | `fetch`-Request mit Bearer, Status 200 |
-| M17-10 | Falsche Audience (Token manipulieren) | 401 |
-| M17-11 | T6: CLI-Token (`qoc-cli`, password grant) | API-Call 200 |
-| M17-12 | T6: Container-Neustart (`docker restart qoc-local`) | Session/History bleiben (SQLite-Volume) |
-| M17-13 | Statische UI ohne Token | `/` lädt, `/api/*` 401 |
-| M17-14 | Logout | Token gelöscht, erneuter Login nötig |
+| M17-01 | T6: run `start-oidc.sh` | Keycloak + QOC start, health 200 |
+| M17-02 | T6: Keycloak admin `http://localhost:8180/admin` | login `admin`/`admin` |
+| M17-03 | open QOC UI (T2 `https://test.schippel.info`, T6 `http://localhost:8071`) | loads, login button |
+| M17-04 | login `alice`/`alice-password` (T6) or Auth0 test user (T2) | return, API calls 200 |
+| M17-05 | check token in DevTools | `iss` correct, `aud` contains `qoc-engine` |
+| M17-06 | `/api/health` with token | 200 |
+| M17-07 | `/api/metrics` as non-admin | 403 |
+| M17-08 | login `bob`/`bob-password` (T6) or admin (T2) | `/api/metrics` 200 |
+| M17-09 | SSE in DevTools | `fetch` request with Bearer, status 200 |
+| M17-10 | wrong audience (manipulate token) | 401 |
+| M17-11 | T6: CLI token (`qoc-cli`, password grant) | API call 200 |
+| M17-12 | T6: container restart (`docker restart qoc-local`) | session/history remain (SQLite volume) |
+| M17-13 | static UI without token | `/` loads, `/api/*` 401 |
+| M17-14 | logout | token deleted, re-login required |
 
-**Split-Horizon prüfen (T6):**
+**Check split-horizon (T6):**
 
-- Browser-Issuer: `http://localhost:8180/realms/qoc`
-- Container-JWKS: `http://host.docker.internal:8180/realms/qoc/...`
-- `QUARKUS_OIDC_TOKEN_ISSUER` muss exakt der Browser-Issuer sein.
+- Browser issuer: `http://localhost:8180/realms/qoc`
+- Container JWKS: `http://host.docker.internal:8180/realms/qoc/...`
+- `QUARKUS_OIDC_TOKEN_ISSUER` must be exactly the browser issuer.
 
-**T2-spezifisch:** Auth0-Issuer mit Trailing Slash, `aud=qoc-engine`,
-JWKS von der VM erreichbar, nginx reicht `Authorization` durch.
+**T2-specific:** Auth0 issuer with trailing slash, `aud=qoc-engine`,
+JWKS reachable from the VM, nginx passes `Authorization` through.
 
-## M18 – Docker-Dev-Native ohne OIDC (T5) (P1)
+## M18 – Docker-Dev-Native without OIDC (T5) (P1)
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M18-01 | `docker compose --profile dev-native up -d` | Native-Build startet |
-| M18-02 | UI `http://localhost:8081` | lädt ohne Login |
-| M18-03 | API-Call ohne Token | 200 (lokaler Admin-Modus) |
-| M18-04 | Native-Startzeit im Log | dokumentiert (Vergleich JVM) |
-| M18-05 | Reflection/Config | keine `ClassNotFound`/Config-Fehler |
-| M18-06 | Container-Neustart | Session/History bleiben |
-| M18-07 | Gleiche UI-Fälle wie M16 (Stichprobe) | identisches Verhalten |
-| M18-08 | Kein OIDC im Container | kein Login/Redirect, kein Auth-Zwang |
+| M18-01 | `docker compose --profile dev-native up -d` | native build starts |
+| M18-02 | UI `http://localhost:8081` | loads without login |
+| M18-03 | API call without token | 200 (local admin mode) |
+| M18-04 | native start time in log | documented (compare to JVM) |
+| M18-05 | reflection/config | no `ClassNotFound`/config errors |
+| M18-06 | container restart | session/history remain |
+| M18-07 | same UI cases as M16 (spot check) | identical behavior |
+| M18-08 | no OIDC in container | no login/redirect, no auth requirement |
 
 ## M19 – Serverless (Cloud Run / Lambda) (P0/P1)
 
-Voraussetzung: T7 (lokal) oder T8 (Cloud). Serverless hat **keine UI**;
-getestet wird der `/mcp`-Endpoint mit Bearer-Token.
+Prerequisite: T7 (local) or T8 (cloud). Serverless has **no UI**; the
+`/mcp` endpoint is tested with a bearer token.
 
-| ID | Schritt | Erwartung |
+| ID | Step | Expectation |
 |---|---|---|
-| M19-01 | Deployment-Skript ausführen | Service/Function aktiv, URL ausgegeben |
-| M19-02 | `/mcp` ohne Token | 401 |
-| M19-03 | `/mcp` mit gültigem OIDC-Token (Auth0/Keycloak) | MCP-Handshake erfolgreich |
-| M19-04 | `qoc_run_agent` mit `build`/`plan` | Ergebnis + `_meta` |
-| M19-05 | `qoc_run_agent` mit unbekanntem Agent | Fetch von `ENGINE_AGENT_SOURCE_URL` |
-| M19-06 | `qoc_run_agent_with_config` (Inline-Markdown) | transienter Agent, danach entfernt |
-| M19-07 | Nach dem Call Session prüfen | ephemere Session gelöscht |
-| M19-08 | Ergebnis-Metadaten | Tokens, Finish, Warnungen, `agentCreated`/`agentDeleted` |
-| M19-09 | Cold Start (Cloud Run `min-instances=0`) | erster Call innerhalb Timeout |
-| M19-10 | Parallele Calls (mehrere Instanzen/Concurrency) | korrekte Ergebnisse, keine geteilten Sessions |
-| M19-11 | Turn-Limit (10 min) / Lambda-Timeout (300 s) | typisierter Fehler, kein Hänger |
-| M19-12 | Großer Prompt / 512 MB Memory | Limit/Fehler, kein OOM |
-| M19-13 | Workspace `/tmp/workspace` | nur Scratch, nach Call bereinigt |
-| M19-14 | Agent-Quelle nicht erreichbar | `agent not available`, klarer Fehler |
-| M19-15 | Unerlaubte Tools (Leaf-Profil) | abgelehnt/gar nicht verfügbar |
-| M19-16 | Skills/Subagents im Serverless-Modus | nicht verfügbar (MVP) |
-| M19-17 | Lambda-Variante: Function-URL + `/mcp` | gleiche Fälle wie Cloud Run |
-| M19-18 | Logs (Cloud Run/Lambda) | Request-ID, keine Secrets |
+| M19-01 | run deployment script | service/function active, URL printed |
+| M19-02 | `/mcp` without token | 401 |
+| M19-03 | `/mcp` with valid OIDC token (Auth0/Keycloak) | MCP handshake successful |
+| M19-04 | `qoc_run_agent` with `build`/`plan` | result + `_meta` |
+| M19-05 | `qoc_run_agent` with unknown agent | fetch from `ENGINE_AGENT_SOURCE_URL` |
+| M19-06 | `qoc_run_agent_with_config` (inline markdown) | transient agent, removed afterwards |
+| M19-07 | check session after the call | ephemeral session deleted |
+| M19-08 | result metadata | tokens, finish, warnings, `agentCreated`/`agentDeleted` |
+| M19-09 | cold start (Cloud Run `min-instances=0`) | first call within timeout |
+| M19-10 | parallel calls (multiple instances/concurrency) | correct results, no shared sessions |
+| M19-11 | turn limit (10 min) / Lambda timeout (300 s) | typed error, no hang |
+| M19-12 | large prompt / 512 MB memory | limit/error, no OOM |
+| M19-13 | workspace `/tmp/workspace` | scratch only, cleaned after call |
+| M19-14 | agent source unreachable | `agent not available`, clear error |
+| M19-15 | forbidden tools (leaf profile) | rejected/not available at all |
+| M19-16 | skills/subagents in serverless mode | not available (MVP) |
+| M19-17 | Lambda variant: function URL + `/mcp` | same cases as Cloud Run |
+| M19-18 | logs (Cloud Run/Lambda) | request ID, no secrets |
 
-## 6. Grenzfälle: manuell vs. automatisiert
+## 6. Edge cases: manual vs. automated
 
-Diese Fälle sind **nicht sinnvoll manuell** testbar – zu fein, zu selten, zu
-timingabhängig oder zu zerstörerisch. Sie gehören in automatisierte Tests.
+These cases are **not sensibly testable manually** – too fine-grained, too
+rare, too timing-dependent or too destructive. They belong in automated
+tests.
 
-| Grenzfall | Warum nicht manuell | Automatisierung |
+| Edge case | Why not manual | Automation |
 |---|---|---|
-| Zwei gleichzeitige Prompts derselben Session | Race, ms-Fenster | Unit/Integration: `ConcurrentPromptTest` |
-| Claim-Kollision / doppelte Execution | ms-Fenster, nicht reproduzierbar | `CoordinatorTest` (existiert) |
-| Doorbell-Coalescing | Timing | `CoordinatorTest` |
-| Admission/Delivery-Reihenfolge | Transaktionsrace | Integration mit DB |
-| Crash mitten im Step (SIGKILL) | zerstört Umgebung | Recovery-Test mit Prozess-Kill |
-| Stromausfall / JVM-Crash | nicht kontrollierbar | Chaos-/Recovery-Test |
-| OOM / Memory-Druck | instabil | Lasttest mit Heap-Limit |
-| Virtual-Thread-Pinning | nur unter Last sichtbar | `-Djdk.tracePinnedThreads=full` |
-| Clock-Skew / Token-Ablauf exakt an der Grenze | Zeitmanipulation | `FixedClock` + Contract-Test |
-| Netzwerkpartition / halbe SSE-Frames | nicht deterministisch | Proxy/Fault-Injection |
-| Provider-Stream bricht mitten im Token ab | nicht reproduzierbar | Stub-Provider mit Fehlerinjektion |
-| Doppelte Tool-Ausführung bei Retry | Race | Effect-Ledger-Test |
-| DB-Deadlock / Serialisierungsfehler | DB-spezifisch | Integration mit Parallelität |
-| Multi-Node-Claims/Leases | mehrere Instanzen | Cluster-Test |
-| Symlink-TOCTOU | Race | Property-/Fuzz-Test |
-| Path-Traversal-Varianten (Encoding) | zu viele Varianten | Fuzz-Test |
-| SSRF über Web-Tools | Umgebung | Security-Test mit Mock-Server |
-| Command-Injection-Payloads | zu viele Varianten | Fuzz-Test |
-| XSS-Payload-Korpus | zu viele Varianten | UI-Test (Playwright) |
-| JSON-Schema-Fuzzing für Tool-Inputs | Kombinatorik | Property-based Test |
-| Migration/Schema-Evolution | DB-Zustände | Migrations-Test |
-| 1.000 wartende Sessions | Last | Load-Test |
-| Eviction unter Speicherdruck | Timing | Lasttest mit Budget |
-| Token-Refresh-Race | ms-Fenster | Integrationstest |
+| Two concurrent prompts on the same session | race, ms window | Unit/Integration: `ConcurrentPromptTest` |
+| Claim collision / double execution | ms window, not reproducible | `CoordinatorTest` (exists) |
+| Doorbell coalescing | timing | `CoordinatorTest` |
+| Admission/delivery ordering | transaction race | integration with DB |
+| Crash mid-step (SIGKILL) | destroys environment | recovery test with process kill |
+| Power loss / JVM crash | not controllable | chaos/recovery test |
+| OOM / memory pressure | unstable | load test with heap limit |
+| Virtual thread pinning | only visible under load | `-Djdk.tracePinnedThreads=full` |
+| Clock skew / token expiry exactly at boundary | time manipulation | `FixedClock` + contract test |
+| Network partition / half SSE frames | non-deterministic | proxy/fault injection |
+| Provider stream breaks mid-token | not reproducible | stub provider with error injection |
+| Duplicate tool execution on retry | race | effect ledger test |
+| DB deadlock / serialization errors | DB-specific | integration with concurrency |
+| Multi-node claims/leases | multiple instances | cluster test |
+| Symlink TOCTOU | race | property/fuzz test |
+| Path traversal variants (encoding) | too many variants | fuzz test |
+| SSRF via web tools | environment | security test with mock server |
+| Command injection payloads | too many variants | fuzz test |
+| XSS payload corpus | too many variants | UI test (Playwright) |
+| JSON schema fuzzing for tool inputs | combinatorics | property-based test |
+| Migration/schema evolution | DB states | migration test |
+| 1,000 waiting sessions | load | load test |
+| Eviction under memory pressure | timing | load test with budget |
+| Token refresh race | ms window | integration test |
 
-**Regel:** Wenn ein Grenzfall manuell nur mit Tricks (Debugger, künstliche
-Verzögerung, Kill -9) erreichbar ist, gehört er **nicht** in diesen Plan,
-sondern in die automatisierte Suite.
+**Rule:** If an edge case is only reachable manually with tricks (debugger,
+artificial delay, kill -9), it does **not** belong in this plan but in the
+automated suite.
 
-## 7. Testmatrix / Checkliste
+## 7. Test matrix / checklist
 
-| Stufe | P0 | P1 | P2 | Bestanden am | Tester |
+| Stage | P0 | P1 | P2 | Passed on | Tester |
 |---|---|---|---|---|---|
 | M0 Smoke | 7 | – | – | | |
 | M1 Auth | 10 | – | – | | |
 | M2 Sessions | 9 | – | – | | |
 | M3 Prompt/SSE | 10 | – | – | | |
-| M4 Datei-Tools | 10 | – | – | | |
+| M4 File tools | 10 | – | – | | |
 | M5 Shell | 8 | – | – | | |
 | M6 Permissions | 11 | – | – | | |
 | M7 Workspace | – | 7 | – | | |
-| M8 Agents/Skills | – | 9 | – | | |
+| M8 Agents/skills | – | 9 | – | | |
 | M9 Subagents | – | 11 | – | | |
-| M10 Kontext | – | 8 | – | | |
-| M11 Integrationen | – | – | 7 | | |
+| M10 Context | – | 8 | – | | |
+| M11 Integrations | – | – | 7 | | |
 | M12 Provider | – | 6 | – | | |
-| M13 Persistenz | 7 | – | – | | |
-| M14 Sicherheit | 10 | – | – | | |
-| M15 Grenzen | – | – | 7 | | |
-| M16 UI-Track | 18 | – | – | | |
+| M13 Persistence | 7 | – | – | | |
+| M14 Security | 10 | – | – | | |
+| M15 Limits | – | – | 7 | | |
+| M16 UI track | 18 | – | – | | |
 | M17 OIDC | 14 | – | – | | |
 | M18 Docker-Dev-Native | – | 8 | – | | |
 | M19 Serverless | 12 | 6 | – | | |
 
-## 8. Umgebungsbefehle
+## 8. Environment commands
 
-### 8.1 Lokal
+### 8.1 Local
 
 ```bash
 cd qoc
@@ -680,186 +682,183 @@ gcloud compute ssh torsten@quad-e2micro --zone=us-central1-a \
 gcloud compute ssh torsten@quad-e2micro --zone=us-central1-a \
   --project=gen-lang-client-0960862878 --command "sudo journalctl -u qoc -n 100 --no-pager"
 
-# Neustart
+# Restart
 gcloud compute ssh torsten@quad-e2micro --zone=us-central1-a \
   --project=gen-lang-client-0960862878 --command "sudo systemctl restart qoc"
 
-# Authentifizierter Aufruf
-TOKEN="<access token aus sessionStorage>"
+# Authenticated call
+TOKEN="<access token from sessionStorage>"
 curl -s -H "Authorization: Bearer $TOKEN" https://test.schippel.info/api/health/live
 ```
 
-### 8.3 Token aus dem Browser holen (nur Test)
+### 8.3 Get token from the browser (test only)
 
-DevTools-Konsole:
+DevTools console:
 
 ```js
 sessionStorage.getItem('qoc.accessToken')
 ```
 
-## 9. Bekannte Stolperfallen
+## 9. Known pitfalls
 
-| Problem | Ursache | Abhilfe |
+| Problem | Cause | Remedy |
 |---|---|---|
-| Alle API-Calls 401 nach Login | Token fehlt/abgelaufen; PKCE-Race | `sessionStorage.clear()`, neu einloggen |
-| „Login-State ungültig" | API-Calls während Login haben PKCE-Keys gelöscht | UI-Fix; im Test langsam klicken |
-| SSE hängt | `EventSource` kann keinen Bearer senden | UI nutzt Fetch-SSE; curl mit Header |
-| Login-Redirect fehlerhaft | falsche `redirect_uri`/Auth0-Config | `/config.js` prüfen |
-| 403 trotz Admin | Rolle fehlt im Token | Auth0-Rollen prüfen |
-| Session „busy" | vorheriger Turn läuft | warten oder `/interrupt` |
-| Permissions hängen | `ENGINE_PERMISSION_ASK_MODE=deny` | Konfiguration prüfen |
-| Workspace-Wechsel schlägt fehl | Pfad fehlt/Rechte | `create=true` oder Pfad prüfen |
-| T6: Login-Redirect auf Container-Host | Split-Horizon falsch | `QUARKUS_OIDC_TOKEN_ISSUER` = Browser-Issuer (`localhost:8180`) |
-| T6: `401` trotz Login | Audience/Issuer weichen ab | Token-Payload mit `jq` prüfen |
-| Serverless: erster Call langsam | Cold Start (`min-instances=0`) | warm halten oder Timeout erhöhen |
-| Serverless: Datei fehlt nach Call | ephemerer Workspace (`/tmp`) | kein persistenter Workspace im Serverless-Modus |
-| Serverless: Agent nicht gefunden | `ENGINE_AGENT_SOURCE_URL` falsch/Token fehlt | Quelle und Bearer-Token prüfen |
+| All API calls 401 after login | token missing/expired; PKCE race | `sessionStorage.clear()`, log in again |
+| "Login state invalid" | API calls during login cleared PKCE keys | UI fix; click slowly in the test |
+| SSE hangs | `EventSource` cannot send a Bearer | UI uses fetch-SSE; curl with header |
+| Login redirect wrong | wrong `redirect_uri`/Auth0 config | check `/config.js` |
+| 403 despite admin | role missing in token | check Auth0 roles |
+| Session "busy" | previous turn still running | wait or `/interrupt` |
+| Permissions hang | `ENGINE_PERMISSION_ASK_MODE=deny` | check configuration |
+| Workspace switch fails | path missing/permissions | `create=true` or check path |
+| T6: login redirect to container host | split-horizon wrong | `QUARKUS_OIDC_TOKEN_ISSUER` = browser issuer (`localhost:8180`) |
+| T6: `401` despite login | audience/issuer differ | check token payload with `jq` |
+| Serverless: first call slow | cold start (`min-instances=0`) | keep warm or raise timeout |
+| Serverless: file missing after call | ephemeral workspace (`/tmp`) | no persistent workspace in serverless mode |
+| Serverless: agent not found | `ENGINE_AGENT_SOURCE_URL` wrong/token missing | check source and bearer token |
 
-## 10. Exit-Kriterien
+## 10. Exit criteria
 
-Ein Durchlauf gilt als bestanden, wenn:
+A run counts as passed when:
 
-1. Alle **P0**-Fälle in T1 **und** T2 grün sind.
-2. Der **UI-Track (M16)** auf T4 (ohne Login) und T2/T6 (mit OIDC) grün ist.
-3. Der **OIDC-Track (M17)** auf T2 oder T6 grün ist.
-4. Der **Serverless-Track (M19)** auf T8 (Cloud Run oder Lambda) grün ist.
-5. Alle **P1**-Fälle grün oder dokumentiert offen sind.
-6. Keine unbehandelten Fehler in Browser-Konsole/Server-Log.
-7. Testartefakte unter `evidence/` abgelegt sind.
-8. Die Testmatrix (§7) vollständig ausgefüllt ist.
+1. All **P0** cases in T1 **and** T2 are green.
+2. The **UI track (M16)** is green on T4 (without login) and T2/T6 (with OIDC).
+3. The **OIDC track (M17)** is green on T2 or T6.
+4. The **serverless track (M19)** is green on T8 (Cloud Run or Lambda).
+5. All **P1** cases are green or documented as open.
+6. No unhandled errors in browser console/server log.
+7. Test artifacts stored under `evidence/`.
+8. The test matrix (§7) is fully filled in.
 
 **Sign-off:**
 
-| Rolle | Name | Datum | Ergebnis |
+| Role | Name | Date | Result |
 |---|---|---|---|
 | Tester | | | |
 | Reviewer | | | |
 
-## 11. Referenzen
+## 11. References
 
-| Thema | Dokument |
+| Topic | Document |
 |---|---|
-| Automatisierte Testarten | [`spec/qualitaet/01-tests.md`](../spec/qualitaet/01-tests.md) |
-| Architektur/Core | [`Core.md`](./Core.md) |
-| Async/Heartbeat | [`Async-use.md`](./Async-use.md) |
+| Automated test types | [`spec/qualitaet/01-tests.md`](../spec/qualitaet/01-tests.md) |
+| Architecture/core | [`Core.md`](./Core.md) |
+| Async/heartbeat | [`Async-use.md`](./Async-use.md) |
 | Storage | [`Storage-alternative.md`](./Storage-alternative.md) |
-| In-Memory-Runtime | [`InMemory.md`](./InMemory.md) |
-| Sicherheit | [`security.md`](../security.md) |
+| In-memory runtime | [`InMemory.md`](./InMemory.md) |
+| Security | [`security.md`](../security.md) |
 | Subagents | [`guides/Subagent-Delegation.md`](../guides/Subagent-Delegation.md) |
 | A2A | [`guides/a2a.md`](../guides/a2a.md) |
-| Agent-Registry | [`guides/Agent-Registry.md`](../guides/Agent-Registry.md) |
+| Agent registry | [`guides/Agent-Registry.md`](../guides/Agent-Registry.md) |
 | Skills | [`skill-loading.md`](../skill-loading.md) |
-| Betrieb/HTTP/SSE | [`spec/betrieb/01-http-streaming.md`](../spec/betrieb/01-http-streaming.md) |
+| Operation/HTTP/SSE | [`spec/betrieb/01-http-streaming.md`](../spec/betrieb/01-http-streaming.md) |
 
 ---
 
-## 12. Aktualisierungen (2026-11)
+## 12. Updates (2026-11)
 
-Dieser Abschnitt ergänzt den manuellen Testplan um die seit 2026-11
-hinzugekommenen Funktionen. Die bestehenden Abschnitte 1–11 bleiben
-unverändert gültig.
+This section extends the manual test plan with the features added since
+2026-11. Sections 1–11 remain valid unchanged.
 
-### 12.1 Workflow-UI (GraphEditor, Agents, Runs, Testbench, McpServers)
+### 12.1 Workflow UI (GraphEditor, agents, runs, testbench, MCP servers)
 
 - **GraphEditor** (`/workflows/:id`):
-  - Node erstellen (Agent, Decision, Fork, Join, Loop, HITL, MCP-Call,
-    Subworkflow, Start, End), Edges verbinden (Click-to-Connect).
-  - Property Panel pro Typ: Agent-Ref (Dropdown), Decision-Branches (JSON),
-    Loop (Max Iterations, Exit Condition), Fork/Join, HITL (Assignee),
-    MCP-Call (Server, Tool, Args), Subworkflow (Ref).
-  - Save/Load, Validierung (GraphCompiler), Auto-Layout (elkjs).
+  - Create nodes (agent, decision, fork, join, loop, HITL, MCP call,
+    subworkflow, start, end), connect edges (click-to-connect).
+  - Property panel per type: agent ref (dropdown), decision branches (JSON),
+    loop (max iterations, exit condition), fork/join, HITL (assignee),
+    MCP call (server, tool, args), subworkflow (ref).
+  - Save/load, validation (GraphCompiler), auto-layout (elkjs).
 - **Agents** (`/agents`):
-  - CRUD, Model, Temperature, MaxTokens, TopP, System-Prompt, Tools,
-    Guardrails, Hooks, JSON-Output, Active.
-  - Response Schema (JSON Schema Textarea).
+  - CRUD, model, temperature, max tokens, top P, system prompt, tools,
+    guardrails, hooks, JSON output, active.
+  - Response schema (JSON schema textarea).
   - Import via `/api/schema/from-class`, `/from-openapi`, `/validate`.
-- **Runs** (`/runs`): Workflow starten (Input), Run-Status, Ergebnis,
-  Live SSE Streaming (Text-Deltas, Tool-Calls/Results).
-- **Testbench** (`/testbench`): Workflow mit Test-Input ausführen, Ergebnis
-  prüfen.
-- **McpServers** (`/mcp-servers`): Server hinzufügen/entfernen, Tools
-  anzeigen, Reload.
+- **Runs** (`/runs`): start workflow (input), run status, result,
+  live SSE streaming (text deltas, tool calls/results).
+- **Testbench** (`/testbench`): run workflow with test input, check result.
+- **McpServers** (`/mcp-servers`): add/remove servers, show tools, reload.
 
-### 12.2 Structured Output (responseSchema)
+### 12.2 Structured output (responseSchema)
 
-- Agent mit `responseSchema` erstellen (Agents-Seite).
-- Workflow mit Agent-Node + `responseSchema` ausführen (Runs/Testbench).
-- Ergebnis: strukturiertes JSON (nicht nur Text).
-- Ungültiges Schema → Fehlermeldung (Server: `JsonSchema.parse` → `Result.Err`).
-- Converter testen: `JavaRecordToJsonSchema`, `OpenApiToJsonSchema`
+- Create agent with `responseSchema` (agents page).
+- Run workflow with agent node + `responseSchema` (runs/testbench).
+- Result: structured JSON (not just text).
+- Invalid schema → error message (server: `JsonSchema.parse` → `Result.Err`).
+- Test converters: `JavaRecordToJsonSchema`, `OpenApiToJsonSchema`
   (`POST /api/schema/from-class`, `/from-openapi`, `/validate`).
 
-### 12.3 RBAC / Ownership (Proxy-Modus)
+### 12.3 RBAC / ownership (proxy mode)
 
-- Als User A Workflow/Agent erstellen → als User B → 403 auf
+- Create workflow/agent as user A → as user B → 403 on
   get/save/delete/run.
-- Admin sieht alle Workflows/Agents.
-- Shared Workflows (ownerId=null) für alle lesbar.
-- System-Token: `curl -H "X-System-Token: <token>"` → Principal.system().
-- OIDC: Login via Keycloak/Auth0, Rollen aus JWT.
+- Admin sees all workflows/agents.
+- Shared workflows (ownerId=null) readable by everyone.
+- System token: `curl -H "X-System-Token: <token>"` → `Principal.system()`.
+- OIDC: login via Keycloak/Auth0, roles from JWT.
 
-### 12.4 In-Memory-Modus
+### 12.4 In-memory mode
 
-- `ENGINE_STORAGE=memory` setzen.
-- Kein DB, kein Restart-Recovery.
-- Sessions/Workflows flüchtig (nach Neustart weg).
-- Memory-Budget (300 MiB) bei Snapshots.
-- No-Op-Adapter für Snapshots, Approvals, Instructions, Credentials,
-  Tool-Result-Cache.
+- Set `ENGINE_STORAGE=memory`.
+- No DB, no restart recovery.
+- Sessions/workflows ephemeral (gone after restart).
+- Memory budget (300 MiB) on snapshots.
+- No-op adapters for snapshots, approvals, instructions, credentials,
+  tool result cache.
 
-### 12.5 Native Image / Docker
+### 12.5 Native image / Docker
 
-- `docker compose --profile native up -d` (Port 8077).
-- Health-Check: `GET /api/health` → `{"status":"ok"}`.
-- Workflow-UI via nginx (Port 5174, `/api` → Engine).
-- SQLite-Alternative: `build-image-sqlite.sh`.
+- `docker compose --profile native up -d` (port 8077).
+- Health check: `GET /api/health` → `{"status":"ok"}`.
+- Workflow UI via nginx (port 5174, `/api` → engine).
+- SQLite alternative: `build-image-sqlite.sh`.
 
-### 12.6 Context Caching (Provider-Level)
+### 12.6 Context caching (provider level)
 
-- Prompt-Caching-Rabatt messen (OpenAI/Anthropic Dashboard).
-- Stabile System-Prompt-Prefixes (keine Zeitstempel).
-- Subagent-Isolation (keine Context Pollution).
+- Measure prompt-caching discount (OpenAI/Anthropic dashboard).
+- Stable system prompt prefixes (no timestamps).
+- Subagent isolation (no context pollution).
 
-### 12.7 Workflow-Resume
+### 12.7 Workflow resume
 
 - `POST /api/workflows/runs/{runId}/resume`.
-- Checkpoint-Replay nach Crash.
-- `max-resume-attempts` (Default 10).
+- Checkpoint replay after crash.
+- `max-resume-attempts` (default 10).
 
-### 12.8 Revert-Snapshots
+### 12.8 Revert snapshots
 
-- `ENGINE_REVERT_SNAPSHOT=true` (Dev) / `false` (Prod).
+- `ENGINE_REVERT_SNAPSHOT=true` (dev) / `false` (prod).
 - `POST /api/session/{id}/revert` (API).
-- Performance: Snapshots schreiben alle Workspace-Dateien in DB.
+- Performance: snapshots write all workspace files into the DB.
 
-### 12.9 Aktualisierungen bestehender Abschnitte
+### 12.9 Updates to existing sections
 
-- **Abschnitt 1 (Geltungsbereich)**: Workflow-UI, RBAC, Structured Output,
-  In-Memory, Native Image ergänzen.
-- **Abschnitt 2 (Stufen)**: Neue Stufe "Workflow-UI" und "RBAC/Proxy".
-- **Abschnitt 3 (Umgebungen)**: `qoc-memory` (8082), `qoc-native` (8077),
-  `qoc-native-ui` (5174) ergänzen.
-- **Abschnitt 4 (Health/UI/Auth)**: Proxy-Modus mit Trusted-Proxies ergänzen.
-- **Abschnitt 5 (Sessions/Prompts/Streaming)**: Live SSE, Tool-Calls/Results.
-- **Abschnitt 6 (Datei/Shell-Tools)**: Sandbox-Modi (workspace-write/full-access),
-  Seccomp.
-- **Abschnitt 7 (Permissions/Fragen)**: Least-Privilege als Default, Ask-Mode.
-- **Abschnitt 8 (Workspace/Agents/Skills)**: Agent-Store (global + user-scoped),
-  Response Schema.
-- **Abschnitt 9 (Subagents/Background)**: Rekursionstiefe (max 2), Semaphore,
-  Background-Tasks.
-- **Abschnitt 10 (Compaction/Revert/Fork/Move)**: Compaction-Trigger,
-  Revert-Snapshot-Performance.
-- **Abschnitt 11 (Grenzfälle)**: In-Memory (kein Recovery), Native Image
-  (kein Dev-Services), OIDC (fail-closed).
+- **Section 1 (scope):** add workflow UI, RBAC, structured output,
+  in-memory, native image.
+- **Section 2 (stages):** new stage "workflow UI" and "RBAC/proxy".
+- **Section 3 (environments):** add `qoc-memory` (8082), `qoc-native` (8077),
+  `qoc-native-ui` (5174).
+- **Section 4 (health/UI/auth):** add proxy mode with trusted proxies.
+- **Section 5 (sessions/prompts/streaming):** live SSE, tool calls/results.
+- **Section 6 (file/shell tools):** sandbox modes (workspace-write/full-access),
+  seccomp.
+- **Section 7 (permissions/questions):** least-privilege as default, ask mode.
+- **Section 8 (workspace/agents/skills):** agent store (global + user-scoped),
+  response schema.
+- **Section 9 (subagents/background):** recursion depth (max 2), semaphore,
+  background tasks.
+- **Section 10 (compaction/revert/fork/move):** compaction triggers,
+  revert snapshot performance.
+- **Section 11 (edge cases):** in-memory (no recovery), native image
+  (no dev services), OIDC (fail-closed).
 
-### 12.10 Test-Matrix (automatisiert vs. manuell)
+### 12.10 Test matrix (automated vs. manual)
 
-| Bereich | Automatisiert (Unit/Integration) | Manuell (UI/API) |
+| Area | Automated (unit/integration) | Manual (UI/API) |
 |---|---|---|
-| Agent-Loop | `QocEngineTest`, `ContextBuilderTest` | Chat, Tool-Calls |
-| Workflow-Loop | `WorkflowRunJournalTest`, `WorkflowStoreContractTest` | GraphEditor, Runs |
-| Security | `AuthTest`, `AgentVisibilityTest`, `WorkflowOwnershipTest` | Proxy/OIDC-Login |
+| Agent loop | `QocEngineTest`, `ContextBuilderTest` | chat, tool calls |
+| Workflow loop | `WorkflowRunJournalTest`, `WorkflowStoreContractTest` | GraphEditor, runs |
+| Security | `AuthTest`, `AgentVisibilityTest`, `WorkflowOwnershipTest` | proxy/OIDC login |
 | Storage | `InMemoryStoresTest`, `SqlAdaptersTest` | — |
-| Tools | `ToolRuntimeTest`, `ReadTool`, `GrepTool` | Datei/Shell/Web |
-| Schema/Converter | `JavaRecordToJsonSchemaTest`, `SchemaParseCompatTest` | Agents-UI, `/api/schema/*` |
+| Tools | `ToolRuntimeTest`, `ReadTool`, `GrepTool` | files/shell/web |
+| Schema/converter | `JavaRecordToJsonSchemaTest`, `SchemaParseCompatTest` | agents UI, `/api/schema/*` |

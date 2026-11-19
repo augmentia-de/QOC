@@ -871,7 +871,7 @@ create table principal_credential (
 | Component | Container | Host port | Notes |
 |---|---|---|---|
 | Keycloak | `keycloak-local` | 8180 | `start-dev --features=token-exchange` |
-| QOC | `qoc-local` | 8071 | Erreicht Keycloak über `host.docker.internal:8180` |
+| QOC | `qoc-local` | 8071 | Reaches Keycloak via `host.docker.internal:8180` |
 | MCP test server | `mcp-echo` | 9000 | Optional; validates Bearer tokens |
 
 Use a pinned Keycloak version (e.g., `quay.io/keycloak/keycloak:26.0`) and a

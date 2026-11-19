@@ -1,75 +1,75 @@
-# Implementierungsplan: Java-Records und YAML in Structured-Output-Konfiguration
+# Implementation Plan: Java Records and YAML in Structured-Output Configuration
 
 **Status:** Plan (2026-11-12)
-**Bezug:** P0/P1/P2 abgeschlossen (Commit `a89ea1a`), Structured-Output-Infrastruktur vorhanden (`SchemaResource`, `JavaRecordToJsonSchema`, `OpenApiToJsonSchema`)
+**Reference:** P0/P1/P2 completed (Commit `a89ea1a`), Structured-Output infrastructure present (`SchemaResource`, `JavaRecordToJsonSchema`, `OpenApiToJsonSchema`)
 
 ---
 
-## 1. Ziel
+## 1. Goal
 
-Strukturierte Ausgabe (Response Schema) soll nicht mehr nur als handgeschriebenes JSON-Schema konfigurierbar sein, sondern aus **Java-Quellcode** (Records/POJOs/DTOs) und **YAML-Dateien** (OpenAPI oder reines JSON Schema) generiert werden können — auf **Agent-Ebene** und **Node-Ebene** (z. B. `llm_eval`).
+Structured output (Response Schema) should no longer be configurable only as a hand-written JSON schema; instead it should be generatable from **Java source code** (Records/POJOs/DTOs) and **YAML files** (OpenAPI or plain JSON Schema) — at the **agent level** and at the **node level** (e.g. `llm_eval`).
 
-Die Integration muss in **JVM- und Native-Mode** funktionieren.
+The integration must work in **JVM and native mode**.
 
 ---
 
-## 2. Bestehende Infrastruktur
+## 2. Existing Infrastructure
 
 ### Backend
-| Datei | Rolle |
+| File | Role |
 |---|---|
-| `workflow-runner/schema/JavaRecordToJsonSchema.java` | Reflection: Java-Record/POJO → JSON-Schema (Map) |
-| `workflow-runner/schema/OpenApiToJsonSchema.java` | OpenAPI 3.x (YAML/JSON) → JSON-Schema |
+| `workflow-runner/schema/JavaRecordToJsonSchema.java` | Reflection: Java Record/POJO → JSON Schema (Map) |
+| `workflow-runner/schema/OpenApiToJsonSchema.java` | OpenAPI 3.x (YAML/JSON) → JSON Schema |
 | `quarkus/http/SchemaResource.java` | JAX-RS `/api/schema`: `from-class`, `from-openapi`, `validate` |
-| `WorkflowReflectionConfig.java` | Native-Reflection-Registrierung für Schema-Klassen |
-| `QocEngine.AgentConfig.responseSchema` | JSON-Schema für LLM-Structured-Output |
-| `Agent.responseSchema`, `NodeData.responseSchema` | Persistierte Schemas |
-| `StructuredOutputConverter` | LLM-`structured()` → `Map` für Workflow-Kontext |
+| `WorkflowReflectionConfig.java` | Native-reflection registration for schema classes |
+| `QocEngine.AgentConfig.responseSchema` | JSON Schema for LLM structured output |
+| `Agent.responseSchema`, `NodeData.responseSchema` | Persisted schemas |
+| `StructuredOutputConverter` | LLM `structured()` → `Map` for workflow context |
 
 ### Frontend
-| Datei | Rolle |
+| File | Role |
 |---|---|
 | `types/workflow.ts` | `Agent.responseSchema`, `NodeData.responseSchema` |
-| `pages/Agents.tsx` | Textarea für JSON-Schema (manuell) |
-| `components/PropertyPanel.tsx` | Agent Config: Response-Schema-Textarea |
-| `services/api.ts` | **Kein** `SchemaApi` |
+| `pages/Agents.tsx` | Textarea for JSON Schema (manual) |
+| `components/PropertyPanel.tsx` | Agent Config: Response-Schema textarea |
+| `services/api.ts` | **No** `SchemaApi` |
 
 ### Tests
-- `JavaRecordToJsonSchemaTest`, `SchemaParseCompatTest` sichern Record→Schema→Parse.
+- `JavaRecordToJsonSchemaTest`, `SchemaParseCompatTest` secure Record→Schema→Parse.
 
 ---
 
-## 3. Integrationspfade (entschieden)
+## 3. Integration Paths (decided)
 
-### 3.1 Java Records → nur Quellcode-Upload
+### 3.1 Java Records → source-code upload only
 
-Quellcode wird geparst, **keine** Reflection-Registrierung für User-Klassen nötig → Native-tauglich.
+Source code is parsed; **no** reflection registration is needed for user classes → native-compatible.
 
-- **Backend:** `POST /api/schema/from-java` mit Body `{ source: string }`.
-  - Parst `.java`-Quellcode mit `JavaParser` (`com.github.javaparser:javaparser-core:3.28.0`).
-  - Extrahiert Record-Komponenten und Klassenfelder aus dem AST.
-  - Konvertiert zu JSON-Schema (Type-Mapping analog zu `JavaRecordToJsonSchema`).
-  - Gibt `{ schema, className }` zurück.
-  - Größenlimit: **50 KB**. Keine Code-Ausführung.
-- **Frontend:** Datei-Upload (`<input type="file" accept=".java">`) oder Textarea; „Schema generieren“ ruft `/from-java` auf und befüllt das Schema-Textarea.
+- **Backend:** `POST /api/schema/from-java` with body `{ source: string }`.
+  - Parses `.java` source code with `JavaParser` (`com.github.javaparser:javaparser-core:3.28.0`).
+  - Extracts Record components and class fields from the AST.
+  - Converts to JSON Schema (type mapping analogous to `JavaRecordToJsonSchema`).
+  - Returns `{ schema, className }`.
+  - Size limit: **50 KB**. No code execution.
+- **Frontend:** File upload (`<input type="file" accept=".java">`) or textarea; "Generate schema" calls `/from-java` and fills the schema textarea.
 
-### 3.2 YAML-Dateien → beide Modi (Auto-Detect)
+### 3.2 YAML files → both modes (auto-detect)
 
-- **OpenAPI YAML:** Bereits über `/from-openapi` möglich (Swagger-Parser liest YAML). Frontend sendet Dateiinhalt.
-- **Reines JSON Schema in YAML:** Neuer Endpoint `POST /api/schema/from-yaml` `{ yaml }`.
-  - Parst YAML mit Jackson-YAML → Map.
-  - Auto-Detect: wenn `openapi`-Schlüssel vorhanden → `OpenApiToJsonSchema`; sonst als JSON Schema validieren und zurückgeben.
-- **Frontend:** File-Upload/Textarea + Modus-Auswahl (OpenAPI vs. JSON Schema).
+- **OpenAPI YAML:** Already possible via `/from-openapi` (Swagger parser reads YAML). Frontend sends file content.
+- **Plain JSON Schema in YAML:** New endpoint `POST /api/schema/from-yaml` `{ yaml }`.
+  - Parses YAML with Jackson-YAML → Map.
+  - Auto-detect: if an `openapi` key is present → `OpenApiToJsonSchema`; otherwise validate as JSON Schema and return it.
+- **Frontend:** File upload/textarea + mode selection (OpenAPI vs. JSON Schema).
 
-### 3.3 Strukturierte Ausgabe auf beiden Ebenen
+### 3.3 Structured output on both levels
 
-- **Agent-Ebene:** Schema wird im Agent-Store persistiert (bestehend).
-- **Node-Ebene:** `NodeData.responseSchema` ist bereits im Modell. Für `llm_eval` (und optional `agent`-Nodes als Override) im PropertyPanel exponieren.
-- Backend-Dispatcher `llm_eval` nutzt dann `node.data().responseSchema()` statt hart codiertem `true`.
+- **Agent level:** Schema is persisted in the Agent store (existing).
+- **Node level:** `NodeData.responseSchema` is already in the model. Expose it in the PropertyPanel for `llm_eval` (and optionally `agent` nodes as an override).
+- Backend dispatcher `llm_eval` then uses `node.data().responseSchema()` instead of the hard-coded `true`.
 
 ---
 
-## 4. Backend-Änderungen
+## 4. Backend Changes
 
 ### 4.1 Dependencies
 
@@ -95,21 +95,21 @@ Quellcode wird geparst, **keine** Reflection-Registrierung für User-Klassen nö
 </dependency>
 ```
 
-### 4.2 Neue Dateien
+### 4.2 New Files
 
 **`workflow-runner/schema/JavaSourceToJsonSchema.java`**
-- Parst Java-Quellcode mit `JavaParser`.
-- Extrahiert `RecordDeclaration`-Komponenten und `ClassDeclaration`-Felder (nur public/non-static).
-- Type-Mapping analog zu `JavaRecordToJsonSchema` (String, int, Optional, Collections, verschachtelte Typen, Enums).
-- Unterstützt `@JsonProperty`, `@Schema(description)`.
-- Gibt `Map<String, Object>` (JSON Schema) zurück.
+- Parses Java source code with `JavaParser`.
+- Extracts `RecordDeclaration` components and `ClassDeclaration` fields (only public/non-static).
+- Type mapping analogous to `JavaRecordToJsonSchema` (String, int, Optional, Collections, nested types, Enums).
+- Supports `@JsonProperty`, `@Schema(description)`.
+- Returns `Map<String, Object>` (JSON Schema).
 
 **`workflow-runner/schema/YamlToJsonSchema.java` (optional)**
-- Wrapper: parst YAML-String mit Jackson-YAML → Map.
-- Wenn `openapi`-Schlüssel vorhanden → delegiert an `OpenApiToJsonSchema`.
-- Sonst validiert die Map als JSON Schema und gibt sie zurück.
+- Wrapper: parses YAML string with Jackson-YAML → Map.
+- If `openapi` key present → delegates to `OpenApiToJsonSchema`.
+- Otherwise validates the Map as JSON Schema and returns it.
 
-### 4.3 `SchemaResource.java` erweitern
+### 4.3 Extend `SchemaResource.java`
 
 ```java
 @POST
@@ -171,7 +171,7 @@ case "llm_eval" -> {
 
 ### 4.5 `WorkflowReflectionConfig.java`
 
-JavaParser-Klassen für native Reflection registrieren:
+Register JavaParser classes for native reflection:
 ```java
 @RegisterForReflection(classNames = {
     "com.github.javaparser.ast.CompilationUnit",
@@ -179,20 +179,20 @@ JavaParser-Klassen für native Reflection registrieren:
     "com.github.javaparser.ast.body.ClassOrInterfaceDeclaration",
     "com.github.javaparser.ast.body.FieldDeclaration",
     "com.github.javaparser.ast.type.Type",
-    // ... weitere benötigte Klassen
+    // ... further required classes
 })
 ```
 
 ### 4.6 Security
 
-- Quellcode/YAML-Größe auf 50 KB begrenzen.
-- JavaParser führt keinen Code aus → keine Ausführungsgefahr.
-- YAML-Parsing: Jackson-YAML ist sicher (keine Code-Execution bei Standard-Konfiguration).
-- Klassennamen-Endpoint (`/from-class`) wird **nicht** mehr im MVP verwendet; stattdessen Quellcode-Parsing.
+- Limit source/YAML size to 50 KB.
+- JavaParser does not execute code → no execution risk.
+- YAML parsing: Jackson-YAML is safe (no code execution under the standard configuration).
+- The class-name endpoint (`/from-class`) is **not** used in the MVP; source-code parsing is used instead.
 
 ---
 
-## 5. Frontend-Änderungen
+## 5. Frontend Changes
 
 ### 5.1 `api.ts` — `SchemaApi`
 
@@ -209,9 +209,9 @@ export const SchemaApi = {
 };
 ```
 
-### 5.2 Neues Component `SchemaSource.tsx`
+### 5.2 New Component `SchemaSource.tsx`
 
-Wiederverwendbare UI für Schema-Import:
+Reusable UI for schema import:
 
 ```tsx
 interface SchemaSourceProps {
@@ -220,95 +220,95 @@ interface SchemaSourceProps {
   disabled?: boolean;
 }
 
-// Modus: 'manual' | 'java' | 'openapi' | 'yaml'
-// - manual: Textarea (bestehend)
-// - java: File-Upload (.java) oder Textarea + "Schema generieren"
-// - openapi: Textarea/Upload + "Schemas laden" → Dropdown + "Übernehmen"
-// - yaml: Textarea/Upload → "Schema parsen"
-// Validierung: "Schema validieren" Button + Fehleranzeige
+// Modes: 'manual' | 'java' | 'openapi' | 'yaml'
+// - manual: Textarea (existing)
+// - java: File upload (.java) or textarea + "Generate schema"
+// - openapi: Textarea/upload + "Load schemas" → dropdown + "Apply"
+// - yaml: Textarea/upload → "Parse schema"
+// Validation: "Validate schema" button + error display
 ```
 
 ### 5.3 Integration in `Agents.tsx`
 
-- Response-Schema-Textarea durch `SchemaSource` ersetzen.
-- Modus-Auswahl über Dropdown.
-- Datei-Upload via `<input type="file" accept=".java,.yaml,.yml,.json">`.
-- `FileReader.readAsText()` → Inhalt an den entsprechenden Endpoint.
+- Replace the response-schema textarea with `SchemaSource`.
+- Mode selection via dropdown.
+- File upload via `<input type="file" accept=".java,.yaml,.yml,.json">`.
+- `FileReader.readAsText()` → pass content to the corresponding endpoint.
 
 ### 5.4 Integration in `PropertyPanel.tsx` (Agent Config)
 
-- Bestehendes Response-Schema-Textarea durch `SchemaSource` ersetzen.
-- Gleiche Funktionalität wie in `Agents.tsx`.
+- Replace the existing response-schema textarea with `SchemaSource`.
+- Same functionality as in `Agents.tsx`.
 
-### 5.5 Node-Level `responseSchema` für `llm_eval`
+### 5.5 Node-level `responseSchema` for `llm_eval`
 
-- PropertyPanel: Collapsible „Output Schema“ für `llm_eval`-Nodes.
-- Textarea (JSON) oder `SchemaSource`-Component.
+- PropertyPanel: Collapsible "Output Schema" for `llm_eval` nodes.
+- Textarea (JSON) or `SchemaSource` component.
 - `updateField('responseSchema', schema)`.
 
 ---
 
-## 6. Phasen
+## 6. Phases
 
-| Phase | Inhalt | Aufwand |
+| Phase | Content | Effort |
 |---|---|---|
-| **SS1** | Backend `/from-yaml` + Jackson-YAML Dependency | 0,5 Tag |
-| **SS2** | Backend `/from-java` mit JavaParser (Quellcode → Schema) | 1 Tag |
-| **SS3** | Frontend `SchemaApi` + `SchemaSource`-Component | 1 Tag |
-| **SS4** | Integration in `Agents.tsx` und `PropertyPanel.tsx` | 0,5 Tag |
-| **SS5** | Node-Level `responseSchema` für `llm_eval` (UI + Dispatcher) | 0,5–1 Tag |
-| **SS6** | Tests + Native-Verifikation | 0,5–1 Tag |
+| **SS1** | Backend `/from-yaml` + Jackson-YAML dependency | 0.5 day |
+| **SS2** | Backend `/from-java` with JavaParser (source → schema) | 1 day |
+| **SS3** | Frontend `SchemaApi` + `SchemaSource` component | 1 day |
+| **SS4** | Integration in `Agents.tsx` and `PropertyPanel.tsx` | 0.5 day |
+| **SS5** | Node-level `responseSchema` for `llm_eval` (UI + dispatcher) | 0.5–1 day |
+| **SS6** | Tests + native verification | 0.5–1 day |
 
 ---
 
 ## 7. Tests
 
-- **Backend:** Unit-Tests für `JavaSourceToJsonSchema` (Record, POJO, verschachtelt, Optional, Enum).
-- **Backend:** Unit-Test für `from-yaml` (OpenAPI YAML + reines JSON Schema YAML).
-- **Backend:** Integration-Test für `/from-java` und `/from-yaml` in `SchemaResource` (oder bestehende Test-Klasse erweitern).
-- **Frontend:** Manuelle Verifikation (Datei-Upload, Schema-Generierung, Validierung, Save/Reload).
-- **Native:** Build mit `./deploy/build-native-image.sh` und Smoke-Test der Endpoints.
+- **Backend:** Unit tests for `JavaSourceToJsonSchema` (record, POJO, nested, Optional, Enum).
+- **Backend:** Unit test for `from-yaml` (OpenAPI YAML + plain JSON Schema YAML).
+- **Backend:** Integration test for `/from-java` and `/from-yaml` in `SchemaResource` (or extend the existing test class).
+- **Frontend:** Manual verification (file upload, schema generation, validation, save/reload).
+- **Native:** Build with `./deploy/build-native-image.sh` and smoke-test the endpoints.
 
 ---
 
-## 8. Offene Fragen (beantwortet)
+## 8. Open Questions (answered)
 
-1. **Java-Records:** Nur Quellcode-Upload (A2). ✅
-2. **YAML:** Beide Modi (OpenAPI + reines JSON Schema), Auto-Detect. ✅
-3. **Node-Level:** Generell für zukünftige Node-Definitionen nutzbar (`llm_eval` als erster Kandidat). ✅
-4. **Native-Registrierung:** Fällt weg bei Quellcode-Parsing. ✅
-5. **Größenlimit:** 50 KB. ✅
-
----
-
-## 9. Empfehlung
-
-- **MVP (SS1–SS4):** Java-Quellcode-Upload + OpenAPI/YAML-Import in der Agent-Konfiguration.
-- **Native:** Quellcode-Parsing braucht keine Reflection-Registrierung für User-Klassen; nur JavaParser/YAML-Parser müssen nativ laufen (Quarkus-Dependency-Handling).
-- **Node-Level (SS5):** Nur für `llm_eval` als ersten Kandidaten, da `agent`-Nodes ihr Schema aus dem Agent-Store beziehen.
-- **Sicherheit:** Quellcode-Größe begrenzen; JavaParser führt keinen Code aus; YAML-Parsing mit Jackson-YAML ist sicher.
+1. **Java Records:** Source-code upload only (A2). ✅
+2. **YAML:** Both modes (OpenAPI + plain JSON Schema), auto-detect. ✅
+3. **Node level:** Generally usable for future node definitions (`llm_eval` as first candidate). ✅
+4. **Native registration:** No longer needed with source-code parsing. ✅
+5. **Size limit:** 50 KB. ✅
 
 ---
 
-## 10. Dateien, die angefasst werden
+## 9. Recommendation
+
+- **MVP (SS1–SS4):** Java source-code upload + OpenAPI/YAML import in agent configuration.
+- **Native:** Source-code parsing needs no reflection registration for user classes; only JavaParser/YAML parser must run natively (Quarkus dependency handling).
+- **Node level (SS5):** Only for `llm_eval` as first candidate, since `agent` nodes obtain their schema from the Agent store.
+- **Security:** Limit source-code size; JavaParser does not execute code; YAML parsing with Jackson-YAML is safe.
+
+---
+
+## 10. Files to be touched
 
 ### Backend
-- `workflow-runner/pom.xml` — Dependencies `javaparser-core`, `jackson-dataformat-yaml`
-- `quarkus/pom.xml` — Dependency `jackson-dataformat-yaml`
-- `workflow-runner/schema/JavaSourceToJsonSchema.java` — **neu**
-- `workflow-runner/schema/YamlToJsonSchema.java` — **neu** (optional)
-- `quarkus/http/SchemaResource.java` — erweitern (`/from-java`, `/from-yaml`)
-- `workflow-runner/runner/DefaultNodeDispatcher.java` — `llm_eval` nutzt `responseSchema`
-- `WorkflowReflectionConfig.java` — JavaParser-Registrierung für native
+- `workflow-runner/pom.xml` — dependencies `javaparser-core`, `jackson-dataformat-yaml`
+- `quarkus/pom.xml` — dependency `jackson-dataformat-yaml`
+- `workflow-runner/schema/JavaSourceToJsonSchema.java` — **new**
+- `workflow-runner/schema/YamlToJsonSchema.java` — **new** (optional)
+- `quarkus/http/SchemaResource.java` — extend (`/from-java`, `/from-yaml`)
+- `workflow-runner/runner/DefaultNodeDispatcher.java` — `llm_eval` uses `responseSchema`
+- `WorkflowReflectionConfig.java` — JavaParser registration for native
 
 ### Frontend
 - `workflow-ui/src/services/api.ts` — `SchemaApi`
-- `workflow-ui/src/components/SchemaSource.tsx` — **neu**
-- `workflow-ui/src/pages/Agents.tsx` — Schema-Quelle integrieren
-- `workflow-ui/src/components/PropertyPanel.tsx` — Schema-Quelle in Agent Config + Node-Level für `llm_eval`
-- `workflow-ui/src/types/workflow.ts` — keine Änderung nötig (`responseSchema` bereits vorhanden)
+- `workflow-ui/src/components/SchemaSource.tsx` — **new**
+- `workflow-ui/src/pages/Agents.tsx` — integrate schema source
+- `workflow-ui/src/components/PropertyPanel.tsx` — schema source in Agent Config + node level for `llm_eval`
+- `workflow-ui/src/types/workflow.ts` — no change needed (`responseSchema` already present)
 
 ### Tests
-- `workflow-runner/src/test/java/.../schema/JavaSourceToJsonSchemaTest.java` — **neu**
-- `workflow-runner/src/test/java/.../schema/YamlToJsonSchemaTest.java` — **neu** (optional)
-- `quarkus/src/test/java/.../SchemaResourceTest.java` — **neu** (optional)
+- `workflow-runner/src/test/java/.../schema/JavaSourceToJsonSchemaTest.java` — **new**
+- `workflow-runner/src/test/java/.../schema/YamlToJsonSchemaTest.java` — **new** (optional)
+- `quarkus/src/test/java/.../SchemaResourceTest.java` — **new** (optional)

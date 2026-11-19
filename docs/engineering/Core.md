@@ -1,146 +1,147 @@
-# Core – der erweiterte Agent-Loop-Kern
+# Core – the extended agent-loop core
 
-> **Zweck:** Synthese und Nachschlagewerk für den *erweiterten Core* des
-> Agent-Loops: Umfang, Komponenten, Ports, Invarianten, Ist-Stand der
-> Java-Portierung und die Extraktionsgrenze zum Outer Skin.
+> **Purpose:** Synthesis and reference work for the *extended Core* of the
+> agent loop: scope, components, ports, invariants, current state of the
+> Java port, and the extraction boundary to the Outer Skin.
 >
-> **Verhältnis zur Spec:** Dieses Dokument fasst zusammen und ordnet ein.
-> Bei Widersprüchen gilt die Spec unter
-> [`spec/session-engine/`](../spec/session-engine/README.md), insbesondere
-> [`12-execution-model.md`](../spec/session-engine/12-execution-model.md) und
+> **Relation to the Spec:** This document summarizes and organizes. In case of
+> contradictions, the Spec under
+> [`spec/session-engine/`](../spec/session-engine/README.md) applies, in
+> particular
+> [`12-execution-model.md`](../spec/session-engine/12-execution-model.md) and
 > [`04-algorithms.md`](../spec/session-engine/04-algorithms.md).
 >
-> **Stand:** 2026-11-09
+> **Status:** 2026-11-09
 
-## 1. Begriffe
+## 1. Terms
 
-| Begriff | Bedeutung |
+| Term | Meaning |
 |---|---|
-| **Execution** | Ein „busy period" pro Session: Claim → Drain(s) → genau ein Terminal-Event. |
-| **Drain** | Ein Durchlauf des Runners: solange Schritte ausführen, bis kein Input mehr da ist oder ein Kontroll-Element (Move/Compaction) die Grenze bildet. |
-| **Step** | Genau ein Modell-Call plus die daraus folgenden Tool-Ausführungen. |
-| **Attempt** | Ein einzelner Modell-Call innerhalb eines Steps (Retry/Continuation/Compaction erzeugen mehrere Attempts pro Step). |
-| **Turn** | Fachlich: ein Prompt des Nutzers bis zur fertigen Antwort; technisch mehrere Steps. |
-| **Minimaler Kern** | Ein einzelner Step: Kontext bauen → Modell rufen → Tools ausführen → Ergebnis. |
-| **Erweiterter Kern** | Minimaler Kern **plus** Execution-Lifecycle: Admission, Delivery, Coordinator, Multi-Step-Drain, Compaction, Recovery. |
+| **Execution** | A "busy period" per session: Claim → Drain(s) → exactly one terminal event. |
+| **Drain** | A runner pass: execute steps until no input remains or a control element (Move/Compaction) forms the boundary. |
+| **Step** | Exactly one model call plus the tool executions resulting from it. |
+| **Attempt** | A single model call within a Step (Retry/Continuation/Compaction create multiple Attempts per Step). |
+| **Turn** | Conceptually: one user prompt until the finished answer; technically several Steps. |
+| **Minimal core** | A single Step: build context → call model → execute tools → result. |
+| **Extended core** | Minimal core **plus** Execution-Lifecycle: Admission, Delivery, Coordinator, Multi-Step-Drain, Compaction, Recovery. |
 
-## 2. Umfang des erweiterten Cores
+## 2. Scope of the extended core
 
-### 2.1 Minimaler Kern (A)
+### 2.1 Minimal core (A)
 
-| Baustein | Rolle |
+| Building block | Role |
 |---|---|
-| **Step** | Ein Modell-Call; Stream konsumieren, Tool-Calls parallel ausführen, Ergebnis normalisieren. |
-| **ContextBuilder** | Agent, Tools, Instructions, History und Modell zu einem `Prepared`-Request zusammenbauen. |
-| **ProviderAdapter** | LLM-Schnittstelle (Streaming, Modell-Metadaten, Fehlerklassifikation). |
-| **ToolRuntime / ToolAuthorizer** | Tool-Snapshot, Pre/Post-Hooks, Ausführung, Autorisierung am Leaf. |
-| **PermissionEngine** | Regelkette: Deny → Allow → Ask; gespeicherte Approvals; Hook. |
-| **CompactionService** | Auto-Compaction vor einem Request, wenn das Kontextfenster vollläuft. |
-| **Resilienz** | `RetryPolicy`, `LoopDetector`, `ErrorClassifier`, `TriageService`, `PreflightChecker`. |
+| **Step** | A model call; consume stream, execute tool calls in parallel, normalize result. |
+| **ContextBuilder** | Assemble agent, tools, instructions, history and model into a `Prepared` request. |
+| **ProviderAdapter** | LLM interface (streaming, model metadata, error classification). |
+| **ToolRuntime / ToolAuthorizer** | Tool snapshot, pre/post hooks, execution, authorization at the leaf. |
+| **PermissionEngine** | Rule chain: Deny → Allow → Ask; stored approvals; hook. |
+| **CompactionService** | Auto-compaction before a request when the context window fills up. |
+| **Resilience** | `RetryPolicy`, `LoopDetector`, `ErrorClassifier`, `TriageService`, `PreflightChecker`. |
 
-### 2.2 Erweiterter Kern (A + B)
+### 2.2 Extended core (A + B)
 
-| Baustein | Rolle |
+| Building block | Role |
 |---|---|
-| **Coordinator** | Genau eine Execution pro Session, Claim (Write-Ahead), Doorbell (Coalescing), Terminal-Event. |
-| **ExecutionRunner / Drain** | Die eigentliche Schleife: `reach_boundary` → `run_step` → nächster Step, bis `Done`/`Moved`/`Reloaded`. |
-| **Admission** | Idempotentes Enqueue in die Inbox, Hooks/Attachments, danach `wake`. |
-| **Delivery** | Steers/Queue an sicheren Grenzen zustellen; nur Zugestelltes ist modell-sichtbar. |
-| **Revert** | Offene Reverts vor neuer Arbeit committen. |
-| **Recovery** | Claims nach Prozess-Abbruch einsammeln, Resume-Budget (max. 10), Synthetic-Message. |
-| **SessionService / Retention** | Session-Lifecycle und Aufräumen. |
-| **Ports** | Stores, Clock, Approval/Question/Policy-Quellen, Wake, Notification. |
+| **Coordinator** | Exactly one Execution per session, Claim (Write-Ahead), Doorbell (Coalescing), Terminal-Event. |
+| **ExecutionRunner / Drain** | The actual loop: `reach_boundary` → `run_step` → next Step, until `Done`/`Moved`/`Reloaded`. |
+| **Admission** | Idempotent enqueue into the Inbox, hooks/attachments, then `wake`. |
+| **Delivery** | Deliver steers/queue at safe boundaries; only delivered input is model-visible. |
+| **Revert** | Commit open reverts before new work. |
+| **Recovery** | Collect claims after process crash, Resume-Budget (max. 10), Synthetic-Message. |
+| **SessionService / Retention** | Session lifecycle and cleanup. |
+| **Ports** | Stores, Clock, Approval/Question/Policy sources, Wake, Notification. |
 
-## 3. Komponenten und Verantwortlichkeiten
+## 3. Components and responsibilities
 
-### 3.1 Orchestrierung
+### 3.1 Orchestration
 
-| Klasse | Paket | Verantwortung |
+| Class | Package | Responsibility |
 |---|---|---|
-| `Coordinator` | `runtime.execution` | `wake`/`interrupt`/`shutdown`; Claim erwerben; genau ein Terminal-Event; Follow-up-Execution über Doorbell. |
-| `ExecutionRunner` | `runtime.execution` | Schnittstelle `run(session, execution, scope) → ExecutionOutcome`. **Die Drain-Logik lebt hier.** |
-| `ExecutionScope` | `runtime.execution` | Scope-Merge (`Input` dominiert `Control`). |
-| `SessionExecution` | `runtime.execution` | Laufzeit-Zustand einer Execution: Doorbell, Stop-Flag, Interrupt-Grund. |
+| `Coordinator` | `runtime.execution` | `wake`/`interrupt`/`shutdown`; acquire Claim; exactly one terminal event; follow-up Execution via Doorbell. |
+| `ExecutionRunner` | `runtime.execution` | Interface `run(session, execution, scope) → ExecutionOutcome`. **The Drain logic lives here.** |
+| `ExecutionScope` | `runtime.execution` | Scope merge (`Input` dominates `Control`). |
+| `SessionExecution` | `runtime.execution` | Runtime state of an Execution: Doorbell, Stop-Flag, interrupt reason. |
 | `ExecutionOutcome` | `runtime.execution` | `Succeeded` / `Failed` / `Interrupted`. |
-| `Recovery` | `runtime.execution` | Offene Claims nach Neustart; Resume-Zähler; Synthetic-Message. |
-| `Step` | `runtime.step` | Ein Modell-Call; Tool-Calls parallel (max. 8, FIFO); `Finished`/`Failed`/`NeedsCompaction`/`Paused`. |
-| `StepResult` | `runtime.step` | Ergebnis-Typen eines Steps (`Finished`, `Failed`, `NeedsCompaction`, `Paused`). |
+| `Recovery` | `runtime.execution` | Open claims after restart; resume counter; Synthetic-Message. |
+| `Step` | `runtime.step` | A model call; parallel tool calls (max. 8, FIFO); `Finished`/`Failed`/`NeedsCompaction`/`Paused`. |
+| `StepResult` | `runtime.step` | Result types of a Step (`Finished`, `Failed`, `NeedsCompaction`, `Paused`). |
 
-### 3.2 Kontext und Request
+### 3.2 Context and request
 
-| Klasse | Paket | Verantwortung |
+| Class | Package | Responsibility |
 |---|---|---|
 | `ContextBuilder` | `runtime.context` | `prepare(...)`: System-Prompt, Instructions, History, Tools, Tool-Choice, Header, Cache-Key. |
-| `Prepared` | `runtime.context` | Eingefrorener Request für genau einen Step; `toRequest()`. |
-| `AgentProfile` | `runtime.context` | Agent-Konfiguration (System, `maxSteps`, Permissions, Plan-Mode, Ask-Mode). |
-| `ContextSize`, `ConversationFolding`, `TitleGenerator` | `runtime.context` | Kontextgröße, Folding, Titel-Generierung. |
-| `ModelRequest`, `ModelMessage`, `GenerationOptions` | `core.contract.provider` | Provider-neutrales Request-Modell. |
+| `Prepared` | `runtime.context` | Frozen request for exactly one Step; `toRequest()`. |
+| `AgentProfile` | `runtime.context` | Agent configuration (System, `maxSteps`, Permissions, Plan-Mode, Ask-Mode). |
+| `ContextSize`, `ConversationFolding`, `TitleGenerator` | `runtime.context` | Context size, folding, title generation. |
+| `ModelRequest`, `ModelMessage`, `GenerationOptions` | `core.contract.provider` | Provider-neutral request model. |
 
-### 3.3 Modell und Tools
+### 3.3 Model and tools
 
-| Klasse | Paket | Verantwortung |
+| Class | Package | Responsibility |
 |---|---|---|
-| `HttpProviderAdapter` | `runtime.provider.client` | HTTP/SSE-Adapter, Event-Übersetzung, Stream-Validierung. |
-| `OpenAiRequestEncoder`, `JsonEventTranslator`, `SseReader` | `runtime.provider.client` | OpenAI-kompatible Serialisierung/Deserialisierung. |
-| `ToolRegistry` | `runtime.tool.registry` | Registrierung von Tool-Definitionen. |
-| `ToolRuntime` | `runtime.tool.runtime` | Tool-Ausführung: Hooks, Decode, Authorizer, PermissionGate, Output-Normalisierung. |
-| `ToolAuthorizer` | `runtime.tool.runtime` | Entscheidet, ob ein Tool im aktuellen Snapshot ausführbar ist. |
-| `ToolCall`, `ToolOutcome`, `ToolDefinition`, `ToolContext` | `core.contract.tool` | Domänen-Typen der Tool-Schicht. |
+| `HttpProviderAdapter` | `runtime.provider.client` | HTTP/SSE adapter, event translation, stream validation. |
+| `OpenAiRequestEncoder`, `JsonEventTranslator`, `SseReader` | `runtime.provider.client` | OpenAI-compatible serialization/deserialization. |
+| `ToolRegistry` | `runtime.tool.registry` | Registration of tool definitions. |
+| `ToolRuntime` | `runtime.tool.runtime` | Tool execution: hooks, decode, authorizer, PermissionGate, output normalization. |
+| `ToolAuthorizer` | `runtime.tool.runtime` | Decides whether a tool is executable in the current snapshot. |
+| `ToolCall`, `ToolOutcome`, `ToolDefinition`, `ToolContext` | `core.contract.tool` | Domain types of the tool layer. |
 
 ### 3.4 Permissions
 
-| Klasse | Paket | Verantwortung |
+| Class | Package | Responsibility |
 |---|---|---|
-| `PermissionEngine` | `runtime.permission.engine` | `decide`/`assertAllowed`/`reply`; Ask-Mode; gespeicherte Approvals. |
-| `PendingApprovals` | `runtime.permission.engine` | Offene Approval-Anfragen pro Session. |
-| `PermissionCheck`, `PermissionDecision`, `PermissionRules` | `core.eval` | Regel-Auswertung, Deny-vor-Allow, Ask-Dominanz. |
-| `ApprovalStore`, `ApprovalSource` | `core.port.store` / `core.port.human` | Persistenz und menschliche Antwortquelle. |
+| `PermissionEngine` | `runtime.permission.engine` | `decide`/`assertAllowed`/`reply`; Ask-Mode; stored approvals. |
+| `PendingApprovals` | `runtime.permission.engine` | Open approval requests per session. |
+| `PermissionCheck`, `PermissionDecision`, `PermissionRules` | `core.eval` | Rule evaluation, Deny-before-Allow, Ask dominance. |
+| `ApprovalStore`, `ApprovalSource` | `core.port.store` / `core.port.human` | Persistence and human response source. |
 
 ### 3.5 Compaction
 
-| Klasse | Paket | Verantwortung |
+| Class | Package | Responsibility |
 |---|---|---|
-| `CompactionService` | `runtime.compaction` | Summary erzeugen, Epoch setzen, Journal-Events. |
-| `CompactionPolicy`, `CompactionWindow`, `CompactionContext` | `runtime.compaction` | Wann/wie viel zusammengefasst wird. |
-| `OverflowCompaction` | `core.eval` | Erkennung „Kontextüberlauf → Compaction möglich". |
+| `CompactionService` | `runtime.compaction` | Produce summary, set epoch, journal events. |
+| `CompactionPolicy`, `CompactionWindow`, `CompactionContext` | `runtime.compaction` | When/how much to compact. |
+| `OverflowCompaction` | `core.eval` | Detection "context overflow → compaction possible". |
 
-### 3.6 Admission und Delivery
+### 3.6 Admission and delivery
 
-| Klasse | Paket | Verantwortung |
+| Class | Package | Responsibility |
 |---|---|---|
-| `Admission` | `runtime.session.core` | Idempotentes Enqueue, Hooks/Attachments, `wake`. |
-| `AdmissionResult` | `runtime.session.core` | `admitted`, `new`, Fehlerfälle. |
-| `Delivery` | `runtime.session.delivery` | Steers vor Queue, Control-Elemente zuerst; macht Input sichtbar. |
-| `Revert` | `runtime.session.revert` | Offene Reverts vor neuem Input committen. |
-| `SessionService`, `SessionRetention` | `runtime.session.core` | Lifecycle, Retention. |
+| `Admission` | `runtime.session.core` | Idempotent enqueue, hooks/attachments, `wake`. |
+| `AdmissionResult` | `runtime.session.core` | `admitted`, `new`, error cases. |
+| `Delivery` | `runtime.session.delivery` | Steers before queue, control elements first; makes input visible. |
+| `Revert` | `runtime.session.revert` | Commit open reverts before new input. |
+| `SessionService`, `SessionRetention` | `runtime.session.core` | Lifecycle, retention. |
 
-### 3.7 Cross-Cutting
+### 3.7 Cross-cutting
 
-| Typ | Paket | Rolle |
+| Type | Package | Role |
 |---|---|---|
-| `EventBus`, `Journal`, `PayloadCodec` | `core.event` / `core.port.store` | Ereignisse, Durable Log, Serialisierung. |
-| `Clock` | `core.port.runtime` | Zeitquelle (testbar). |
-| `SessionWake` | `core.port.runtime` | Entkopplung Admission → Coordinator. |
-| `ApprovalSource`, `QuestionSource`, `PolicySource`, `NotificationChannel` | `core.port.human` | Menschliche Interaktion. |
-| `Json`, `JsonValue`, `Schema` | `core.json` | Wertmodell und Schema. |
+| `EventBus`, `Journal`, `PayloadCodec` | `core.event` / `core.port.store` | Events, durable log, serialization. |
+| `Clock` | `core.port.runtime` | Time source (testable). |
+| `SessionWake` | `core.port.runtime` | Decoupling Admission → Coordinator. |
+| `ApprovalSource`, `QuestionSource`, `PolicySource`, `NotificationChannel` | `core.port.human` | Human interaction. |
+| `Json`, `JsonValue`, `Schema` | `core.json` | Value model and schema. |
 
-## 4. Ablauf des erweiterten Cores
+## 4. Flow of the extended core
 
 ### 4.1 Execution (Coordinator)
 
 ```
 wake(session, scope)
-  ├─ läuft bereits?  → Doorbell := merge(Doorbell, scope); return
-  └─ sonst: Claim erwerben
-       ├─ Claim leer → Ende
-       └─ ExecutionStarted publizieren
+  ├─ already running? → Doorbell := merge(Doorbell, scope); return
+  └─ otherwise: acquire Claim
+       ├─ Claim empty → end
+       └─ publish ExecutionStarted
             → runner.run(session, execution, scope)   ← Drain
             → Terminal-Event (Succeeded/Failed/Interrupted)
-            → Claim freigeben (außer Shutdown)
-            → Doorbell gesetzt? → wake(...) (Follow-up)
+            → release Claim (except Shutdown)
+            → Doorbell set? → wake(...) (Follow-up)
 ```
 
-### 4.2 Drain (Soll-Zustand laut Spec)
+### 4.2 Drain (target state per Spec)
 
 ```
 drain(session, scope, continuation)
@@ -156,13 +157,13 @@ drain(session, scope, continuation)
       entering := false
 ```
 
-`reachBoundary` entscheidet über:
-- **Control-Elemente** (Compaction/Move) → Vorrang, ggf. neuer Kontext.
-- **Delivery** (Steers sofort, Queue erst an ruhiger Grenze).
-- **Abbruch**, wenn nichts mehr da ist (`Done`).
-- **Step-Reset** bei neuem Input.
+`reachBoundary` decides:
+- **Control elements** (Compaction/Move) → precedence, possibly new context.
+- **Delivery** (Steers immediately, Queue only at calm boundary).
+- **Abort** when nothing remains (`Done`).
+- **Step-Reset** on new input.
 
-### 4.3 Step (implementiert in `Step`)
+### 4.3 Step (implemented in `Step`)
 
 ```
 runStep(prepared, context)
@@ -174,35 +175,35 @@ runStep(prepared, context)
       if e = Finished: finish, usage
       if e = ProviderFailed:
           needsCompaction? → NeedsCompaction
-          sonst → Failed
+          otherwise → Failed
   if finish == null → Failed(INCOMPLETE_STREAM)
   if toolsDisabled && ToolCallLeak → Failed
-  if toolsDisabled && toolCalls nicht leer → alle Calls Failed
-  if hasQuestion → sequenziell ausführen
+  if toolsDisabled && toolCalls not empty → all Calls Failed
+  if hasQuestion → execute sequentially
   else → parallel (max. 8) via ExecutorService
   return Finished(finish, usage, events, outcomes)
 ```
 
-### 4.4 Attempt-/Retry-Grenze
+### 4.4 Attempt/retry boundary
 
-- **Ein Step = genau ein Modell-Call** (G-06). Der nächste Step liest die History neu.
-- **Retry** (gleicher Assistant-Message-ID) bei transienten Fehlern vor Output.
-- **Continuation** bei Fehlern nach Output (Synthetic-Message, neue ID).
-- **Compaction** bei Kontextüberlauf (neue ID, neuer Kontext).
-- **OutputLimit** → Synthetic-Message „Split the work", neue ID.
-- **Paused** (Approval/Question) beendet den Step typisiert und wird später fortgesetzt.
+- **One Step = exactly one model call** (G-06). The next Step reloads the History.
+- **Retry** (same Assistant-Message-ID) on transient errors before output.
+- **Continuation** on errors after output (Synthetic-Message, new ID).
+- **Compaction** on context overflow (new ID, new context).
+- **OutputLimit** → Synthetic-Message "Split the work", new ID.
+- **Paused** (Approval/Question) ends the Step in a typed way and is continued later.
 
-## 5. Ports und Adapter (hexagonale Grenze)
+## 5. Ports and adapters (hexagonal boundary)
 
-Der Kern kennt **nur Interfaces**. Konkrete Technik lebt in `engine.adapter.*`
-und im Quarkus-Skin.
+The core knows **only interfaces**. Concrete technology lives in `engine.adapter.*`
+and in the Quarkus-Skin.
 
-| Port | Paket | Adapter (Beispiele) |
+| Port | Package | Adapter (examples) |
 |---|---|---|
 | `SessionStore`, `SessionReader` | `core.port.store` | `adapter.sql.SqlSessions`, `adapter.sqlite.SqliteSessions` |
 | `ConversationStore`, `Conversation` | `core.port.store` | `adapter.sql.SqlConversation` |
 | `Journal` | `core.port.store` | `adapter.sql.SqlJournal`, `adapter.sqlite.SqliteJournal` |
-| `ClaimStore` | `core.port.store` | SQL/SQLite-Implementierungen |
+| `ClaimStore` | `core.port.store` | SQL/SQLite implementations |
 | `SnapshotStore` | `core.port.store` | `adapter.sql.SqlSnapshots` |
 | `ApprovalStore` | `core.port.store` | `adapter.sql.SqlApprovals` |
 | `ToolOutputStore`, `ToolResultCache` | `core.port.store` | SQL/SQLite |
@@ -218,82 +219,82 @@ und im Quarkus-Skin.
 | `ApprovalSource`, `QuestionSource`, `PolicySource` | `core.port.human` | HTTP/UI-Adapter |
 | `ProviderAdapter` | `core.contract.provider` | `runtime.provider.client.HttpProviderAdapter` |
 
-**Regel:** `engine.core.*` bleibt frei von Quarkus, Jackson, CDI, HTTP und
-Datenbanktreibern. Alles Technische gehört in `engine.adapter.*` oder in den
+**Rule:** `engine.core.*` remains free of Quarkus, Jackson, CDI, HTTP and
+database drivers. All technical concerns belong in `engine.adapter.*` or in the
 Quarkus-Skin.
 
-## 6. Invarianten
+## 6. Invariants
 
-### 6.1 Execution (X-Reihe)
+### 6.1 Execution (X-series)
 
-| # | Invariante |
+| # | Invariant |
 |---|---|
-| X-1 | Höchstens eine aktive Execution pro Session; weitere Wakes setzen genau **eine** Doorbell. |
-| X-2 | Eine Execution = eine virtuelle Thread. |
-| X-3 | Tool-Calls eines Steps laufen parallel, begrenzt durch ein Quota (Default 8, konfigurierbar 1–32, FIFO). |
-| X-4 | Kein blockierendes I/O unter einem Lock; `ReentrantLock`, kritischer Abschnitt nur State-Change. |
-| X-5 | Kein `ThreadLocal` für Session-Kontext; Session-ID wird durchgereicht. |
-| X-6 | Abort ist Interrupt **plus** eigener Kanal; nie als Fehler reinterpretiert. |
-| X-7 | Shutdown lässt den Claim stehen (Recovery); User-Abbruch gibt ihn frei. |
-| X-8 | Wartende Sessions belegen keinen Thread (Inbox). |
+| X-1 | At most one active Execution per session; further Wakes set exactly **one** Doorbell. |
+| X-2 | An Execution = a virtual thread. |
+| X-3 | Tool calls of a Step run in parallel, limited by a quota (default 8, configurable 1–32, FIFO). |
+| X-4 | No blocking I/O under a lock; `ReentrantLock`, critical section only for state change. |
+| X-5 | No `ThreadLocal` for session context; session ID is passed through. |
+| X-6 | Abort is Interrupt **plus** its own channel; never reinterpreted as an error. |
+| X-7 | Shutdown leaves the Claim standing (Recovery); user abort releases it. |
+| X-8 | Waiting sessions hold no thread (Inbox). |
 
-### 6.2 Ordnung (G-Reihe)
+### 6.2 Ordering (G-series)
 
-| # | Garantie |
+| # | Guarantee |
 |---|---|
-| G-01 | Admission vor Execution: Inbox-Zeile existiert, bevor Arbeit geplant wird. |
-| G-02 | Delivery vor Sichtbarkeit: nur `InboxDelivered` macht Input modell-sichtbar. |
-| G-03 | `ToolCalled` vor dem Seiteneffekt. |
-| G-04 | Terminal-Event nach dem Seiteneffekt. |
-| G-05 | Tool-Calls parallel, **Publikation** in Call-Reihenfolge. |
-| G-06 | Ein Step = ein Modell-Call; der nächste Step lädt die History neu. |
-| G-07 | Terminal-Events nach dem Cleanup (bei Interrupt sofortige Bestätigung). |
-| G-08 | Interrupt beendet laufende Tool-Calls, ohne geparkte Inputs zu verwerfen. |
+| G-01 | Admission before Execution: Inbox row exists before work is scheduled. |
+| G-02 | Delivery before visibility: only `InboxDelivered` makes input model-visible. |
+| G-03 | `ToolCalled` before the side effect. |
+| G-04 | Terminal-Event after the side effect. |
+| G-05 | Tool calls parallel, **publication** in call order. |
+| G-06 | One Step = one model call; the next Step reloads the History. |
+| G-07 | Terminal-Events after cleanup (immediate confirmation on interrupt). |
+| G-08 | Interrupt ends running tool calls without discarding parked inputs. |
 
 ### 6.3 Recovery
 
-- Recovery ist **at-least-once**: Sie verhindert parallele Runs, nicht
-  wiederholte Seiteneffekte nach einem Abbruch.
-- Resume-Budget: **max. 10 Versuche** pro Session; danach
-  `ExecutionFailed` und Claim-Freigabe.
-- Vor dem Resume wird `SyntheticRaised` („Server wurde neu gestartet")
-  publiziert.
+- Recovery is **at-least-once**: it prevents parallel runs, not
+  repeated side effects after an abort.
+- Resume-Budget: **max. 10 attempts** per session; afterwards
+  `ExecutionFailed` and Claim release.
+- Before resuming, `SyntheticRaised` ("Server was restarted") is
+  published.
 
-## 7. Ist-Stand der Java-Portierung
+## 7. Current state of the Java port
 
-### 7.1 Vorhanden (engine-Modul, reines Java)
+### 7.1 Present (engine module, pure Java)
 
-| Bereich | Status |
+| Area | Status |
 |---|---|
-| `Step` (ein Modell-Call, parallele Tools, Paused/Compaction/Failed) | ✅ implementiert |
-| `ContextBuilder` + `Prepared` | ✅ implementiert |
-| `ToolRuntime`, `ToolRegistry`, `ToolAuthorizer` | ✅ implementiert |
-| `PermissionEngine`, `PendingApprovals` | ✅ implementiert |
-| `CompactionService` | ✅ implementiert |
-| `Admission`, `Delivery`, `Revert` | ✅ implementiert |
-| `Coordinator`, `Recovery`, `SessionExecution` | ✅ implementiert |
-| Ports (`core.port.*`) + SQL/SQLite/FS/Process/SSH-Adapter | ✅ implementiert |
-| Provider-Client (`HttpProviderAdapter`) | ✅ implementiert |
-| `TurnPolicy` | ⚠️ definiert, aber **nicht verwendet** |
+| `Step` (a model call, parallel tools, Paused/Compaction/Failed) | ✅ implemented |
+| `ContextBuilder` + `Prepared` | ✅ implemented |
+| `ToolRuntime`, `ToolRegistry`, `ToolAuthorizer` | ✅ implemented |
+| `PermissionEngine`, `PendingApprovals` | ✅ implemented |
+| `CompactionService` | ✅ implemented |
+| `Admission`, `Delivery`, `Revert` | ✅ implemented |
+| `Coordinator`, `Recovery`, `SessionExecution` | ✅ implemented |
+| Ports (`core.port.*`) + SQL/SQLite/FS/Process/SSH adapters | ✅ implemented |
+| Provider-Client (`HttpProviderAdapter`) | ✅ implemented |
+| `TurnPolicy` | ⚠️ defined, but **not used** |
 
-### 7.2 Noch nicht im Kern
+### 7.2 Not yet in the core
 
-| Lücke | Details |
+| Gap | Details |
 |---|---|
-| **ExecutionRunner-Implementierung** | Nur das Interface existiert. Die Drain-Schleife (`advanceToStep`, `reach_boundary`, `Moved`/`Reloaded`) ist **nicht portiert**. |
-| **Coordinator im Produktivpfad** | `Coordinator` wird derzeit nur in Tests instanziiert. Der produktive Loop läuft in `quarkus/.../Engine.prompt` (`while (true)` mit Step-Budget, Retry, Triage, Persistenz). |
-| **Step-übergreifende Persistenz** | Tool-Ergebnisse/History werden im Quarkus-`Engine` persistiert, nicht im Kern-Runner. |
-| **Multi-Step-Boundary** | Delivery/Compaction/Move als Step-Grenze ist in der Spec beschrieben, im Java-Kern aber noch nicht verdrahtet. |
+| **ExecutionRunner implementation** | Only the interface exists. The Drain loop (`advanceToStep`, `reach_boundary`, `Moved`/`Reloaded`) is **not ported**. |
+| **Coordinator in the productive path** | `Coordinator` is currently only instantiated in tests. The productive loop runs in `quarkus/.../Engine.prompt` (`while (true)` with Step-Budget, Retry, Triage, Persistence). |
+| **Cross-Step persistence** | Tool results/History are persisted in the Quarkus `Engine`, not in the core runner. |
+| **Multi-Step boundary** | Delivery/Compaction/Move as Step boundary is described in the Spec, but not yet wired in the Java core. |
 
-> **Konsequenz:** Der „erweiterte Core" ist konzeptionell und in seinen
-> Bausteinen vorhanden, aber derzeit **zweigeteilt**: Die Einzelteile liegen
-> im `engine`-Modul, der orchestrierende Multi-Step-Loop noch im Quarkus-Skin
-> (`Engine.prompt`). Eine echte Extraktion muss zuerst die Drain-Schleife in
-> den Kern portieren.
+> **Consequence:** The "extended Core" is conceptually and in its building
+> blocks present, but currently **split in two**: the individual parts live
+> in the `engine` module, while the orchestrating Multi-Step-Loop is still in
+> the Quarkus-Skin (`Engine.prompt`). A real extraction must first port the
+> Drain loop into the core.
 
-## 8. Extraktionsgrenze
+## 8. Extraction boundary
 
-### 8.1 Was in den Kern gehört
+### 8.1 What belongs in the core
 
 ```
 agent-kernel/
@@ -313,41 +314,40 @@ agent-kernel/
     permission/    PermissionEngine, PendingApprovals
     compaction/    CompactionService, CompactionPolicy
     resilience/    RetryPolicy, LoopDetector, ErrorClassifier, TriageService
-    provider/      HttpProviderAdapter (oder als Adapter belassen)
+    provider/      HttpProviderAdapter (or keep as adapter)
 ```
 
-### 8.2 Was außerhalb bleibt
+### 8.2 What stays outside
 
 - `engine.adapter.*` – SQL/SQLite, FS, Process, SSH, Net, Logging
 - `quarkus/` – HTTP-API, SSE, Security (OIDC/Basic), UI, Metrics, Native-Config
-- `deploy/`, `cli/`, `tui/`, `test-client/` – Werkzeuge und Skins
+- `deploy/`, `cli/`, `tui/`, `test-client/` – Tools and skins
 - UI, Auth0, Deployment
 
-### 8.3 Abhängigkeitsregeln
+### 8.3 Dependency rules
 
-1. `core.*` darf **nichts** aus `runtime.*` oder `adapter.*` kennen.
-2. `runtime.*` darf `core.*` und Ports kennen, aber keinen konkreten Adapter.
-3. `adapter.*` implementiert Ports; darf `core.*` und `runtime.*` nicht nach
-   unten abhängig machen.
-4. Der Quarkus-Skin verdrahtet alles über CDI und ruft nur
-   `ExecutionRunner`/`Coordinator`/`Admission` auf.
-5. Keine `Impl`-Klassen außerhalb der Adapter-Schicht.
+1. `core.*` must **not** know anything from `runtime.*` or `adapter.*`.
+2. `runtime.*` may know `core.*` and Ports, but no concrete adapter.
+3. `adapter.*` implements Ports; must not make `core.*` and `runtime.*` depend downward.
+4. The Quarkus-Skin wires everything via CDI and only calls
+   `ExecutionRunner`/`Coordinator`/`Admission`.
+5. No `Impl` classes outside the adapter layer.
 
-## 9. Offene Punkte / nächste Schritte
+## 9. Open points / next steps
 
-1. **Drain-Schleife portieren** (`ExecutionRunner`-Implementierung):
+1. **Port the Drain loop** (`ExecutionRunner` implementation):
    `reachBoundary`, Delivery, Compaction, Move, Step-Reset.
-2. **`Coordinator` in den Produktivpfad** bringen und `Engine.prompt` auf
-   `Admission` + `Coordinator` umstellen.
-3. **`TurnPolicy` aktivieren** (Step-/Tool-/Token-/Wall-Time-Budget zentral
-   statt im Skin).
-4. **Persistenz in den Runner ziehen**: Tool-Ergebnisse, Assistant-Messages,
-   Step-Enden und Terminal-Events müssen aus dem Kern publiziert werden.
-5. **ArchUnit-Regeln** für die Kern/Adapter-Grenze ergänzen.
-6. **Lasttests** für X-2/X-3/X-8 (virtuelle Threads, Tool-Quota, 1.000
-   wartende Sessions).
+2. **Bring `Coordinator` into the productive path** and switch `Engine.prompt`
+   to `Admission` + `Coordinator`.
+3. **Activate `TurnPolicy`** (Step/Tool/Token/Wall-Time budget centrally
+   instead of in the skin).
+4. **Pull persistence into the runner**: Tool results, Assistant-Messages,
+   Step endings and Terminal-Events must be published from the core.
+5. **Add ArchUnit rules** for the core/adapter boundary.
+6. **Load tests** for X-2/X-3/X-8 (virtual threads, tool quota, 1,000
+   waiting sessions).
 
-## 10. Referenzen
+## 10. References
 
 - [`spec/session-engine/README.md`](../spec/session-engine/README.md)
 - [`spec/session-engine/04-algorithms.md`](../spec/session-engine/04-algorithms.md)

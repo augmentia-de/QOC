@@ -1,105 +1,105 @@
-# UI-Sicherheitstests — Testplan
+# UI Security Tests — Test Plan
 
 **Status:** Plan (2026-11-18)
-**Bezug:** OIDC, RBAC, Session-Ownership, Trusted Proxy, Egress, MCP-OAuth, Workflow/Agent-Ownership
+**Reference:** OIDC, RBAC, Session-Ownership, Trusted Proxy, Egress, MCP-OAuth, Workflow/Agent-Ownership
 
 ---
 
-## Voraussetzungen (Prerequisites)
+## Prerequisites
 
-- Quarkus-Backend läuft (`mvn quarkus:dev` oder `./start.sh`), DB (Postgres/SQLite) initialisiert.
-- OIDC-Provider (Keycloak/Auth0) konfiguriert **oder** BASIC-Modus mit Test-Usern.
-- Zwei Test-Accounts: `admin` (Role `admin`) und `user1` (Role `user`, kein admin).
-- Mindestens 2 Sessions, 2 Workflows, 2 Agents mit unterschiedlichen Ownern.
-- Browser mit DevTools (Network/Console) für Token-Inspektion.
-- Test-Runner: Playwright (bereits im Repo: `playwright.config.js`) oder manuell.
+- Quarkus backend running (`mvn quarkus:dev` or `./start.sh`), DB (Postgres/SQLite) initialized.
+- OIDC provider (Keycloak/Auth0) configured **or** BASIC mode with test users.
+- Two test accounts: `admin` (Role `admin`) and `user1` (Role `user`, no admin).
+- At least 2 sessions, 2 workflows, 2 agents with different owners.
+- Browser with DevTools (Network/Console) for token inspection.
+- Test runner: Playwright (already in repo: `playwright.config.js`) or manual.
 
-### Umgebungsvariablen
+### Environment Variables
 
 ```bash
-ENGINE_SECURITY_MODE=OIDC   # oder BASIC / PROXY / NONE (nur Dev)
+ENGINE_SECURITY_MODE=OIDC   # or BASIC / PROXY / NONE (dev only)
 ENGINE_WORKSPACE=/tmp/qoc-test-workspace
-# OIDC (nur bei OIDC-Modus):
+# OIDC (only in OIDC mode):
 QUARKUS_OIDC_AUTH_SERVER_URL=https://keycloak/realms/qoc
 QUARKUS_OIDC_CLIENT_ID=qoc-ui
 ```
 
 ---
 
-## Test-Suites
+## Test Suites
 
-### A. Authentifizierung (OIDC/BASIC/PROXY)
+### A. Authentication (OIDC/BASIC/PROXY)
 
-| ID | Test | Schritte | Erwartung |
+| ID | Test | Steps | Expected |
 |---|---|---|---|
-| A1 | Login-Flow (OIDC) | 1. `/core/` öffnen 2. Login-Button klicken 3. OIDC-Redirect 4. Callback | Token in `sessionStorage`, UI zeigt User |
-| A2 | Login-Flow (BASIC) | 1. `ENGINE_SECURITY_MODE=BASIC` 2. Basic-Auth-Dialog 3. Credentials | Zugriff auf `/api/*` |
-| A3 | Unauthentifizierter Zugriff | Ohne Token `/api/session` aufrufen | 401 + WWW-Authenticate |
-| A4 | Token-Expiry | Abgelaufenen Token verwenden | 401, Refresh-Flow oder Logout |
-| A5 | Logout | Logout-Button klicken | Token entfernt, Redirect zu Login |
+| A1 | Login flow (OIDC) | 1. Open `/core/` 2. Click login button 3. OIDC redirect 4. Callback | Token in `sessionStorage`, UI shows user |
+| A2 | Login flow (BASIC) | 1. `ENGINE_SECURITY_MODE=BASIC` 2. Basic-Auth dialog 3. Credentials | Access to `/api/*` |
+| A3 | Unauthenticated access | Call `/api/session` without token | 401 + WWW-Authenticate |
+| A4 | Token expiry | Use expired token | 401, refresh flow or logout |
+| A5 | Logout | Click logout button | Token removed, redirect to login |
 
-### B. Session-Ownership (RBAC)
+### B. Session Ownership (RBAC)
 
-| ID | Test | Schritte | Erwartung |
+| ID | Test | Steps | Expected |
 |---|---|---|---|
-| B1 | Eigene Session sichtbar | user1 erstellt Session, listet Sessions | Session in Liste |
-| B2 | Fremde Session unsichtbar | user1 versucht Session von user2 zu lesen | 403 "not session owner" |
-| B3 | Admin sieht alle | admin listet Sessions | Alle Sessions sichtbar |
-| B4 | Delete fremde Session | user1 löscht Session von user2 | 403 |
-| B5 | Delete eigene Session | user1 löscht eigene Session | 204, aus Liste entfernt |
+| B1 | Own session visible | user1 creates session, lists sessions | Session in list |
+| B2 | Foreign session invisible | user1 tries to read user2's session | 403 "not session owner" |
+| B3 | Admin sees all | admin lists sessions | All sessions visible |
+| B4 | Delete foreign session | user1 deletes user2's session | 403 |
+| B5 | Delete own session | user1 deletes own session | 204, removed from list |
 
-### C. Workflow-Ownership
+### C. Workflow Ownership
 
-| ID | Test | Schritte | Erwartung |
+| ID | Test | Steps | Expected |
 |---|---|---|---|
-| C1 | Workflow erstellen + Owner | user1 erstellt Workflow via UI | `ownerId = user1` |
-| C2 | Fremder Workflow-Zugriff | user2 GET `/workflows/{id}` (owner user1) | 403 |
-| C3 | Shared Workflow (leerer Owner) | Workflow mit `ownerId=""` | Beide User können lesen |
-| C4 | Generate erbt Owner | user1 generiert Workflow | `ownerId = user1` |
+| C1 | Create workflow + owner | user1 creates workflow via UI | `ownerId = user1` |
+| C2 | Foreign workflow access | user2 GET `/workflows/{id}` (owner user1) | 403 |
+| C3 | Shared workflow (empty owner) | Workflow with `ownerId=""` | Both users can read |
+| C4 | Generate inherits owner | user1 generates workflow | `ownerId = user1` |
 
-### D. Agent-Ownership & Authoring
+### D. Agent Ownership & Authoring
 
-| ID | Test | Schritte | Erwartung |
+| ID | Test | Steps | Expected |
 |---|---|---|---|
-| D1 | Admin erstellt Agent | admin POST `/agent` | 200 ok |
-| D2 | Non-Admin erstellt Agent | user1 POST `/agent` | 403 |
-| D3 | Agent-Store-Ownership | user1 erstellt Agent via `/agents` | nur eigene sichtbar (wenn ownerId gesetzt) |
+| D1 | Admin creates agent | admin POST `/agent` | 200 ok |
+| D2 | Non-admin creates agent | user1 POST `/agent` | 403 |
+| D3 | Agent store ownership | user1 creates agent via `/agents` | only own visible (when ownerId set) |
 
-### E. Trusted Proxy / Header-Spoofing
+### E. Trusted Proxy / Header Spoofing
 
-| ID | Test | Schritte | Erwartung |
+| ID | Test | Steps | Expected |
 |---|---|---|---|
-| E1 | Trusted Proxy erlaubt | Request von trusted IP mit `X-Forwarded-User` | Principal gesetzt |
-| E2 | Untrusted Proxy blockiert | Request von nicht-trusted IP mit Spoofed-Header | Header ignoriert, 401/403 |
+| E1 | Trusted proxy allowed | Request from trusted IP with `X-Forwarded-User` | Principal set |
+| E2 | Untrusted proxy blocked | Request from non-trusted IP with spoofed header | Header ignored, 401/403 |
 
-### F. Egress-Schutz
+### F. Egress Protection
 
-| ID | Test | Schritte | Erwartung |
+| ID | Test | Steps | Expected |
 |---|---|---|---|
-| F1 | A2A-Tool zu erlaubtem Host | A2A-Call zu `allowedHosts`-Eintrag | Erfolg |
-| F2 | A2A-Tool zu blockiertem Host | A2A-Call zu nicht erlaubtem Host | `egress_blocked` Fehler |
-| F3 | Webhook zu blockiertem Host | Webhook-URL nicht in Allowlist | `egress_blocked` Log |
+| F1 | A2A tool to allowed host | A2A call to an `allowedHosts` entry | Success |
+| F2 | A2A tool to blocked host | A2A call to a non-allowed host | `egress_blocked` error |
+| F3 | Webhook to blocked host | Webhook URL not in allowlist | `egress_blocked` log |
 
 ### G. MCP-OAuth
 
-| ID | Test | Schritte | Erwartung |
+| ID | Test | Steps | Expected |
 |---|---|---|---|
-| G1 | OAuth-Flow starten | MCP-Server mit OAuth konfigurieren | Redirect zu OAuth-Provider |
-| G2 | Token-Refresh | Abgelaufenes Token nutzen | Automatischer Refresh |
+| G1 | Start OAuth flow | Configure MCP server with OAuth | Redirect to OAuth provider |
+| G2 | Token refresh | Use expired token | Automatic refresh |
 
-### H. UI-Sichtbarkeit
+### H. UI Visibility
 
-| ID | Test | Schritte | Erwartung |
+| ID | Test | Steps | Expected |
 |---|---|---|---|
-| H1 | Admin-UI-Elemente | Als admin einloggen | "New agent", "Reload Config", Delete-Buttons sichtbar |
-| H2 | Non-Admin-UI-Elemente | Als user1 einloggen | Authoring-Buttons ausgeblendet/deaktiviert |
-| H3 | Session-Dropdown zeigt nur eigene | user1 öffnet Chat | Nur eigene Sessions im Dropdown |
+| H1 | Admin UI elements | Log in as admin | "New agent", "Reload Config", Delete buttons visible |
+| H2 | Non-admin UI elements | Log in as user1 | Authoring buttons hidden/disabled |
+| H3 | Session dropdown shows only own | user1 opens chat | Only own sessions in dropdown |
 
 ---
 
-## Playwright-Skizzen
+## Playwright Sketches
 
-### A1: OIDC-Login setzt Token
+### A1: OIDC login sets token
 
 ```typescript
 test('A1: OIDC login sets token', async ({ page }) => {
@@ -110,7 +110,7 @@ test('A1: OIDC login sets token', async ({ page }) => {
 });
 ```
 
-### B2: Fremde Session liefert 403
+### B2: Foreign session returns 403
 
 ```typescript
 test('B2: foreign session returns 403', async ({ request }) => {
@@ -121,7 +121,7 @@ test('B2: foreign session returns 403', async ({ request }) => {
 });
 ```
 
-### C2: Fremder Workflow-Zugriff
+### C2: Foreign workflow access
 
 ```typescript
 test('C2: foreign workflow returns 403', async ({ request }) => {
@@ -132,7 +132,7 @@ test('C2: foreign workflow returns 403', async ({ request }) => {
 });
 ```
 
-### D2: Non-Admin kann keinen Agent anlegen
+### D2: Non-admin cannot create agent
 
 ```typescript
 test('D2: non-admin agent create returns 403', async ({ request }) => {
@@ -144,7 +144,7 @@ test('D2: non-admin agent create returns 403', async ({ request }) => {
 });
 ```
 
-### H1/H2: UI-Elemente rollenbasiert
+### H1/H2: Role-based UI elements
 
 ```typescript
 test('H1: admin sees authoring buttons', async ({ page }) => {
@@ -162,9 +162,9 @@ test('H2: non-admin hides authoring buttons', async ({ page }) => {
 
 ---
 
-## Playwright-Konfiguration (Hinweis)
+## Playwright Configuration (Note)
 
-`playwright.config.js` im Repo-Root. Für Security-Tests eine separate Config mit `baseURL` und Auth-Setup:
+`playwright.config.js` in repo root. For security tests, a separate config with `baseURL` and auth setup:
 
 ```js
 // playwright.security.config.js
@@ -175,16 +175,16 @@ module.exports = {
 };
 ```
 
-Ausführung:
+Execution:
 ```bash
 npx playwright test --config=playwright.security.config.js
 ```
 
 ---
 
-## Hinweise
+## Notes
 
-- Für CI: `ENGINE_SECURITY_MODE=BASIC` mit Test-Usern (einfacher als OIDC-Testcontainer).
-- OIDC-Tests (A1, A4, A5) erfordern einen laufenden Keycloak/Auth0-Testrealm.
-- Egress-Tests (F1–F3) erfordern konfigurierte Allowlists (`engine.a2a.egress.allowedHosts`, `engine.webhook.url`).
-- MCP-OAuth-Tests (G1, G2) erfordern einen OAuth-fähigen MCP-Server.
+- For CI: `ENGINE_SECURITY_MODE=BASIC` with test users (simpler than OIDC test containers).
+- OIDC tests (A1, A4, A5) require a running Keycloak/Auth0 test realm.
+- Egress tests (F1–F3) require configured allowlists (`engine.a2a.egress.allowedHosts`, `engine.webhook.url`).
+- MCP-OAuth tests (G1, G2) require an OAuth-capable MCP server.

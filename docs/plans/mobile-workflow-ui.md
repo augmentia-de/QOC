@@ -1,113 +1,113 @@
-# Implementierungsplan: Mobile Version des workflow-ui
+# Implementation Plan: Mobile Version of workflow-ui
 
 Status: Plan (2026-11-14)
-Bezug: `workflow-ui/src/App.tsx`, `workflow-ui/src/pages/GraphEditor.tsx`, `workflow-ui/src/components/PropertyPanel.tsx`
+Reference: `workflow-ui/src/App.tsx`, `workflow-ui/src/pages/GraphEditor.tsx`, `workflow-ui/src/components/PropertyPanel.tsx`
 
-## 1. Herausforderungen (verifiziert im Code)
+## 1. Challenges (verified in code)
 
-- **GraphEditor** (`pages/GraphEditor.tsx`): ReactFlow-Canvas mit Drag/Drop, Zoom, Pan – auf Touch nur bedingt nutzbar.
-- **Navigation** (`App.tsx`): horizontale Top-Nav mit 11 Links – auf Mobile überläuft/bricht.
-- **PropertyPanel** (`components/PropertyPanel.tsx`): breite Sidebar, für kleine Screens zu breit.
-- **Daten-Tabellen** (Workflows, Runs, Agents, MCP): horizontale Tabellen, nicht mobile-optimiert.
+- **GraphEditor** (`pages/GraphEditor.tsx`): ReactFlow canvas with drag/drop, zoom, pan – only partially usable on touch.
+- **Navigation** (`App.tsx`): horizontal top nav with 11 links – overflows/breaks on mobile.
+- **PropertyPanel** (`components/PropertyPanel.tsx`): wide sidebar, too wide for small screens.
+- **Data tables** (Workflows, Runs, Agents, MCP): horizontal tables, not mobile-optimized.
 
-## 2. Konzept: "Mobile-First, Desktop-Enhanced"
+## 2. Concept: "Mobile-First, Desktop-Enhanced"
 
 ### 2.1 Layout & Navigation
 
-- **Bottom-Navigation-Bar** (5 Haupt-Icons: Dashboard, Workflows, Editor, Runs, Settings) – thumb-reachable.
-- **Hamburger-Menu** für sekundäre Seiten (Agents, MCP, Generate, HITL, Observe, Testbench).
-- **Top-Bar**: Titel + Language-Switcher (kompakt).
-- **Safe-Area-Insets** für Notch/Gesture-Bar.
+- **Bottom navigation bar** (5 main icons: Dashboard, Workflows, Editor, Runs, Settings) – thumb-reachable.
+- **Hamburger menu** for secondary pages (Agents, MCP, Generate, HITL, Observe, Testbench).
+- **Top bar**: title + language switcher (compact).
+- **Safe-area insets** for notch/gesture bar.
 
-### 2.2 GraphEditor – Mobile-Modus
+### 2.2 GraphEditor – Mobile Mode
 
-Der Canvas ist auf Mobile nicht praktikabel. Zwei Optionen:
+The canvas is not practical on mobile. Two options:
 
-- **Option A (empfohlen):** Mobile zeigt eine **Listenansicht** der Nodes (Titel, Typ, Status) + Tap öffnet PropertyPanel als Bottom-Sheet. Edges werden als "Abhängigkeiten"-Liste angezeigt. Drag/Drop nur auf Desktop.
-- **Option B:** Read-only-Viewer mit Pinch-Zoom (kein Editieren).
+- **Option A (recommended):** Mobile shows a **list view** of the nodes (title, type, status) + tap opens the PropertyPanel as a bottom sheet. Edges are shown as a "Dependencies" list. Drag/drop only on desktop.
+- **Option B:** Read-only viewer with pinch-zoom (no editing).
 
-Implementierung: `useMediaQuery('(max-width: 768px)')` → bedingtes Rendering. ReactFlow wird nur auf Desktop geladen (lazy import, Code-Splitting).
+Implementation: `useMediaQuery('(max-width: 768px)')` → conditional rendering. ReactFlow is only loaded on desktop (lazy import, code splitting).
 
-### 2.3 Seiten-Anpassungen
+### 2.3 Page Adjustments
 
-| Seite | Desktop | Mobile |
+| Page | Desktop | Mobile |
 |---|---|---|
-| Dashboard | KPI-Cards + Charts | Vertikale Card-Liste, Charts als Mini-Sparklines |
-| Workflows | Tabelle | Card-Liste mit Swipe-Actions (Edit/Delete) |
-| WorkflowDetail | Split-View (Info + Graph) | Tabs: Info / Graph(Read-only) / Runs |
-| GraphEditor | Canvas + Sidebar | Listenansicht + Bottom-Sheet Properties |
-| Runs | Tabelle mit Filtern | Card-Liste, Filter als Bottom-Sheet |
-| Agents | Tabelle + Form | Akkordeon-Liste + Modal-Form |
-| McpServers | Tabelle + Form | Wie Agents |
-| Generate | Textarea + Button | Vollbild-Textarea + Button |
-| Settings | Formular | Vertikale Sections, Accordion |
-| HITL/Observe/Testbench | jeweils anpassen | jeweils anpassen |
+| Dashboard | KPI cards + charts | Vertical card list, charts as mini-sparklines |
+| Workflows | Table | Card list with swipe actions (Edit/Delete) |
+| WorkflowDetail | Split view (Info + Graph) | Tabs: Info / Graph (read-only) / Runs |
+| GraphEditor | Canvas + sidebar | List view + bottom-sheet properties |
+| Runs | Table with filters | Card list, filters as bottom sheet |
+| Agents | Table + form | Accordion list + modal form |
+| McpServers | Table + form | Same as Agents |
+| Generate | Textarea + button | Full-screen textarea + button |
+| Settings | Form | Vertical sections, accordion |
+| HITL/Observe/Testbench | adjust individually | adjust individually |
 
-### 2.4 Technische Umsetzung
+### 2.4 Technical Implementation
 
-- **Tailwind Breakpoints:** `sm:` (640px), `md:` (768px), `lg:` (1024px). Mobile-First: Basis-Styles für Mobile, `md:`/`lg:` für Desktop.
-- **Bottom-Sheet-Komponente:** neues `components/BottomSheet.tsx` (Slide-up, Backdrop, Swipe-to-close).
-- **Responsive Nav:** `components/BottomNav.tsx` (Mobile) + `components/TopNav.tsx` (Desktop).
-- **Touch-Gesten:** `react-use-gesture` für Swipe-Actions (optional).
-- **Viewport-Meta:** `index.html` prüfen (viewport width=device-width, initial-scale=1).
-- **PWA (optional):** `manifest.json` + Service Worker für Offline-Nutzung.
+- **Tailwind breakpoints:** `sm:` (640px), `md:` (768px), `lg:` (1024px). Mobile-first: base styles for mobile, `md:`/`lg:` for desktop.
+- **Bottom-sheet component:** new `components/BottomSheet.tsx` (slide-up, backdrop, swipe-to-close).
+- **Responsive nav:** `components/BottomNav.tsx` (mobile) + `components/TopNav.tsx` (desktop).
+- **Touch gestures:** `react-use-gesture` for swipe actions (optional).
+- **Viewport meta:** check `index.html` (viewport width=device-width, initial-scale=1).
+- **PWA (optional):** `manifest.json` + service worker for offline use.
 
-## 3. Neue / geänderte Dateien
+## 3. New / Changed Files
 
 ```
 workflow-ui/src/
 ├── components/
-│   ├── BottomNav.tsx          # NEU: Mobile-Bottom-Navigation
-│   ├── TopNav.tsx             # NEU: Desktop-Top-Navigation (aus App.tsx extrahiert)
-│   ├── BottomSheet.tsx        # NEU: Slide-up Panel
-│   └── NodeListView.tsx       # NEU: Mobile-Listenansicht für GraphEditor
+│   ├── BottomNav.tsx          # NEW: mobile bottom navigation
+│   ├── TopNav.tsx             # NEW: desktop top navigation (extracted from App.tsx)
+│   ├── BottomSheet.tsx        # NEW: slide-up panel
+│   └── NodeListView.tsx       # NEW: mobile list view for GraphEditor
 ├── hooks/
-│   └── useMediaQuery.ts       # NEU: Breakpoint-Hook
-├── App.tsx                    # GEÄNDERT: responsive Nav + Layout
-├── pages/GraphEditor.tsx      # GEÄNDERT: bedingtes Rendering (Canvas vs. Liste)
-└── index.html                 # GEÄNDERT: Viewport-Meta prüfen
+│   └── useMediaQuery.ts       # NEW: breakpoint hook
+├── App.tsx                    # CHANGED: responsive nav + layout
+├── pages/GraphEditor.tsx      # CHANGED: conditional rendering (canvas vs. list)
+└── index.html                 # CHANGED: check viewport meta
 ```
 
-## 4. Reihenfolge der Umsetzung
+## 4. Implementation Order
 
-### Phase 1 (2-3 Tage): Responsive Layout
-1. `useMediaQuery` Hook erstellen.
-2. `BottomNav.tsx` + `TopNav.tsx` aus `App.tsx` extrahieren.
-3. `App.tsx` responsive: Mobile → BottomNav, Desktop → TopNav.
-4. Viewport-Meta in `index.html` prüfen/setzen.
-5. Alle Seiten mit Tailwind Mobile-First anpassen (Card-Layouts statt Tabellen).
+### Phase 1 (2-3 days): Responsive Layout
+1. Create `useMediaQuery` hook.
+2. Extract `BottomNav.tsx` + `TopNav.tsx` from `App.tsx`.
+3. Make `App.tsx` responsive: mobile → BottomNav, desktop → TopNav.
+4. Check/set viewport meta in `index.html`.
+5. Adapt all pages to Tailwind mobile-first (card layouts instead of tables).
 
-### Phase 2 (2-3 Tage): GraphEditor Mobile-Modus
-1. `NodeListView.tsx`: Liste der Nodes (Titel, Typ, Status) mit Tap → PropertyPanel.
-2. `GraphEditor.tsx`: `useMediaQuery` → Mobile: NodeListView + BottomSheet(PropertyPanel), Desktop: ReactFlow-Canvas.
-3. ReactFlow lazy import für Desktop (Code-Splitting).
-4. Edges als "Abhängigkeiten"-Liste in NodeListView.
+### Phase 2 (2-3 days): GraphEditor Mobile Mode
+1. `NodeListView.tsx`: list of nodes (title, type, status) with tap → PropertyPanel.
+2. `GraphEditor.tsx`: `useMediaQuery` → mobile: NodeListView + BottomSheet(PropertyPanel), desktop: ReactFlow canvas.
+3. Lazy import ReactFlow for desktop (code splitting).
+4. Edges as "Dependencies" list in NodeListView.
 
-### Phase 3 (1-2 Tage): Bottom-Sheet & Swipe-Actions
-1. `BottomSheet.tsx`: Slide-up, Backdrop, Swipe-to-close.
-2. Swipe-Actions auf Card-Listen (Workflows, Runs, Agents).
-3. PropertyPanel in BottomSheet einbetten.
+### Phase 3 (1-2 days): Bottom Sheet & Swipe Actions
+1. `BottomSheet.tsx`: slide-up, backdrop, swipe-to-close.
+2. Swipe actions on card lists (Workflows, Runs, Agents).
+3. Embed PropertyPanel in BottomSheet.
 
-### Phase 4 (1 Tag): Tests & Polish
-1. Playwright mobile viewport Tests (375px, 768px).
-2. PWA-Manifest (optional).
-3. Performance: Lazy-Loading, Virtualisierung bei vielen Nodes.
+### Phase 4 (1 day): Tests & Polish
+1. Playwright mobile viewport tests (375px, 768px).
+2. PWA manifest (optional).
+3. Performance: lazy loading, virtualization for many nodes.
 
-## 5. Risiken
+## 5. Risks
 
-- **ReactFlow auf Mobile:** Performance (viele Nodes). Lösung: Virtualisierung + Lazy-Loading.
-- **PropertyPanel-Komplexität:** zu viele Felder für Mobile. Lösung: Accordion-Sections im Bottom-Sheet.
-- **i18n:** Bottom-Nav-Labels müssen kurz sein (Icons + kurze Labels).
-- **Touch-Targets:** Mindestgröße 44px für Buttons/Links.
+- **ReactFlow on mobile:** performance (many nodes). Solution: virtualization + lazy loading.
+- **PropertyPanel complexity:** too many fields for mobile. Solution: accordion sections in the bottom sheet.
+- **i18n:** bottom nav labels must be short (icons + short labels).
+- **Touch targets:** minimum size 44px for buttons/links.
 
-## 6. Abhängigkeiten
+## 6. Dependencies
 
-- Keine neuen Backend-Änderungen nötig.
-- `react-use-gesture` (optional) für Swipe-Gesten.
-- Tailwind bereits vorhanden.
+- No new backend changes needed.
+- `react-use-gesture` (optional) for swipe gestures.
+- Tailwind already present.
 
-## 7. Offene Fragen
+## 7. Open Questions
 
-1. Soll der GraphEditor auf Mobile komplett read-only sein, oder sollen einfache Edits (Node hinzufügen/entfernen) möglich sein?
-2. Soll eine PWA (Offline-Nutzung) implementiert werden?
-3. Welche Breakpoints sind relevant (375px iPhone, 768px Tablet)?
+1. Should the GraphEditor be completely read-only on mobile, or should simple edits (add/remove node) be possible?
+2. Should a PWA (offline use) be implemented?
+3. Which breakpoints are relevant (375px iPhone, 768px tablet)?

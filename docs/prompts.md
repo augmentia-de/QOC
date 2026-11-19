@@ -1,176 +1,175 @@
-# Prompt-Dateien der Engine
+# Engine Prompt Files
 
-> **Zweck:** Überblick über alle Prompt-Ressourcen (`engine/src/main/resources/prompts/`),
-> ihre Aufgabe, Trigger und Einfluss – plus Analyse, wie sie weniger
-> entwicklerspezifisch und dynamischer für verschiedene Zwecke gebaut werden können.
+> **Purpose:** Overview of all prompt resources (`engine/src/main/resources/prompts/`),
+> their role, trigger, and influence — plus analysis of how they can become less
+> developer-specific and more dynamic for different purposes.
 >
-> Detail-Dokumentation: `promptlib.md` (Root, gegen Code geprüft) und
+> Detailed documentation: `promptlib.md` (root, checked against the code) and
 > `docs/spec/session-engine/13-internal-prompts.md`.
 
 ---
 
-## 1. Lademechanismus
+## 1. Loading Mechanism
 
-- `PromptLoader.get(id)` lädt `/prompts/<id>.txt` vom Classpath, cached das
-  Ergebnis und wirft bei fehlendem Prompt eine `IllegalArgumentException`
-  (Defect, kein Fallback).
-- `PromptLoader.render(id, vars)` ersetzt `{key}`-Platzhalter.
-- Beim Laden wird `stripTrailing()` angewendet.
-- Es gibt kein `manifest.json`, keine Version und keine Checksumme.
-  Der Identifier ist der Dateiname; Golden-Tests sichern die Texte ab.
-
----
-
-## 2. System-Part (Level 1)
-
-| Datei | ID | Trigger | Aufgabe |
-|---|---|---|---|
-| `base-prompt.txt` | `SYS-BASE` | Jeder Request ohne `agent.system` | Basis-Systemprompt: Rolle („OpenCode session engine"), Regeln, Tool-Liste via `${tools}`. Definiert das Grundverhalten. |
-| `sys-guide.txt` | `SYS-GUIDE` | Mindestens eines von `shell`, `write`, `edit` im Snapshot | Tool-Hinweise. Enthält Marker-Kommentare (`# only if "shell" is available`), wird aber **als Ganzes angehängt** – die Abschnitte werden nicht pro Tool gefiltert (bekannte Lücke). |
-
-Hinweis: `agent.system` ersetzt die Basis vollständig (PR-3/PR-4).
-Provider-Templates sind entfallen (PRM-A/PRM-B).
+- `PromptLoader.get(id)` loads `/prompts/<id>.txt` from the classpath, caches the
+  result, and throws an `IllegalArgumentException` if a prompt is missing
+  (defect, no fallback).
+- `PromptLoader.render(id, vars)` replaces `{key}` placeholders.
+- `stripTrailing()` is applied on load.
+- There is no `manifest.json`, no version, and no checksum.
+  The identifier is the file name; Golden tests lock down the texts.
 
 ---
 
-## 3. Nachrichten (Level 2)
+## 2. System Part (Level 1)
 
-| Datei | ID | Trigger | Aufgabe |
+| File | ID | Trigger | Role |
 |---|---|---|---|
-| `step-limit.txt` | `CTX-MAX-STEPS` | Letzter erlaubter Schritt | Assistant-Message; Tools sind für diesen Schritt gesperrt (PR-13). Fordert Textabschluss: Zusammenfassung der geleisteten Arbeit, offene Punkte, nächste Empfehlungen. Keine Tool-Aufrufe. |
-| `mode-plan-enter.txt` | – | Agent-Modus wechselt zu `plan` | Reminder: nicht editieren, Plan nach `~/.opencode/plan/<name>.md` schreiben, nur Pfade aus der Plan-Datei dürfen editiert werden. Transient, nicht persistiert, kein `SyntheticRaised`-Event. |
-| `mode-plan-leave.txt` | – | Agent-Modus verlässt `plan` | Reminder: normales Editieren wieder erlaubt. |
-| `server-restarted.txt` | – | Recovery nach Prozess-Abbruch | Synthetische Nachricht (`SyntheticRaised` bzw. `runPrompt`), informiert das Modell über den Neustart. |
-| `ttl-message.txt` | – | Neue Session | Titel-Generierung aus der **ersten Nachricht** (`{text}`); Antwort = nur der Titel (2000 Zeichen Input, 100 Zeichen Output). |
-| `ttl-conversation.txt` | – | Regeneration | Titel-Generierung aus der Historie (`{text}`, 8000-Zeichen-Kontext), ebenfalls „Reply with only the title". |
+| `base-prompt.txt` | `SYS-BASE` | Every request without `agent.system` | Base system prompt: role ("OpenCode session engine"), rules, tool list via `${tools}`. Defines the base behavior. |
+| `sys-guide.txt` | `SYS-GUIDE` | At least one of `shell`, `write`, `edit` in the snapshot | Tool hints. Contains marker comments (`# only if "shell" is available`), but is **appended as a whole** — the sections are not filtered per tool (known gap). |
+
+Note: `agent.system` replaces the base entirely (PR-3/PR-4).
+Provider templates have been removed (PRM-A/PRM-B).
 
 ---
 
-## 4. Tool- und Struktur-Hinweise (Level 3)
+## 3. Messages (Level 2)
 
-| Datei | ID | Trigger | Aufgabe |
+| File | ID | Trigger | Role |
 |---|---|---|---|
-| `skill-guidance.txt` | `SKILL-GUIDANCE` | Sichtbare Skills | Erklärung des Skill-Mechanismus im `<available_skills>`-Block: Skill-Tool laden, direkte User-Invokation erscheint als `<skill_content>`-Block, keine Doppel-Invokation. |
-| `no-skills.txt` | `NO-SKILLS` | Keine sichtbaren Skills | Fallback-Text: `No skills are currently available.` |
-| `unable-to-load-skill.txt` | – | Unbekannte Skill-ID | Fehlermeldung des Skill-Tools: `Unable to load skill {id}`. |
-| `bounding-hint.txt` | – | Output > 2000 Zeilen oder > 50 KiB | Truncation-Hinweis: `[showing lines 1-{shown} of {total}; full output saved to {path}]`. |
-| `mcp-instructions.txt` | – | MCP-Server mit nicht vollständig verweigerten Tools | Wrapper `<mcp_instructions>{servers}</mcp_instructions>`; blockierte Server fehlen vollständig. |
+| `step-limit.txt` | `CTX-MAX-STEPS` | Last allowed step | Assistant message; tools are locked for this step (PR-13). Demands a text conclusion: summary of work done, open points, next recommendations. No tool calls. |
+| `mode-plan-enter.txt` | – | Agent mode switches to `plan` | Reminder: do not edit, write the plan to `~/.opencode/plan/<name>.md`, only paths listed in the plan file may be edited. Transient, not persisted, no `SyntheticRaised` event. |
+| `mode-plan-leave.txt` | – | Agent mode leaves `plan` | Reminder: normal editing is allowed again. |
+| `server-restarted.txt` | – | Recovery after process abort | Synthetic message (`SyntheticRaised` or `runPrompt`), informs the model about the restart. |
+| `ttl-message.txt` | – | New session | Title generation from the **first message** (`{text}`); response = only the title (2000 characters input, 100 characters output). |
+| `ttl-conversation.txt` | – | Regeneration | Title generation from the history (`{text}`, 8000-character context), likewise "Reply with only the title". |
 
-Nicht als Ressourcen ausgelagert: die **22 statischen Tool-Beschreibungen**
-(Java-Literale in `ToolDefinition`). Sie sind Teil des Modell-Contracts
-(PR-10), 9 davon golden-getestet.
+---
+
+## 4. Tool and Structure Hints (Level 3)
+
+| File | ID | Trigger | Role |
+|---|---|---|---|
+| `skill-guidance.txt` | `SKILL-GUIDANCE` | Visible skills | Explanation of the skill mechanism in the `<available_skills>` block: load via the Skill tool, direct user invocation appears as a `<skill_content>` block, no double invocation. |
+| `no-skills.txt` | `NO-SKILLS` | No visible skills | Fallback text: `No skills are currently available.` |
+| `unable-to-load-skill.txt` | – | Unknown skill ID | Skill tool error message: `Unable to load skill {id}`. |
+| `bounding-hint.txt` | – | Output > 2000 lines or > 50 KiB | Truncation hint: `[showing lines 1-{shown} of {total}; full output saved to {path}]`. |
+| `mcp-instructions.txt` | – | MCP servers with not fully denied tools | Wrapper `<mcp_instructions>{servers}</mcp_instructions>`; blocked servers are omitted entirely. |
+
+Not extracted as resources: the **22 static tool descriptions**
+(Java literals in `ToolDefinition`). They are part of the model contract
+(PR-10), 9 of them golden-tested.
 
 ---
 
 ## 5. Compaction (Level 4)
 
-| Datei | ID | Trigger | Aufgabe |
+| File | ID | Trigger | Role |
 |---|---|---|---|
-| `ctx-summary.txt` | `CTX-SUMMARY` | Compaction ohne Vorgänger | Strukturierte Zusammenfassung nach festem Template (Objective, Requirements, Decisions, Work State, Next Move, Relevant Files, Important Context) inkl. Regeln: Kürze, exakte Pfade/Bezeichner, nur offene User-Fragen tragen, Prozess/Compaction nicht erwähnen, keine Tools. |
-| `ctx-summary-update.txt` | `CTX-SUMMARY-UPDATE` | Compaction mit Vorgänger (`hasPredecessor`) | Konsolidiert die bestehende Zusammenfassung: neuere Historie gewinnt, veraltete/unrelevante Teile entfernen, Wrapper-Tags nicht reproduzieren (PR-8). |
-| `ctx-nudge.txt` | `CTX-NUDGE` | Antwort verletzt das Summary-Template | Einmaliger Re-Prompt: keine Tools, nur Summary mit exakten Sektionsüberschriften. Erfordert einen Provider. |
-| `ctx-checkpoint.txt` | – | Jede `CompactionMessage` | Wrapper `<conversation-checkpoint>` mit `<summary>` und `<recent-context>`. Lücke: `recent` wird aktuell immer als leerer String übergeben. |
+| `ctx-summary.txt` | `CTX-SUMMARY` | Compaction without predecessor | Structured summary according to a fixed template (Objective, Requirements, Decisions, Work State, Next Move, Relevant Files, Important Context) including rules: brevity, exact paths/identifiers, carry over only open user questions, do not mention process/compaction, no tools. |
+| `ctx-summary-update.txt` | `CTX-SUMMARY-UPDATE` | Compaction with predecessor (`hasPredecessor`) | Consolidates the existing summary: newer history wins, remove outdated/irrelevant parts, do not reproduce wrapper tags (PR-8). |
+| `ctx-nudge.txt` | `CTX-NUDGE` | Answer violates the summary template | One-time re-prompt: no tools, only the summary with exact section headings. Requires a provider. |
+| `ctx-checkpoint.txt` | – | Every `CompactionMessage` | Wrapper `<conversation-checkpoint>` with `<summary>` and `<recent-context>`. Gap: `recent` is currently always passed as an empty string. |
 
 ---
 
-## 6. Verdrahtung (Code-Stellen)
+## 6. Wiring (Code Locations)
 
-| Klasse | Prompt | Status |
+| Class | Prompt | Status |
 |---|---|---|
-| `ContextBuilder` | `base-prompt`, `sys-guide`, `step-limit`, `mode-plan-*`, `ctx-checkpoint` | ✅ aus Ressourcen geladen; `recent` leer |
-| `ConversationFolding` | `ctx-checkpoint` | ✅ aus Ressource geladen; `recent` leer |
-| `CompactionService` | `ctx-summary`, `ctx-summary-update` | ✅ aus Ressourcen geladen |
-| `CtxNudge` | `ctx-nudge` | ✅ aus Ressource geladen |
-| `SkillCatalog` | `skill-guidance`, `no-skills` | ✅ aus Ressourcen geladen |
-| `SkillTool` | `unable-to-load-skill` | ✅ aus Ressource geladen |
-| `OutputBounding` | `bounding-hint` | ✅ aus Ressource geladen |
-| `McpInstructions` | `mcp-instructions` | ✅ aus Ressource geladen |
-| `Recovery` / `QocEngine` | `server-restarted` | ✅ aus Ressource geladen |
-| `TitleGenerator` | `ttl-message`, `ttl-conversation` | ✅ aus Ressourcen geladen |
-| `ToolDefinition` (alle Tools) | Tool-Beschreibungen | ⚠️ Java-Literale, nicht ausgelagert |
+| `ContextBuilder` | `base-prompt`, `sys-guide`, `step-limit`, `mode-plan-*`, `ctx-checkpoint` | ✅ loaded from resources; `recent` empty |
+| `ConversationFolding` | `ctx-checkpoint` | ✅ loaded from resource; `recent` empty |
+| `CompactionService` | `ctx-summary`, `ctx-summary-update` | ✅ loaded from resources |
+| `CtxNudge` | `ctx-nudge` | ✅ loaded from resource |
+| `SkillCatalog` | `skill-guidance`, `no-skills` | ✅ loaded from resources |
+| `SkillTool` | `unable-to-load-skill` | ✅ loaded from resource |
+| `OutputBounding` | `bounding-hint` | ✅ loaded from resource |
+| `McpInstructions` | `mcp-instructions` | ✅ loaded from resource |
+| `Recovery` / `QocEngine` | `server-restarted` | ✅ loaded from resource |
+| `TitleGenerator` | `ttl-message`, `ttl-conversation` | ✅ loaded from resources |
+| `ToolDefinition` (all tools) | Tool descriptions | ⚠️ Java literals, not extracted |
 
 ---
 
-## 7. Bekannte Lücken
+## 7. Known Gaps
 
-| Lücke | Detail |
+| Gap | Detail |
 |---|---|
-| `SYS-GUIDE`-Filterung | Ganze Datei wird angehängt, sobald eines von `shell`/`write`/`edit` vorhanden ist; die `# only if`-Marker landen im Prompt. |
-| `CTX-CHECKPOINT`-Recent | `ConversationFolding` übergibt `recent=""`; der Block bleibt leer. |
-| `MODE-PLAN`-Persistenz | Reminder sind transient und werden nicht als `SyntheticRaised` geloggt. |
-| `TTL`-Modell | `Engine.java` erzeugt `ModelRef` mit zufälligen IDs; mit echtem Provider problematisch. |
-| `CTX-SUMMARY-UPDATE` | Verdrahtet und golden-getestet, aber kein End-to-End-Test des Vorgängerpfads. |
-| Manifest/Checksumme | Nicht implementiert (siehe §1). |
-| Tool-Beschreibungen | 22 statische Tools, davon 9 golden-getestet; keine Ressourcen. |
+| `SYS-GUIDE` filtering | The entire file is appended as soon as one of `shell`/`write`/`edit` is present; the `# only if` markers end up in the prompt. |
+| `CTX-CHECKPOINT` recent | `ConversationFolding` passes `recent=""`; the block stays empty. |
+| `MODE-PLAN` persistence | Reminders are transient and are not logged as `SyntheticRaised`. |
+| `TTL` model | `Engine.java` creates a `ModelRef` with random IDs; problematic with a real provider. |
+| `CTX-SUMMARY-UPDATE` | Wired up and golden-tested, but no end-to-end test of the predecessor path. |
+| Manifest/checksum | Not implemented (see §1). |
+| Tool descriptions | 22 static tools, 9 of them golden-tested; no resources. |
 
 ---
 
-## 8. Dynamisierung: weniger entwicklerspezifisch, anpassbar für verschiedene Zwecke
+## 8. Dynamization: Less Developer-Specific, Adaptable for Different Purposes
 
-Aktuelle Einschränkungen: Texte sind hart kodiert, englischsprachig, auf eine
-konkrete Produktidentität („OpenCode", `~/.opencode/plan/…`) und feste
-Sprach-/Regelkonstanten zugeschnitten.
+Current limitations: texts are hard-coded, English-language, tailored to a
+specific product identity ("OpenCode", `~/.opencode/plan/…`) and fixed
+language/rule constants.
 
-### 8.1 Produktidentität, Pfade und Limits als Variablen
+### 8.1 Product Identity, Paths, and Limits as Variables
 
-- `base-prompt.txt`: „You are the OpenCode session engine" → `{product}` oder
-  `{role}` aus Konfiguration (Persona/Deployment-abhängig).
-- `mode-plan-enter.txt`: hart kodiertes `~/.opencode/plan/<name>.md` →
-  `{planDir}` aus Config (workspace-/produktabhängig).
-- Summary-/TTL-Limits (8000/2000/100 Zeichen, max. 15 Dateien) als
-  `{maxChars}`-Variablen statt fest im Text – pro Deployment justierbar.
+- `base-prompt.txt`: "You are the OpenCode session engine" → `{product}` or
+  `{role}` from configuration (persona/deployment dependent).
+- `mode-plan-enter.txt`: hard-coded `~/.opencode/plan/<name>.md` →
+  `{planDir}` from config (workspace/product dependent).
+- Summary/TTL limits (8000/2000/100 characters, max. 15 files) as
+  `{maxChars}` variables instead of fixed in the text — adjustable per deployment.
 
-### 8.2 Layered Loader (Overrides statt nur Classpath)
+### 8.2 Layered Loader (Overrides Instead of Classpath Only)
 
-Fallback-Kette für `PromptLoader`:
+Fallback chain for `PromptLoader`:
 
 ```
-CLI-Flag → Config-Verzeichnis (~/.<app>/prompts/) → Workspace-Override (.prompts/) → Classpath-Default
+CLI flag → Config directory (~/.<app>/prompts/) → Workspace override (.prompts/) → Classpath default
 ```
 
-Damit können Nutzer/Deployments Prompts überschreiben, ohne die Engine neu zu
-bauen; die Engine kennt weiterhin nur IDs (PR-12 konsequent fortgeführt).
-Dazu `manifest.json` mit ID → Version → Checksumme, um Overrides zu
-validieren und Abweichungen erkennbar zu machen.
+This lets users/deployments override prompts without rebuilding the engine;
+the engine still knows only IDs (PR-12 consistently continued).
+Plus a `manifest.json` with ID → version → checksum to validate overrides
+and make deviations detectable.
 
-### 8.3 Sprach- und Zielgruppen-Adaption
+### 8.3 Language and Audience Adaptation
 
-- Alle Engine-Prompts sind Englisch; ein `lang`-Rendering-Parameter
-  (`ctx-summary.en.txt` / `ctx-summary.de.txt` oder Übersetzungstabelle pro
-  Key) macht Compaction-, Nudge- und Step-Limit-Texte sprachabhängig ohne
-  Codeänderung.
-- Alternativ „Antworte in der Sprache des Nutzers" als Variable.
+- All engine prompts are English; a `lang` rendering parameter
+  (`ctx-summary.en.txt` / `ctx-summary.de.txt` or a translation table per
+  key) makes compaction, nudge, and step-limit texts language-dependent
+  without code changes.
+- Alternatively "Reply in the user's language" as a variable.
 
-### 8.4 Komposition statt Monolithen
+### 8.4 Composition Instead of Monoliths
 
-- `sys-guide.txt` in Fragmente zerlegen (`sys-guide/shell.txt`,
-  `sys-guide/write.txt`, …), die der Loader pro vorhandenem Tool
-  zusammensetzt – die Marker-Lücke entfällt strukturell.
-- `ctx-summary.txt`: Template (Sektionen) und Regeln (Kompaktheit, Pfade,
-  Verschwiegenheit) als getrennte Fragmente, je nach Anwendungsfall
-  zusammensetzbar oder selektiv überschreibbar.
-- `step-limit.txt` mischt Verbotsregeln, Pflichtstruktur und Eskalationssprache
-  („CRITICAL"); als Fragmente ist die Tonalität pro Deployment austauschbar,
-  ohne die Vertragssemantik (keine Tools, Text-Abschluss) zu gefährden.
+- Split `sys-guide.txt` into fragments (`sys-guide/shell.txt`,
+  `sys-guide/write.txt`, …) that the loader assembles per available tool
+  — the marker gap disappears structurally.
+- `ctx-summary.txt`: template (sections) and rules (brevity, paths,
+  reticence) as separate fragments, composable or selectively overridable
+  per use case.
+- `step-limit.txt` mixes prohibition rules, required structure, and escalation
+  language ("CRITICAL"); as fragments the tone is replaceable per deployment
+  without endangering the contract semantics (no tools, text conclusion).
 
-### 8.5 Profile / PromptContext
+### 8.5 Profiles / PromptContext
 
-Ein zentrales `PromptContext` (Produktname, Toolset, Plan-Modus-Verhalten,
-Sprache, Limits, Zielgruppe) befüllt `PromptLoader.render()`. Jede Datei wird
-damit ein neutrales Template: dasselbe `ctx-summary` dient der Coding-Engine,
-einem Support-Bot oder einem Recherche-Agenten – je nach Profil.
+A central `PromptContext` (product name, toolset, plan-mode behavior,
+language, limits, target audience) populates `PromptLoader.render()`. Every file
+then becomes a neutral template: the same `ctx-summary` serves the coding
+engine, a support bot, or a research agent — depending on the profile.
 
-### 8.6 Struktur-Absicherung beibehalten
+### 8.6 Keep Structure Safeguards
 
-Template-Texte wie das Summary-Format sind ein **Vertrag** zwischen Engine
-(Post-Processing, `CtxNudge`-Erkennung anhand Sektionsüberschriften) und
-Modell. Regeln für jede Dynamisierung:
+Template texts like the summary format are a **contract** between the engine
+(post-processing, `CtxNudge` detection based on section headings) and the
+model. Rules for every dynamization:
 
-- Golden-Tests (`PromptGoldenTest`, `ToolDescriptionGoldenTest`) auf die
-  *gerenderte* Struktur (Sektionsnamen, Wrapper-Tags) pinnen, nicht auf
-  exakte Bytes.
-- Overrides per Checksumme/Manifest validieren.
-- Verhaltenskritische Prompts (`step-limit`, `ctx-nudge`) nur in semantisch
-  äquivalenten Varianten zulassen.
-- Keine Provider-Kontrolltoken (z. B. `<|end|>`) in Prompt-Dateien (PR-1…PR-13,
-  Pflege-Regeln in `promptlib.md` §9).
+- Pin Golden tests (`PromptGoldenTest`, `ToolDescriptionGoldenTest`) to the
+  *rendered* structure (section names, wrapper tags), not to exact bytes.
+- Validate overrides via checksum/manifest.
+- Allow only semantically equivalent variants for behavior-critical prompts
+  (`step-limit`, `ctx-nudge`).
+- No provider control tokens (e.g. `|`) in prompt files (PR-1…PR-13,
+  maintenance rules in `promptlib.md` §9).

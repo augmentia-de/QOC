@@ -1,219 +1,218 @@
 # QOC Deployment Modes: Server, Serverless, Worker
 
-Status: Design-/Entscheidungsdokument
-Datum: 2026-11-04
+Status: Design/decision document
+Date: 2026-11-04
 
-Dieses Dokument erklärt die drei Betriebsarten von QOC, ihre Aufgaben, ihre
-Agent-Config-Quellen, Tool-Policies, Workspace-Semantik und Identitätsweitergabe.
-Es unterscheidet zwischen **implementiertem Ist-Zustand** und **geplantem
-Zielbild**.
+This document explains the three operating modes of QOC, their responsibilities,
+their agent-config sources, tool policies, workspace semantics, and identity
+propagation. It distinguishes between the **implemented current state** and the
+**planned target state**.
 
-## 1. Überblick
+## 1. Overview
 
-| | Server Mode | Serverless Mode | Worker Mode (geplant) |
+| | Server Mode | Serverless Mode | Worker Mode (planned) |
 |---|---|---|---|
 | `ENGINE_MODE` | `server` | `serverless` | `server` |
 | `ENGINE_ROLE` | `server` | – | `worker` |
-| Topologie | langlebiger Server/VM | Function/Cloud Run | langlebiger Server/VM |
-| Workspace | persistent | ephemer pro Call | **geteilt, persistent** |
-| Agent-Authoring | ja (Rolle `admin`/`agent:write`) | nein | **nein** |
-| Agent-Quelle | lokal (Settings + Markdown) | On-Demand-Fetch + Inline | lokal read-only + optional Fetch |
-| Default-Agenten | alle konfigurierten | `build`, `plan` | alle (read-only) |
-| Skills | lokal verfügbar | nicht verfügbar (MVP) | lokal read-only |
-| MCP | lokale Definitionen | lokale Definitionen + Agent-Filter | lokale Definitionen + Agent-Filter |
-| Tools | voller Katalog | Leaf-Profil (eingeschränkt) | voll/konfigurierbar |
-| Session-Cleanup | nein | ja (ephemer) | nein |
-| Identität | User/Admin | Caller-Token (delegiert) | Service oder delegierter User |
-| Hauptnutzen | Orchestrierung, Authoring, interaktive Arbeit | parallele, unabhängige Teilaufgaben | mehrere Worker auf gemeinsamem Workspace |
+| Topology | long-lived server/VM | Function/Cloud Run | long-lived server/VM |
+| Workspace | persistent | ephemeral per call | **shared, persistent** |
+| Agent authoring | yes (role `admin`/`agent:write`) | no | **no** |
+| Agent source | local (Settings + Markdown) | on-demand fetch + inline | local read-only + optional fetch |
+| Default agents | all configured | `build`, `plan` | all (read-only) |
+| Skills | locally available | not available (MVP) | locally read-only |
+| MCP | local definitions | local definitions + agent filter | local definitions + agent filter |
+| Tools | full catalog | leaf profile (restricted) | full/configurable |
+| Session cleanup | no | yes (ephemeral) | no |
+| Identity | User/Admin | caller token (delegated) | service or delegated user |
+| Main benefit | orchestration, authoring, interactive work | parallel, independent subtasks | multiple workers on a shared workspace |
 
 ---
 
 ## 2. Server Mode (`ENGINE_MODE=server`)
 
-### Zweck
+### Purpose
 
-Control Plane: Orchestrator, Workflow-Editor, interaktive Sessions, Authoring
-von Agenten und Workflows. Der Server hält den Workspace und den Kontext.
+Control plane: orchestrator, workflow editor, interactive sessions, authoring
+of agents and workflows. The server holds the workspace and the context.
 
-### Agent-Config-Quellen
+### Agent config sources
 
-Beim Start und bei `reloadConfig()`:
+At startup and on `reloadConfig()`:
 
-1. Globales `settings.json` (`~/.config/opencode/settings.json`) → `agents[]`
-2. Projekt-`settings.json` (`<workspace>/settings.json`) → `agents[]`,
-   sofern `engine.settings.workspace-enabled=true`
-3. Globale Markdown-Agenten: `~/.config/opencode/agents/*.md`
-4. Projekt-Markdown-Agenten: `.opencode/agents/*.md` im Workspace und in
-   Elternverzeichnissen
-5. Baseline: `build` und `plan` werden immer ergänzt, falls sie fehlen
+1. Global `settings.json` (`~/.config/opencode/settings.json`) → `agents[]`
+2. Project `settings.json` (`<workspace>/settings.json`) → `agents[]`,
+   provided `engine.settings.workspace-enabled=true`
+3. Global Markdown agents: `~/.config/opencode/agents/*.md`
+4. Project Markdown agents: `.opencode/agents/*.md` in the workspace and in
+   parent directories
+5. Baseline: `build` and `plan` are always added if missing
 
-Die zusammengeführte Agent-Liste landet im `AgentCatalogue`. Die vollständige
-Definition ist über `AgentCatalogue.config(name)` und
-`GET /api/agent/{name}` verfügbar.
+The merged agent list lands in the `AgentCatalogue`. The full definition is
+available via `AgentCatalogue.config(name)` and `GET /api/agent/{name}`.
 
-### Agent-Authoring
+### Agent authoring
 
-- `POST /api/agent` – Agent aus Markdown anlegen
-- `PUT /api/agent/{name}` – aktualisieren
-- `DELETE /api/agent/{name}` – löschen
-- Voraussetzung: Rolle `admin` (`requireRole("admin")`) und
+- `POST /api/agent` – create an agent from Markdown
+- `PUT /api/agent/{name}` – update
+- `DELETE /api/agent/{name}` – delete
+- Prerequisite: role `admin` (`requireRole("admin")`) and
   `ENGINE_AGENT_AUTHORING_ENABLED=true`
-- Dateien werden nach `~/.config/opencode/agents/<name>.md` geschrieben;
-  anschließend `reloadConfig()`
-- `GET /api/agent/{name}` liefert `{name, content?, config, hash?, updatedAt?}`
+- Files are written to `~/.config/opencode/agents/<name>.md`;
+  then `reloadConfig()`
+- `GET /api/agent/{name}` returns `{name, content?, config, hash?, updatedAt?}`
 
-### Workspace und Sessions
+### Workspace and sessions
 
-- Persistenter Workspace unter `ENGINE_WORKSPACE`
-- OIDC-User erhalten ein Unterverzeichnis `<workspace>/<user>` (Ausnahmen:
-  `opencode`, `anonymous`, `local` → Basis-Workspace)
-- Sessions standardmäßig `mode=workspace`; `mode=ephemeral` ist möglich
-- Workspace-Switch über `/api/workspace` (Admin)
-- Ownership ist aktuell **verzeichnisbasiert** (`Engine.isOwner`); ein
-  explizites `owner`-Feld in `SessionInfo` fehlt noch
+- Persistent workspace under `ENGINE_WORKSPACE`
+- OIDC users get a subdirectory `<workspace>/<user>` (exceptions:
+  `opencode`, `anonymous`, `local` → base workspace)
+- Sessions default to `mode=workspace`; `mode=ephemeral` is possible
+- Workspace switch via `/api/workspace` (Admin)
+- Ownership is currently **directory-based** (`Engine.isOwner`); an explicit
+  `owner` field in `SessionInfo` is still missing
 
 ### Tools
 
-Der volle Tool-Katalog wird registriert:
+The full tool catalog is registered:
 
 - Workspace: `read`, `write`, `edit`, `patch`, `glob`, `grep`, `shell`
 - Worktrees: `worktree_create`, `worktree_list`, `worktree_remove`
 - Sessions: `session_move`, `session_rename`
-- Agenten: `subagent`, `task`
+- Agents: `subagent`, `task`
 - Skills: `skill`, `skill_list`
 - Web: `webfetch`, `websearch`
-- MCP: dynamisch pro konfiguriertem Server
-- Weitere: `question`, `todowrite`, `models`, A2A-Tools, E-Mail-Tools
+- MCP: dynamically per configured server
+- Further: `question`, `todowrite`, `models`, A2A tools, email tools
 
-Die Agent-Config schränkt ein:
+The agent config restricts:
 
 - `tools.allow` / `tools.deny`
 - `permissions[]` (action/resource/effect)
-- `mcpServers[]` (Namespace-Allow-List)
+- `mcpServers[]` (namespace allow-list)
 - `skills.enabled/allow/deny/max`
 
 ### Skills
 
-- Quellen: `<workspace>/skill`, `<workspace>/skills`,
+- Sources: `<workspace>/skill`, `<workspace>/skills`,
   `<workspace>/.opencode/skills`, plus `skills.paths`
-- Globaler Filter (`skills.allow/deny/max`) und pro-Agent-Filter
-- `skill` lädt den Body on demand, `skill_list` listet Metadaten
-- Prompt-Time wird nur der Katalog (ID, Name, Beschreibung) gerendert
+- Global filter (`skills.allow/deny/max`) and per-agent filter
+- `skill` loads the body on demand, `skill_list` lists metadata
+- At prompt time only the catalog (ID, name, description) is rendered
 
 ### MCP
 
-- Definitionen aus dem `"mcp"`-Block der `settings.json`
-- Lokale Server (`type=local`, Command/Env) und Remote-Server
+- Definitions from the `"mcp"` block of `settings.json`
+- Local servers (`type=local`, Command/Env) and remote servers
   (`type=remote`, URL/Headers/OAuth)
-- Registrierung und Tool-Discovery beim Start (`McpServerManager`)
-- Der Agent filtert über `mcpServers` die Namespaces
+- Registration and tool discovery at startup (`McpServerManager`)
+- The agent filters namespaces via `mcpServers`
 
-### Identität und Authz
+### Identity and authorization
 
-- OIDC (Keycloak/Auth0) oder Basic/None
+- OIDC (Keycloak/Auth0) or Basic/None
 - `OidcPrincipalProducer` → `PrincipalContext` (`id`, `name`, `roles`,
   `groups`, `claims`, `accessToken`)
-- Agent-Authoring: `admin`
-- Andere Admin-Endpunkte: `admin`
-- `X-QOC-User`-Header wird auf einigen Endpunkten zusätzlich akzeptiert
-  (siehe Abschnitt Identität)
+- Agent authoring: `admin`
+- Other admin endpoints: `admin`
+- `X-QOC-User` header is additionally accepted on some endpoints
+  (see the identity section)
 
 ### Status
 
-Vollständig implementiert.
+Fully implemented.
 
 ---
 
 ## 3. Serverless Mode (`ENGINE_MODE=serverless`)
 
-### Zweck
+### Purpose
 
-Stateless **Leaf Worker** für unabhängige, parallelisierbare Teilaufgaben:
-Web-Recherche, URL-Extraktion, MCP-Operationen, Batch-Verarbeitung. Kein
-geteilter Workspace, keine verschachtelten Subagents.
+Stateless **leaf worker** for independent, parallelizable subtasks:
+web research, URL extraction, MCP operations, batch processing. No shared
+workspace, no nested subagents.
 
-### Agent-Config-Quellen
+### Agent config sources
 
-Priorität:
+Priority:
 
-1. **Inline-Config** über `qoc_run_agent_with_config`
-   - Der Orchestrator sendet Agent-Markdown direkt im MCP-Call
-   - Wird über `AgentMarkdownLoader.parseContent` geparst
-   - In-Memory als transienter Agent materialisiert
-   - Nach dem Call entfernt; kein Dateisystem-Schreibzugriff
-2. **Lokaler Katalog**
-   - Nur `build` und `plan` (plus global Markdown-Agenten, im Container
-     normalerweise leer)
-   - Settings-`agents[]` und Projekt-`.opencode/agents` werden im
-     Serverless-Modus **ignoriert**
-3. **On-Demand-Fetch vom Server**
+1. **Inline config** via `qoc_run_agent_with_config`
+   - The orchestrator sends agent Markdown directly in the MCP call
+   - Parsed via `AgentMarkdownLoader.parseContent`
+   - Materialized in-memory as a transient agent
+   - Removed after the call; no filesystem write access
+2. **Local catalog**
+   - Only `build` and `plan` (plus global Markdown agents, usually empty in
+     the container)
+   - Settings `agents[]` and project `.opencode/agents` are **ignored** in
+     serverless mode
+3. **On-demand fetch from the server**
    - `GET {ENGINE_AGENT_SOURCE_URL}/api/agent/{name}`
-   - `Authorization: Bearer <Token des aufrufenden MCP-Clients>`
+   - `Authorization: Bearer <token of the calling MCP client>`
    - Fallback: `ENGINE_AGENT_SOURCE_TOKEN`
-   - Nur wenn der Agent lokal nicht vorhanden ist (`!hasAgent`)
-   - Antwort: `{name, content?, config, hash?, updatedAt?}`
-   - `config` wird in-memory als transienter Agent materialisiert
-   - Nach dem Call: `removeTransientAgent`, kein Cache
-4. **Fehler** `agent not available`, wenn kein Fetch möglich ist
+   - Only if the agent is not available locally (`!hasAgent`)
+   - Response: `{name, content?, config, hash?, updatedAt?}`
+   - `config` is materialized in-memory as a transient agent
+   - After the call: `removeTransientAgent`, no cache
+4. **Error** `agent not available` if no fetch is possible
 
-Wichtige Konfiguration:
+Important configuration:
 
 ```env
 ENGINE_MODE=serverless
-ENGINE_AGENT_SOURCE_URL=http://host.docker.internal:8074   # Registry/Server-Basis, nicht /mcp
-ENGINE_AGENT_SOURCE_TOKEN=...                              # optionaler Fallback
+ENGINE_AGENT_SOURCE_URL=http://host.docker.internal:8074   # registry/server base, not /mcp
+ENGINE_AGENT_SOURCE_TOKEN=...                              # optional fallback
 ```
 
-Nur `config` wird übertragen. **Nicht** übertragen werden:
-- MCP-Server-Definitionen (nur die Namespace-Allow-List `mcpServers`)
-- Skill-Inhalte (nur der Skill-Filter)
-- Workspace-Inhalte, Provider-Secrets, globale Skill-Filter
+Only `config` is transferred. **Not** transferred:
+- MCP server definitions (only the namespace allow-list `mcpServers`)
+- Skill contents (only the skill filter)
+- Workspace contents, provider secrets, global skill filter
 
-### Lifecycle eines Calls
+### Lifecycle of a call
 
 ```
 Client/Orchestrator
   └─ POST /mcp  (Bearer <user-token>)
        └─ qoc_run_agent(agent="chat", prompt=...)
-            ├─ Agent lokal? build/plan → ja: direkt
-            ├─ sonst: GET {SOURCE}/api/agent/chat (Bearer Caller)
+            ├─ Agent local? build/plan → yes: directly
+            ├─ otherwise: GET {SOURCE}/api/agent/chat (Bearer Caller)
             │    └─ config → defineTransientAgent (in-memory)
             ├─ createSession(mode=ephemeral, retain=false)
-            ├─ prompt ausführen
+            ├─ execute prompt
             └─ finally: removeTransientAgent
-                 + deleteSession → ephemeres Verzeichnis löschen
+                 + deleteSession → delete ephemeral directory
 ```
 
-### Workspace und Sessions
+### Workspace and sessions
 
-- Ziel: `mode=ephemeral` pro Call
-- `createSession(..., "ephemeral", false)` legt ein Session-Verzeichnis unter
-  `ENGINE_SESSION_TEMP_DIR` an
-- `deleteSession` entfernt es wieder
-- Kein geteilter Workspace
-- **Aktueller Stand:** Der MCP-Default ist noch `workspace`; die Umstellung auf
-  `ephemeral` und das automatische Session-Cleanup sind geplant
+- Goal: `mode=ephemeral` per call
+- `createSession(..., "ephemeral", false)` creates a session directory under
+  `ENGINE_SESSION_TEMP_DIR`
+- `deleteSession` removes it again
+- No shared workspace
+- **Current state:** The MCP default is still `workspace`; switching to
+  `ephemeral` and automatic session cleanup are planned
 
-### Tools (Leaf-Profil)
+### Tools (leaf profile)
 
 > **Worktrees (opt-in).** `worktree_create`/`worktree_list`/`worktree_remove`
-> sind standardmäßig deaktiviert (`engine.worktree.enabled=false` /
-> `ENGINE_WORKTREE_ENABLED=false`). Aktivierung erfordert zusätzlich `git` und
-> ein Git-Working-Tree in `ENGINE_WORKSPACE`. Siehe
+> are disabled by default (`engine.worktree.enabled=false` /
+> `ENGINE_WORKTREE_ENABLED=false`). Activation additionally requires `git` and
+> a Git working tree in `ENGINE_WORKSPACE`. See
 > `docs/diagrams/10-deployment.md`.
 
-Ziel-Policy:
+Target policy:
 
-| Erlaubt | Verboten |
+| Allowed | Forbidden |
 |---|---|
 | `webfetch`, `websearch` | `worktree_create/list/remove` |
-| `read`, `write`, `edit`, `patch`, `glob`, `grep` (nur Scratch) | `question` |
+| `read`, `write`, `edit`, `patch`, `glob`, `grep` (scratch only) | `question` |
 | `todowrite` | `subagent`, `task` |
-| `shell` (nur Scratch) | `session_move`, `session_rename` |
-| MCP-Tools (Namespace-gefiltert) | `skill`, `skill_list` (MVP) |
+| `shell` (scratch only) | `session_move`, `session_rename` |
+| MCP tools (namespace-filtered) | `skill`, `skill_list` (MVP) |
 | `list_mcp_resources`, `read_mcp_resource` | `models` |
 
-Konfiguration (geplant):
+Configuration (planned):
 
 ```env
 ENGINE_SERVERLESS_TOOL_PROFILE=leaf
@@ -221,283 +220,284 @@ ENGINE_SERVERLESS_ALLOW_TOOLS=...
 ENGINE_SERVERLESS_DENY_TOOLS=...
 ```
 
-**Aktueller Stand:** Die Leaf-Policy ist noch nicht implementiert; der
-Serverless-Container registriert derzeit denselben Tool-Katalog wie der Server.
+**Current state:** The leaf policy is not yet implemented; the serverless
+container currently registers the same tool catalog as the server.
 
 ### Skills
 
-Im MVP **nicht** unterstützt:
+Not supported in the MVP:
 
-- Keine Skill-Dateien im leeren Serverless-Workspace
-- Kein Remote-Skill-Loading
-- Der Orchestrator inlined die benötigten Instruktionen im Prompt
+- No skill files in the empty serverless workspace
+- No remote skill loading
+- The orchestrator inlines the required instructions in the prompt
 
-Später optional:
-- `GET /api/skill/{id}` für Bodies + Supporting Files
-- Skill-Katalog im Agent-Fetch
-- `SkillContentSource`-Port im Engine, lazy Laden mit Per-Call-Cache
-- virtuelle `baseDirectory` (`remote://skill/<id>`), keine Server-Pfade rendern
+Later optionally:
+- `GET /api/skill/{id}` for bodies + supporting files
+- Skill catalog in the agent fetch
+- `SkillContentSource` port in the engine, lazy loading with per-call cache
+- Virtual `baseDirectory` (`remote://skill/<id>`), no server paths rendered
 
 ### MCP
 
-- Definitionen kommen aus der **lokalen** Serverless-Konfiguration
-  (`settings.json` `"mcp"` oder Deployment-Env)
-- Der Agent filtert über `mcpServers` die Namespaces
-- Fehlt ein Namespace: Warnung in `_meta.warnings` (geplant), optional
-  `ENGINE_SERVERLESS_MCP_STRICT=true` → Fehler
-- Keine MCP-Secrets vom Server
+- Definitions come from the **local** serverless configuration
+  (`settings.json` `"mcp"` block or deployment env)
+- The agent filters namespaces via `mcpServers`
+- Missing namespace: warning in `_meta.warnings` (planned), optional
+  `ENGINE_SERVERLESS_MCP_STRICT=true` → error
+- No MCP secrets from the server
 
-### Identität
+### Identity
 
-- Der Serverless-Container validiert den Bearer-Token des MCP-Callers
-- `principalContext.get().id()` wird als Session-User verwendet
-- Der Raw-Token wird an den Agent-Fetch weitergereicht
-- Der Worker agiert **als der Caller**, nicht als eigener Service-User
-- MCP-Server-Aufrufe selbst erhalten aktuell keinen User-Token (globale
-  Credentials); per-User-Credentials sind offen
+- The serverless container validates the Bearer token of the MCP caller
+- `principalContext.get().id()` is used as the session user
+- The raw token is forwarded to the agent fetch
+- The worker acts **as the caller**, not as its own service user
+- MCP server calls themselves currently receive no user token (global
+  credentials); per-user credentials are open
 
-### Limits und Parallelität
+### Limits and concurrency
 
 - `ENGINE_TURN_MAX_WALL_MINUTES=10`
-- `ENGINE_MAX_CONCURRENT_PROMPTS`: 1 für Lambda/Cloud Run, 4 für lokale
-  Paralleltests
-- Horizontale Skalierung über Instanzen
-- Mehrere synchrone MCP-Calls parallel vom Orchestrator
-- Ergebnis: Text + optional `structuredContent` + `_meta`
-  (Tokens, Finish, Warnungen, `agentCreated`, `agentDeleted`)
+- `ENGINE_MAX_CONCURRENT_PROMPTS`: 1 for Lambda/Cloud Run, 4 for local
+  parallel tests
+- Horizontal scaling via instances
+- Multiple synchronous MCP calls in parallel from the orchestrator
+- Result: text + optional `structuredContent` + `_meta`
+  (tokens, finish, warnings, `agentCreated`, `agentDeleted`)
 
 ### Status
 
-- On-Demand-Agent-Fetch: **implementiert**
-- Inline-`qoc_run_agent_with_config`: **implementiert**
-- Default `build`/`plan`: **implementiert**
-- Leaf-Tool-Policy, Default `ephemeral`, automatisches Session-Cleanup,
-  MCP-Warnungen: **geplant**
+- On-demand agent fetch: **implemented**
+- Inline `qoc_run_agent_with_config`: **implemented**
+- Default `build`/`plan`: **implemented**
+- Leaf tool policy, default `ephemeral`, automatic session cleanup,
+  MCP warnings: **planned**
 
 ---
 
-## 4. Worker Mode (`ENGINE_ROLE=worker`, geplant)
+## 4. Worker Mode (`ENGINE_ROLE=worker`, planned)
 
-### Zweck
+### Purpose
 
-Mehrere Worker auf einem **gemeinsamen, persistenten Workspace** betreiben,
-ohne dass sie Agent-Konfigurationen schreiben dürfen. Der Editor/Orchestrator
-bleibt der einzige Schreiber.
+Run multiple workers on a **shared, persistent workspace** without allowing
+them to write agent configurations. The editor/orchestrator remains the only
+writer.
 
-### Abgrenzung zu Serverless
+### Distinction from serverless
 
 | | Serverless | Worker |
 |---|---|---|
-| Workspace | ephemer, kein Shared Space | geteilt, persistent |
-| Agent-Quelle | On-Demand-Fetch + Inline | read-only Dateien + optional Fetch |
-| Skills | keine (MVP) | lokal read-only |
-| Default-Agenten | `build`, `plan` | alle konfigurierten |
-| Einsatz | parallele I/O-Teilaufgaben | dauerhafte Worker auf gemeinsamen Dateien |
+| Workspace | ephemeral, no shared space | shared, persistent |
+| Agent source | on-demand fetch + inline | read-only files + optional fetch |
+| Skills | none (MVP) | locally read-only |
+| Default agents | `build`, `plan` | all configured |
+| Use case | parallel I/O subtasks | long-lived workers on shared files |
 
-`serverless` ist daher **nicht** der richtige Modus für einen VM-Worker mit
-Shared Workspace.
+`serverless` is therefore **not** the right mode for a VM worker with a shared
+workspace.
 
-### Agent-Config-Quellen
+### Agent config sources
 
 1. `<shared-workspace>/.opencode/agents/*.md` (read-only)
 2. `~/.config/opencode/agents/*.md` (read-only)
 3. `settings.json` → `agents[]` (read-only)
 4. optional: `GET {ENGINE_AGENT_SOURCE_URL}/api/agent/{name}`
 
-Für den optionalen Fetch muss die aktuelle Kopplung an
-`engine.isServerlessMode()` entkoppelt werden: Fetch immer erlauben, wenn eine
-Source-URL gesetzt ist.
+For the optional fetch, the current coupling to `engine.isServerlessMode()`
+must be decoupled: always allow fetch when a source URL is set.
 
 ### Authoring
 
 - `ENGINE_AGENT_AUTHORING_ENABLED=false`
 - `POST/PUT/DELETE /api/agent` → 403
-- Dateisystem: Agent-Verzeichnisse read-only gemountet
-- Nur der Editor/Orchestrator (Control Plane) schreibt
-- Empfohlene Scopes: Worker nur `agent:read` + `mcp:run`
+- Filesystem: agent directories mounted read-only
+- Only the editor/orchestrator (control plane) writes
+- Recommended scopes: worker only `agent:read` + `mcp:run`
 
-### Workspace und Sessions
+### Workspace and sessions
 
 - `ENGINE_WORKSPACE_MODE=shared`
-- Persistenter Workspace
-- Sessions bleiben erhalten
-- Worker dürfen Aufgaben-Dateien bearbeiten, aber nicht die Agent-Konfiguration
+- Persistent workspace
+- Sessions are retained
+- Workers may edit task files, but not the agent configuration
 
 ### Tools
 
-- Standardmäßig voller Workspace-Tool-Katalog
-- Konfigurierbar über eine Worker-Policy
-- `shell` und Datei-Tools sind auf dem geteilten Workspace möglich
+- Full workspace tool catalog by default
+- Configurable via a worker policy
+- `shell` and file tools are possible on the shared workspace
 
-### Skills und MCP
+### Skills and MCP
 
-- Skills aus dem geteilten Workspace (read-only) und globalen Quellen
-- MCP-Definitionen lokal; Agent filtert Namespaces
-- Keine Authoring-Rechte für Skills/Agenten
+- Skills from the shared workspace (read-only) and global sources
+- MCP definitions local; agent filters namespaces
+- No authoring rights for skills/agents
 
-### Identität und exklusives Schreibrecht
+### Identity and exclusive write rights
 
-Drei Ebenen:
+Three levels:
 
-1. **API-Authz:** `agent:write` nur für Editor/Admin; Worker `agent:read`
-2. **Dateisystem:** Agent-Config read-only für Worker
-3. **Single-Writer + Versionierung:** Editor schreibt, Worker lesen mit
+1. **API authorization:** `agent:write` only for editor/admin; worker
+   `agent:read`
+2. **Filesystem:** agent config read-only for workers
+3. **Single writer + versioning:** editor writes, workers read with
    `hash`/`updatedAt`/ETag
 
-Zusätzlich: Audit-Log für Agent-/Workflow-Writes und Admin-Sperre für andere
-mutierende Endpunkte (`/api/config/reload`, Workspace-Switch, Session-Move).
+Additionally: audit log for agent/workflow writes and admin lock for other
+mutating endpoints (`/api/config/reload`, workspace switch, session move).
 
 ### Status
 
-Nicht implementiert. Erfordert:
+Not implemented. Requires:
 - `ENGINE_ROLE=server|worker`
 - `ENGINE_WORKSPACE_MODE=shared|ephemeral`
-- Entkopplung des Agent-Fetch von `ENGINE_MODE`
-- Authz-Scopes und read-only Mounts
+- Decoupling agent fetch from `ENGINE_MODE`
+- Authz scopes and read-only mounts
 
 ---
 
-## 5. Vergleichsmatrix (Details)
+## 5. Comparison matrix (details)
 
 | Dimension | Server | Serverless | Worker |
 |---|---|---|---|
-| Agent aus `settings.json` | ja | nein | ja (read-only) |
-| Agent aus Projekt-`.opencode/agents` | ja | nein | ja (read-only) |
-| Agent aus globalem Markdown | ja | ja (meist leer) | ja (read-only) |
-| On-Demand-Fetch | nein | ja | optional (geplant) |
-| Inline-Config | über API/Datei | `qoc_run_agent_with_config` | über API/Datei |
-| Authoring-API | ja (admin) | nein (403) | nein (403) |
-| Default-Agenten | alle | build/plan | alle |
-| Skills | lokal | keine (MVP) | lokal read-only |
-| MCP-Definitionen | lokal | lokal | lokal |
-| MCP-Namespace-Filter | ja | ja | ja |
-| Workspace | persistent | ephemer | geteilt persistent |
-| Shell | voll | nur Scratch (geplant) | voll |
-| Subagents | ja | nein (geplant) | ja/konfigurierbar |
-| Session-Cleanup | nein | ja (geplant) | nein |
-| Identität | User/Admin | Caller-delegiert | Service/delegiert |
+| Agent from `settings.json` | yes | no | yes (read-only) |
+| Agent from project `.opencode/agents` | yes | no | yes (read-only) |
+| Agent from global Markdown | yes | yes (usually empty) | yes (read-only) |
+| On-demand fetch | no | yes | optional (planned) |
+| Inline config | via API/file | `qoc_run_agent_with_config` | via API/file |
+| Authoring API | yes (admin) | no (403) | no (403) |
+| Default agents | all | build/plan | all |
+| Skills | local | none (MVP) | local read-only |
+| MCP definitions | local | local | local |
+| MCP namespace filter | yes | yes | yes |
+| Workspace | persistent | ephemeral | shared persistent |
+| Shell | full | scratch only (planned) | full |
+| Subagents | yes | no (planned) | yes/configurable |
+| Session cleanup | no | yes (planned) | no |
+| Identity | User/Admin | caller-delegated | service/delegated |
 
 ---
 
-## 6. Identität und User-Weitergabe
+## 6. Identity and user propagation
 
-### Ist-Zustand
+### Current state
 
-1. **Browser:** OIDC Authorization Code + PKCE; Token in `sessionStorage`;
-   `Authorization: Bearer` bei API/SSE.
-2. **Quarkus:** OIDC validiert das JWT.
-3. **`OidcPrincipalProducer`:** baut `Principal` aus `sub`,
-   `preferred_username`, Rollen (Keycloak `realm_access.roles`, Auth0
-   `roles`/namespaced Claims), Gruppen und Claims; speichert ihn im
-   `PrincipalContext` (Request-scoped), inklusive Raw-Token.
+1. **Browser:** OIDC Authorization Code + PKCE; token in `sessionStorage`;
+   `Authorization: Bearer` for API/SSE.
+2. **Quarkus:** OIDC validates the JWT.
+3. **`OidcPrincipalProducer`:** builds a `Principal` from `sub`,
+   `preferred_username`, roles (Keycloak `realm_access.roles`, Auth0
+   `roles`/namespaced claims), groups and claims; stores it in
+   `PrincipalContext` (request-scoped), including the raw token.
 4. **`HttpApi`:**
-   - `POST /api/session`: `X-QOC-User` zuerst, sonst Principal-ID
-   - `POST /api/run`: nur `X-QOC-User`, Fallback `anonymous`
-   - `GET /api/session`/`{id}`: Principal-ID für Ownership
-   - Agent-Authoring: `admin`
-5. **`Engine.createSession`:** User-ID → `<workspace>/<user>` (außer
+   - `POST /api/session`: `X-QOC-User` first, then Principal ID
+   - `POST /api/run`: only `X-QOC-User`, fallback `anonymous`
+   - `GET /api/session`/`{id}`: Principal ID for ownership
+   - Agent authoring: `admin`
+5. **`Engine.createSession`:** user ID → `<workspace>/<user>` (except
    `opencode`/`anonymous`/`local`).
-6. **`Engine.isOwner`:** prüft nur den Verzeichnis-Prefix.
-7. **`McpServerResource`:** User = Principal-ID; Raw-Token wird an den
-   Agent-Fetch weitergereicht.
-8. **`ToolContext`:** enthält **keinen** Principal.
-9. **A2A:** Basic oder Trusted-Proxy-Header.
+6. **`Engine.isOwner`:** checks only the directory prefix.
+7. **`McpServerResource`:** user = Principal ID; raw token is forwarded to
+   the agent fetch.
+8. **`ToolContext`:** contains **no** principal.
+9. **A2A:** Basic or trusted-proxy header.
 
-### Bekannte Lücken
+### Known gaps
 
-- `X-QOC-User` ist im OIDC-Modus spoofbar; `POST /api/run` nutzt nicht den
-  authentifizierten Principal.
-- `SessionInfo` hat kein `owner`-Feld; Ownership hängt am Verzeichnisnamen.
-- Rollen werden kaum durchgesetzt (nur `admin`); keine `agent:read`/
-  `skill:read`/`mcp:run`-Scopes.
-- Kein Principal im `ToolContext`; async Tools können den Request-Scope
-  verlieren.
-- MCP-Server erhalten keinen per-User-Token; globale Credentials.
-- Raw-Token wird nur für den Agent-Fetch weitergereicht.
+- `X-QOC-User` is spoofable in OIDC mode; `POST /api/run` does not use the
+  authenticated principal.
+- `SessionInfo` has no `owner` field; ownership depends on the directory
+  name.
+- Roles are barely enforced (only `admin`); no `agent:read`/
+  `skill:read`/`mcp:run` scopes.
+- No principal in `ToolContext`; async tools can lose the request scope.
+- MCP servers receive no per-user token; global credentials.
+- Raw token is only forwarded for the agent fetch.
 
-### Zielbild
+### Target state
 
-- `sub` als stabiler Owner-Key; `SessionInfo.owner` + Migration
-- `X-QOC-User` im OIDC-Modus ignorieren; Admin-Impersonation nur explizit
-  (`act-as`) und auditierbar
+- `sub` as stable owner key; `SessionInfo.owner` + migration
+- Ignore `X-QOC-User` in OIDC mode; admin impersonation only explicitly
+  (`act-as`) and auditable
 - Scopes: `qoc-admin`, `qoc-editor` (`agent:write`), `qoc-user`
-  (`agent:read`, `mcp:run`, eigene Sessions), `qoc-worker` (`agent:read`,
+  (`agent:read`, `mcp:run`, own sessions), `qoc-worker` (`agent:read`,
   `mcp:run`)
-- Principal im `ToolContext` / `ExecutionIdentity`
-- Token Exchange (RFC 8693) für ausgehende Aufrufe (`aud=mcp-server`,
-  `aud=qoc-engine`), `act`-Claim für Delegation
-- Per-User-Credentials verschlüsselt, kein globaler MCP-Token
-- User-getriggerte Worker: delegierter User-Token; Systemtasks: Service-Identity
+- Principal in `ToolContext` / `ExecutionIdentity`
+- Token exchange (RFC 8693) for outgoing calls (`aud=mcp-server`,
+  `aud=qoc-engine`), `act` claim for delegation
+- Per-user credentials encrypted, no global MCP token
+- User-triggered workers: delegated user token; system tasks: service identity
 
 ---
 
-## 7. Entscheidungen (Serverless MVP)
+## 7. Decisions (Serverless MVP)
 
-| # | Frage | Entscheidung |
+| # | Question | Decision |
 |---|---|---|
-| 1 | `shell` im Worker | lokal im ephemeren Scratch erlaubt |
-| 2 | `write`/`edit` im Scratch | ja |
+| 1 | `shell` in the worker | allowed locally in the ephemeral scratch |
+| 2 | `write`/`edit` in scratch | yes |
 | 3 | `subagent`/`task` | deny |
-| 4 | `max-concurrent-prompts` | konfigurierbar: 1 (Lambda/Cloud Run) oder 4 (lokal/VM) |
-| 5 | MCP-Namespace fehlt | Warnung in `_meta.warnings`, optional Strict-Mode |
+| 4 | `max-concurrent-prompts` | configurable: 1 (Lambda/Cloud Run) or 4 (local/VM) |
+| 5 | MCP namespace missing | warning in `_meta.warnings`, optional strict mode |
 
 ---
 
-## 8. Implementierungsplan
+## 8. Implementation plan
 
 ### Serverless MVP
 
-1. Leaf-Tool-Policy in `Engine.filterToolSnapshot` (Serverless-Modus)
+1. Leaf tool policy in `Engine.filterToolSnapshot` (serverless mode)
 2. Default `mode=ephemeral` in `McpServerResource.toolsCall`
-3. Session-Cleanup nach dem Call (`sessionMode=new`, `retain=false`)
-4. `_meta.warnings` für fehlende MCP-Namespaces; optional Strict-Mode
-5. `skills.filter` in `EngineConfig.agentToJson` serialisieren (Bugfix)
+3. Session cleanup after the call (`sessionMode=new`, `retain=false`)
+4. `_meta.warnings` for missing MCP namespaces; optional strict mode
+5. Serialize `skills.filter` in `EngineConfig.agentToJson` (bugfix)
 6. Compose: `ENGINE_SERVERLESS_TOOL_PROFILE=leaf`,
    `ENGINE_SESSION_TEMP_DIR=/tmp/qoc-sessions`,
    `ENGINE_MAX_CONCURRENT_PROMPTS=1|4`
 
 ### Worker Mode
 
-1. `ENGINE_ROLE=server|worker` einführen
+1. Introduce `ENGINE_ROLE=server|worker`
 2. `ENGINE_WORKSPACE_MODE=shared|ephemeral`
-3. Agent-Fetch unabhängig von `ENGINE_MODE` (nur Source-URL entscheidet)
-4. Authoring per Authz + read-only Mounts erzwingen
-5. Scopes `agent:read`/`agent:write`/`mcp:run` durchsetzen
-6. `SessionInfo.owner` + DB-Migration
-7. Principal in `ToolContext` propagieren
+3. Decouple agent fetch from `ENGINE_MODE` (only source URL decides)
+4. Enforce authoring via authz + read-only mounts
+5. Enforce scopes `agent:read`/`agent:write`/`mcp:run`
+6. `SessionInfo.owner` + DB migration
+7. Propagate principal into `ToolContext`
 
 ### Tests
 
-- Serverless: Leaf-Policy, Ephemeral-Cleanup, parallele Calls,
-  MCP-Filter/Warnungen, Inline-Config ohne Dateisystem
-- Worker: Read-only Agent-Config, 403 bei Authoring, gemeinsamer Workspace
-- Identität: kein `X-QOC-User`-Spoofing im OIDC-Modus, Owner-Feld,
-  Rollen/Scopes
+- Serverless: leaf policy, ephemeral cleanup, parallel calls,
+  MCP filter/warnings, inline config without filesystem
+- Worker: read-only agent config, 403 on authoring, shared workspace
+- Identity: no `X-QOC-User` spoofing in OIDC mode, owner field,
+  roles/scopes
 - JaCoCo ≥ 80 %
 
 ---
 
-## 9. Offene Punkte
+## 9. Open points
 
-- Fire-and-forget-Async-Jobs oder synchrone MCP-Calls mit Orchestrator-Parallelität?
-- Artefakt-Handoff: strukturiertes Output vs. Object Storage vs. MCP
-- Remote-Skills: Katalog im Agent-Fetch oder separater Endpoint?
-- MCP-Config: strikt deployment-lokal (empfohlen) oder sanitisiert vom Server?
-- Scope-Namen und Rollenmodell final festlegen
-- Worker-Rolle: eigene `ENGINE_ROLE`-Achse oder nur Capability-Flags?
+- Fire-and-forget async jobs or synchronous MCP calls with orchestrator
+  parallelism?
+- Artifact handoff: structured output vs. object storage vs. MCP
+- Remote skills: catalog in agent fetch or separate endpoint?
+- MCP config: strictly deployment-local (recommended) or sanitized from
+  server?
+- Finalize scope names and role model
+- Worker role: own `ENGINE_ROLE` axis or only capability flags?
 
 ---
 
-## 10. Subagent-Delegation
+## 10. Subagent delegation
 
-Der Entwurf für die Delegation an lokale, Serverless- und Server-Worker über
-das `subagent`-Tool – inklusive Worker-Pool, Routing, MCP-Proxy-Varianten und
-Cloud-Topologien – steht in `guides/Subagent-Delegation.md`.
+The design for delegation to local, serverless, and server workers via the
+`subagent` tool – including worker pool, routing, MCP proxy variants, and
+cloud topologies – is in `guides/Subagent-Delegation.md`.
 
+## 11. Registry role (optional)
 
-## 11. Registry-Rolle (optional)
-
-QOC kann ohne Ausführung als **Agent-Registry** betrieben werden:
+QOC can run without execution as an **agent registry**:
 
 ```env
 ENGINE_MODE=server
@@ -505,8 +505,9 @@ ENGINE_ROLE=registry
 ENGINE_AGENT_AUTHORING_ENABLED=true
 ```
 
-- Agent-CRUD/Read (`/api/agent`) bleibt verfügbar.
-- Ausführung (`/api/run`, Sessions, MCP-Tool-Calls, A2A) liefert HTTP 503.
-- Serverless- und VM-Worker nutzen `ENGINE_AGENT_SOURCE_URL` auf die Registry.
+- Agent CRUD/read (`/api/agent`) remains available.
+- Execution (`/api/run`, sessions, MCP tool calls, A2A) returns HTTP 503.
+- Serverless and VM workers use `ENGINE_AGENT_SOURCE_URL` against the
+  registry.
 
 Details: `guides/Agent-Registry.md`.

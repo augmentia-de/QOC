@@ -1,121 +1,121 @@
-# resilience.md — Robuste Agenten-Infrastruktur für QOC
+# resilience.md — Robust Agent Infrastructure for QOC
 
-## 1. Zielsetzung
+## 1. Objective
 
-Deterministische Infrastruktur-Schicht ("Wrapper") um den probabilistischen LLM-Agenten.
-Fängt Ausfälle ab (Netzwerk, Berechtigungen, Timeouts, Endlosschleifen), sichert den
-Zustand persistent und eskaliert bei unlösbaren Fehlern automatisiert.
+Deterministic infrastructure layer ("wrapper") around the probabilistic LLM agent.
+Absorbs failures (network, permissions, timeouts, infinite loops), persists
+state durably, and escalates automatically when errors cannot be resolved.
 
-## 2. Architektur-Übersicht
+## 2. Architecture Overview
 
-Sechs Phasen, sequenziell bzw. überwacht:
+Six phases, sequential or monitored:
 
-1. **Pre-Flight Checks** — proaktive Validierung vor Task-Start
-2. **State & Checkpoint Initialization** — Persistenz-Setup
-3. **Execution Loop mit Timeouts & Watchdogs** — Laufzeitüberwachung
-4. **Fehlerklassifizierung & Smart Retry** — transiente vs. permanente Fehler
-5. **LLM-Fehleranalyse & Selbstheilung** — Triage-Schleife bei lösbaren Fehlern
-6. **Eskalation, Alerting & HITL** — bei finalem Scheitern
+1. **Pre-Flight Checks** — proactive validation before task start
+2. **State & Checkpoint Initialization** — persistence setup
+3. **Execution Loop with Timeouts & Watchdogs** — runtime monitoring
+4. **Error Classification & Smart Retry** — transient vs. permanent errors
+5. **LLM Error Analysis & Self-Healing** — triage loop for solvable errors
+6. **Escalation, Alerting & HITL** — on final failure
 
-## 3. Phasen im Detail
+## 3. Phases in Detail
 
-### Phase 0: Housekeeping (Bug-Fixes)
+### Phase 0: Housekeeping (Bug Fixes)
 
-#### 0.1 idle_outcome setzen
-- **Problem:** Keine Session hat `idle_outcome` gesetzt (immer NULL).
-- **Fix:** In `Engine.runPrompt()`, nach TurnOutcome-Berechnung `sessions.put()` mit idle_outcome.
-- **Dateien:** `Engine.java` (runPrompt, ~Zeile 1925)
-- **Aufwand:** 0.5 Tag
+#### 0.1 Set idle_outcome
+- **Problem:** No session has `idle_outcome` set (always NULL).
+- **Fix:** In `Engine.runPrompt()`, after TurnOutcome computation, call `sessions.put()` with idle_outcome.
+- **Files:** `Engine.java` (runPrompt, ~line 1925)
+- **Effort:** 0.5 day
 
-#### 0.2 Subagent-Deduplizierung
-- **Problem:** 7× Architecture, 4× Execution Subagents für einen Schritt.
-- **Fix:** Vor `runner.run()` prüfen ob Session für Agent existiert; Prompt-Level-Regel im Orchestrator.
-- **Dateien:** `SubagentTool.java`, `SubagentRunner.java`, Orchestrator-System-Prompt
-- **Aufwand:** 1 Tag
+#### 0.2 Subagent Deduplication
+- **Problem:** 7× Architecture, 4× Execution subagents for one step.
+- **Fix:** Before `runner.run()`, check whether a session for the agent exists; add a prompt-level rule in the orchestrator.
+- **Files:** `SubagentTool.java`, `SubagentRunner.java`, Orchestrator system prompt
+- **Effort:** 1 day
 
-#### 0.3 Leere Sessions auto-löschen
-- **Problem:** Sessions mit 0 Messages bleiben in DB.
-- **Fix:** Am Ende von `runPrompt()`: wenn `messageCount == 0`, `sessionRetention.delete(id)`.
-- **Dateien:** `Engine.java`, `SessionRetention.java`
-- **Aufwand:** 0.5 Tag
+#### 0.3 Auto-delete empty sessions
+- **Problem:** Sessions with 0 messages remain in the DB.
+- **Fix:** At the end of `runPrompt()`: if `messageCount == 0`, call `sessionRetention.delete(id)`.
+- **Files:** `Engine.java`, `SessionRetention.java`
+- **Effort:** 0.5 day
 
-#### 0.4 Question-Resolution-Bug fixen
-- **Problem:** REST-API-Antwort auf Frage resumed den blockierten Turn nicht.
-- **Root Cause:** `DurableQuestionSource.ask()` blockt auf `webQuestionSource.ask()` (CompletableFuture). API ruft `resolve()` auf, aber der blockierende Thread wird nicht aufgeweckt.
-- **Fix:** Callback-basierte Auflösung statt Polling; `WebQuestionSource.ask()` ohne Timeout, API-Resolution completen den Future korrekt.
-- **Dateien:** `DurableQuestionSource.java`, `WebQuestionSource.java`, `HttpApi.java`
-- **Aufwand:** 1–2 Tage
+#### 0.4 Fix Question-Resolution bug
+- **Problem:** REST API response to a question does not resume the blocked turn.
+- **Root Cause:** `DurableQuestionSource.ask()` blocks on `webQuestionSource.ask()` (CompletableFuture). The API calls `resolve()`, but the blocking thread is not woken up.
+- **Fix:** Callback-based resolution instead of polling; `WebQuestionSource.ask()` without timeout; API resolution completes the future correctly.
+- **Files:** `DurableQuestionSource.java`, `WebQuestionSource.java`, `HttpApi.java`
+- **Effort:** 1–2 days
 
-#### 0.5 Approval-Cache bereinigen
-- **Problem:** 180 `pending_approval`-Einträge (alle DECIDED), keine Bereinigung.
-- **Fix:** Periodisch (täglich): `DELETE FROM pending_approval WHERE state='DECIDED' AND created_at < NOW() - INTERVAL '7 days'`.
-- **Dateien:** `SessionRetention.java` oder neues `ApprovalRetention.java`
-- **Aufwand:** 0.5 Tag
+#### 0.5 Clean up Approval Cache
+- **Problem:** 180 `pending_approval` entries (all DECIDED), no cleanup.
+- **Fix:** Periodically (daily): `DELETE FROM pending_approval WHERE state='DECIDED' AND created_at < NOW() - INTERVAL '7 days'`.
+- **Files:** `SessionRetention.java` or new `ApprovalRetention.java`
+- **Effort:** 0.5 day
 
 #### 0.6 Tool-Result-Cache Eviction
-- **Problem:** 1541 Einträge, keine Eviction.
-- **Fix:** TTL oder LRU in `ToolResultCache`.
-- **Dateien:** `SqliteToolResultCache.java`, `SqlToolResultCache.java`
-- **Aufwand:** 0.5 Tag
+- **Problem:** 1541 entries, no eviction.
+- **Fix:** TTL or LRU in `ToolResultCache`.
+- **Files:** `SqliteToolResultCache.java`, `SqlToolResultCache.java`
+- **Effort:** 0.5 day
 
-#### 0.7 Snapshots aktivieren
-- **Problem:** 0 Snapshots in DB (Feature deaktiviert).
-- **Fix:** `ENGINE_REVERT_SNAPSHOT=true` in `.env` setzen.
-- **Aufwand:** 0.5 Tag
+#### 0.7 Activate snapshots
+- **Problem:** 0 snapshots in DB (feature disabled).
+- **Fix:** Set `ENGINE_REVERT_SNAPSHOT=true` in `.env`.
+- **Effort:** 0.5 day
 
 ### Phase 1: Core Resilience (Pre-Flight + Retry)
 
 #### 1.1 PreflightChecker
-- **Neue Klasse:** `engine.runtime.resilience.PreflightChecker`
-- **Checks:** DNS-Lookup, HTTP Health, API-Key-Validierung, DB-Connectivity, Workspace-Writability
+- **New class:** `engine.runtime.resilience.PreflightChecker`
+- **Checks:** DNS lookup, HTTP health, API key validation, DB connectivity, workspace writability
 - **Config:** `ENGINE_PREFLIGHT_ENABLED` (default: true)
 
 #### 1.2 ErrorClassifier
-- **Neue Klasse:** `engine.runtime.resilience.ErrorClassifier`
-- **Taxonomie:** TRANSIENT (Timeout, 429, 5xx), PERMANENT (403, 400), CORRECTABLE (KeyError, IllegalArgumentException), CRITICAL (Loop)
-- **Config:** keine neuen (intern)
+- **New class:** `engine.runtime.resilience.ErrorClassifier`
+- **Taxonomy:** TRANSIENT (timeout, 429, 5xx), PERMANENT (403, 400), CORRECTABLE (KeyError, IllegalArgumentException), CRITICAL (loop)
+- **Config:** none new (internal)
 
 #### 1.3 RetryPolicy (Exponential Backoff + Jitter)
-- **Neue Klasse:** `engine.runtime.resilience.RetryPolicy`
-- **Formel:** `t = min(Tmax, Base × 2^attempt) + Jitter(0..JitterMax)`
+- **New class:** `engine.runtime.resilience.RetryPolicy`
+- **Formula:** `t = min(Tmax, Base × 2^attempt) + Jitter(0..JitterMax)`
 - **Config:** `ENGINE_RETRY_BASE_DELAY_MS` (1000), `ENGINE_RETRY_MAX_DELAY_MS` (60000), `ENGINE_RETRY_JITTER_MS` (5000)
 
-#### 1.4 Engine-Integration
-- Preflight vor Run-Loop
-- ErrorClassifier + RetryPolicy in Retry-Logik
+#### 1.4 Engine Integration
+- Preflight before run loop
+- ErrorClassifier + RetryPolicy in retry logic
 - Config: `ENGINE_RETRY_MAX_ATTEMPTS` (3)
 
-### Phase 2: Safety (Timeouts + Loop-Detection)
+### Phase 2: Safety (Timeouts + Loop Detection)
 
-#### 2.1 Tool-Level Hard-Timeouts
-- **Änderung:** `ToolRuntime.execute()` wrapt Tool-Ausführung in `Future.get(timeout)`
+#### 2.1 Tool-Level Hard Timeouts
+- **Change:** `ToolRuntime.execute()` wraps tool execution in `Future.get(timeout)`
 - **Config:** `ENGINE_STEP_TIMEOUT_SECONDS` (30)
 
 #### 2.2 LoopDetector
-- **Neue Klasse:** `engine.runtime.resilience.LoopDetector`
-- **Erkennt:** gleicher Tool-Name + gleiche Input-Parameter N× in Folge
+- **New class:** `engine.runtime.resilience.LoopDetector`
+- **Detects:** same tool name + same input parameters N× in a row
 - **Config:** `ENGINE_LOOP_DETECTION_THRESHOLD` (5)
 
 ### Phase 3: Self-Healing (Triage)
 
 #### 3.1 TriageService
-- **Neue Klasse:** `engine.runtime.resilience.TriageService`
-- **Prompt:** Stacktrace + Tool-Output + State → JSON-Korrekturvorschlag
+- **New class:** `engine.runtime.resilience.TriageService`
+- **Prompt:** Stack trace + tool output + state → JSON correction suggestion
 - **Config:** `ENGINE_TRIAGE_ENABLED` (false), `ENGINE_TRIAGE_MAX_ATTEMPTS` (3), `ENGINE_TRIAGE_MODEL`
 
 ### Phase 4: Escalation (Webhook + HITL)
 
 #### 4.1 WebhookAlerter
-- **Neue Klasse:** `engine.adapter.alerting.WebhookAlerter`
-- **Formate:** Slack, Telegram, Generic JSON
+- **New class:** `engine.adapter.alerting.WebhookAlerter`
+- **Formats:** Slack, Telegram, Generic JSON
 - **Config:** `ENGINE_WEBHOOK_ENABLED` (false), `ENGINE_WEBHOOK_URL`, `ENGINE_WEBHOOK_FORMAT`
 
-#### 4.2 HITL-Aktions-Links
-- "Berechtigung temporär erteilen" → `/api/approval/{token}/grant`
-- "Task fortsetzen" → `/api/session/{id}/resume`
-- "Task abbrechen" → `/api/session/{id}/interrupt`
+#### 4.2 HITL Action Links
+- "Grant permission temporarily" → `/api/approval/{token}/grant`
+- "Continue task" → `/api/session/{id}/resume`
+- "Cancel task" → `/api/session/{id}/interrupt`
 
-## 4. Neue Config-Properties
+## 4. New Config Properties
 
 ```properties
 # Phase 0
@@ -143,51 +143,52 @@ ENGINE_WEBHOOK_URL=
 ENGINE_WEBHOOK_FORMAT=generic
 ```
 
-## 5. Neue Komponenten
+## 5. New Components
 
-| Komponente | Paket | Beschreibung |
+| Component | Package | Description |
 |---|---|---|
-| `PreflightChecker` | `engine.runtime.resilience` | DNS, Health, Auth-Validierung |
-| `ErrorClassifier` | `engine.runtime.resilience` | Fehler-Taxonomie |
-| `RetryPolicy` | `engine.runtime.resilience` | Exponential Backoff + Jitter |
-| `LoopDetector` | `engine.runtime.resilience` | Erkennt wiederholte Tool-Calls |
-| `TriageService` | `engine.runtime.resilience` | LLM-basierte Fehleranalyse |
-| `WebhookAlerter` | `engine.adapter.alerting` | Slack/Telegram/Webhook |
-| `ApprovalRetention` | `engine.runtime.resilience` | Bereinigung entschiedener Approvals |
+| `PreflightChecker` | `engine.runtime.resilience` | DNS, health, auth validation |
+| `ErrorClassifier` | `engine.runtime.resilience` | Error taxonomy |
+| `RetryPolicy` | `engine.runtime.resilience` | Exponential backoff + jitter |
+| `LoopDetector` | `engine.runtime.resilience` | Detects repeated tool calls |
+| `TriageService` | `engine.runtime.resilience` | LLM-based error analysis |
+| `WebhookAlerter` | `engine.adapter.alerting` | Slack/Telegram/webhook |
+| `ApprovalRetention` | `engine.runtime.resilience` | Cleanup of decided approvals |
 
-## 6. Aufwand & Reihenfolge
+## 6. Effort & Order
 
-| Phase | Aufwand | Priorität |
+| Phase | Effort | Priority |
 |---|---|---|
-| Phase 0 (Housekeeping) | 4–5 Tage | **Hoch** |
-| Phase 1 (Core Resilience) | 3–5 Tage | **Hoch** |
-| Phase 2 (Safety) | 2 Tage | **Mittel** |
-| Phase 4 (Escalation) | 2–3 Tage | **Mittel** |
-| Phase 3 (Self-Healing) | 3–5 Tage | **Niedrig** |
+| Phase 0 (Housekeeping) | 4–5 days | **High** |
+| Phase 1 (Core Resilience) | 3–5 days | **High** |
+| Phase 2 (Safety) | 2 days | **Medium** |
+| Phase 4 (Escalation) | 2–3 days | **Medium** |
+| Phase 3 (Self-Healing) | 3–5 days | **Low** |
 
-**Gesamt: ~15–20 Tage**
+**Total: ~15–20 days**
 
-### Empfohlene Reihenfolge
-1. Phase 0 (Bug-Fixes, sofortiger Mehrwert)
+### Recommended order
+1. Phase 0 (Bug fixes, immediate value)
 2. Phase 1 (Core Resilience)
 3. Phase 2 (Safety)
-4. Phase 4 (Escalation, einfach, hoher Mehrwert)
-5. Phase 3 (Self-Healing, komplex, hoher Mehrwert)
+4. Phase 4 (Escalation, simple, high value)
+5. Phase 3 (Self-Healing, complex, high value)
 
-## 7. Offene Entscheidungen
+## 7. Open Decisions
 
-1. Soll Phase 5 (Checkpoint/Resume) entfallen? QOC hat bereits Session-Persistenz.
-2. Soll der Triage-Service ein separates, schnelleres Modell nutzen?
-3. Welches Webhook-Format hat Priorität (Slack/Telegram/Generic)?
-4. Soll die Question-Resolution über WebSocket statt REST-Polling laufen?
-5. Soll `ENGINE_REVERT_SNAPSHOT` default auf `true` gesetzt werden?
+1. Should Phase 5 (Checkpoint/Resume) be dropped? QOC already has session persistence.
+2. Should the triage service use a separate, faster model?
+3. Which webhook format has priority (Slack/Telegram/Generic)?
+4. Should question resolution run over WebSocket instead of REST polling?
+5. Should `ENGINE_REVERT_SNAPSHOT` default to `true`?
 
-## 8. Verifikation
+## 8. Verification
 
-Nach jeder Phase:
-- `mvn test` grün
+After each phase:
+- `mvn test` green
 - JaCoCo Coverage ≥ 80%
-- ArchUnit-Regeln für neue Pakete
-- Integrationstest: `qoc run --resilient "test prompt"` mit simuliertem Fehler
-- DB-Prüfung: `idle_outcome` gesetzt, keine leeren Sessions, keine orphaned Approvals
-path: /home/torsten/dev/my-projects/2oc/qoc/docs/resilience.md
+- ArchUnit rules for new packages
+- Integration test: `qoc run --resilient "test prompt"` with simulated error
+- DB check: `idle_outcome` set, no empty sessions, no orphaned approvals
+`, "path">
+/home/torsten/dev/my-projects/2oc/qoc/docs/resilience.md

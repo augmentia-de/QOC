@@ -1,13 +1,13 @@
-# Lokale Docker- und Native-Deployment
+# Local Docker and Native Deployment
 
 > **Status:** implemented
-> **Quelle:** `deploy/README.md`, `deploy/docker-compose.yml`, `deploy/Dockerfile`,
+> **Source:** `deploy/README.md`, `deploy/docker-compose.yml`, `deploy/Dockerfile`,
 > `deploy/Dockerfile.native`
 
-Alle Varianten liegen in **einer** Datei (`deploy/docker-compose.yml`) und haben
-ein eigenes Profil sowie einen festen Host-Port:
+All variants live in **one** file (`deploy/docker-compose.yml`) and each has
+its own profile as well as a fixed host port:
 
-| Service | Profil | Port |
+| Service | Profile | Port |
 |---|---|---|
 | `qoc-dev` | `dev` | 8070 |
 | `qoc-local` | `local` | 8071 |
@@ -24,17 +24,17 @@ ein eigenes Profil sowie einen festen Host-Port:
 ```bash
 cd qoc
 cp deploy/.env.example deploy/.env
-# .env anpassen
+# adjust .env
 ./deploy/build-image.sh
 cd deploy
 docker compose up -d qoc-local
 ```
 
 - Image: `qoc-engine:local`
-- Port: `8071` (fest, kein `QOC_PORT` mehr)
-- Datenbank: PostgreSQL (extern, z. B. Neon) oder SQLite
+- Port: `8071` (fixed, no `QOC_PORT` anymore)
+- Database: PostgreSQL (external, e.g. Neon) or SQLite
 - Mounts: `workspace`, `home`, `qoc.db`, `log`
-- Ohne Dienstnamen startet nichts, weil alle Services Profile haben
+- Nothing starts without a service name, because all services have profiles
 
 ## Native (Docker Compose)
 
@@ -49,10 +49,10 @@ docker compose --profile native up -d --build
 
 - Image: `qoc-engine:native`
 - Port: `8077`
-- Enthält git + util-linux (Worktree-Tools, PTY)
-- `AGENTS.native.md` wird read-only gemountet
+- Contains git + util-linux (worktree tools, PTY)
+- `AGENTS.native.md` is mounted read-only
 
-## Native (ohne Docker)
+## Native (without Docker)
 
 ```bash
 cd qoc
@@ -60,19 +60,19 @@ cp deploy/.env.example deploy/.env
 ./start-native.sh
 ```
 
-- Lauscht auf `${QUARKUS_HTTP_PORT:-8007}`
-- Fallback auf SQLite wenn keine JDBC-URL konfiguriert
+- Listens on `${QUARKUS_HTTP_PORT:-8007}`
+- Falls back to SQLite when no JDBC URL is configured
 
-## Shell-Isolation
+## Shell Isolation
 
-`qoc-secure-shell` (Port 8076) mountet ausschließlich `/data/home`:
-andere Datenpfade (`/data/workspace`, `/data/qoc.db`, `../log`) existieren im
-Container nicht. Details: `deploy/docker-secure-shell/README.md`.
+`qoc-secure-shell` (Port 8076) mounts only `/data/home`:
+other data paths (`/data/workspace`, `/data/qoc.db`, `../log`) do not exist in
+the container. Details: `deploy/docker-secure-shell/README.md`.
 
 ## Hardening
 
-Siehe `06-security-hardening.md`. Kurzfassung:
-- Read-only Root-Dateisystem
-- Targeted Mounts (kein ganzes `/data`)
+See `06-security-hardening.md`. Summary:
+- Read-only root filesystem
+- Targeted mounts (no whole `/data`)
 - `cap_drop ALL`, `no-new-privileges`, `pids_limit: 256`
-- bwrap deaktiviert in Docker (`ENGINE_SHELL_SANDBOX_ENABLED=false`)
+- bwrap disabled in Docker (`ENGINE_SHELL_SANDBOX_ENABLED=false`)

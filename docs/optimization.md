@@ -1,12 +1,12 @@
 # QOC – Optimization (consolidated)
 
-> Konsolidierte Dokumentation der Optimierungshebel in QOC.
-> Entstanden aus `optimization.md` und `optimization.md`.
+> Consolidated documentation of the optimization levers in QOC.
+> Created from `optimization.md` and `optimization.md`.
 > Status: 2026-11-09
 
 ---
 
-# Teil 1 – Optimization Opportunities
+# Part 1 – Optimization Opportunities
 
 # QOC – Optimization Opportunities
 
@@ -480,7 +480,7 @@ These values are starting points, not dogma:
 - `engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java`
 - `engine/src/main/java/de/augmentia/oc/engine/runtime/compaction/CompactionService.java`
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java`
-## Anhang: Ideen und Skizzen (aus optimization.md)
+## Appendix: Ideas and sketches (from optimization.md)
 
 # Ideas
 
@@ -830,7 +830,7 @@ MCP endpoint is another outer-skin adapter.
 
 ---
 
-# Teil 2 – Prompt Optimization
+# Part 2 – Prompt Optimization
 
 # optimization.md – Prompt Optimization for QOC
 
@@ -1342,6 +1342,6 @@ multi-skill workflows.
 *Created: 2026-10-28*
 ```
 
-Wenn du in den Bau-Modus wechselst, kann ich diese Datei als `docs/optimization.md` anlegen und die README/INDEX-Verweise ergänzen.<|end|><|start|>user<|channel|><system-reminder>
+When you switch to build mode, I can create this file as `docs/optimization.md` and add the README/INDEX references.<|end|><|start|>user<|channel|><system-reminder>
 You are NO LONGER in Plan mode. The previous Plan restrictions no longer apply. Any Plan mode instructions from earlier in this conversation are no longer active.
 </system-reminder><|end|><|start|>user<|message|>start

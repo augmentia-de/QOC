@@ -1,1029 +1,1028 @@
-# Learnings aus `deepseek-harness` für QOC (code-basiert)
+# Learnings from `deepseek-harness` for QOC (code-based)
 
-> Quelle: `/home/torsten/dev/my-projects/deepseek-harness` (Cordis-basiertes Agent-Harness, TS/Node).  
-> Methode: Analyse der Subsystem-Docs **und** der Quelltypen (`packages/*/src/*.ts`).  
-> Ziel: Was QOC aus diesem System übernehmen kann oder sollte — Architektur, Patterns, Features, Invarianten.  
-> Status: 2026-11-02 · Analyse, keine Code-Änderung.
-
----
-
-## 1. Kontext
-
-`deepseek-harness` (dsh) ist ein plugin-basiertes Agent-Harness auf Basis von **Cordis** (plugin framework: Services, Events, reversible Effects). Alles ist Plugin — Modell-Adapter, Tool-Registry, Session-Log, Agent-Loop. QOC ist ein Java/Quarkus-Engine mit festem Kern. Die Learnings sind daher **konzeptionell**: Muster, Datenmodelle, Invarianten, die QOC übernehmen oder nachrüsten kann, ohne die Plugin-Architektur zu kopieren.
+> Source: `/home/torsten/dev/my-projects/deepseek-harness` (Cordis-based Agent Harness, TS/Node).
+> Method: Analysis of subsystem docs **and** source types (`packages/*/src/*.ts`).
+> Goal: What QOC can or should adopt from this system — architecture, patterns, features, invariants.
+> Status: 2026-11-02 · Analysis, no code change.
 
 ---
 
-## 2. Typsystem & Invarianten (code-level)
+## 1. Context
 
-### 2.1 Branded Types überall
-dsh brandet **jede** ID und jeden numerischen Cursor: `SessionId`, `SessionSeq`, `SessionLogOffset`, `FsTargetKey`, `FsVersion`, `ApprovalRequestId`, `WorkspaceId`, `GoalId`, `JobId`, `CredentialRef`, `CredentialKey`, `SpillLocator`, `AttachmentId`, `SubagentPromptRequestId`, `SessionTitleProviderId`, `GoalRef`.  
-Numerische Seqs werden mit Validierung gebranded (`SessionSeq`: non-negative safe integer, kein `-0`).  
-**QOC-Bezug:** QOC hat `SessionId`, `CallId`, `ToolName`, `MessageId`, aber **keine gebrandeten Seq/Cursor/Version-Tokens**. Lernpunkt: **Branded Types für Seq, Offset, Version-Tokens** einführen, um Verwechslungen (z. B. `updated()`-Instant vs. Seq) zur Compile-Zeit zu verhindern. Besonders `FsVersion` und `FsTargetKey` als Opaque-Tokens.
-
-### 2.2 Opaque Targets/Versionen im Filesystem
-`FsTargetKey` (Opake Key, Backend bestimmt Repräsentation), `FsVersion` (Opake Freshness-Token). Consumers **dürfen nicht parsen**. `FsObservation = present(version) | absent`. `FsWriteIntent = createIfAbsent | replaceIfVersion(version)`.  
-**QOC-Bezug:** QOC's Filesystem-Tools haben keine Versions-Stale-Guards. Lernpunkt: **Version-basierte Stale-Guards** (`replaceIfVersion`) + `createIfAbsent` (atomares Create) einführen. Verhindert Lost-Update bei concurrent Edits.
-
-### 2.3 FsWriteOutcome mit before/after
-`FsWriteOutcome` trägt `before: string | null` (LF-normalisiert, vor dem Write) und `after: string`. `FsEditOutcome` trägt `before`/`after`. `FsDeleteOutcome` trägt `before`.  
-**QOC-Bezug:** QOC's Edit-Tool gibt nur Erfolg/Fehler. Lernpunkt: **before/after im Ergebnis** zurückgeben, damit UI/Diff/Revert ohne Re-Read auskommen. QOC hat Revert-Staging — das würde davon profitieren.
-
-### 2.4 Typed FsError-Codes
-`FS_ERROR_CODES` = 15 stabile Codes (`FS_NOT_FOUND`, `FS_STALE_VERSION`, `FS_AMBIGUOUS_EDIT`, `FS_PATCH_MISMATCH`, …). `FsError extends HarnessError`.  
-**QOC-Bezug:** QOC hat `FailureKind` für Provider, aber **keine typisierten FS-Fehlercodes**. Lernpunkt: **FS-Error-Taxonomie** (wie `FailureKind` für Provider) einführen.
-
-### 2.5 Empty-is-Absent (Credentials)
-Leerer gespeicherter Wert = absent überall. `CredentialInfo { configured, source?, writable }`.  
-**QOC-Bezug:** QOC's Settings/Provider-Config. Lernpunkt: **Empty-is-Absent-Regel** konsistent anwenden (Provider-URL, API-Key).
+`deepseek-harness` (dsh) is a plugin-based agent harness built on **Cordis** (plugin framework: services, events, reversible effects). Everything is a plugin — model adapter, tool registry, session log, agent loop. QOC is a Java/Quarkus engine with a fixed core. The learnings are therefore **conceptual**: patterns, data models, invariants that QOC can adopt or retrofit without copying the plugin architecture.
 
 ---
 
-## 3. Architektur-Prinzipien
+## 2. Type system & invariants (code-level)
 
-### 3.1 Capability Seams (Service Definition / Provider / Consumer)
-Jede Fähigkeit ist Dreiklang: Service Definition (Interface), Service Provider (Impl), Consumer (z. B. Tool). Ein Provider-Swap ändert das ganze Produkt.  
-**QOC-Bezug:** QOC hat Ports (`ProviderAdapter`, `HttpTransport`, `SessionStore`). Lernpunkt: **jede** externe Fähigkeit (Spill, Compaction, Sandbox, Approval, Credentials, Storage) als expliziten Seam mit drei Rollen definieren.
+### 2.1 Branded types everywhere
+dsh brands **every** ID and numeric cursor: `SessionId`, `SessionSeq`, `SessionLogOffset`, `FsTargetKey`, `FsVersion`, `ApprovalRequestId`, `WorkspaceId`, `GoalId`, `JobId`, `CredentialRef`, `CredentialKey`, `SpillLocator`, `AttachmentId`, `SubagentPromptRequestId`, `SessionTitleProviderId`, `GoalRef`.
+Numeric seqs are branded with validation (`SessionSeq`: non-negative safe integer, no `-0`).
+**QOC relevance:** QOC has `SessionId`, `CallId`, `ToolName`, `MessageId`, but **no branded seq/cursor/version tokens**. Learning: **introduce branded types for seq, offset, version tokens** to prevent confusion (e.g. `updated()` instant vs. seq) at compile time. Especially `FsVersion` and `FsTargetKey` as opaque tokens.
+
+### 2.2 Opaque targets/versions in the filesystem
+`FsTargetKey` (opaque key, backend determines representation), `FsVersion` (opaque freshness token). Consumers **must not parse**. `FsObservation = present(version) | absent`. `FsWriteIntent = createIfAbsent | replaceIfVersion(version)`.
+**QOC relevance:** QOC's filesystem tools have no version-based stale guards. Learning: **introduce version-based stale guards** (`replaceIfVersion`) + `createIfAbsent` (atomic create). Prevents lost updates on concurrent edits.
+
+### 2.3 FsWriteOutcome with before/after
+`FsWriteOutcome` carries `before: string | null` (LF-normalized, before the write) and `after: string`. `FsEditOutcome` carries `before`/`after`. `FsDeleteOutcome` carries `before`.
+**QOC relevance:** QOC's edit tool returns only success/failure. Learning: **return before/after in the result**, so UI/diff/revert work without re-reading. QOC has revert staging — it would benefit from this.
+
+### 2.4 Typed FsError codes
+`FS_ERROR_CODES` = 15 stable codes (`FS_NOT_FOUND`, `FS_STALE_VERSION`, `FS_AMBIGUOUS_EDIT`, `FS_PATCH_MISMATCH`, …). `FsError extends HarnessError`.
+**QOC relevance:** QOC has `FailureKind` for providers, but **no typed FS error codes**. Learning: **introduce an FS error taxonomy** (analogous to `FailureKind` for providers).
+
+### 2.5 Empty-is-absent (credentials)
+An empty stored value = absent everywhere. `CredentialInfo { configured, source?, writable }`.
+**QOC relevance:** QOC's settings/provider config. Learning: **apply the empty-is-absent rule consistently** (provider URL, API key).
+
+---
+
+## 3. Architectural principles
+
+### 3.1 Capability seams (service definition / provider / consumer)
+Every capability is a triad: service definition (interface), service provider (impl), consumer (e.g. tool). Swapping a provider changes the whole product.
+**QOC relevance:** QOC has ports (`ProviderAdapter`, `HttpTransport`, `SessionStore`). Learning: **define every** external capability (spill, compaction, sandbox, approval, credentials, storage) as an explicit seam with three roles.
 
 ### 3.2 "Model-visible means logged"
-Jede Modell-Anfrage muss aus dem Log rekonstruierbar sein. Neue modell-sichtbare Inputs brauchen Session-Events.  
-**QOC-Bezug:** QOC hat Event-Log. Lernpunkt: **Streng durchsetzen**, dass kein modell-sichtbarer State nur im Speicher liegt. Runtime-Context (Working Directory, Approval-Policy, Plan-Mode) muss als Event in den Log.
+Every model request must be reconstructable from the log. New model-visible inputs require session events.
+**QOC relevance:** QOC has an event log. Learning: **strictly enforce** that no model-visible state lives only in memory. Runtime context (working directory, approval policy, plan mode) must be an event in the log.
 
-### 3.3 Pure Message Projections
-Plugins ändern bestehende Message-Inhalte über **pure Projections** (keine Mutation), Detached Readers liefern dieselben Definitionen.  
-**QOC-Bezug:** QOC's `ConversationFolding`. Lernpunkt: **Projections als erstklassiges Konzept**.
+### 3.3 Pure message projections
+Plugins change existing message content via **pure projections** (no mutation); detached readers return the same definitions.
+**QOC relevance:** QOC's `ConversationFolding`. Learning: **projections as a first-class concept**.
 
-### 3.4 Capability-Events (fs/*, tools/*, telemetry/*)
-Policy/Hooks greifen über Events ein, ohne den Loop zu importieren.  
-**QOC-Bezug:** QOC hat keine Capability-Events. Lernpunkt: `fs/*`, `tools/*`, `telemetry/*` als Event-Domänen einführen.
+### 3.4 Capability events (fs/*, tools/*, telemetry/*)
+Policy/hooks intervene via events without importing the loop.
+**QOC relevance:** QOC has no capability events. Learning: introduce `fs/*`, `tools/*`, `telemetry/*` as event domains.
 
-### 3.5 Working Directories als eigene Schicht
-Aktives Verzeichnis ist Event (`working-directory/change`), immutable Header identifiziert Original-Projekt. Sandbox-Write-Roots bleiben am Original verankert.  
-**QOC-Bezug:** Lernpunkt: **Sandbox-Roots dürfen nicht mit cwd wandern** — wichtige Sicherheitsinvariante.
+### 3.5 Working directories as their own layer
+The active directory is an event (`working-directory/change`), immutable header identifies the original project. Sandbox write roots stay anchored to the original.
+**QOC relevance:** Learning: **sandbox roots must not travel with cwd** — an important security invariant.
 
 ---
 
-## 4. Session-Log & Replay
+## 4. Session log & replay
 
-### 4.1 Adjacent Migrations (immutable Generations)
-Session-Format-Versionen als `vN`-Dateien, nie umbenannt/überschrieben/gelöscht. `stat`/`list` wählen höchste kanonische Generation; `open` dekodiert Migrationskette. Migration fügt nur fehlendes `turn/end` ein, wenn schon späteres `turn/start` existiert. `SESSION_FORMAT_VERSION = 4`.  
-**QOC-Bezug:** QOC hat Flyway für DB-Schema, aber **keine Format-Versionierung für Event-Log**. Lernpunkt: Wenn QOC persistiertes Event-Format wechselt, immutable Generations + adjacent migrations.
+### 4.1 Adjacent migrations (immutable generations)
+Session format versions as `vN` files, never renamed/overwritten/deleted. `stat`/`list` pick the highest canonical generation; `open` decodes the migration chain. Migration only inserts a missing `turn/end` if a later `turn/start` already exists. `SESSION_FORMAT_VERSION = 4`.
+**QOC relevance:** QOC has Flyway for DB schema, but **no format versioning for the event log**. Learning: if QOC changes the persisted event format, use immutable generations + adjacent migrations.
 
-### 4.2 Surface vs. Shadowed vs. Log-only
-Jedes Event ist `current` (modell-sichtbar), `shadowed` (durch Compaction ersetzt) oder `log-only` (Audit). `foldSurface()` berechnet modell-sichtbare Sicht. `SessionEventSurface = 'current' | 'shadowed' | 'log-only'`.  
-**QOC-Bezug:** QOC hat keine Surface-Klassifikation. Lernpunkt: **Surface-Klassifikation** als First-Class-Konzept.
+### 4.2 Surface vs. shadowed vs. log-only
+Every event is `current` (model-visible), `shadowed` (replaced by compaction) or `log-only` (audit). `foldSurface()` computes the model-visible view. `SessionEventSurface = 'current' | 'shadowed' | 'log-only'`.
+**QOC relevance:** QOC has no surface classification. Learning: **surface classification** as a first-class concept.
 
-### 4.3 Session Projections (fold committed events)
-Domain-Plugins registrieren "Units", die committed Events falten; Carriers lesen fertige Werte. Registry subscribed einmal auf `session/event`. `ProjectionHandle` behält Reader auch nach Unregistration (`stateOf`, `readerFor`, `dispose`). Summary-excluded Keys (`SessionProjectionSummaryExcluded`).  
-**QOC-Bezug:** QOC's `ConversationFolding`. Lernpunkt: **Projections als Service** mit detached Readers.
+### 4.3 Session projections (fold committed events)
+Domain plugins register "units" that fold committed events; carriers read finished values. Registry subscribes once to `session/event`. `ProjectionHandle` keeps readers even after unregistration (`stateOf`, `readerFor`, `dispose`). Summary-excluded keys (`SessionProjectionSummaryExcluded`).
+**QOC relevance:** QOC's `ConversationFolding`. Learning: **projections as a service** with detached readers.
 
-### 4.4 Session Query (cross-corpus)
-`SessionRecord { header, live, persisted, formatStatus? }`. `SessionLogSnapshot` (detached, replay-validated). `SessionSurfaceSnapshot` (exact-read). Filter + Relationship-Tracing.  
-**QOC-Bezug:** QOC hat `SessionStore` + `Journal`. Lernpunkt: **Unified Query-Schicht** über live + persisted.
+### 4.4 Session query (cross-corpus)
+`SessionRecord { header, live, persisted, formatStatus? }`. `SessionLogSnapshot` (detached, replay-validated). `SessionSurfaceSnapshot` (exact-read). Filter + relationship tracing.
+**QOC relevance:** QOC has `SessionStore` + `Journal`. Learning: **unified query layer** over live + persisted.
 
-### 4.5 Session Title (latest-wins, pinned)
-`SessionTitleSource = fallback | provider (mit ModelIdentity) | user`. User-Rename pinnt (stopt Auto). `TitleInputState` als bounded Aggregate: `{ first, count, lastSeq }`.  
-**QOC-Bezug:** QOC hat `TitleGenerator`. Lernpunkt: **Pinning-Semantik** + **Model-Identity-Tracking** + **Bounded Aggregate** für Title-Input.
+### 4.5 Session title (latest-wins, pinned)
+`SessionTitleSource = fallback | provider (with ModelIdentity) | user`. User rename pins (stops auto). `TitleInputState` as a bounded aggregate: `{ first, count, lastSeq }`.
+**QOC relevance:** QOC has `TitleGenerator`. Learning: **pinning semantics** + **model-identity tracking** + **bounded aggregate** for title input.
 
 ### 4.6 Branded SessionSeq/SessionLogOffset
-`SessionSeq` = non-negative safe integer branded. `SessionSeqCursor = SessionSeq | -1`. `OptionalSessionSeq = SessionSeq | null`.  
-**QOC-Bezug:** QOC nutzt `Seq` (long). Lernpunkt: **Typsicherheit** für Seq vs. Offset vs. Cursor.
+`SessionSeq` = non-negative safe integer branded. `SessionSeqCursor = SessionSeq | -1`. `OptionalSessionSeq = SessionSeq | null`.
+**QOC relevance:** QOC uses `Seq` (long). Learning: **type safety** for seq vs. offset vs. cursor.
 
 ---
 
-## 5. Turn/Step-Lifecycle
+## 5. Turn/step lifecycle
 
-### 5.1 Claiming + Pre-Step Waterfall
-Turn öffnet, claimt next-step input + eine queued Message. `agent/pre-step` ist Waterfall (accept/rewrite/reject). Rejected/empty first claim schließt Turn ohne Step. `startsRequestSeries` Declaration.  
-**QOC-Bezug:** QOC hat `Step` + `StepResult`. Lernpunkt: **Pre-Step-Hook als Waterfall** für Kontext-Injection, Steering, Policy-Checks.
+### 5.1 Claiming + pre-step waterfall
+Turn opens, claims next-step input + a queued message. `agent/pre-step` is a waterfall (accept/rewrite/reject). Rejected/empty first claim closes the turn without a step. `startsRequestSeries` declaration.
+**QOC relevance:** QOC has `Step` + `StepResult`. Learning: **pre-step hook as a waterfall** for context injection, steering, policy checks.
 
-### 5.2 Prepare-Call mit Cancellation-Semantik
-`prepareCall()` bindet Adapter; Cancellation während async Phase committet weder System noch Users.  
-**QOC-Bezug:** QOC's `Step.run`. Lernpunkt: **Cancellation-Commitment-Garantie** dokumentieren und testen.
+### 5.2 Prepare-call with cancellation semantics
+`prepareCall()` binds the adapter; cancellation during the async phase commits neither system nor users.
+**QOC relevance:** QOC's `Step.run`. Learning: **document and test the cancellation-commitment guarantee**.
 
-### 5.3 Freeze Request from Log
-Request wird aus dem Log abgeleitet und eingefroren (immutable). Retry nutzt Freeze-Evidence. Loop-built requests sind **deep-frozen**.  
-**QOC-Bezug:** QOC hat `ModelRequest`. Lernpunkt: **Request-Freeze** als explizites Konzept.
+### 5.3 Freeze request from log
+Request is derived from the log and frozen (immutable). Retry uses freeze evidence. Loop-built requests are **deep-frozen**.
+**QOC relevance:** QOC has `ModelRequest`. Learning: **request freeze as an explicit concept**.
 
-### 5.4 request/header & request/context Events
-`request/header` (Modell-Selection-Snapshot) und `request/context` (Runtime-Facts) als separate durable Events.  
-**QOC-Bezug:** QOC hat `ModelRequest` + `GenerationOptions`. Lernpunkt: **Model-Selection-Snapshot pro Request** als Event.
+### 5.4 request/header & request/context events
+`request/header` (model-selection snapshot) and `request/context` (runtime facts) as separate durable events.
+**QOC relevance:** QOC has `ModelRequest` + `GenerationOptions`. Learning: **model-selection snapshot per request** as an event.
 
-### 5.5 Retry ohne Re-Assembly
-Retry wiederholt nicht Assembly/Pre-Step/User-Admission, sondern nur prepare+reconcile.  
-**QOC-Bezug:** QOC hat keine Retry-Logik im Provider (nur FailureKind). Lernpunkt: **Retry-Semantik** dokumentieren.
+### 5.5 Retry without re-assembly
+Retry does not re-run assembly/pre-step/user admission, only prepare + reconcile.
+**QOC relevance:** QOC has no retry logic in the provider (only `FailureKind`). Learning: **document retry semantics**.
 
-### 5.6 turn-stopping (Serial, Terminal Checkpoint)
-`agent/turn-stopping` ist serial (kein `next()`), Terminal-Checkpoint vor `turn/end`.  
-**QOC-Bezug:** QOC hat `TurnOutcome`. Lernpunkt: **Terminal-Checkpoint-Hook**.
+### 5.6 turn-stopping (serial, terminal checkpoint)
+`agent/turn-stopping` is serial (no `next()`), terminal checkpoint before `turn/end`.
+**QOC relevance:** QOC has `TurnOutcome`. Learning: **terminal checkpoint hook**.
 
-### 5.7 Failed Steps record missing tool results
-Fehlgeschlagene Steps protokollieren fehlende Tool-Results.  
-**QOC-Bezug:** QOC's `StepResult.Failed`. Lernpunkt: **Invarianten-Test**.
+### 5.7 Failed steps record missing tool results
+Failed steps log missing tool results.
+**QOC relevance:** QOC's `StepResult.Failed`. Learning: **invariant test**.
 
-### 5.8 Claimed Batch stays removed on reject
-Bei rejected/empty first claim bleibt der claimed Batch entfernt, Turn gibt keinen Step aus.  
-**QOC-Bezug:** QOC. Lernpunkt: **Claimed-Input-Semantik** bei Rejection.
+### 5.8 Claimed batch stays removed on reject
+On rejected/empty first claim the claimed batch stays removed; the turn emits no step.
+**QOC relevance:** QOC. Learning: **claimed-input semantics** on rejection.
 
 ---
 
-## 6. Tool-Execution-Pipeline
+## 6. Tool-execution pipeline
 
-### 6.1 Pre/Execute/Post Waterfalls
-`tools/pre-execute` (Hooks, Permission, Sandbox), `tools/execute` (Timeout, Retry, Metrics around dispatch), `tools/post-execute` (accept/block/replace/add context). Monotonic Guards (deny/abstain) laufen zwischen pre und execute. Guards werfen → normalized.  
-**QOC-Bezug:** QOC hat Permission-Gate + ToolRuntime. Lernpunkt: **Drei-Phasen-Pipeline** als explizites Design.
+### 6.1 Pre/execute/post waterfalls
+`tools/pre-execute` (hooks, permission, sandbox), `tools/execute` (timeout, retry, metrics around dispatch), `tools/post-execute` (accept/block/replace/add context). Monotonic guards (deny/abstain) run between pre and execute. Guard throws → normalized.
+**QOC relevance:** QOC has permission gate + `ToolRuntime`. Learning: **three-phase pipeline** as explicit design.
 
-### 6.2 Approval vor Guards
-`ctx.approval` löst Asks **vor** monotonic Guards. Owner-Policy, die nicht reorderbar sein darf, bleibt Guard.  
-**QOC-Bezug:** QOC hat HITL/ASK. Lernpunkt: **Reihenfolge** dokumentieren.
+### 6.2 Approval before guards
+`ctx.approval` resolves asks **before** monotonic guards. Owner policy that must not be reorderable stays a guard.
+**QOC relevance:** QOC has HITL/ASK. Learning: **document ordering**.
 
 ### 6.3 fs/write-intent & fs/edit-intent
-Tool-FS-Mutationen gehen über `fs/*` Events (read-before-edit Checks).  
-**QOC-Bezug:** QOC hat Filesystem-Tools. Lernpunkt: **Intent-Events** für FS-Mutationen.
+Tool FS mutations go through `fs/*` events (read-before-edit checks).
+**QOC relevance:** QOC has filesystem tools. Learning: **intent events** for FS mutations.
 
 ### 6.4 projectContent / finalizeContent
-`ToolDefinition.projectContent` installiert prepared content vor post-execute; `finalizeContent` ist letzte content-only Invariante. Pipeline snapshottet candidate result und normalisiert Snapshot-Failure.  
-**QOC-Bezug:** QOC's Tool-Result-Handling. Lernpunkt: **Zwei-Stufen-Content-Transformation**.
+`ToolDefinition.projectContent` installs prepared content before post-execute; `finalizeContent` is the last content-only invariant. Pipeline snapshots the candidate result and normalizes snapshot failure.
+**QOC relevance:** QOC's tool-result handling. Learning: **two-stage content transformation**.
 
 ### 6.5 additionalContexts (FIFO)
-Nach recorded tool results werden additionalContexts als `user/message` injiziert.  
-**QOC-Bezug:** QOC. Lernpunkt: **Post-Tool-Context-Injection**.
+After recorded tool results, additionalContexts are injected as `user/message`.
+**QOC relevance:** QOC. Learning: **post-tool context injection**.
 
-### 6.6 PTC Mode (Programmatic Tool Calling)
-`run_code` transport + sub-calls durch dieselbe Pipeline; sub-calls tragen parent token, loggen `tool/ptc-dispatch`, Denials als binding rejections, keine additionalContexts.  
-**QOC-Bezug:** QOC hat keine PTC. Lernpunkt: **PTC als optionale Capability**.
+### 6.6 PTC mode (programmatic tool calling)
+`run_code` transport + sub-calls through the same pipeline; sub-calls carry a parent token, log `tool/ptc-dispatch`, denials are binding rejections, no additionalContexts.
+**QOC relevance:** QOC has no PTC. Learning: **PTC as an optional capability**.
 
-### 6.7 presentCall / presentResult (UI Cards)
-UI pending/completed cards als Hooks.  
-**QOC-Bezug:** QOC hat UI. Lernpunkt: **Tool-UI-Hooks** entkoppelt.
+### 6.7 presentCall / presentResult (UI cards)
+UI pending/completed cards as hooks.
+**QOC relevance:** QOC has UI. Learning: **decouple tool UI hooks**.
 
-### 6.8 Timeout-Policy & Repeat-Tool-Reminder (Guards)
-`guard/` family: repeat-tool-reminder + timeout-policy. Beide shippen enabled in base bundle.  
-**QOC-Bezug:** QOC hat keine Loop-Guards. Lernpunkt: **Loop-Hygiene-Guards** (Repeat-Detection, Timeout).
+### 6.8 Timeout policy & repeat-tool reminder (guards)
+`guard/` family: repeat-tool-reminder + timeout-policy. Both ship enabled in the base bundle.
+**QOC relevance:** QOC has no loop guards. Learning: **loop-hygiene guards** (repeat detection, timeout).
 
 ---
 
 ## 7. Compaction (code-level)
 
-### 7.1 Lock-Brackets (start/end)
-`compaction/start` (Lock) → Summarization → `compaction/summary` → `user/message` (replace) → `compaction/end` (Release). Lock zuerst, Release zuletzt → Crash mid-op = detectable orphaned lock.  
-**QOC-Bezug:** QOC hat `CompactionService`. Lernpunkt: **Lock-Event-Pattern**.
+### 7.1 Lock brackets (start/end)
+`compaction/start` (lock) → summarization → `compaction/summary` → `user/message` (replace) → `compaction/end` (release). Lock first, release last → crash mid-op = detectable orphaned lock.
+**QOC relevance:** QOC has `CompactionService`. Learning: **lock-event pattern**.
 
-### 7.2 Surface Replacement via surfaceOp
-Summary ersetzt surface-Bereich über `surfaceOp: { op: 'replace', startSeq, endSeq }` auf `user/message`. Shadowed Seqs werden trackt. `shadowedRange` ist Position-Span, nicht numerisches Interval (nach prior replace kann start > end).  
-**QOC-Bezug:** QOC's `ConversationFolding`. Lernpunkt: **Surface-Op als explizites Event-Feld**.
+### 7.2 Surface replacement via surfaceOp
+Summary replaces the surface range via `surfaceOp: { op: 'replace', startSeq, endSeq }` on `user/message`. Shadowed seqs are tracked. `shadowedRange` is a position span, not a numeric interval (after a prior replace, start can exceed end).
+**QOC relevance:** QOC's `ConversationFolding`. Learning: **surface op as an explicit event field**.
 
-### 7.3 Tool-Result Pruning vor Summary
-Optional `ctx.toolResultPruner` ersetzt große Tool-Results durch head/tail + Spill-Locator. Läuft vor Range-Selection, remeasured via tokenMeter. `PrunedEntry { originalSeq, replacementSeq, callId, charsBefore, charsAfter }`.  
-**QOC-Bezug:** QOC hat `ToolResultCache`. Lernpunkt: **Tool-Result-Pruning als separate Capability**.
+### 7.3 Tool-result pruning before summary
+Optional `ctx.toolResultPruner` replaces large tool results with head/tail + spill locator. Runs before range selection, re-measured via tokenMeter. `PrunedEntry { originalSeq, replacementSeq, callId, charsBefore, charsAfter }`.
+**QOC relevance:** QOC has `ToolResultCache`. Learning: **tool-result pruning as a separate capability**.
 
-### 7.4 Image Offload
-`image/offload` Event mit `seq` + `imageIndexes` (depth-first). Persist-before-event.  
-**QOC-Bezug:** QOC hat `ModelContent.Media`. Lernpunkt: **Image-Offload-Event**.
+### 7.4 Image offload
+`image/offload` event with `seq` + `imageIndexes` (depth-first). Persist-before-event.
+**QOC relevance:** QOC has `ModelContent.Media`. Learning: **image-offload event**.
 
-### 7.5 Trigger-Klassen
-`CompactionTrigger = 'pressure' | 'context-overflow'`; overflow aggressiver.  
-**QOC-Bezug:** QOC's Compaction. Lernpunkt: **Zwei Trigger-Klassen**.
+### 7.5 Trigger classes
+`CompactionTrigger = 'pressure' | 'context-overflow'`; overflow is more aggressive.
+**QOC relevance:** QOC's compaction. Learning: **two trigger classes**.
 
-### 7.6 Manual Error Codes
-`ManualCompactionErrorCode = 'busy' | 'cancelled' | 'changed' | 'summary' | 'commit' | 'persistence'`.  
-**QOC-Bezug:** QOC. Lernpunkt: **Granulare Fehlercodes**.
+### 7.6 Manual error codes
+`ManualCompactionErrorCode = 'busy' | 'cancelled' | 'changed' | 'summary' | 'commit' | 'persistence'`.
+**QOC relevance:** QOC. Learning: **granular error codes**.
 
-### 7.7 Tool-Pairing Boundaries
-`toolPairingBalancedBefore(session, seq)` und `toolPairingBalancedAfter(session, seq)` — validieren surface membership, reject missing seqs and orphan results.  
-**QOC-Bezug:** QOC. Lernpunkt: **Tool-Call/Result-Pairing als Invariante**.
+### 7.7 Tool-pairing boundaries
+`toolPairingBalancedBefore(session, seq)` and `toolPairingBalancedAfter(session, seq)` — validate surface membership, reject missing seqs and orphan results.
+**QOC relevance:** QOC. Learning: **tool-call/result pairing as an invariant**.
 
-### 7.8 CompactionId (Stable Identity)
-`CompactionId` als stable identity für den gesamten durable Lifecycle. `compactCheckpointSource(compactionId, sourceCommandId?)` für Replacement-Checkpoint.  
-**QOC-Bezug:** QOC. Lernpunkt: **Compaction-Identity** für Korrelation.
+### 7.8 CompactionId (stable identity)
+`CompactionId` as stable identity for the entire durable lifecycle. `compactCheckpointSource(compactionId, sourceCommandId?)` for the replacement checkpoint.
+**QOC relevance:** QOC. Learning: **compaction identity** for correlation.
 
 ---
 
-## 8. Spill Storage (code-level)
+## 8. Spill storage (code-level)
 
-### 8.1 Opaque Locators
-`SpillLocator` branded/opaque; lokales Backend nutzt Pfad, remote nutzt URI/Key. Consumers rendern mit `retrievalHint`, parsen nicht. `SpillRef { locator, bytes, retrievalHint }`.  
-**QOC-Bezug:** QOC hat `ToolResultCache` + ArtifactRefs. Lernpunkt: **Opaque Locators**.
+### 8.1 Opaque locators
+`SpillLocator` branded/opaque; local backend uses a path, remote uses URI/key. Consumers render with `retrievalHint`, do not parse. `SpillRef { locator, bytes, retrievalHint }`.
+**QOC relevance:** QOC has `ToolResultCache` + artifact refs. Learning: **opaque locators**.
 
-### 8.2 Best-Effort Policy
-Spill-Policy ersetzt over-`maxInlineTokens` Result durch head/tail + Spill-Adresse; bei Save-Failure bleibt Original inline.  
-**QOC-Bezug:** QOC. Lernpunkt: **Best-Effort-Spill**.
+### 8.2 Best-effort policy
+Spill policy replaces results over `maxInlineTokens` with head/tail + spill address; on save failure the original stays inline.
+**QOC relevance:** QOC. Learning: **best-effort spill**.
 
-### 8.3 Symlink-Safety
-`open(path, 'wx', 0o600)` — exclusive write, 0600. Session-subdir via `sha256(sessionId)`.  
-**QOC-Bezug:** QOC's Filesystem-Tools. Lernpunkt: **Symlink-Safe Writes**.
+### 8.3 Symlink safety
+`open(path, 'wx', 0o600)` — exclusive write, 0600. Session subdir via `sha256(sessionId)`.
+**QOC relevance:** QOC's filesystem tools. Learning: **symlink-safe writes**.
 
 ### 8.4 Retention
-Spill folgt Session-Retention.  
-**QOC-Bezug:** QOC's ToolOutputStore sweep. Lernpunkt: **Spill-Retention an Session koppeln**.
+Spill follows session retention.
+**QOC relevance:** QOC's `ToolOutputStore` sweep. Learning: **couple spill retention to the session**.
 
-### 8.5 SaveTextSpill Request
-`{ owner: { sessionId }, source: tool|session-reference, suggestedName, content }`. `source` beschreibt Produzent, nie Access Control.  
-**QOC-Bezug:** QOC. Lernpunkt: **Spill-Request mit Owner/Source-Trennung**.
+### 8.5 SaveTextSpill request
+`{ owner: { sessionId }, source: tool|session-reference, suggestedName, content }`. `source` describes the producer, never access control.
+**QOC relevance:** QOC. Learning: **spill request with owner/source separation**.
 
 ---
 
 ## 9. Subagents (code-level)
 
-### 9.1 Capability Flags
-`SubagentCapabilities { agentOptions, agentPreset, outputSchema, depthLimit }`. Manager prüft vor Prepare.  
-**QOC-Bezug:** QOC hat `agent_create`. Lernpunkt: **Capability-Flags**.
+### 9.1 Capability flags
+`SubagentCapabilities { agentOptions, agentPreset, outputSchema, depthLimit }`. Manager checks before prepare.
+**QOC relevance:** QOC has `agent_create`. Learning: **capability flags**.
 
-### 9.2 Activation vs. PrepareContinuable
-`startActivation` unified; `prepareContinuable` für lokale Child-Agents, `start` für externe.  
-**QOC-Bezug:** QOC's A2A/MCP. Lernpunkt: **Unified Activation API**.
+### 9.2 Activation vs. prepareContinuable
+`startActivation` unified; `prepareContinuable` for local child agents, `start` for external.
+**QOC relevance:** QOC's A2A/MCP. Learning: **unified activation API**.
 
-### 9.3 Delivery Modes
-`delivery: 'parent' | 'caller'`.  
-**QOC-Bezug:** QOC. Lernpunkt: **Delivery-Mode**.
+### 9.3 Delivery modes
+`delivery: 'parent' | 'caller'`.
+**QOC relevance:** QOC. Learning: **delivery mode**.
 
-### 9.4 Structured Output Schema
-`outputSchema` als Object-JSON-Schema; Child liefert `structured` Value.  
-**QOC-Bezug:** QOC hat `SubmitResult`. Lernpunkt: **Structured Output für Subagents**.
+### 9.4 Structured output schema
+`outputSchema` as an object JSON schema; child returns a `structured` value.
+**QOC relevance:** QOC has `SubmitResult`. Learning: **structured output for subagents**.
 
-### 9.5 Depth Limit
-`maxDepth` Cap; computed depth muss ≤ cap.  
-**QOC-Bezug:** QOC. Lernpunkt: **Rekursions-Schutz**.
+### 9.5 Depth limit
+`maxDepth` cap; computed depth must be ≤ cap.
+**QOC relevance:** QOC. Learning: **recursion protection**.
 
-### 9.6 cwd Inheritance
-Child erbt parent's effective directory at admission; relative paths resolve against parent.  
-**QOC-Bezug:** QOC's Ephemeral Sessions. Lernpunkt: **cwd-Vererbung**.
+### 9.6 cwd inheritance
+Child inherits the parent's effective directory at admission; relative paths resolve against the parent.
+**QOC relevance:** QOC's ephemeral sessions. Learning: **cwd inheritance**.
 
-### 9.7 Catalog Rows (one-shot/external/continuable)
-`SubagentCatalogRow` mit `mode: 'one-shot' | 'external' | 'continuable'`. Historical children mit unavailable descriptors bleiben `mode: 'unknown'`.  
-**QOC-Bezug:** QOC's A2A Agent Cards. Lernpunkt: **Mode-Klassifikation** für Subagents.
+### 9.7 Catalog rows (one-shot/external/continuable)
+`SubagentCatalogRow` with `mode: 'one-shot' | 'external' | 'continuable'`. Historical children with unavailable descriptors remain `mode: 'unknown'`.
+**QOC relevance:** QOC's A2A agent cards. Learning: **mode classification** for subagents.
 
 ### 9.8 SubagentPromptRequest (queue/steer)
-`delivery: 'queue' | 'steer'` für Messages an continuable children.  
-**QOC-Bezug:** QOC. Lernpunkt: **Steering vs. Queuing**.
+`delivery: 'queue' | 'steer'` for messages to continuable children.
+**QOC relevance:** QOC. Learning: **steering vs. queuing**.
 
 ---
 
 ## 10. Approval (code-level)
 
-### 10.1 Per-Session Policy (ask/never)
-`ApprovalPolicy = 'ask' | 'never'`; `never` gibt deterministisch `rejected`. Effective value = letztes `approval/policy` Event, Fallback Service-Config.  
-**QOC-Bezug:** QOC hat ASK + Permission-Gate. Lernpunkt: **Per-Session Approval-Policy als Event**.
+### 10.1 Per-session policy (ask/never)
+`ApprovalPolicy = 'ask' | 'never'`; `never` deterministically returns `rejected`. Effective value = latest `approval/policy` event, fallback service config.
+**QOC relevance:** QOC has ASK + permission gate. Learning: **per-session approval policy as an event**.
 
-### 10.2 Fail-Closed
-`ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'`. Missing/throwing answerer → `unavailable`.  
-**QOC-Bezug:** QOC. Lernpunkt: **Fail-Closed-Semantik**.
+### 10.2 Fail-closed
+`ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'`. Missing/throwing answerer → `unavailable`.
+**QOC relevance:** QOC. Learning: **fail-closed semantics**.
 
-### 10.3 Audit Events (log-only)
-`approval/asked` + `approval/decided` als log-only Pair, korreliert über `ApprovalRequestId`.  
-**QOC-Bezug:** QOC. Lernpunkt: **Audit-Pair mit Request-ID**.
+### 10.3 Audit events (log-only)
+`approval/asked` + `approval/decided` as a log-only pair, correlated via `ApprovalRequestId`.
+**QOC relevance:** QOC. Learning: **audit pair with request ID**.
 
-### 10.4 Keine Arguments in Request
-`ApprovalRequest` enthält `callId`, nicht Arguments. `displayReason` für Locale-Strings.  
-**QOC-Bezug:** QOC's `ToolOptions.approvalMessage`. Lernpunkt: **Arguments nicht duplizieren**.
+### 10.4 No arguments in request
+`ApprovalRequest` contains `callId`, not arguments. `displayReason` for locale strings.
+**QOC relevance:** QOC's `ToolOptions.approvalMessage`. Learning: **do not duplicate arguments**.
 
-### 10.5 Scoped Dispatch
-`approval/request` ist Waterfall mit Scope-Filterung (agent-scoped listeners).  
-**QOC-Bezug:** QOC. Lernpunkt: **Scoped Answerer-Dispatch**.
+### 10.5 Scoped dispatch
+`approval/request` is a waterfall with scope filtering (agent-scoped listeners).
+**QOC relevance:** QOC. Learning: **scoped answerer dispatch**.
 
 ---
 
 ## 11. Sandbox (code-level)
 
 ### 11.1 Modes
-`SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'`. Nur erste zwei an Provider.  
-**QOC-Bezug:** QOC hat keine Sandbox. Lernpunkt: **Sandbox-Modi**.
+`SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'`. Only the first two are passed to the provider.
+**QOC relevance:** QOC has no sandbox. Learning: **sandbox modes**.
 
 ### 11.2 Enforcement (full/partial)
-`SandboxEnforcement = 'full' | 'partial'`.  
-**QOC-Bezug:** QOC. Lernpunkt: **Enforcement als Reported Fact**.
+`SandboxEnforcement = 'full' | 'partial'`.
+**QOC relevance:** QOC. Learning: **enforcement as a reported fact**.
 
-### 11.3 Per-Call Policy
-Policy pro Call aufgelöst, nicht provider-global. `SandboxPolicyRequest { session?, mode? }`. `SandboxExecutionPolicy { mode, workspaceRoot, additionalWritableRoots?, sessionId? }`.  
-**QOC-Bezug:** QOC. Lernpunkt: **Per-Call Policy Resolution**.
+### 11.3 Per-call policy
+Policy resolved per call, not provider-global. `SandboxPolicyRequest { session?, mode? }`. `SandboxExecutionPolicy { mode, workspaceRoot, additionalWritableRoots?, sessionId? }`.
+**QOC relevance:** QOC. Learning: **per-call policy resolution**.
 
-### 11.4 Runner Failure Rules
-`RunnerFailureRule { allowedExitCodes?, fatalSignatures[], informationalLines[] }`. Case-insensitive. Exit-Status allein beweist nichts.  
-**QOC-Bezug:** QOC. Lernpunkt: **Strukturierte Runner-Failure-Klassifikation**.
+### 11.4 Runner failure rules
+`RunnerFailureRule { allowedExitCodes?, fatalSignatures[], informationalLines[] }`. Case-insensitive. Exit status alone proves nothing.
+**QOC relevance:** QOC. Learning: **structured runner-failure classification**.
 
 ### 11.5 Escalation
-Nach denied Call kann Modell einen strikt weiteren Mode für human approval anfordern.  
-**QOC-Bezug:** QOC. Lernpunkt: **Escalation-Flow**.
+After a denied call the model can request a strictly broader mode for human approval.
+**QOC relevance:** QOC. Learning: **escalation flow**.
 
 ---
 
 ## 12. Skills (code-level)
 
-### 12.1 Ranked Discovery
-Roots in Rank-Order (project-dsh 100, project-agents 200, custom 300, user-dsh 400, user-agents 500, bundled 600). Duplicate names: nearest layer wins; innerhalb Layer: rank, provider, local order.  
-**QOC-Bezug:** QOC hat BM25-Skill-Loading. Lernpunkt: **Rank-basierte Discovery** + Layer-Precedence.
+### 12.1 Ranked discovery
+Roots in rank order (project-dsh 100, project-agents 200, custom 300, user-dsh 400, user-agents 500, bundled 600). Duplicate names: nearest layer wins; within a layer: rank, provider, local order.
+**QOC relevance:** QOC has BM25 skill loading. Learning: **rank-based discovery** + layer precedence.
 
-### 12.2 Skill Identity
-Kebab-case `^[a-z0-9]+(?:-[a-z0-9]+)*$`. Directory bundles (`<name>/SKILL.md`) + flat files (`<name>.md`). Keine rekursive `**/SKILL.md`.  
-**QOC-Bezug:** QOC. Lernpunkt: **Skill-Naming-Convention**.
+### 12.2 Skill identity
+Kebab-case `^[a-z0-9]+(?:-[a-z0-9]+)*$`. Directory bundles (`<name>/SKILL.md`) + flat files (`<name>.md`). No recursive `**/SKILL.md`.
+**QOC relevance:** QOC. Learning: **skill naming convention**.
 
-### 12.3 Invocation Policy
-`SkillInvocationPolicy { modelInvocable, userInvocable }` als positive Booleans.  
-**QOC-Bezug:** QOC hat per-Agent allow/deny. Lernpunkt: **Explizite Invocation-Policy**.
+### 12.3 Invocation policy
+`SkillInvocationPolicy { modelInvocable, userInvocable }` as positive booleans.
+**QOC relevance:** QOC has per-agent allow/deny. Learning: **explicit invocation policy**.
 
-### 12.4 Incomplete Discovery
-Rejected `list()` wird geloggt und aus Observation ausgeschlossen; incomplete observation liefert usable candidates ohne Cache. `SkillProviderObservation { candidates, complete }`.  
-**QOC-Bezug:** QOC. Lernpunkt: **Graceful Degradation**.
+### 12.4 Incomplete discovery
+Rejected `list()` calls are logged and excluded from observation; incomplete observation yields usable candidates without cache. `SkillProviderObservation { candidates, complete }`.
+**QOC relevance:** QOC. Learning: **graceful degradation**.
 
-### 12.5 Chokidar-Watcher
-Bestehende Roots werden gewatched. Missing Root wird segment-weise verfolgt. Model-facing `write`/`edit` invalidieren synchron.  
-**QOC-Bezug:** QOC. Lernpunkt: **File-Watcher für Skill-Roots**.
+### 12.5 Chokidar watcher
+Existing roots are watched. Missing roots are tracked segment-wise. Model-facing `write`/`edit` invalidate synchronously.
+**QOC relevance:** QOC. Learning: **file watcher for skill roots**.
 
-### 12.6 Provider Registry (host+per-scope layered)
-Registration files into layer of calling context's scope. Discovery caches keyed by scope chain.  
-**QOC-Bezug:** QOC. Lernpunkt: **Scoped Skill-Registry**.
+### 12.6 Provider registry (host + per-scope layered)
+Registration files into the layer of the calling context's scope. Discovery caches keyed by scope chain.
+**QOC relevance:** QOC. Learning: **scoped skill registry**.
 
 ---
 
 ## 13. Attachments (code-level)
 
-### 13.1 Content-Addressed
-`AttachmentId` = `sha256:<digest>` (branded). Consumers parsen nicht.  
-**QOC-Bezug:** QOC hat `ModelContent.Media`. Lernpunkt: **Content-Addressed IDs**.
+### 13.1 Content-addressed
+`AttachmentId` = `sha256:<digest>` (branded). Consumers do not parse.
+**QOC relevance:** QOC has `ModelContent.Media`. Learning: **content-addressed IDs**.
 
-### 13.2 Persist-Before-Event
-Object wird **vor** dem Event durable. Session-Events enthalten nur Referenz + Metadata.  
-**QOC-Bezug:** QOC. Lernpunkt: **Persist-Before-Event**.
+### 13.2 Persist-before-event
+The object is persisted **before** the event. Session events contain only the reference + metadata.
+**QOC relevance:** QOC. Learning: **persist-before-event**.
 
 ### 13.3 ImageRequestTarget & RequestImageAttachment
-Deterministischer Request-Image-Target pro Modell-Route. `RequestImageAttachment` als cached request version (variantId, attachment, data, mediaType, bytes, width, height, depth, space, hasAlpha).  
-**QOC-Bezug:** QOC. Lernpunkt: **Image-Request-Caching** (Variant-basiert).
+Deterministic request-image target per model route. `RequestImageAttachment` as cached request version (variantId, attachment, data, mediaType, bytes, width, height, depth, space, hasAlpha).
+**QOC relevance:** QOC. Learning: **image-request caching** (variant-based).
 
-### 13.4 Admission Parts
-`AttachmentAdmissionPart` / `AdmittedPromptContentPart` — Host-admitted content mit durable refs.  
-**QOC-Bezug:** QOC. Lernpunkt: **Admission-Pipeline** für Binaries.
+### 13.4 Admission parts
+`AttachmentAdmissionPart` / `AdmittedPromptContentPart` — host-admitted content with durable refs.
+**QOC relevance:** QOC. Learning: **admission pipeline** for binaries.
 
 ---
 
 ## 14. Deliverables (code-level)
 
-### 14.1 `present` Tool
-Modell deklariert Dateien als Deliverable (log-only Event). `PresentedFile { path, description? }`.  
-**QOC-Bezug:** QOC hat keine Deliverables. Lernpunkt: **Deliverables als First-Class**.
+### 14.1 `present` tool
+Model declares files as a deliverable (log-only event). `PresentedFile { path, description? }`.
+**QOC relevance:** QOC has no deliverables. Learning: **deliverables as first-class**.
 
-### 14.2 Workspace Changes
-Git-Snapshot am Turn-Start/-Ende + whole-file Captures um File-Tool-Edits. `WorkspaceChangedFile { path, display, added, deleted, binary? }`.  
-**QOC-Bezug:** QOC hat `RevertStaged`/`RevertCommitted`. Lernpunkt: **Turn-Diff als Deliverable**.
+### 14.2 Workspace changes
+Git snapshot at turn start/end + whole-file captures around file-tool edits. `WorkspaceChangedFile { path, display, added, deleted, binary? }`.
+**QOC relevance:** QOC has `RevertStaged`/`RevertCommitted`. Learning: **turn diff as a deliverable**.
 
-### 14.3 Move-Semantik
-Move contributes deleted source + added destination. Stopped commit contributes only net changes.  
-**QOC-Bezug:** QOC. Lernpunkt: **Move-Accounting**.
+### 14.3 Move semantics
+Move contributes deleted source + added destination. Stopped commit contributes only net changes.
+**QOC relevance:** QOC. Learning: **move accounting**.
 
 ---
 
-## 15. Background Jobs (code-level)
+## 15. Background jobs (code-level)
 
-### 15.1 Job Lifecycle Records
-`job/registered` + `job/settled` Events im Owner-Session. `JobId = <kind>-<short-uuid>` (16 hex). `JobStatus = running | stopping | completed | killed | failed`.  
-**QOC-Bezug:** QOC hat `ExecutionStarted/Succeeded/Failed`. Lernpunkt: **Job-Events im Session-Log**.
+### 15.1 Job lifecycle records
+`job/registered` + `job/settled` events in the owner session. `JobId = <kind>-<short-uuid>` (16 hex). `JobStatus = running | stopping | completed | killed | failed`.
+**QOC relevance:** QOC has `ExecutionStarted/Succeeded/Failed`. Learning: **job events in the session log**.
 
 ### 15.2 producerReported
-`producerReported` = Producer fulfilled `done` mit terminal outcome. False für forced teardown/rejection.  
-**QOC-Bezug:** QOC. Lernpunkt: **Teardown vs. Result Trennung**.
+`producerReported` = producer fulfilled `done` with a terminal outcome. False for forced teardown/rejection.
+**QOC relevance:** QOC. Learning: **teardown vs. result separation**.
 
-### 15.3 Missing Settlement bleibt incomplete
-Ohne `job/settled` im Log = incomplete, auch wenn Registry termination meldet.  
-**QOC-Bezug:** QOC. Lernpunkt: **Log als Wahrheit**.
+### 15.3 Missing settlement stays incomplete
+Without `job/settled` in the log = incomplete, even if the registry reports termination.
+**QOC relevance:** QOC. Learning: **log is truth**.
 
 ### 15.4 Ownership (scoped to agent session)
-Andere Agents können nicht inspect/stop.  
-**QOC-Bezug:** QOC. Lernpunkt: **Job-Ownership**.
+Other agents cannot inspect/stop.
+**QOC relevance:** QOC. Learning: **job ownership**.
 
 ---
 
 ## 16. Schedule (code-level)
 
-### 16.1 7 Timing Kinds
-`after`, `at`, `every`, `daily`, `weekly`, `cron`, `rrule`.  
-**QOC-Bezug:** QOC hat keine Scheduling. Lernpunkt: **Scheduling als Capability**.
+### 16.1 7 timing kinds
+`after`, `at`, `every`, `daily`, `weekly`, `cron`, `rrule`.
+**QOC relevance:** QOC has no scheduling. Learning: **scheduling as a capability**.
 
-### 16.2 Storage Versioning
-`compatibleVersions` für alte Stamps. Normal edits persist current rows. Reads lassen Storage unverändert.  
-**QOC-Bezug:** QOC. Lernpunkt: **Storage-Versioning-Pattern**.
+### 16.2 Storage versioning
+`compatibleVersions` for old stamps. Normal edits persist current rows. Reads leave storage unchanged.
+**QOC relevance:** QOC. Learning: **storage-versioning pattern**.
 
-### 16.3 Latest-Only Catch-Up
-Verpasste Occurrences: nur letzte einmal liefern, dann erste zukünftige.  
-**QOC-Bezug:** QOC. Lernpunkt: **Catch-Up-Semantik**.
+### 16.3 Latest-only catch-up
+Missed occurrences: only the last one is delivered once, then the first future one.
+**QOC relevance:** QOC. Learning: **catch-up semantics**.
 
-### 16.4 Canonical UTC Instants
-`scheduledAt` = RFC 3339 UTC, ms-Precision, Jahr 0001–9999. Decoding recalculiert nicht.  
-**QOC-Bezug:** QOC. Lernpunkt: **Canonical Time Storage**.
+### 16.4 Canonical UTC instants
+`scheduledAt` = RFC 3339 UTC, ms precision, year 0001–9999. Decoding does not recalculate.
+**QOC relevance:** QOC. Learning: **canonical time storage**.
 
 ---
 
 ## 17. Goals (code-level)
 
-### 17.1 Revision-basiert (CAS)
-`GoalRef = { id, revision }`; jede durable Mutation inkrementiert Revision.  
-**QOC-Bezug:** QOC. Lernpunkt: **Compare-and-Set** für Shared State.
+### 17.1 Revision-based (CAS)
+`GoalRef = { id, revision }`; every durable mutation increments the revision.
+**QOC relevance:** QOC. Learning: **compare-and-set** for shared state.
 
 ### 17.2 Phases
-`GoalPhase = active | paused | blocked | complete`. `blocked` mit `GoalBlockReason { code, message }`.  
-**QOC-Bezug:** QOC. Lernpunkt: **Goal-Lifecycle**.
+`GoalPhase = active | paused | blocked | complete`. `blocked` with `GoalBlockReason { code, message }`.
+**QOC relevance:** QOC. Learning: **goal lifecycle**.
 
 ### 17.3 Activation (process-local)
-`GoalActivation = armed | disarmed`. Nie persisted.  
-**QOC-Bezug:** QOC. Lernpunkt: **Process-Local vs. Durable State Trennung**.
+`GoalActivation = armed | disarmed`. Never persisted.
+**QOC relevance:** QOC. Learning: **process-local vs. durable state separation**.
 
-### 17.4 Round Cap
-`maxGoalRounds` (default 256) begrenzt automatische Continuation.  
-**QOC-Bezug:** QOC. Lernpunkt: **Round-Cap** für Agent-Loops.
+### 17.4 Round cap
+`maxGoalRounds` (default 256) bounds automatic continuation.
+**QOC relevance:** QOC. Learning: **round cap** for agent loops.
 
 ---
 
-## 18. Plan Mode (code-level)
+## 18. Plan mode (code-level)
 
-### 18.1 Soft Guidance
-Plan-Mode ist soft guidance (nicht Sandbox/Approval). Eigenes Event `plan/mode`, log-only, whole-value-replace.  
-**QOC-Bezug:** QOC. Lernpunkt: **Plan-Mode als Capability**.
+### 18.1 Soft guidance
+Plan mode is soft guidance (not sandbox/approval). Its own event `plan/mode`, log-only, whole-value replace.
+**QOC relevance:** QOC. Learning: **plan mode as a capability**.
 
-### 18.2 Pending Selections
-User-Selection bleibt pending bis zum nächsten accepted in-turn pre-step. `PlanProjection { active, pending }`. `PlanUnitState { active, wanted, running, activeAtLastHeader, entered }`.  
-**QOC-Bezug:** QOC. Lernpunkt: **Pending-Selection-Pattern**.
+### 18.2 Pending selections
+User selection stays pending until the next accepted in-turn pre-step. `PlanProjection { active, pending }`. `PlanUnitState { active, wanted, running, activeAtLastHeader, entered }`.
+**QOC relevance:** QOC. Learning: **pending-selection pattern**.
 
-### 18.3 exit_plan_mode Tool
-Progressiv disclosed; requires complete markdown plan mit `#` heading; präsentiert zur Review (user-questions seam).  
-**QOC-Bezug:** QOC. Lernpunkt: **Plan-Review-Flow**.
+### 18.3 exit_plan_mode tool
+Progressively disclosed; requires a complete markdown plan with a `#` heading; presented for review (user-questions seam).
+**QOC relevance:** QOC. Learning: **plan review flow**.
 
-### 18.4 `/plan` Command
-`/plan [off|message]`: bare → select plan mode; mit message → select + steer; `off` → inactive + cancel pending.  
-**QOC-Bezug:** QOC. Lernpunkt: **Command-basierte Mode-Toggle**.
+### 18.4 `/plan` command
+`/plan [off|message]`: bare → select plan mode; with message → select + steer; `off` → inactive + cancel pending.
+**QOC relevance:** QOC. Learning: **command-based mode toggle**.
 
 ---
 
 ## 19. Todo (code-level)
 
-### 19.1 Whole-List Replacement
-`todo/write` ersetzt ganze Liste (last-wins), kein Id/Priority/activeForm. `TodoItem { content, status: pending|in_progress|completed }`.  
-**QOC-Bezug:** QOC hat `TodoTool`. Lernpunkt: **Minimal-Design**.
+### 19.1 Whole-list replacement
+`todo/write` replaces the whole list (last-wins), no id/priority/activeForm. `TodoItem { content, status: pending|in_progress|completed }`.
+**QOC relevance:** QOC has `TodoTool`. Learning: **minimal design**.
 
-### 19.2 Excluded from Summary
-`todos: SessionProjectionSummaryExcluded<TodoItem[]> | null` — nicht in Session-Summary.  
-**QOC-Bezug:** QOC. Lernpunkt: **Summary-Exclusion** für große Projections.
+### 19.2 Excluded from summary
+`todos: SessionProjectionSummaryExcluded<TodoItem[]> | null` — not in the session summary.
+**QOC relevance:** QOC. Learning: **summary exclusion** for large projections.
 
 ---
 
-## 20. Working Directory (code-level)
+## 20. Working directory (code-level)
 
-### 20.1 Immutable Header + Change Events
-Original Project bleibt Anker. `working-directory/change { cwd }`.  
-**QOC-Bezug:** QOC. Lernpunkt: **Sandbox-Roots nicht mit cwd wandern**.
+### 20.1 Immutable header + change events
+Original project stays the anchor. `working-directory/change { cwd }`.
+**QOC relevance:** QOC. Learning: **sandbox roots must not travel with cwd**.
 
-### 20.2 Serialize Queue per Session
-`serialize(agent, signal, action)` — per-Session Promise-Chain für ordered Mutations.  
-**QOC-Bezug:** QOC. Lernpunkt: **Per-Session Serialization** für Directory-Mutations.
+### 20.2 Serialize queue per session
+`serialize(agent, signal, action)` — per-session promise chain for ordered mutations.
+**QOC relevance:** QOC. Learning: **per-session serialization** for directory mutations.
 
 ### 20.3 ensure() restores original
-Wenn cwd verschwunden, restore original project directory.  
-**QOC-Bezug:** QOC. Lernpunkt: **Recovery-Pattern**.
+If cwd disappears, restore the original project directory.
+**QOC relevance:** QOC. Learning: **recovery pattern**.
 
 ### 20.4 Notice via inject()
-Commit queued notice via `agent.inject()` (user/message). Failure wird gewarnt, aber committed state bleibt.  
-**QOC-Bezug:** QOC. Lernpunkt: **Best-Effort Notice** nach Commit.
+Commit queued notice via `agent.inject()` (user/message). Failure is warned, but committed state remains.
+**QOC relevance:** QOC. Learning: **best-effort notice** after commit.
 
-### 20.5 Required User-Context
-Working directory als `required: true` user-context snapshot, auch wenn optional runtime context deaktiviert.  
-**QOC-Bezug:** QOC. Lernpunkt: **Required Context** (nicht optional).
+### 20.5 Required user context
+Working directory as a `required: true` user-context snapshot, even when optional runtime context is disabled.
+**QOC relevance:** QOC. Learning: **required context** (not optional).
 
 ---
 
 ## 21. Workspace (code-level)
 
-### 21.1 Canonical Paths
-`realpathNormalize` (resolve symlinks, `..`, trailing slashes) als einzige Uniqueness-Canon.  
-**QOC-Bezug:** QOC. Lernpunkt: **Canonical Path Normalization**.
+### 21.1 Canonical paths
+`realpathNormalize` (resolve symlinks, `..`, trailing slashes) as the single uniqueness canon.
+**QOC relevance:** QOC. Learning: **canonical path normalization**.
 
-### 21.2 Session Membership Validation
-Workspace validiert Session-cwd gegen Workspace-Path. Missing header preserve candidate.  
-**QOC-Bezug:** QOC. Lernpunkt: **Membership-Validation**.
+### 21.2 Session membership validation
+Workspace validates session cwd against the workspace path. Missing header preserves the candidate.
+**QOC relevance:** QOC. Learning: **membership validation**.
 
 ### 21.3 Status (ok/missing-dir)
-Live directory check, uncached. Missing directory mutiert nicht den Record.  
-**QOC-Bezug:** QOC. Lernpunkt: **Non-Mutating Status Check**.
+Live directory check, uncached. Missing directory does not mutate the record.
+**QOC relevance:** QOC. Learning: **non-mutating status check**.
 
-### 21.4 Activity Families
-`SessionActivityKindMap` merge-extensible (turn, job, subagent, schedule).  
-**QOC-Bezug:** QOC. Lernpunkt: **Activity-Family-Registry**.
+### 21.4 Activity families
+`SessionActivityKindMap` merge-extensible (turn, job, subagent, schedule).
+**QOC relevance:** QOC. Learning: **activity-family registry**.
 
 ---
 
 ## 22. Credentials (code-level)
 
-### 22.1 References, not Values
-Settings enthalten nur Referenzen (Env-Var-Namen), Provider besitzt Werte. `CredentialRef` branded.  
-**QOC-Bezug:** QOC hat Provider-Auth. Lernpunkt: **Credential-References**.
+### 22.1 References, not values
+Settings contain only references (env-var names); the provider owns the values. `CredentialRef` branded.
+**QOC relevance:** QOC has provider auth. Learning: **credential references**.
 
-### 22.2 Per-Operation Resolve
-Resolve pro Operation, nie gecacht → Hot-Update.  
-**QOC-Bezug:** QOC. Lernpunkt: **Per-Operation Resolve**.
+### 22.2 Per-operation resolve
+Resolve per operation, never cached → hot update.
+**QOC relevance:** QOC. Learning: **per-operation resolve**.
 
-### 22.3 Empty = Absent
-Leerer Wert = absent.  
-**QOC-Bezug:** QOC. Lernpunkt: **Empty-is-Absent**.
+### 22.3 Empty = absent
+Empty value = absent.
+**QOC relevance:** QOC. Learning: **empty-is-absent**.
 
 ### 22.4 CredentialInfo
-`{ configured, source?, writable }` — sichere View für UI, nie Wert.  
-**QOC-Bezug:** QOC. Lernpunkt: **Safe Credential View**.
+`{ configured, source?, writable }` — safe view for UI, never the value.
+**QOC relevance:** QOC. Learning: **safe credential view**.
 
 ### 22.5 CredentialKey (scope/id)
-`<scope>/<id>` für stored records. Scope = owner plugin.  
-**QOC-Bezug:** QOC. Lernpunkt: **Scoped Credential Keys**.
+`<scope>/<id>` for stored records. Scope = owner plugin.
+**QOC relevance:** QOC. Learning: **scoped credential keys**.
 
-### 22.6 Resolution Events
-`credentials/reference-updated` + `credentials/record-updated` als emit-Events.  
-**QOC-Bezug:** QOC. Lernpunkt: **Credential-Change-Events**.
+### 22.6 Resolution events
+`credentials/reference-updated` + `credentials/record-updated` as emit events.
+**QOC relevance:** QOC. Learning: **credential-change events**.
 
 ---
 
 ## 23. Settings (code-level)
 
-### 23.1 Form Projection
-Config-Felder zu Forms. `SettingsNamespaceView { autoGenerate, ns, schema, value, base?, user?, applies, secrets, revision }`.  
-**QOC-Bezug:** QOC hat Settings. Lernpunkt: **Form-Projection**.
+### 23.1 Form projection
+Config fields to forms. `SettingsNamespaceView { autoGenerate, ns, schema, value, base?, user?, applies, secrets, revision }`.
+**QOC relevance:** QOC has settings. Learning: **form projection**.
 
-### 23.2 Optimistic Concurrency
-`revision` monotonic; write mit `expectedRevision`; stale refused.  
-**QOC-Bezug:** QOC. Lernpunkt: **Optimistic Concurrency**.
+### 23.2 Optimistic concurrency
+`revision` monotonic; write with `expectedRevision`; stale refused.
+**QOC relevance:** QOC. Learning: **optimistic concurrency**.
 
-### 23.3 Path-Ops
-`SettingsPathOpView = { op: 'set', path, value } | { op: 'unset', path }`. Empty path = root.  
-**QOC-Bezug:** QOC. Lernpunkt: **Path-addressed Edits**.
+### 23.3 Path ops
+`SettingsPathOpView = { op: 'set', path, value } | { op: 'unset', path }`. Empty path = root.
+**QOC relevance:** QOC. Learning: **path-addressed edits**.
 
-### 23.4 Secret Redaction
-`SettingsSecretView { path, set }` — Value nie im Wire.  
-**QOC-Bezug:** QOC. Lernpunkt: **Secret-Redaction im Wire**.
+### 23.4 Secret redaction
+`SettingsSecretView { path, set }` — value never on the wire.
+**QOC relevance:** QOC. Learning: **secret redaction on the wire**.
 
 ---
 
 ## 24. Storage (code-level)
 
-### 24.1 Hub/Backend/Domain Form
-`ctx.storage` ist Meeting-Point. Backends (json/sqlite) own Media; Domain Form owns Semantics. Hub macht kein IO. `register(name, backend)` returns disposer. `mount(form, facility)` effect.  
-**QOC-Bezug:** QOC hat `SessionStore`/`Journal`/`ToolOutputStore`. Lernpunkt: **Storage-Hub-Pattern**.
+### 24.1 Hub/backend/domain form
+`ctx.storage` is the meeting point. Backends (json/sqlite) own media; domain form owns semantics. Hub does no IO. `register(name, backend)` returns a disposer. `mount(form, facility)` is an effect.
+**QOC relevance:** QOC has `SessionStore`/`Journal`/`ToolOutputStore`. Learning: **storage-hub pattern**.
 
-### 24.2 Backend Contract
-`StorageBackend { kv?, ... }`. Facets optional; fehlend = resolution fails loud. `close()` idempotent.  
-**QOC-Bezug:** QOC. Lernpunkt: **Facet-basierte Backends**.
+### 24.2 Backend contract
+`StorageBackend { kv?, … }`. Facets optional; missing = resolution fails loudly. `close()` idempotent.
+**QOC relevance:** QOC. Learning: **facet-based backends**.
 
-### 24.3 Domain Versioning
-Shared domain-version policy für JSON + SQLite.  
-**QOC-Bezug:** QOC. Lernpunkt: **Versionierte Storage-Domains**.
+### 24.3 Domain versioning
+Shared domain-version policy for JSON + SQLite.
+**QOC relevance:** QOC. Learning: **versioned storage domains**.
 
 ### 24.4 storageBackendServiceKey
-Lifecycle-only service key für Backend-Registration.  
-**QOC-Bezug:** QOC. Lernpunkt: **Backend-Lifecycle-Sync**.
+Lifecycle-only service key for backend registration.
+**QOC relevance:** QOC. Learning: **backend lifecycle sync**.
 
 ---
 
 ## 25. MCP (code-level)
 
-### 25.1 Scope-basiert
-MCP-Server opt-in pro Scope. Kein Server → keine Tools/Prompt-Text.  
-**QOC-Bezug:** QOC hat MCP Client/Server. Lernpunkt: **Scope-basierte Server-Sichtbarkeit**.
+### 25.1 Scope-based
+MCP servers opt in per scope. No server → no tools/prompt text.
+**QOC relevance:** QOC has MCP client/server. Learning: **scope-based server visibility**.
 
-### 25.2 Server Instructions in System Prompt
-Server-Instructions joinen logged System Prompt (mit Size-Limit `maxInstructionBytes`).  
-**QOC-Bezug:** QOC. Lernpunkt: **MCP-Instructions als Prompt-Section**.
+### 25.2 Server instructions in system prompt
+Server instructions join the logged system prompt (with size limit `maxInstructionBytes`).
+**QOC relevance:** QOC. Learning: **MCP instructions as a prompt section**.
 
-### 25.3 Resources als Tools
-Resources discover/read als normale Tools mit Permission + recorded results. Binary payloads als descriptions.  
-**QOC-Bezug:** QOC. Lernpunkt: **MCP-Resources als First-Class-Tools**.
+### 25.3 Resources as tools
+Resources are discovered/read as normal tools with permission + recorded results. Binary payloads as descriptions.
+**QOC relevance:** QOC. Learning: **MCP resources as first-class tools**.
 
-### 25.4 Tool-Naming
-`mcp__<server>__<tool>`.  
-**QOC-Bezug:** QOC. Lernpunkt: **Namespacing-Convention**.
+### 25.4 Tool naming
+`mcp__<server>__<tool>`.
+**QOC relevance:** QOC. Learning: **namespacing convention**.
 
-### 25.5 Protocol Negotiation
-SDK's supported revisions; kein Product-Setting für Revision.  
-**QOC-Bezug:** QOC. Lernpunkt: **SDK-managed Protocol Negotiation**.
+### 25.5 Protocol negotiation
+SDK's supported revisions; no product setting for revision.
+**QOC relevance:** QOC. Learning: **SDK-managed protocol negotiation**.
 
 ---
 
-## 26. System Prompt (code-level)
+## 26. System prompt (code-level)
 
-### 26.1 Sections mit Order
-Prompt-Sections mit Order (z. B. `plan:policy` bei 50). `system-prompt/assemble` Waterfall. `context()` mit `name`, `order`, `required`, `interpolate`, `text`.  
-**QOC-Bezug:** QOC hat `ContextBuilder`. Lernpunkt: **Ordered Sections + Waterfall-Assembly**.
+### 26.1 Sections with order
+Prompt sections with order (e.g. `plan:policy` at 50). `system-prompt/assemble` waterfall. `context()` with `name`, `order`, `required`, `interpolate`, `text`.
+**QOC relevance:** QOC has `ContextBuilder`. Learning: **ordered sections + waterfall assembly**.
 
-### 26.2 Capability-independent Tool Changes
-Tool-Changes sind capability-independent; Session Tool History liefert Provider-Declarations.  
-**QOC-Bezug:** QOC. Lernpunkt: **Tool-History als separate Concern**.
+### 26.2 Capability-independent tool changes
+Tool changes are capability-independent; session tool history provides provider declarations.
+**QOC relevance:** QOC. Learning: **tool history as a separate concern**.
 
-### 26.3 Required User-Context
-`required: true` user-context snapshot, auch wenn optional runtime context deaktiviert.  
-**QOC-Bezug:** QOC. Lernpunkt: **Required Context**.
+### 26.3 Required user context
+`required: true` user-context snapshot, even when optional runtime context is disabled.
+**QOC relevance:** QOC. Learning: **required context**.
 
 ---
 
 ## 27. LLM (code-level)
 
-### 27.1 Streams enden immer mit Terminal Result
-Jeder Stream endet mit success/failure/cancellation.  
-**QOC-Bezug:** QOC hat `ModelEvent.Finished`/`ProviderFailed`. Lernpunkt: **Terminal-Result-Garantie**.
+### 27.1 Streams always end with a terminal result
+Every stream ends with success/failure/cancellation.
+**QOC relevance:** QOC has `ModelEvent.Finished`/`ProviderFailed`. Learning: **terminal-result guarantee**.
 
-### 27.2 Loop-built Requests deep-frozen
-Extensions/Adapter können Requests nicht rewrites.  
-**QOC-Bezug:** QOC. Lernpunkt: **Immutability von Requests**.
+### 27.2 Loop-built requests deep-frozen
+Extensions/adapters cannot rewrite requests.
+**QOC relevance:** QOC. Learning: **request immutability**.
 
-### 27.3 Provider-specific Translation in Adapter
-Provider-spezifische Translation bleibt im Adapter.  
-**QOC-Bezug:** QOC. Lernpunkt: **Adapter-Isolation** (QOC hat das schon).
+### 27.3 Provider-specific translation in adapter
+Provider-specific translation stays in the adapter.
+**QOC relevance:** QOC. Learning: **adapter isolation** (QOC already has this).
 
-### 27.4 Model Discovery
-Model-Metadata + Call-Defaults resolution.  
-**QOC-Bezug:** QOC hat `ModelInfo`/`StaticCatalogSource`. Lernpunkt: **Dynamic Model Discovery**.
+### 27.4 Model discovery
+Model metadata + call-defaults resolution.
+**QOC relevance:** QOC has `ModelInfo`/`StaticCatalogSource`. Learning: **dynamic model discovery**.
 
 ---
 
 ## 28. Guard (code-level)
 
-### 28.1 Repeat-Tool-Reminder
-Erkennt wiederholte identische Tool-Calls, erinnert Modell.  
-**QOC-Bezug:** QOC hat keine Loop-Guards. Lernpunkt: **Repeat-Detection**.
+### 28.1 Repeat-tool reminder
+Detects repeated identical tool calls, reminds the model.
+**QOC relevance:** QOC has no loop guards. Learning: **repeat detection**.
 
-### 28.2 Timeout-Policy
-Time-Limit für Tool-Calls mit deklariertem Timeout.  
-**QOC-Bezug:** QOC. Lernpunkt: **Tool-Timeout-Policy**.
+### 28.2 Timeout policy
+Time limit for tool calls with a declared timeout.
+**QOC relevance:** QOC. Learning: **tool-timeout policy**.
 
 ---
 
-## 29. Identity & Telemetry (code-level)
+## 29. Identity & telemetry (code-level)
 
-### 29.1 Anonymous User ID
-Ein Anonymous-Id pro Harness-Home für Telemetry/Feedback/Provider-Requests.  
-**QOC-Bezug:** QOC. Lernpunkt: **Installation-Identity** für Telemetry.
+### 29.1 Anonymous user ID
+One anonymous ID per harness home for telemetry/feedback/provider requests.
+**QOC relevance:** QOC. Learning: **installation identity** for telemetry.
 
-### 29.2 OTEL Transport Plugins
-Shared telemetry transport, business consumers wählen Events/Redaction.  
-**QOC-Bezug:** QOC hat `LlmTrace`. Lernpunkt: **OTEL-Integration**.
+### 29.2 OTEL transport plugins
+Shared telemetry transport; business consumers choose events/redaction.
+**QOC relevance:** QOC has `LlmTrace`. Learning: **OTEL integration**.
 
 ---
 
 ## 30. Extensions (code-level)
 
-### 30.1 Read-only API Discovery
-Runtime API inspection für Agents.  
-**QOC-Bezug:** QOC. Lernpunkt: **API-Discovery** für Agents.
+### 30.1 Read-only API discovery
+Runtime API inspection for agents.
+**QOC relevance:** QOC. Learning: **API discovery** for agents.
 
-### 30.2 Process-local Runners
-Programmatic + browser consumers.  
-**QOC-Bezug:** QOC. Lernpunkt: **Process-local Execution**.
+### 30.2 Process-local runners
+Programmatic + browser consumers.
+**QOC relevance:** QOC. Learning: **process-local execution**.
 
 ---
 
 ## 31. Preset (code-level)
 
-### 31.1 Agent Capabilities via Config
-Agent-Capabilities durch ordinary Cordis Config. Revision-Management.  
-**QOC-Bezug:** QOC hat `AgentProfile`/`AgentSelection`. Lernpunkt: **Config-basierte Agent-Composition**.
+### 31.1 Agent capabilities via config
+Agent capabilities through ordinary Cordis config. Revision management.
+**QOC relevance:** QOC has `AgentProfile`/`AgentSelection`. Learning: **config-based agent composition**.
 
 ---
 
-## 32. PTC Runtime (code-level)
+## 32. PTC runtime (code-level)
 
-### 32.1 Fresh Process per Async Function
-Node evaluates async function bodies in fresh processes. REPL retains one process per state owner. Script retention optional.  
-**QOC-Bezug:** QOC hat keine PTC. Lernpunkt: **PTC-Execution-Model**.
+### 32.1 Fresh process per async function
+Node evaluates async function bodies in fresh processes. REPL retains one process per state owner. Script retention optional.
+**QOC relevance:** QOC has no PTC. Learning: **PTC execution model**.
 
-### 32.2 Failures as Results
-Failures return as results, nicht exceptions.  
-**QOC-Bezug:** QOC. Lernpunkt: **Failure-as-Result**.
+### 32.2 Failures as results
+Failures return as results, not exceptions.
+**QOC relevance:** QOC. Learning: **failure-as-result**.
 
 ---
 
 ## 33. Document (code-level)
 
-### 33.1 Office→PDF Conversion
-LibreOffice kit. Targets mit native engine nutzen sie; andere Node WASM.  
-**QOC-Bezug:** QOC. Lernpunkt: **Document-Conversion** als Capability.
+### 33.1 Office→PDF conversion
+LibreOffice kit. Targets with a native engine use it; others use Node WASM.
+**QOC relevance:** QOC. Learning: **document conversion** as a capability.
 
 ---
 
 ## 34. SSH (code-level)
 
-### 34.1 Remote Providers via Shared Connection
-Filesystem/Subprocess/Sandbox über SSH. Provider-owned paths.  
-**QOC-Bezug:** QOC hat keine SSH-Execution. Lernpunkt: **Remote Execution Providers**.
+### 34.1 Remote providers via shared connection
+Filesystem/subprocess/sandbox over SSH. Provider-owned paths.
+**QOC relevance:** QOC has no SSH execution. Learning: **remote execution providers**.
 
 ---
 
 ## 35. Terminal (code-level)
 
 ### 35.1 Persistent PTY
-Interactive shells/REPLs über Tool-Calls hinweg. Owner-isolated. Nicht restart-surviving.  
-**QOC-Bezug:** QOC hat keine persistenten Terminals. Lernpunkt: **Persistent Terminal** als Capability.
+Interactive shells/REPLs across tool calls. Owner-isolated. Not restart-surviving.
+**QOC relevance:** QOC has no persistent terminals. Learning: **persistent terminal** as a capability.
 
 ---
 
 ## 36. LSP (code-level)
 
-### 36.1 Code Navigation
-Go-to-definition, find-references, hover. Provider choice transparent.  
-**QOC-Bezug:** QOC. Lernpunkt: **LSP-Integration**.
+### 36.1 Code navigation
+Go-to-definition, find-references, hover. Provider choice transparent.
+**QOC relevance:** QOC. Learning: **LSP integration**.
 
 ---
 
 ## 37. Web (code-level)
 
-### 37.1 Search/Fetch Providers
-Exa/Perplexity/DeepSeek für Search, anonymous HTTP(S)/DeepSeek für Fetch.  
-**QOC-Bezug:** QOC. Lernpunkt: **Web-Access als Capability** (QOC hat Firecrawl-MCP).
+### 37.1 Search/fetch providers
+Exa/Perplexity/DeepSeek for search, anonymous HTTP(S)/DeepSeek for fetch.
+**QOC relevance:** QOC. Learning: **web access as a capability** (QOC has Firecrawl MCP).
 
 ---
 
-## 38. Browser-use / Computer-use (code-level)
+## 38. Browser-use / computer-use (code-level)
 
-### 38.1 Exclusive Provider Registration
-Nur ein Provider pro Composition.  
-**QOC-Bezug:** QOC. Lernpunkt: **Exclusive Provider Pattern**.
+### 38.1 Exclusive provider registration
+Only one provider per composition.
+**QOC relevance:** QOC. Learning: **exclusive provider pattern**.
 
 ---
 
 ## 39. Context (code-level)
 
-### 39.1 Request-Context Plugins
-Agent-instructions, @file mentions, session references, time, tmux location. Durable (enter session history as user-role messages).  
-**QOC-Bezug:** QOC hat ContextBuilder. Lernpunkt: **Context als Plugins** mit Durable-Injection.
+### 39.1 Request-context plugins
+Agent instructions, @file mentions, session references, time, tmux location. Durable (enter session history as user-role messages).
+**QOC relevance:** QOC has `ContextBuilder`. Learning: **context as plugins** with durable injection.
 
 ---
 
 ## 40. FS (code-level)
 
-### 40.1 Write Intents
-`createIfAbsent`, `replaceIfVersion`. Omitting = unconditional create-or-overwrite.  
-**QOC-Bezug:** QOC. Lernpunkt: **Guarded Writes**.
+### 40.1 Write intents
+`createIfAbsent`, `replaceIfVersion`. Omitting means unconditional create-or-overwrite.
+**QOC relevance:** QOC. Learning: **guarded writes**.
 
-### 40.2 Move Outcome
-`FsMoveOutcome = { sourceBefore, destination, sourceDeleted: true } | { ..., sourceDeleted: false, sourceFailure }`. Destination published even if source removal fails.  
-**QOC-Bezug:** QOC. Lernpunkt: **Move mit Partial-Failure-Reporting**.
+### 40.2 Move outcome
+`FsMoveOutcome = { sourceBefore, destination, sourceDeleted: true } | { …, sourceDeleted: false, sourceFailure }`. Destination published even if source removal fails.
+**QOC relevance:** QOC. Learning: **move with partial-failure reporting**.
 
-### 40.3 Patch Hunks
-`FS_PATCH_MISMATCH` für Patch-Failures.  
-**QOC-Bezug:** QOC. Lernpunkt: **Patch-Hunk-Support**.
+### 40.3 Patch hunks
+`FS_PATCH_MISMATCH` for patch failures.
+**QOC relevance:** QOC. Learning: **patch-hunk support**.
 
-### 40.4 Path-Level Symlink Probe
-`FsPathInfo` mit `type: 'symlink'` für Trust-Boundary-Checks vor Resolve.  
-**QOC-Bezug:** QOC. Lernpunkt: **Symlink-Detection vor Resolve**.
+### 40.4 Path-level symlink probe
+`FsPathInfo` with `type: 'symlink'` for trust-boundary checks before resolve.
+**QOC relevance:** QOC. Learning: **symlink detection before resolve**.
 
 ---
 
-## 41. Konkrete Übernahme-Empfehlungen für QOC (priorisiert nach Impact)
+## 41. Concrete adoption recommendations for QOC (prioritized by impact)
 
-Bewertungsskala: **Impact** 1–5 (Produktwert), **Aufwand** 1–5 (Entwicklungszeit), **Integrierbarkeit** (ohne Architekturbruch: hoch/mittel/niedrig).  
-Architekturbruch = Änderung an `engine.core`-Grenzen, Port-Prinzip, Paket-Sichtbarkeit oder ArchUnit-Regeln.
+Rating scale: **Impact** 1–5 (product value), **Effort** 1–5 (dev time), **Integrability** (no architecture break: high/medium/low). Architecture break = change to `engine.core` boundaries, port principle, package visibility, or ArchUnit rules.
 
-### 41.1 Priorisierungsmatrix (P0/P1/P2)
+### 41.1 Prioritization matrix (P0/P1/P2)
 
-| # | Empfehlung | Impact | Aufwand | Integr. | Kategorie |
+| # | Recommendation | Impact | Effort | Integr. | Category |
 |---|---|---|---|---|---|
-| 1 | Empty-Session-Purge (>2h) | 3 | 1 | hoch | ✅ erledigt |
-| 2 | Fail-Closed Approval (missing answerer → `unavailable`) | 4 | 1 | hoch | P0 |
-| 3 | Symlink-Safe Writes (O_EXCL, 0600) | 4 | 1 | hoch | P0 |
-| 4 | Canonical Path Normalization (realpath) | 3 | 1 | hoch | P0 |
-| 5 | Branded Types für Seq/Offset/Version-Tokens | 3 | 2 | hoch | P0 |
-| 6 | Typed FS-Error-Codes (wie FailureKind) | 3 | 2 | hoch | P0 |
-| 7 | Capability Flags für Subagents | 3 | 1 | hoch | P0 |
-| 8 | Depth Limit für Subagents | 4 | 1 | hoch | P0 |
-| 9 | Empty-is-Absent (Credentials/Settings) | 3 | 1 | hoch | P0 |
-| 10 | Repeat-Tool-Reminder + Timeout-Policy (Guards) | 4 | 3 | hoch | P0 |
-| 11 | Per-Session Approval-Policy (`ask`/`never`) als Event | 4 | 3 | mittel | P0 |
-| 12 | Audit-Pair (`approval/asked`+`decided`) mit Request-ID | 4 | 3 | mittel | P0 |
-| 13 | Credential References + Per-Operation Resolve | 5 | 4 | mittel | P1 |
-| 14 | FsVersion Stale-Guards + createIfAbsent | 4 | 3 | mittel | P1 |
-| 15 | FsWriteOutcome before/after für Diff/Revert | 4 | 2 | hoch | P1 |
-| 16 | Fs Move mit Partial-Failure-Reporting | 3 | 2 | hoch | P1 |
-| 17 | Pinned Session Titles + Model-Identity + Bounded Aggregate | 3 | 2 | hoch | P1 |
-| 18 | Optimistic Concurrency (Revision) für Settings | 3 | 3 | mittel | P1 |
-| 19 | Path-addressed Settings Edits (set/unset) | 3 | 3 | mittel | P1 |
-| 20 | Secret Redaction im Wire | 4 | 2 | mittel | P1 |
-| 21 | Opaque Spill Locators + Best-Effort Policy | 4 | 3 | mittel | P1 |
-| 22 | Tool-Result-Pruning vor Compaction | 4 | 3 | mittel | P1 |
-| 23 | Compaction Lock-Events (Crash-Safety) | 4 | 3 | mittel | P1 |
-| 24 | Surface/Shadowed/Log-only Klassifikation | 4 | 4 | mittel | P1 |
-| 25 | System-Prompt Sections mit Order + Waterfall-Assembly | 3 | 2 | hoch | P1 |
-| 26 | Per-Session Serialization (Directory-Mutations) | 3 | 2 | hoch | P1 |
-| 27 | Capability Flags für Subagents (erweitert) | 3 | 2 | hoch | P1 |
-| 28 | Empty-is-Absent für Provider-Config | 3 | 1 | hoch | P1 |
-| 29 | Canonical Path Normalization (erweitert) | 3 | 2 | hoch | P1 |
-| 30 | Capability Seams formalisieren | 5 | 5 | niedrig | P2 |
-| 31 | Sandbox Modes + Enforcement | 4 | 5 | niedrig | P2 |
-| 32 | PTC (Programmatic Tool Calling) | 3 | 5 | niedrig | P2 |
-| 33 | Deliverables (present + Workspace Changes) | 3 | 4 | mittel | P2 |
-| 34 | Background Jobs (Session-Lifecycle-Records) | 4 | 4 | mittel | P2 |
-| 35 | Scheduling (7 Timing Kinds) | 3 | 5 | niedrig | P2 |
-| 36 | Goals (Revision-basiert) | 3 | 4 | mittel | P2 |
-| 37 | Plan Mode (Soft Guidance) | 3 | 4 | mittel | P2 |
-| 38 | Session Projections (detached Readers) | 4 | 4 | mittel | P2 |
-| 39 | Session Query (cross-corpus, surface classification) | 3 | 4 | mittel | P2 |
-| 40 | Working Directory als Event + Sandbox-Root-Anker | 4 | 3 | mittel | P2 |
-| 41 | Workspace (Canonical Paths, Membership, Activity) | 3 | 4 | mittel | P2 |
-| 42 | MCP Scope-basiert + Instructions in System Prompt | 3 | 3 | mittel | P2 |
-| 43 | Adjacent Migrations für Event-Log-Format | 4 | 5 | niedrig | P2 |
-| 44 | Image-Request-Caching (Variant-basiert) | 3 | 3 | mittel | P2 |
-| 45 | Image Offload Events | 3 | 3 | mittel | P2 |
-| 46 | Terminal (persistent PTY) | 2 | 4 | niedrig | P2 |
-| 47 | LSP Integration | 2 | 4 | niedrig | P2 |
-| 48 | SSH Remote Execution Providers | 2 | 5 | niedrig | P2 |
-| 49 | Web-Access Capability | 2 | 3 | mittel | P2 |
-| 50 | Document Conversion (Office→PDF) | 2 | 3 | mittel | P2 |
-| 51 | Browser/Computer-use (Exclusive Provider) | 2 | 5 | niedrig | P2 |
-| 52 | Context als Plugins (Durable Injection) | 3 | 4 | mittel | P2 |
-| 53 | Anonymous Installation Identity | 2 | 2 | hoch | P2 |
-| 54 | OTEL Integration | 3 | 3 | mittel | P2 |
+| 1 | Empty-session purge (>2h) | 3 | 1 | high | ✅ done |
+| 2 | Fail-closed approval (missing answerer → `unavailable`) | 4 | 1 | high | P0 |
+| 3 | Symlink-safe writes (O_EXCL, 0600) | 4 | 1 | high | P0 |
+| 4 | Canonical path normalization (realpath) | 3 | 1 | high | P0 |
+| 5 | Branded types for seq/offset/version tokens | 3 | 2 | high | P0 |
+| 6 | Typed FS error codes (like FailureKind) | 3 | 2 | high | P0 |
+| 7 | Capability flags for subagents | 3 | 1 | high | P0 |
+| 8 | Depth limit for subagents | 4 | 1 | high | P0 |
+| 9 | Empty-is-absent (credentials/settings) | 3 | 1 | high | P0 |
+| 10 | Repeat-tool reminder + timeout policy (guards) | 4 | 3 | high | P0 |
+| 11 | Per-session approval policy (`ask`/`never`) as event | 4 | 3 | medium | P0 |
+| 12 | Audit pair (`approval/asked`+`decided`) with request ID | 4 | 3 | medium | P0 |
+| 13 | Credential references + per-operation resolve | 5 | 4 | medium | P1 |
+| 14 | FsVersion stale guards + createIfAbsent | 4 | 3 | medium | P1 |
+| 15 | FsWriteOutcome before/after for diff/revert | 4 | 2 | high | P1 |
+| 16 | Fs move with partial-failure reporting | 3 | 2 | high | P1 |
+| 17 | Pinned session titles + model identity + bounded aggregate | 3 | 2 | high | P1 |
+| 18 | Optimistic concurrency (revision) for settings | 3 | 3 | medium | P1 |
+| 19 | Path-addressed settings edits (set/unset) | 3 | 3 | medium | P1 |
+| 20 | Secret redaction on the wire | 4 | 2 | medium | P1 |
+| 21 | Opaque spill locators + best-effort policy | 4 | 3 | medium | P1 |
+| 22 | Tool-result pruning before compaction | 4 | 3 | medium | P1 |
+| 23 | Compaction lock events (crash safety) | 4 | 3 | medium | P1 |
+| 24 | Surface/shadowed/log-only classification | 4 | 4 | medium | P1 |
+| 25 | System-prompt sections with order + waterfall assembly | 3 | 2 | high | P1 |
+| 26 | Per-session serialization (directory mutations) | 3 | 2 | high | P1 |
+| 27 | Capability flags for subagents (extended) | 3 | 2 | high | P1 |
+| 28 | Empty-is-absent for provider config | 3 | 1 | high | P1 |
+| 29 | Canonical path normalization (extended) | 3 | 2 | high | P1 |
+| 30 | Formalize capability seams | 5 | 5 | low | P2 |
+| 31 | Sandbox modes + enforcement | 4 | 5 | low | P2 |
+| 32 | PTC (programmatic tool calling) | 3 | 5 | low | P2 |
+| 33 | Deliverables (present + workspace changes) | 3 | 4 | medium | P2 |
+| 34 | Background jobs (session lifecycle records) | 4 | 4 | medium | P2 |
+| 35 | Scheduling (7 timing kinds) | 3 | 5 | low | P2 |
+| 36 | Goals (revision-based) | 3 | 4 | medium | P2 |
+| 37 | Plan mode (soft guidance) | 3 | 4 | medium | P2 |
+| 38 | Session projections (detached readers) | 4 | 4 | medium | P2 |
+| 39 | Session query (cross-corpus, surface classification) | 3 | 4 | medium | P2 |
+| 40 | Working directory as event + sandbox-root anchor | 4 | 3 | medium | P2 |
+| 41 | Workspace (canonical paths, membership, activity) | 3 | 4 | medium | P2 |
+| 42 | MCP scope-based + instructions in system prompt | 3 | 3 | medium | P2 |
+| 43 | Adjacent migrations for event-log format | 4 | 5 | low | P2 |
+| 44 | Image-request caching (variant-based) | 3 | 3 | medium | P2 |
+| 45 | Image offload events | 3 | 3 | medium | P2 |
+| 46 | Terminal (persistent PTY) | 2 | 4 | low | P2 |
+| 47 | LSP integration | 2 | 4 | low | P2 |
+| 48 | SSH remote execution providers | 2 | 5 | low | P2 |
+| 49 | Web-access capability | 2 | 3 | medium | P2 |
+| 50 | Document conversion (office→PDF) | 2 | 3 | medium | P2 |
+| 51 | Browser/computer-use (exclusive provider) | 2 | 5 | low | P2 |
+| 52 | Context as plugins (durable injection) | 3 | 4 | medium | P2 |
+| 53 | Anonymous installation identity | 2 | 2 | high | P2 |
+| 54 | OTEL integration | 3 | 3 | medium | P2 |
 
 ---
 
-### 41.2 P0 — Detailbeschreibungen
+### 41.2 P0 — detailed descriptions
 
-#### 2. Fail-Closed Approval (Impact 4, Aufwand 1, Integr. hoch)
-**Was:** Wenn kein Answerer verfügbar ist oder wirft, wird die Approval als `unavailable` behandelt (nicht geöffnet).  
-**Warum:** Verhindert, dass ein fehlender UI-Kanal zu einem stillen `allowed`.  
-**Integration:** Nur `WebApprovalSource`/`DurableApprovalSource` anpassen: bei fehlendem Answerer `ToolOutcome`/`StepResult` als denied zurückgeben. Kein Architekturbruch — rein in der Adapter-Schicht.  
-**Aufwand:** 1 Tag (Code + Tests).
+#### 2. Fail-closed approval (Impact 4, Effort 1, Integr. high)
+**What:** When no answerer is available or throws, the approval is treated as `unavailable` (not opened).
+**Why:** Prevents a missing UI channel from silently becoming `allowed`.
+**Integration:** Adjust only `WebApprovalSource`/`DurableApprovalSource`: on a missing answerer return `ToolOutcome`/`StepResult` as denied. No architecture break — purely adapter layer.
+**Effort:** 1 day (code + tests).
 
-#### 3. Symlink-Safe Writes (Impact 4, Aufwand 1, Integr. hoch)
-**Was:** Filesystem-Writes mit `O_EXCL` (create) und Mode 0600, um Symlink-Attacks zu verhindern.  
-**Warum:** Sicherheit bei Agent-gesteuerten Filesystem-Operationen.  
-**Integration:** `JdkFileSystem`/`PosixFileSystem` anpassen: `Files.createFile` mit `CREATE_NEW` + `posix:permissions`. Kein Port-Bruch.  
-**Aufwand:** 1 Tag.
+#### 3. Symlink-safe writes (Impact 4, Effort 1, Integr. high)
+**What:** Filesystem writes with `O_EXCL` (create) and mode 0600 to prevent symlink attacks.
+**Why:** Security for agent-driven filesystem operations.
+**Integration:** Adjust `JdkFileSystem`/`PosixFileSystem`: `Files.createFile` with `CREATE_NEW` + `posix:permissions`. No port break.
+**Effort:** 1 day.
 
-#### 4. Canonical Path Normalization (Impact 3, Aufwand 1, Integr. hoch)
-**Was:** `realpath`-Normalisierung (resolve symlinks, `..`, trailing slashes) als einzige Uniqueness-Canon.  
-**Warum:** Verhindert Path-Confusion und Duplicate-Workspace-Einträge.  
-**Integration:** In `Filesystem`-Adapter und `WorkspaceStore` (falls vorhanden). QOC hat kein Workspace-Konzept, aber Filesystem-Tools profitieren.  
-**Aufwand:** 1 Tag.
+#### 4. Canonical path normalization (Impact 3, Effort 1, Integr. high)
+**What:** `realpath` normalization (resolve symlinks, `..`, trailing slashes) as the single uniqueness canon.
+**Why:** Prevents path confusion and duplicate workspace entries.
+**Integration:** In the filesystem adapter and `WorkspaceStore` (if present). QOC has no workspace concept, but filesystem tools benefit.
+**Effort:** 1 day.
 
-#### 5. Branded Types für Seq/Offset/Version-Tokens (Impact 3, Aufwand 2, Integr. hoch)
-**Was:** `SessionSeq`, `SessionLogOffset`, `FsVersion`, `FsTargetKey` als gebrandete Typen einführen (Java: Records mit Validierung oder Value-Objects).  
-**Warum:** Verhindert Verwechslung von Seq vs. Offset vs. Instant zur Compile-Zeit.  
-**Integration:** Nur neue Typen in `engine.core`, keine bestehenden Signaturen ändern (additive).  
-**Aufwand:** 2–3 Tage (Typen + Migration der Aufrufer).
+#### 5. Branded types for seq/offset/version tokens (Impact 3, Effort 2, Integr. high)
+**What:** Introduce `SessionSeq`, `SessionLogOffset`, `FsVersion`, `FsTargetKey` as branded types (Java: records with validation or value objects).
+**Why:** Prevents confusion of seq vs. offset vs. instant at compile time.
+**Integration:** New types only in `engine.core`, no existing signatures changed (additive).
+**Effort:** 2–3 days (types + migration of callers).
 
-#### 6. Typed FS-Error-Codes (Impact 3, Aufwand 2, Integr. hoch)
-**Was:** `FsErrorCode`-Enum (`FS_NOT_FOUND`, `FS_STALE_VERSION`, `FS_AMBIGUOUS_EDIT`, …) analog zu `FailureKind`.  
-**Warum:** Strukturierte Fehlerbehandlung in Tools/UI.  
-**Integration:** Neues Enum in `engine.core`, `FsError`-Exception. Tools werfen typisierte Codes.  
-**Aufwand:** 2 Tage.
+#### 6. Typed FS error codes (Impact 3, Effort 2, Integr. high)
+**What:** `FsErrorCode` enum (`FS_NOT_FOUND`, `FS_STALE_VERSION`, `FS_AMBIGUOUS_EDIT`, …) analogous to `FailureKind`.
+**Why:** Structured error handling in tools/UI.
+**Integration:** New enum in `engine.core`, `FsError` exception. Tools throw typed codes.
+**Effort:** 2 days.
 
-#### 7. Capability Flags für Subagents (Impact 3, Aufwand 1, Integr. hoch)
-**Was:** `SubagentCapabilities { agentOptions, agentPreset, outputSchema, depthLimit }` als Flags am Provider.  
-**Warum:** Verhindert, dass ein Provider Optionen akzeptiert, die er nicht kann.  
-**Integration:** In `A2AClient`/`McpClient`-Adapter als Capability-Flags. Kein Port-Bruch.  
-**Aufwand:** 1 Tag.
+#### 7. Capability flags for subagents (Impact 3, Effort 1, Integr. high)
+**What:** `SubagentCapabilities { agentOptions, agentPreset, outputSchema, depthLimit }` as flags on the provider.
+**Why:** Prevents a provider from accepting options it cannot handle.
+**Integration:** In the `A2AClient`/`McpClient` adapter as capability flags. No port break.
+**Effort:** 1 day.
 
-#### 8. Depth Limit für Subagents (Impact 4, Aufwand 1, Integr. hoch)
-**Was:** `maxDepth` Cap für rekursive Subagent-Aufrufe.  
-**Warum:** Verhindert unendliche Rekursion (Kosten-/Stabilitätsrisiko).  
-**Integration:** In `agent_create`/A2A-Client als Parameter + Check.  
-**Aufwand:** 1 Tag.
+#### 8. Depth limit for subagents (Impact 4, Effort 1, Integr. high)
+**What:** `maxDepth` cap for recursive subagent calls.
+**Why:** Prevents infinite recursion (cost/stability risk).
+**Integration:** In `agent_create`/A2A client as parameter + check.
+**Effort:** 1 day.
 
-#### 9. Empty-is-Absent (Impact 3, Aufwand 1, Integr. hoch)
-**Was:** Leerer String/Null = absent (Provider-URL, API-Key, Config-Werte).  
-**Warum:** Verhindert, dass leere Config-Werte als gültige Werte behandelt werden.  
-**Integration:** Validierung in `ProviderProducer`/Config-Loading.  
-**Aufwand:** 1 Tag.
+#### 9. Empty-is-absent (Impact 3, Effort 1, Integr. high)
+**What:** Empty string/null = absent (provider URL, API key, config values).
+**Why:** Prevents empty config values from being treated as valid values.
+**Integration:** Validation in `ProviderProducer`/config loading.
+**Effort:** 1 day.
 
-#### 10. Repeat-Tool-Reminder + Timeout-Policy (Impact 4, Aufwand 3, Integr. hoch)
-**Was:** Guard, der wiederholte identische Tool-Calls erkennt und dem Modell eine Erinnerung injiziert; Timeout-Policy für Tools mit deklariertem Timeout.  
-**Warum:** Verhindert stuck loops und hängende Calls.  
-**Integration:** Als `ToolHook`/`Step`-Phase (pre-execute). QOC hat `ToolHooks` — dort einbauen. Kein Architekturbruch.  
-**Aufwand:** 3–4 Tage.
+#### 10. Repeat-tool reminder + timeout policy (Impact 4, Effort 3, Integr. high)
+**What:** Guard that detects repeated identical tool calls and injects a reminder to the model; timeout policy for tools with a declared timeout.
+**Why:** Prevents stuck loops and hanging calls.
+**Integration:** As a `ToolHook`/`Step` phase (pre-execute). QOC has `ToolHooks` — implement it there. No architecture break.
+**Effort:** 3–4 days.
 
-#### 11. Per-Session Approval-Policy `ask`/`never` (Impact 4, Aufwand 3, Integr. mittel)
-**Was:** `ApprovalPolicy = 'ask' | 'never'` als per-Session Event. `never` gibt deterministisch `rejected`. Effective value = letztes `approval/policy` Event, Fallback Service-Config.  
-**Warum:** Headless/CI-Betrieb ohne Prompts; replayable.  
-**Integration:** Neues Session-Event `approval/policy` + `SessionStore`/`Journal`. Medium, weil Event-Schema + Replay.  
-**Aufwand:** 3–4 Tage.
+#### 11. Per-session approval policy `ask`/`never` (Impact 4, Effort 3, Integr. medium)
+**What:** `ApprovalPolicy = 'ask' | 'never'` as a per-session event. `never` deterministically returns `rejected`. Effective value = latest `approval/policy` event, fallback service config.
+**Why:** Headless/CI operation without prompts; replayable.
+**Integration:** New session event `approval/policy` + `SessionStore`/`Journal`. Medium because of event schema + replay.
+**Effort:** 3–4 days.
 
-#### 12. Audit-Pair mit Request-ID (Impact 4, Aufwand 3, Integr. mittel)
-**Was:** `approval/asked` + `approval/decided` als log-only Pair, korreliert über `ApprovalRequestId`.  
-**Warum:** Auditierbarkeit von Approvals.  
-**Integration:** Neue Events + Store. Medium.  
-**Aufwand:** 3 Tage.
-
----
-
-### 41.3 P1 — Detailbeschreibungen
-
-#### 13. Credential References + Per-Operation Resolve (Impact 5, Aufwand 4, Integr. mittel)
-**Was:** Settings enthalten nur Referenzen (Env-Var-Namen), Provider besitzt Werte. Resolve pro Operation (kein Cache) → Hot-Rotation.  
-**Warum:** Höchster Impact: Secrets aus Config raus, Rotation ohne Neustart.  
-**Integration:** `ProviderProducer` und Config-Loading anpassen: statt `apiKey`-String eine `CredentialRef` auflösen. Medium-Hoch, weil Config-Schema und UI betroffen. Kein Port-Bruch (Adapter-Schicht).  
-**Aufwand:** 1 Woche.
-
-#### 14. FsVersion Stale-Guards (Impact 4, Aufwand 3, Integr. mittel)
-**Was:** `replaceIfVersion(version)` / `createIfAbsent` Intents im Filesystem.  
-**Warum:** Verhindert Lost-Update bei concurrent Edits.  
-**Integration:** `FileSystem`-Port erweitern (neue Methoden/Parameter). Port-Änderung, aber additiv.  
-**Aufwand:** 3–4 Tage.
-
-#### 15. FsWriteOutcome before/after (Impact 4, Aufwand 2, Integr. hoch)
-**Was:** Write/Edit/Delete-Ergebnisse tragen `before`/`after` (LF-normalisiert).  
-**Warum:** UI-Diff und Revert ohne Re-Read.  
-**Integration:** Return-Types in `FileSystem`-Port erweitern. Additiv.  
-**Aufwand:** 2 Tage.
-
-#### 16. Fs Move Partial-Failure (Impact 3, Aufwand 2, Integr. hoch)
-**Was:** Move publiziert Destination auch wenn Source-Removal fehlschlägt; `sourceDeleted: false + sourceFailure`.  
-**Warum:** Korrektes Error-Reporting bei partial failures.  
-**Integration:** `move`-Methode im Port.  
-**Aufwand:** 2 Tage.
-
-#### 17. Pinned Session Titles (Impact 3, Aufwand 2, Integr. hoch)
-**Was:** User-Rename pinnt Title (stopt Auto). Model-Identity-Tracking. `TitleInputState` als bounded Aggregate `{ first, count, lastSeq }`.  
-**Warum:** Konsistentes Title-Verhalten, keine Überschreibung durch Auto-Title nach User-Rename.  
-**Integration:** `TitleGenerator` + `SessionStore` anpassen.  
-**Aufwand:** 2 Tage.
-
-#### 18. Optimistic Concurrency für Settings (Impact 3, Aufwand 3, Integr. mittel)
-**Was:** `revision` monotonic; write mit `expectedRevision`; stale refused.  
-**Warum:** Verhindert lost updates bei concurrent Settings-Edits.  
-**Integration:** `SettingsStore` + UI.  
-**Aufwand:** 3 Tage.
-
-#### 19. Path-addressed Settings Edits (Impact 3, Aufwand 3, Integr. mittel)
-**Was:** `set(path, value)` / `unset(path)` statt whole-replace.  
-**Warum:** Granulare Edits, Secret-Preservation.  
-**Integration:** Settings-API erweitern.  
-**Aufwand:** 3 Tage.
-
-#### 20. Secret Redaction im Wire (Impact 4, Aufwand 2, Integr. mittel)
-**Was:** Secrets nie im Wire; `SettingsSecretView { path, set }`.  
-**Warum:** Sicherheit.  
-**Integration:** UI/REST-API anpassen.  
-**Aufwand:** 2 Tage.
-
-#### 21. Opaque Spill Locators (Impact 4, Aufwand 3, Integr. mittel)
-**Was:** `SpillLocator` branded/opaque; Consumers rendern mit `retrievalHint`, parsen nicht.  
-**Warum:** Entkopplung von Storage-Backend.  
-**Integration:** QOC's `ToolResultCache`/ArtifactRef anpassen.  
-**Aufwand:** 3 Tage.
-
-#### 22. Tool-Result-Pruning (Impact 4, Aufwand 3, Integr. mittel)
-**Was:** Große Tool-Results durch head/tail + Spill-Locator ersetzen (best-effort).  
-**Warum:** Kontext-Ersparnis.  
-**Integration:** In `CompactionService` oder `Step` (pre-request).  
-**Aufwand:** 3 Tage.
-
-#### 23. Compaction Lock-Events (Impact 4, Aufwand 3, Integr. mittel)
-**Was:** `compaction/start` (Lock) → Summary → `compaction/end` (Release). Crash = detectable orphaned lock.  
-**Warum:** Crash-Safety für Compaction.  
-**Integration:** `CompactionService` + `Journal`.  
-**Aufwand:** 3 Tage.
-
-#### 24. Surface/Shadowed/Log-only (Impact 4, Aufwand 4, Integr. mittel)
-**Was:** Event-Klassifikation `current | shadowed | log-only`. `foldSurface()` berechnet modell-sichtbare Sicht.  
-**Warum:** Korrektes Replay nach Compaction.  
-**Integration:** `ConversationFolding` + `Journal` erweitern.  
-**Aufwand:** 4 Tage.
-
-#### 25. System-Prompt Sections mit Order (Impact 3, Aufwand 2, Integr. hoch)
-**Was:** Prompt-Sections mit Order (z. B. `plan:policy` bei 50). Waterfall-Assembly.  
-**Warum:** Flexiblere Prompt-Komposition.  
-**Integration:** `ContextBuilder` anpassen.  
-**Aufwand:** 2 Tage.
-
-#### 26. Per-Session Serialization (Impact 3, Aufwand 2, Integr. hoch)
-**Was:** Per-Session Promise-Chain für ordered Mutations (z. B. Directory-Changes).  
-**Warum:** Verhindert Race-Conditions bei concurrent Mutations.  
-**Integration:** In `SessionService` oder `ToolRuntime`.  
-**Aufwand:** 2 Tage.
-
-#### 27. Capability Flags (erweitert) (Impact 3, Aufwand 2, Integr. hoch)
-**Was:** Capability-Flags am Provider (agentOptions, agentPreset, outputSchema, depthLimit).  
-**Warum:** Provider-Fähigkeiten explizit.  
-**Integration:** In `ProviderAdapter`/`ModelInfo`.  
-**Aufwand:** 2 Tage.
-
-#### 28. Empty-is-Absent (erweitert) (Impact 3, Aufwand 1, Integr. hoch)
-**Was:** Leere Werte = absent (Provider-URL, API-Key, Config).  
-**Warum:** Konsistenz.  
-**Integration:** Config-Loading + ProviderProducer.  
-**Aufwand:** 1 Tag.
-
-#### 29. Canonical Path Normalization (erweitert) (Impact 3, Aufwand 2, Integr. hoch)
-**Was:** realpath-Normalisierung (symlinks, `..`, trailing slashes).  
-**Warum:** Path-Confusion verhindern.  
-**Integration:** Filesystem-Adapter + Workspace (falls vorhanden).  
-**Aufwand:** 2 Tage.
+#### 12. Audit pair with request ID (Impact 4, Effort 3, Integr. medium)
+**What:** `approval/asked` + `approval/decided` as a log-only pair, correlated via `ApprovalRequestId`.
+**Why:** Auditability of approvals.
+**Integration:** New events + store. Medium.
+**Effort:** 3 days.
 
 ---
 
-### 41.4 P2 — Nur Kurzreferenz (hoher Aufwand / niedrige Integrationsreife)
+### 41.3 P1 — detailed descriptions
 
-Sandbox Modes, PTC, Deliverables, Background Jobs, Scheduling, Goals, Plan Mode, Session Projections, Session Query, Working Directory als Event, Workspace, MCP Scope, Adjacent Migrations, Image-Caching, Image Offload, Terminal, LSP, SSH, Web-Access, Document Conversion, Browser/Computer-use, Context-as-Plugins, Anonymous Identity, OTEL, Capability Seams formalisieren.
+#### 13. Credential references + per-operation resolve (Impact 5, Effort 4, Integr. medium)
+**What:** Settings contain only references (env-var names); the provider owns the values. Resolve per operation (no cache) → hot rotation.
+**Why:** Highest impact: secrets out of config, rotation without restart.
+**Integration:** Adjust `ProviderProducer` and config loading: instead of an `apiKey` string, resolve a `CredentialRef`. Medium-high, because config schema and UI are affected. No port break (adapter layer).
+**Effort:** 1 week.
 
-Diese erfordern entweder neue Subsysteme oder tiefere Architekturänderungen und sind erst sinnvoll, wenn P0/P1 abgeschlossen sind.
+#### 14. FsVersion stale guards (Impact 4, Effort 3, Integr. medium)
+**What:** `replaceIfVersion(version)` / `createIfAbsent` intents in the filesystem.
+**Why:** Prevents lost updates on concurrent edits.
+**Integration:** Extend the `FileSystem` port (new methods/parameters). Port change, but additive.
+**Effort:** 3–4 days.
+
+#### 15. FsWriteOutcome before/after (Impact 4, Effort 2, Integr. high)
+**What:** Write/edit/delete results carry `before`/`after` (LF-normalized).
+**Why:** UI diff and revert without re-reading.
+**Integration:** Extend return types in the `FileSystem` port. Additive.
+**Effort:** 2 days.
+
+#### 16. Fs move partial failure (Impact 3, Effort 2, Integr. high)
+**What:** Move publishes the destination even when source removal fails; `sourceDeleted: false + sourceFailure`.
+**Why:** Correct error reporting on partial failures.
+**Integration:** `move` method in the port.
+**Effort:** 2 days.
+
+#### 17. Pinned session titles (Impact 3, Effort 2, Integr. high)
+**What:** User rename pins the title (stops auto). Model-identity tracking. `TitleInputState` as a bounded aggregate `{ first, count, lastSeq }`.
+**Why:** Consistent title behavior; no overwrite by auto-title after a user rename.
+**Integration:** Adjust `TitleGenerator` + `SessionStore`.
+**Effort:** 2 days.
+
+#### 18. Optimistic concurrency for settings (Impact 3, Effort 3, Integr. medium)
+**What:** `revision` monotonic; write with `expectedRevision`; stale refused.
+**Why:** Prevents lost updates on concurrent settings edits.
+**Integration:** `SettingsStore` + UI.
+**Effort:** 3 days.
+
+#### 19. Path-addressed settings edits (Impact 3, Effort 3, Integr. medium)
+**What:** `set(path, value)` / `unset(path)` instead of whole-replace.
+**Why:** Granular edits, secret preservation.
+**Integration:** Extend the settings API.
+**Effort:** 3 days.
+
+#### 20. Secret redaction on the wire (Impact 4, Effort 2, Integr. medium)
+**What:** Secrets never on the wire; `SettingsSecretView { path, set }`.
+**Why:** Security.
+**Integration:** Adjust UI/REST API.
+**Effort:** 2 days.
+
+#### 21. Opaque spill locators (Impact 4, Effort 3, Integr. medium)
+**What:** `SpillLocator` branded/opaque; consumers render with `retrievalHint`, do not parse.
+**Why:** Decoupling from the storage backend.
+**Integration:** Adjust QOC's `ToolResultCache`/artifact ref.
+**Effort:** 3 days.
+
+#### 22. Tool-result pruning (Impact 4, Effort 3, Integr. medium)
+**What:** Replace large tool results with head/tail + spill locator (best-effort).
+**Why:** Context savings.
+**Integration:** In `CompactionService` or `Step` (pre-request).
+**Effort:** 3 days.
+
+#### 23. Compaction lock events (Impact 4, Effort 3, Integr. medium)
+**What:** `compaction/start` (lock) → summary → `compaction/end` (release). Crash = detectable orphaned lock.
+**Why:** Crash safety for compaction.
+**Integration:** `CompactionService` + `Journal`.
+**Effort:** 3 days.
+
+#### 24. Surface/shadowed/log-only (Impact 4, Effort 4, Integr. medium)
+**What:** Event classification `current | shadowed | log-only`. `foldSurface()` computes the model-visible view.
+**Why:** Correct replay after compaction.
+**Integration:** Extend `ConversationFolding` + `Journal`.
+**Effort:** 4 days.
+
+#### 25. System-prompt sections with order (Impact 3, Effort 2, Integr. high)
+**What:** Prompt sections with order (e.g. `plan:policy` at 50). Waterfall assembly.
+**Why:** More flexible prompt composition.
+**Integration:** Adjust `ContextBuilder`.
+**Effort:** 2 days.
+
+#### 26. Per-session serialization (Impact 3, Effort 2, Integr. high)
+**What:** Per-session promise chain for ordered mutations (e.g. directory changes).
+**Why:** Prevents race conditions on concurrent mutations.
+**Integration:** In `SessionService` or `ToolRuntime`.
+**Effort:** 2 days.
+
+#### 27. Capability flags (extended) (Impact 3, Effort 2, Integr. high)
+**What:** Capability flags on the provider (agentOptions, agentPreset, outputSchema, depthLimit).
+**Why:** Provider capabilities made explicit.
+**Integration:** In `ProviderAdapter`/`ModelInfo`.
+**Effort:** 2 days.
+
+#### 28. Empty-is-absent (extended) (Impact 3, Effort 1, Integr. high)
+**What:** Empty values = absent (provider URL, API key, config).
+**Why:** Consistency.
+**Integration:** Config loading + `ProviderProducer`.
+**Effort:** 1 day.
+
+#### 29. Canonical path normalization (extended) (Impact 3, Effort 2, Integr. high)
+**What:** realpath normalization (symlinks, `..`, trailing slashes).
+**Why:** Prevents path confusion.
+**Integration:** Filesystem adapter + workspace (if present).
+**Effort:** 2 days.
 
 ---
 
-### 41.5 Nicht übernehmen (QOC-spezifisch anders gelöst)
-- Plugin-Architektur (Cordis) — QOC ist Java/Quarkus mit festem Kern; Ports reichen.
-- TypeScript/Node-Ökosystem — andere Runtime.
-- Web-UI-Details — QOC hat eigene UI.
-- Session-Format v4 Details — QOC nutzt DB, nicht JSONL.
-- Capability Seams als Plugin-System — QOC nutzt Port-Prinzip.
+### 41.4 P2 — short reference only (high effort / low integration maturity)
 
-## 42. Referenzen
+Sandbox modes, PTC, deliverables, background jobs, scheduling, goals, plan mode, session projections, session query, working directory as event, workspace, MCP scope, adjacent migrations, image caching, image offload, terminal, LSP, SSH, web access, document conversion, browser/computer-use, context-as-plugins, anonymous identity, OTEL, formalizing capability seams.
+
+These require either new subsystems or deeper architecture changes and only make sense once P0/P1 are complete.
+
+---
+
+### 41.5 Do not adopt (QOC solves these differently)
+- Plugin architecture (Cordis) — QOC is Java/Quarkus with a fixed core; ports suffice.
+- TypeScript/Node ecosystem — different runtime.
+- Web UI details — QOC has its own UI.
+- Session format v4 details — QOC uses a DB, not JSONL.
+- Capability seams as a plugin system — QOC uses the port principle.
+
+## 42. References
 
 - `deepseek-harness/docs/architecture.md`
 - `deepseek-harness/docs/agent-lifecycle.md`
@@ -1031,4 +1030,4 @@ Diese erfordern entweder neue Subsysteme oder tiefere Architekturänderungen und
 - `deepseek-harness/docs/session-format-status.md`
 - `deepseek-harness/docs/subsystems/*.md`
 - `deepseek-harness/packages/*/README.md`
-- `deepseek-harness/packages/*/src/*.ts` (Typen und Implementierungen)
+- `deepseek-harness/packages/*/src/*.ts` (types and implementations)

@@ -1,99 +1,99 @@
-# Layering – Agent-Runtime vs. Workflow-Orchestrierung
+# Layering – Agent Runtime vs. Workflow Orchestration
 
-> **Zweck:** Festlegung der Schichtengrenze zwischen Agent-Runtime (Kern)
-> und Workflow-Orchestrierung. Klärt, wo Subagents/Tools leben und wo
-> Resilienz, SAGA, Abhängigkeiten und Cross-Session-Wake hingehören.
+> **Purpose:** Defines the layer boundary between the Agent Runtime (core)
+> and workflow orchestration. Clarifies where subagents/tools live and where
+> resilience, SAGA, dependencies and cross-session wake belong.
 >
-> **Status:** 2026-11-09 (Entscheidung)
+> **Status:** 2026-11-09 (Decision)
 >
-> **Referenzen:** [`Core.md`](./Core.md),
+> **References:** [`Core.md`](./Core.md),
 > [`Task-Orchestration.md`](./Task-Orchestration.md),
 > [`Async-use.md`](./Async-use.md),
 > [`Storage-alternative.md`](./Storage-alternative.md).
 
-## 1. Entscheidung
+## 1. Decision
 
-**Beide Schichten sind sinnvoll.** Subagents leben im **Kern**, aber nur
-als **Helfer (Primitive)** – ohne Resilienz, Saga oder Abhängigkeiten.
-Workflow-Orchestrierung liegt **darüber** und nutzt Subagents als **Worker**.
+**Both layers make sense.** Subagents live in the **core**, but only as
+**helpers (primitives)** – without resilience, saga or dependencies.
+Workflow orchestration sits **on top** and uses subagents as **workers**.
 
-| Ebene | Frage | Kennt Subagents/Tools als … |
+| Level | Question | Knows subagents/tools as … |
 |---|---|---|
-| **Agent-Runtime (Kern)** | „Wie führe ich **einen** Turn aus?" | **Tool** – `subagent` ist ein Tool, das der Agent aufrufen kann. |
-| **Workflow-Schicht (oben)** | „Wie verteile ich **mehrere** Aufgaben auf mehrere Agenten?" | **Teilnehmer** – Subagents sind Worker, die der Workflow steuert. |
+| **Agent Runtime (core)** | "How do I execute **one** turn?" | **Tool** – `subagent` is a tool the agent can call. |
+| **Workflow layer (top)** | "How do I distribute **multiple** tasks across multiple agents?" | **Participant** – subagents are workers controlled by the workflow. |
 
-## 2. Was gehört in den Kern (Agent-Runtime)
+## 2. What belongs in the core (Agent Runtime)
 
-Alles, was einen **einzelnen** Agent-Turn ausführt:
+Everything that executes a **single** agent turn:
 
-| Baustein | Rolle |
+| Building block | Role |
 |---|---|
-| `Step` | Ein Modell-Call + parallele Tool-Ausführung |
-| `ContextBuilder` / `Prepared` | Kontext eines Turns |
-| `ToolRuntime` / `ToolAuthorizer` | Tool-Ausführung |
-| `PermissionEngine` | Autorisierung pro Turn |
-| `CompactionService` | Kontext-Management |
-| `Coordinator` (single-session) | Claim, Doorbell, Terminal-Event **einer** Session |
-| `Admission` / `Delivery` | Inbox einer Session |
-| `Recovery` (single-session) | Claim-basierte Wiederaufnahme |
-| `ProviderAdapter` | LLM-Aufruf |
+| `Step` | One model call + parallel tool execution |
+| `ContextBuilder` / `Prepared` | Context of a turn |
+| `ToolRuntime` / `ToolAuthorizer` | Tool execution |
+| `PermissionEngine` | Authorization per turn |
+| `CompactionService` | Context management |
+| `Coordinator` (single-session) | Claim, doorbell, terminal event of **one** session |
+| `Admission` / `Delivery` | Inbox of a session |
+| `Recovery` (single-session) | Claim-based resumption |
+| `ProviderAdapter` | LLM call |
 
-### 2.1 Subagents im Kern – nur als Helfer
+### 2.1 Subagents in the core – only as helpers
 
-Der Kern stellt die **Primitive** bereit, damit der Agent delegieren kann:
+The core provides the **primitives** so the agent can delegate:
 
-| Baustein | Rolle im Kern |
+| Building block | Role in the core |
 |---|---|
-| `SubagentTool` | `ToolDefinition` im Snapshot – der Agent kann `subagent` aufrufen |
-| `SubagentRunner` | Ausführungsprimitive: `run(session, agent, prompt)` |
-| `BackgroundTasks` | Primitive Registry: Task-ID, Status, Ergebnis (in-memory) |
-| `SubagentSessionRegistry` | Parent/Child-Tracking |
-| `PermissionGate` | Autorisierung der Delegation |
-| `ToolRuntime` | Hooks, Decode, Encode |
+| `SubagentTool` | `ToolDefinition` in the snapshot – the agent can call `subagent` |
+| `SubagentRunner` | Execution primitive: `run(session, agent, prompt)` |
+| `BackgroundTasks` | Primitive registry: task ID, status, result (in-memory) |
+| `SubagentSessionRegistry` | Parent/child tracking |
+| `PermissionGate` | Authorization of delegation |
+| `ToolRuntime` | Hooks, decode, encode |
 
-**Der Kern weiß nichts von:** Abhängigkeiten, DAGs, Tiers, Kompensationen,
-durable Persistenz, Cross-Session-Wake, Quotas, Versionierung.
+**The core knows nothing about:** dependencies, DAGs, tiers, compensations,
+durable persistence, cross-session wake, quotas, versioning.
 
-Der Kern führt einen `subagent`-Aufruf aus und liefert ein Ergebnis. Punkt.
+The core executes a `subagent` call and returns a result. Period.
 
-## 3. Was gehört in die Workflow-Schicht (oben)
+## 3. What belongs in the workflow layer (top)
 
-Orchestrierung von **mehreren** Agent-Turns:
+Orchestration of **multiple** agent turns:
 
-| Baustein | Rolle |
+| Building block | Role |
 |---|---|
-| `TaskNode` + `dependsOn` | Task-Modell mit Abhängigkeiten |
-| DAG-Scheduler | Reihenfolge, Parallelität, Fan-out/Fan-in |
-| `TaskTier` (research/analyze/execute/saga) | Policy über Agent-Profile |
-| `SagaRunner` + Kompensationen | Multi-Step-Transaktionen |
-| `BackgroundTaskStore` (durable) | Persistenz über Neustart |
-| `TaskResultDelivery` | Inbox-Steer an Parent |
-| Task-Quota pro Session | Ressourcen-Governance |
-| Versions-/Schemaversionierung | Lebenszyklus von Definitionen |
-| Heartbeat (Task/Worker) | Observability über Sessions hinweg |
-| Scheduler/Webhook-Trigger | Externe Einstiegspunkte |
+| `TaskNode` + `dependsOn` | Task model with dependencies |
+| DAG scheduler | Ordering, parallelism, fan-out/fan-in |
+| `TaskTier` (research/analyze/execute/saga) | Policy over agent profiles |
+| `SagaRunner` + compensations | Multi-step transactions |
+| `BackgroundTaskStore` (durable) | Persistence across restarts |
+| `TaskResultDelivery` | Inbox-steer to parent |
+| Task quota per session | Resource governance |
+| Version/schema versioning | Lifecycle of definitions |
+| Heartbeat (task/worker) | Observability across sessions |
+| Scheduler/webhook triggers | External entry points |
 
-### 3.1 Subagents in der Workflow-Schicht – als Worker
+### 3.1 Subagents in the workflow layer – as workers
 
-Hier sind Subagents keine Tools, sondern **Teilnehmer** in einem Plan:
+Here subagents are not tools but **participants** in a plan:
 
-- „Starte Research-Subagent A, dann Analysis-Subagent B, dann Execute C."
-- „Führe A und B parallel aus, warte auf beide, dann C."
-- „Wenn C fehlschlägt, kompensiere B und A."
+- "Start research subagent A, then analysis subagent B, then execute C."
+- "Run A and B in parallel, wait for both, then C."
+- "If C fails, compensate B and A."
 
-Die Workflow-Schicht entscheidet:
-- **Wann** ein Subagent startet (Abhängigkeiten).
-- **Welchen Tier** er nutzt (research/analyze/execute/saga).
-- **Ob** er durable sein muss.
-- **Wie** das Ergebnis weitergegeben wird (Inbox-Delivery).
+The workflow layer decides:
+- **When** a subagent starts (dependencies).
+- **Which tier** it uses (research/analyze/execute/saga).
+- **Whether** it must be durable.
+- **How** the result is forwarded (inbox delivery).
 
-## 4. Kommunikation zwischen den Schichten
+## 4. Communication between the layers
 
-Die Workflow-Schicht nutzt den Kern **nur über Ports**, nie über Interna:
+The workflow layer uses the core **only through ports**, never through internals:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ Workflow-Schicht (runtime/workflow)                 │
+│ Workflow layer (runtime/workflow)                   │
 │   TaskService, DAG-Scheduler, SagaRunner,           │
 │   TaskStore, HeartbeatPublisher, Quota              │
 │        │  Ports (SessionStore, Journal, Inbox,      │
@@ -101,116 +101,116 @@ Die Workflow-Schicht nutzt den Kern **nur über Ports**, nie über Interna:
 └────────┼────────────────────────────────────────────┘
          │
 ┌────────┼────────────────────────────────────────────┐
-│ Agent-Runtime (engine core)                        │
+│ Agent Runtime (engine core)                        │
 │   Session, Coordinator, Step, ContextBuilder,       │
 │   ToolRuntime, PermissionEngine, Compaction         │
 └────────────────────────────────────────────────────┘
 ```
 
-| Workflow-Aktion | Kern-Port, der genutzt wird |
+| Workflow action | Core port used |
 |---|---|
-| Task startet Subagent | `SessionService.create` + `Coordinator.wake` |
-| Task-Ergebnis an Parent | `Admission.admit` + `SessionWake.wake` |
-| Task-Claim (durabler) | `ClaimStore.acquire/release` |
-| Task-Events | `Journal.append` |
-| Tool-Ausführung im Task | `ToolRuntime` (über `Step`) |
-| Permission im Task | `PermissionEngine` |
+| Task starts subagent | `SessionService.create` + `Coordinator.wake` |
+| Task result to parent | `Admission.admit` + `SessionWake.wake` |
+| Task claim (durable) | `ClaimStore.acquire/release` |
+| Task events | `Journal.append` |
+| Tool execution in task | `ToolRuntime` (via `Step`) |
+| Permission in task | `PermissionEngine` |
 | Heartbeat | `EventBus.publishLive` + Journal |
-| Quota | Semaphore (Runtime-Primitive) |
+| Quota | Semaphore (runtime primitive) |
 
-**Regel:** Der Kern importiert **nichts** aus der Workflow-Schicht.
-Die Abhängigkeit zeigt nur nach unten (Workflow → Core).
+**Rule:** The core imports **nothing** from the workflow layer.
+The dependency points only downward (Workflow → Core).
 
-## 5. Aufteilung: was wo liegt
+## 5. Allocation: where things live
 
-| Konzept | Kern (Runtime) | Workflow-Schicht |
+| Concept | Core (Runtime) | Workflow layer |
 |---|---|---|
-| `SubagentTool` als Tool-Definition | ✅ | ❌ (nutzt es nur indirekt) |
-| `SubagentRunner.run(session, agent, prompt)` | ✅ | ✅ (ruft es auf) |
-| `BackgroundTasks` (Registry) | ✅ (primitive) | ✅ (steuert Lifecycle) |
+| `SubagentTool` as tool definition | ✅ | ❌ (uses it only indirectly) |
+| `SubagentRunner.run(session, agent, prompt)` | ✅ | ✅ (calls it) |
+| `BackgroundTasks` (registry) | ✅ (primitive) | ✅ (controls lifecycle) |
 | `SubagentSessionRegistry` | ✅ | ❌ |
-| Task-Abhängigkeiten, DAG | ❌ | ✅ |
-| Tier-Modell | ❌ | ✅ |
-| SAGA + Kompensationen | ❌ | ✅ |
-| Durable Task-Persistenz | ❌ | ✅ |
-| Cross-Session-Wake | ❌ | ✅ (nutzt `SessionWake`) |
-| Task-Quota pro Session | ❌ | ✅ |
-| Versions-/Schemaversionierung | ❌ | ✅ |
-| Heartbeat (Execution, single-session) | ✅ | ❌ |
-| Heartbeat (Task/Worker) | ❌ | ✅ |
-| Permission-Check für Subagent | ✅ | ❌ (delegiert an Kern) |
-| Tool-Snapshot-Filterung | ✅ | ❌ (delegiert an Kern) |
+| Task dependencies, DAG | ❌ | ✅ |
+| Tier model | ❌ | ✅ |
+| SAGA + compensations | ❌ | ✅ |
+| Durable task persistence | ❌ | ✅ |
+| Cross-session wake | ❌ | ✅ (uses `SessionWake`) |
+| Task quota per session | ❌ | ✅ |
+| Version/schema versioning | ❌ | ✅ |
+| Heartbeat (execution, single-session) | ✅ | ❌ |
+| Heartbeat (task/worker) | ❌ | ✅ |
+| Permission check for subagent | ✅ | ❌ (delegates to core) |
+| Tool snapshot filtering | ✅ | ❌ (delegates to core) |
 
-## 6. Warum nicht nur eine Schicht?
+## 6. Why not just one layer?
 
-| Ansatz | Problem |
+| Approach | Problem |
 |---|---|
-| **Nur Kern** (Subagents als Tools, kein Workflow) | Keine Abhängigkeiten, keine SAGA, keine durable Tasks, kein Cross-Session-Wake. Agent muss alles selbst steuern → komplex, fehleranfällig. |
-| **Nur Workflow** (alles orchestriert) | Workflow müsste Tool-Ausführung, Permissions, Kontext-Building, Compaction kennen → verletzt Single Responsibility, schwer testbar. |
-| **Beide (Kern + Workflow)** | Klare Trennung: Kern = „ein Turn", Workflow = „viele Turns koordinieren". |
+| **Core only** (subagents as tools, no workflow) | No dependencies, no SAGA, no durable tasks, no cross-session wake. The agent must orchestrate everything itself → complex, error-prone. |
+| **Workflow only** (everything orchestrated) | Workflow would have to know about tool execution, permissions, context building, compaction → violates single responsibility, hard to test. |
+| **Both (core + workflow)** | Clear separation: core = "one turn", workflow = "coordinate many turns". |
 
-**Merksatz:** Der Kern stellt die **primitive** „führe Subagent X aus" bereit.
-Die Workflow-Schicht **komponiert** daraus Pläne mit Abhängigkeiten, Tiers
-und Kompensationen. Resilienz und Saga leben **nur** oben.
+**Mnemonic:** The core provides the **primitive** "execute subagent X".
+The workflow layer **composes** plans with dependencies, tiers and
+compensations from it. Resilience and saga live **only** at the top.
 
-## 7. Aktueller Stand in QOC (Vermischung)
+## 7. Current state in QOC (mixed)
 
-Im Code ist die Trennung noch nicht sauber:
+In the code the separation is not yet clean:
 
-| Baustein | Aktueller Ort | Sollte sein |
+| Building block | Current location | Should be |
 |---|---|---|
 | `BackgroundTasks` | `runtime/tool/subagent/` | `runtime/workflow/` |
-| `SubagentTool.executeBackground` | `runtime/tool/subagent/` | `runtime/workflow/` (ruft `SubagentRunner` auf) |
-| `TaskTool` | `runtime/tool/subagent/` | `runtime/workflow/` (oder HTTP-API) |
+| `SubagentTool.executeBackground` | `runtime/tool/subagent/` | `runtime/workflow/` (calls `SubagentRunner`) |
+| `TaskTool` | `runtime/tool/subagent/` | `runtime/workflow/` (or HTTP API) |
 | `SubagentSessionRegistry` | `runtime/tool/subagent/` | `runtime/workflow/` |
-| `Engine` (Quarkus) | orchestriert Subagents + Live-Events | Workflow-Schicht nutzt `Engine` als Kern-API |
-| `MAX_CONCURRENT_SUBAGENTS` | `Engine.java:2249` | `TaskQuota` in Workflow-Schicht |
+| `Engine` (Quarkus) | orchestrates subagents + live events | Workflow layer uses `Engine` as core API |
+| `MAX_CONCURRENT_SUBAGENTS` | `Engine.java:2249` | `TaskQuota` in workflow layer |
 
-## 8. Migrationsschritte
+## 8. Migration steps
 
-1. `BackgroundTasks` + `SubagentTool.executeBackground` + `TaskTool` +
-   `SubagentSessionRegistry` aus `runtime/tool/subagent/` nach
-   `runtime/workflow/` verschieben (reine Paket-Umbenennung).
-2. `TaskNode` + `dependsOn` ergänzen; `TaskService` als Fassade.
-3. DAG-Scheduler (`TaskScheduler`) implementieren.
-4. Tier-Definitionen als Daten einführen.
-5. `BackgroundTaskStore`-Port definieren; Memory- und SQL-Adapter.
-6. Cross-Session-Wake über `Admission`/`SessionWake`.
-7. SAGA + Kompensationen (durable, Journal-Events).
-8. Heartbeat (`HeartbeatPublisher`) als Workflow-Komponente.
-9. Quota pro Session im `TaskService`.
-10. ArchUnit-Regeln für die Schichtgrenze.
+1. Move `BackgroundTasks` + `SubagentTool.executeBackground` + `TaskTool` +
+   `SubagentSessionRegistry` out of `runtime/tool/subagent/` into
+   `runtime/workflow/` (pure package rename).
+2. Add `TaskNode` + `dependsOn`; `TaskService` as facade.
+3. Implement DAG scheduler (`TaskScheduler`).
+4. Introduce tier definitions as data.
+5. Define `BackgroundTaskStore` port; memory and SQL adapters.
+6. Cross-session wake via `Admission`/`SessionWake`.
+7. SAGA + compensations (durable, journal events).
+8. Heartbeat (`HeartbeatPublisher`) as workflow component.
+9. Quota per session in `TaskService`.
+10. ArchUnit rules for the layer boundary.
 
-## 9. Wann lohnt sich die Trennung, wann nicht?
+## 9. When does the separation pay off, when not?
 
-| Kriterium | Trennung lohnt sich | Trennung nicht nötig |
+| Criterion | Separation pays off | Separation not needed |
 |---|---|---|
-| **Scope** | Multi-Session-Workflows, SAGA, durable Tasks | Nur einzelne Subagents, kein DAG |
-| **Testbarkeit** | Workflow-Tests gegen Fake-Kern | Einfache Subagent-Calls |
-| **Skalierung** | Workflow als eigener Service | Single-Process |
-| **Team** | Getrennte Verantwortung Kern/Workflow | Kleines Team |
-| **Komplexität** | Abhängigkeiten, Kompensationen, Versionen | Keine Abhängigkeiten |
+| **Scope** | Multi-session workflows, SAGA, durable tasks | Only single subagents, no DAG |
+| **Testability** | Workflow tests against fake core | Simple subagent calls |
+| **Scaling** | Workflow as own service | Single process |
+| **Team** | Separate responsibility core/workflow | Small team |
+| **Complexity** | Dependencies, compensations, versions | No dependencies |
 
-**Empfehlung für QOC:** Die Trennung lohnt sich, weil:
-- Die Bausteine existieren bereits und sind nur falsch platziert.
-- Die Spec beschreibt bereits eine Schichtung (Coordinator = single-session,
-  Workflow = multi-session).
-- Durable Tasks und SAGA erfordern Persistenz, die der Kern nicht kennen
-  sollte.
-- Die Hexagonal-Architektur passt dazu: Workflow ist ein `runtime.*`-Modul,
-  das `core.*` nutzt, aber nicht umgekehrt.
+**Recommendation for QOC:** The separation pays off because:
+- The building blocks already exist and are only misplaced.
+- The spec already describes a layering (Coordinator = single-session,
+  workflow = multi-session).
+- Durable tasks and SAGA require persistence the core should not know
+  about.
+- The hexagonal architecture fits: workflow is a `runtime.*` module that
+  uses `core.*`, but not the other way around.
 
-**Wenn du nur einfache Subagents brauchst** (kein DAG, kein SAGA, keine
-Persistenz), reicht die aktuelle Struktur. Die Trennung wird relevant, sobald
-du **Abhängigkeiten, Versionen oder Kompensationen** brauchst.
+**If you only need simple subagents** (no DAG, no SAGA, no persistence),
+the current structure is sufficient. The separation becomes relevant once
+you need **dependencies, versions or compensations**.
 
-## 10. Referenzen
+## 10. References
 
-- [`Core.md`](./Core.md) §2 (Kernumfang), §8 (Extraktionsgrenze)
-- [`Task-Orchestration.md`](./Task-Orchestration.md) (Task-Abhängigkeiten, Tiers, SAGA)
-- [`Async-use.md`](./Async-use.md) (Variante B/C, Heartbeat, Recovery)
-- [`Storage-alternative.md`](./Storage-alternative.md) (Persistenz, Journal als Source of Truth)
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/` (aktuelle, zu verschiebende Bausteine)
-- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java` (Subagent-Wiring, Live-Events)
-- `qoc/docs/spec/session-engine/12-execution-model.md` (Execution-Modell)
-- `qoc/docs/spec/session-engine/04-algorithms.md` (Algorithmen)
+- [`Core.md`](./Core.md) §2 (core scope), §8 (extraction boundary)
+- [`Task-Orchestration.md`](./Task-Orchestration.md) (task dependencies, tiers, SAGA)
+- [`Async-use.md`](./Async-use.md) (variants B/C, heartbeat, recovery)
+- [`Storage-alternative.md`](./Storage-alternative.md) (persistence, journal as source of truth)
+- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/` (current building blocks to be moved)
+- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java` (subagent wiring, live events)
+- `qoc/docs/spec/session-engine/12-execution-model.md` (execution model)
+- `qoc/docs/spec/session-engine/04-algorithms.md` (algorithms)

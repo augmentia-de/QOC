@@ -1,10 +1,10 @@
 # Quarkus Workflow Integration
 
-## Ziel
+## Goal
 
-Workflow-Runner (ReactFlow-basierte Workflows) und die workflow-ui (React) werden in den Quarkus-Stack integriert, sodass ein einziges natives Binary sowohl die Agent-Chat-UI (`/`) als auch den Workflow-Editor (`/workflow`) ausliefert und die Workflow-REST-API unter `/api/workflows*` bereitstellt.
+Integrate the workflow runner (ReactFlow-based workflows) and the workflow-ui (React) into the Quarkus stack, so that a single native binary serves both the Agent-Chat-UI (`/`) and the Workflow Editor (`/workflow`) and exposes the Workflow REST API under `/api/workflows*`.
 
-## Architektur (Ziel)
+## Architecture (Target)
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -21,61 +21,62 @@ Workflow-Runner (ReactFlow-basierte Workflows) und die workflow-ui (React) werde
 └─────────────────────────────────────────────┘
 ```
 
-## Schritte
+## Steps
 
-### Schritt 1 – Dependency & Bean-Wiring
-- `workflow-runner` als Dependency in `quarkus/pom.xml` (slf4j-simple excluden).
-- CDI-Beans: `WorkflowStore`, `CheckpointStore` (pfad-konfigurierbar via `engine.workflow.storage-dir`).
+### Step 1 – Dependency & Bean-Wiring
+- Add `workflow-runner` as a dependency in `quarkus/pom.xml` (exclude slf4j-simple).
+- CDI beans: `WorkflowStore`, `CheckpointStore` (path configurable via `engine.workflow.storage-dir`).
 - Config: `engine.workflow.storage-dir=${ENGINE_WORKFLOW_STORAGE_DIR:./wf-data}`.
 
-### Schritt 2 – JAX-RS Resource portieren
-- `WorkflowResource` unter `/api/workflows` (CRUD, validate, versions, run).
-- Nutzt `engine.qocEngine()` + `WorkflowStore`.
-- `WorkflowExecutor` pro Request instanziieren.
+### Step 2 – Port the JAX-RS Resource
+- `WorkflowResource` under `/api/workflows` (CRUD, validate, versions, run).
+- Uses `engine.qocEngine()` + `WorkflowStore`.
+- Instantiate `WorkflowExecutor` per request.
 
-### Schritt 3 – Native-Reflection (Jackson)
-- `@RegisterForReflection` auf `WorkflowDefinition` etc. ODER `reflect-config.json`.
-- Test: `mvn -Pnative package` startet ohne Jackson-Fehler.
+### Step 3 – Native Reflection (Jackson)
+- `@RegisterForReflection` on `WorkflowDefinition` etc. OR `reflect-config.json`.
+- Test: `mvn -Pnative package` starts without Jackson errors.
 
-### Schritt 4 – UI-Assets einbinden (React)
+### Step 4 – Include UI Assets (React)
 - `npm run build` in `workflow-ui/` → `dist/`.
-- Copy nach `quarkus/src/main/resources/META-INF/resources/workflow/`.
-- Optional `ui`-Profil im quarkus-pom (frontend-maven-plugin).
+- Copy into `quarkus/src/main/resources/META-INF/resources/workflow/`.
+- Optional `ui` profile in the quarkus pom (frontend-maven-plugin).
 
-### Schritt 5 – SPA-Fallback
-- Option A: Hash-Router in React (keine Server-Änderung).
+### Step 5 – SPA Fallback
+- Option A: Hash router in React (no server changes).
 - Option B: JAX-RS `@Path("/workflow/{path:.*}")` → `index.html`.
 
-### Schritt 6 – API-Ausrichtung
-- workflow-ui nutzt `baseURL: '/api'` + `/workflows` → passt zu Quarkus.
-- Vite-Proxy in Dev auf `:8080`.
+### Step 6 – API Alignment
+- workflow-ui uses `baseURL: '/api'` + `/workflows` → matches Quarkus.
+- Vite proxy in dev to `:8080`.
 
-### Schritt 7 – Navigation
-- Link von `/` → `/workflow` und zurück.
+### Step 7 – Navigation
+- Link from `/` → `/workflow` and back.
 
-### Schritt 8 – Test
-- JVM-Modus: CRUD + Run (Multi-Node) + UI.
-- Native-Modus: Binary startet, Assets werden ausgeliefert.
+### Step 8 – Test
+- JVM mode: CRUD + Run (Multi-Node) + UI.
+- Native mode: Binary starts, assets are served.
 
-### Schritt 9 – Cleanup
-- `WorkflowRunnerMain` als Standalone-Dev-Server behalten (optional).
-- Scripts anpassen.
+### Step 9 – Cleanup
+- Keep `WorkflowRunnerMain` as standalone dev server (optional).
+- Adjust scripts.
 
 ## Status
 
-- [x] Schritt 1 – Dependency & Bean-Wiring
-- [x] Schritt 2 – JAX-RS Resource
-- [x] Schritt 3 – Native-Reflection
-- [x] Schritt 4 – UI-Assets
-- [x] Schritt 5 – SPA-Fallback
-- [x] Schritt 6 – API-Ausrichtung
-- [x] Schritt 7 – Navigation
-- [x] Schritt 8 – Test (JVM)
-- [x] Schritt 9 – Cleanup
+- [x] Step 1 – Dependency & Bean-Wiring
+- [x] Step 2 – JAX-RS Resource
+- [x] Step 3 – Native Reflection
+- [x] Step 4 – UI Assets
+- [x] Step 5 – SPA Fallback
+- [x] Step 6 – API Alignment
+- [x] Step 7 – Navigation
+- [x] Step 8 – Test (JVM)
+- [x] Step 9 – Cleanup
 
-## Risiken
+## Risks
 
-- Jackson-Reflection in Native (häufigste Fehlerquelle).
-- SPA-Routing (Fallback).
-- WorkflowStore File-I/O im Container (Volume-Mount).
-- Shared QocEngine-Instanz (Session-/State-Konsistenz).
+- Jackson reflection in native (most common source of errors).
+- SPA routing (fallback).
+- WorkflowStore file I/O in container (volume mount).
+- Shared QocEngine instance (session/state consistency).
+"

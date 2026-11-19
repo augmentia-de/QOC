@@ -1,38 +1,37 @@
-# Task-Orchestration – Abhängigkeiten, gestufte Versionen, SAGA
+# Task Orchestration – Dependencies, Tiered Versions, SAGA
 
-> **Zweck:** Detaillierte Beschreibung, wie Tasks in QOC voneinander abhängig,
-> gestuft, versioniert und als SAGA ausgeführt werden können – inklusive
-> Durable Persistenz, Cross-Session-Wake und Task-Quota.
+> **Purpose:** Detailed description of how tasks in QOC depend on each other, are
+> tiered, versioned and executed as a SAGA – including durable persistence,
+> cross-session wake and task quota.
 >
-> **Status:** 2026-11-09 (Analyse / Planung, nicht implementiert)
+> **Status:** 2026-11-09 (analysis / planning, not implemented)
 >
-> **Referenzen:** [`Async-use.md`](./Async-use.md),
+> **References:** [`Async-use.md`](./Async-use.md),
 > [`Core.md`](./Core.md), [`Storage-alternative.md`](./Storage-alternative.md).
 
-## 1. Ausgangslage in QOC
+## 1. Starting Point in QOC
 
-Bereits vorhanden:
+Already available:
 
-| Baustein | Datei | Was er kann |
+| Building block | File | What it can do |
 |---|---|---|
-| `BackgroundTasks` | `engine/.../runtime/tool/subagent/BackgroundTasks.java` | In-Memory-Registry pro Parent: `create`, `succeed`, `fail`, `cancel`, `await`, `list`, `get` |
-| `SubagentTool` | `.../SubagentTool.java` | `background=true` → virtueller Thread; `tasks=[...]` → Batch (`executeBatch`, sequenziell, Fail-fast) |
-| `SubagentSessionRegistry` | `.../SubagentSessionRegistry.java` | Parent→Child-Mapping |
-| HTTP-Tasks | `HttpApi.java:513,525` | `GET /session/{id}/tasks`, `POST .../tasks/{taskId}/cancel` |
+| `BackgroundTasks` | `engine/.../runtime/tool/subagent/BackgroundTasks.java` | In-memory registry per parent: `create`, `succeed`, `fail`, `cancel`, `await`, `list`, `get` |
+| `SubagentTool` | `.../SubagentTool.java` | `background=true` → virtual thread; `tasks=[...]` → batch (`executeBatch`, sequential, fail-fast) |
+| `SubagentSessionRegistry` | `.../SubagentSessionRegistry.java` | Parent→Child mapping |
+| HTTP Tasks | `HttpApi.java:513,525` | `GET /session/{id}/tasks`, `POST .../tasks/{taskId}/cancel` |
 | SSE | `Engine.java:2404/2437/2448/2454` | `SubagentStarted/Finished/Cancelled` |
 
-**Was fehlt:** Abhängigkeiten zwischen Tasks, Stufen (Research … Saga),
-Versions-/Schemaversionierung, Kompensation bei Teilfehlern, Persistenz über
-Neustart.
+**What is missing:** Dependencies between tasks, tiers (Research … Saga),
+version/schema versioning, compensation on partial failures, persistence across
+restarts.
 
 ---
 
-## 2. Task-Abhängigkeiten (`dependsOn`)
+## 2. Task Dependencies (`dependsOn`)
 
-### 2.1 Modell
+### 2.1 Model
 
-Ein Task kann eine Liste von Task-IDs angeben, die vor ihm abgeschlossen
-sein müssen.
+A task can specify a list of task IDs that must be completed before it.
 
 ```java
 public record TaskNode(
@@ -49,60 +48,59 @@ public record TaskNode(
 ) {}
 ```
 
-### 2.2 Semantik
+### 2.2 Semantics
 
-- Ein Task mit `dependsOn` startet nicht sofort, sondern geht in den Zustand
+- A task with `dependsOn` does not start immediately but enters the state
   `WAITING`.
-- Er wird `READY`, sobald **alle** Vorgänger `SUCCEEDED` sind.
-- Schlägt ein Vorgänger fehl (`FAILED`/`CANCELLED`), wird der Nachfolger
-  `BLOCKED` (oder `CANCELLED`, je nach Policy).
-- Ein Task ohne `dependsOn` ist sofort `READY`.
+- It becomes `READY` once **all** predecessors have `SUCCEEDED`.
+- If a predecessor fails (`FAILED`/`CANCELLED`), the successor becomes
+  `BLOCKED` (or `CANCELLED`, depending on policy).
+- A task without `dependsOn` is immediately `READY`.
 
-**Warum sinnvoll:** Verhindert, dass Task B mit unvollständigen Daten von A
-arbeitet; ermöglicht parallele Ausführung unabhängiger Tasks; macht den
-Datenfluss explizit.
+**Why useful:** Prevents task B from working with incomplete data from A;
+enables parallel execution of independent tasks; makes data flow explicit.
 
-### 2.3 Konkret in QOC
+### 2.3 Concrete in QOC
 
-- `TaskNode` bekommt `List<String> dependsOn`.
-- `BackgroundTasks.create(parent, agent, dependsOn)` prüft, ob alle IDs
-  existieren.
-- `tryStartReady(parent)` startet alle Tasks, deren Vorgänger alle
-  `SUCCEEDED` sind und ein Slot frei ist.
+- `TaskNode` gets `List<String> dependsOn`.
+- `BackgroundTasks.create(parent, agent, dependsOn)` checks that all IDs
+  exist.
+- `tryStartReady(parent)` starts all tasks whose predecessors have all
+  `SUCCEEDED` and a slot is free.
 
 ---
 
-## 3. DAG-Scheduler
+## 3. DAG Scheduler
 
-### 3.1 Konzept
+### 3.1 Concept
 
-Ein leichtgewichtiger Planer für gerichtete azyklische Graphen (DAG) von
-Tasks. Tasks können mehrere Vorgänger (Diamond) und mehrere Nachfolger
-(Fan-out) haben; keine Zyklen erlaubt.
+A lightweight scheduler for directed acyclic graphs (DAG) of tasks. Tasks can
+have multiple predecessors (diamond) and multiple successors (fan-out); no
+cycles allowed.
 
-### 3.2 Ablauf
+### 3.2 Flow
 
 ```
-1. Task wird erstellt → Vorgänger prüfen → WAITING oder READY
-2. Scheduler sucht alle READY-Tasks (Vorgänger alle SUCCEEDED)
-3. Startet so viele wie Slots frei sind (Quota)
-4. Bei Terminal-Event eines Tasks:
-   a. Vorgänger-Status aktualisieren
-   b. tryStartReady() erneut ausführen
-   c. Ggf. Nachfolger BLOCKED markieren
+1. Task is created → check predecessors → WAITING or READY
+2. Scheduler finds all READY tasks (all predecessors SUCCEEDED)
+3. Starts as many as there are free slots (quota)
+4. On terminal event of a task:
+   a. Update predecessor status
+   b. Re-run tryStartReady()
+   c. Possibly mark successors as BLOCKED
 ```
 
-### 3.3 Vorteile gegenüber `executeBatch` (heute)
+### 3.3 Advantages over `executeBatch` (today)
 
-| `executeBatch` (heute) | DAG-Scheduler (vorgeschlagen) |
+| `executeBatch` (today) | DAG scheduler (proposed) |
 |---|---|
-| Strikt sequenziell | Parallel, wo möglich |
-| Fail-fast (erster Fehler bricht alles ab) | Konfigurierbar: block oder cancel |
-| Keine Ergebnis-Weitergabe | Ergebnis-Interpolation |
-| Keine Abhängigkeiten | Explizite `dependsOn` |
-| Ein Tool-Call | Mehrere Tasks mit Quota |
+| Strictly sequential | Parallel where possible |
+| Fail-fast (first error aborts everything) | Configurable: block or cancel |
+| No result passing | Result interpolation |
+| No dependencies | Explicit `dependsOn` |
+| Single tool call | Multiple tasks with quota |
 
-### 3.4 Beispiel Diamond-DAG
+### 3.4 Diamond DAG Example
 
 ```
         ┌─► Task B (analyze API) ─┐
@@ -110,82 +108,82 @@ Task A (research) ─┤                  ├─► Task D (implement)
         └─► Task C (analyze DB) ─┘
 ```
 
-A läuft zuerst. B und C laufen parallel. D startet erst, wenn B und C
-beide fertig sind.
+A runs first. B and C run in parallel. D starts only once both B and C are
+finished.
 
 ---
 
-## 4. Ergebnis-Interpolation
+## 4. Result Interpolation
 
-### 4.1 Was
+### 4.1 What
 
-Das Ergebnis eines Vorgänger-Tasks wird in den Prompt eines
-Nachfolger-Tasks eingesetzt.
+The result of a predecessor task is inserted into the prompt of a successor
+task.
 
-### 4.2 Mechanismen
+### 4.2 Mechanisms
 
-| Mechanismus | Beschreibung | Eignung |
+| Mechanism | Description | Suitability |
 |---|---|---|
-| **Text-Interpolation** | `{{task_<id>.result}}` im Prompt wird durch den Ergebnis-Text ersetzt | einfach, lesbar |
-| **Strukturiert** | Ergebnis als JSON-Objekt in den Prompt-Kontext | typsicher, komplex |
-| **Artifact-Referenz** | `artifact://task_<id>/result` → Nachfolger liest über `read`-Tool | für große Ergebnisse |
+| **Text interpolation** | `{{task_<id>.result}}` in the prompt is replaced by the result text | simple, readable |
+| **Structured** | Result as JSON object in the prompt context | type-safe, complex |
+| **Artifact reference** | `artifact://task_<id>/result` → successor reads via `read` tool | for large results |
 
-### 4.3 Beispiel
+### 4.3 Example
 
 ```
 Task A (research): "Recherchiere REST-API-Best-Practices"
   → Ergebnis: "1. Pagination via cursor, 2. Rate-Limiting via Token-Bucket, ..."
 
 Task B (analyze, dependsOn=[A]):
-  Prompt: "Analysiere folgende Best-Practices auf Relevanz für QOC:
+  Prompt: "Analyze the following best practices for relevance to QOC:
            {{task_A.result}}"
 ```
 
-### 4.4 Grenzen
+### 4.4 Limits
 
-- Ergebnis-Größe: große Ergebnisse als Artifact referenzieren, nicht inline.
-- Der Agent muss wissen, dass er mit einem interpolierten Ergebnis arbeitet.
-- Bei `FAILED`-Vorgänger: Interpolation schlägt fehl → Nachfolger `BLOCKED`.
+- Result size: large results should be referenced as artifacts, not inlined.
+- The agent must know that it is working with an interpolated result.
+- On a `FAILED` predecessor: interpolation fails → successor `BLOCKED`.
 
 ---
 
-## 5. Tier-Modell (research / analyze / execute / saga)
+## 5. Tier Model (research / analyze / execute / saga)
 
-### 5.1 Was
+### 5.1 What
 
-Vier Stufen, die den Charakter eines Tasks bestimmen. Jede Stufe hat eigene
-Tool-Zugriffe, Step-Limits, Sandbox und Durability.
+Four levels that determine the character of a task. Each level has its own
+tool access, step limits, sandbox and durability.
 
-| Tier | Charakter | Tools | maxSteps | Sandbox | Durable |
+| Tier | Character | Tools | maxSteps | Sandbox | Durable |
 |---|---|---|---|---|---|
-| **research** | read-only, keine Side-Effects | read, glob, grep, webfetch, websearch | 5 | read-only | nein |
-| **analyze** | Analyse, darf Entwürfe schreiben | research + write/edit (Scratch) | 10 | workspace-write | nein |
-| **execute** | Vollzug mit Side-Effects | voller Katalog | 20 | konfigurierbar | ja |
-| **saga** | Multi-Step, transaktional | voller Katalog + Kompensationen | 50+ | konfigurierbar | ja |
+| **research** | read-only, no side effects | read, glob, grep, webfetch, websearch | 5 | read-only | no |
+| **analyze** | analysis, may write drafts | research + write/edit (scratch) | 10 | workspace-write | no |
+| **execute** | execution with side effects | full catalog | 20 | configurable | yes |
+| **saga** | multi-step, transactional | full catalog + compensations | 50+ | configurable | yes |
 
-### 5.2 Warum Tiers?
+### 5.2 Why Tiers?
 
-- **Sicherheit:** Ein Research-Task kann nichts zerstören.
-- **Kosten:** Research braucht weniger Steps und kein Durability.
-- **Klarheit:** Der Aufrufer sagt, was er will („recherchiere" vs.
-  „implementiere").
-- **Quota:** Research-Tasks können aggressiver parallelisiert werden.
+- **Safety:** A research task cannot destroy anything.
+- **Cost:** Research needs fewer steps and no durability.
+- **Clarity:** The caller states what they want ("research" vs.
+  "implement").
+- **Quota:** Research tasks can be parallelized more aggressively.
 
-### 5.3 Umsetzung
+### 5.3 Implementation
 
 ```java
 public enum TaskTier { RESEARCH, ANALYZE, EXECUTE, SAGA }
 
 public record AgentProfile(..., TaskTier tier) { ... }
-// Oder beim Aufruf:
+// Or at call time:
 // subagent(agent="researcher", prompt="...", tier="research")
 ```
 
-Die Tier-Definition steuert: `maxSteps`, `tools.allow/deny`, `sandbox`,
-`durable`, `compensations` (nur bei `saga`).
+The tier definition controls: `maxSteps`, `tools.allow/deny`, `sandbox`,
+`durable`, `compensations` (only for `saga`).
 
-**Tier als Daten, nicht als Code:** JSON-Config oder Agent-Frontmatter, nicht
-hartkodierte `if`-Ketten. Anpassung ohne Rebuild.
+**Tier as data, not code:** JSON config or agent frontmatter, not
+hardcoded `if` chains. Adjustable without rebuild.
 
 ```json
 {
@@ -200,23 +198,23 @@ hartkodierte `if`-Ketten. Anpassung ohne Rebuild.
 
 ---
 
-## 6. SAGA mit Kompensationen
+## 6. SAGA with Compensations
 
-### 6.1 Konzept
+### 6.1 Concept
 
-Ein SAGA-Task besteht aus mehreren **Schritten**, von denen jeder eine
-**Kompensation** (Undo-Aktion) hat. Bei einem Fehler laufen die
-Kompensationen in **umgekehrter Reihenfolge**.
+A SAGA task consists of several **steps**, each of which has a
+**compensation** (undo action). On failure, compensations run in **reverse
+order**.
 
 ```
 Saga: [Step1, Step2, Step3]
-  Step1 OK → Comp1 registriert
-  Step2 OK → Comp2 registriert
-  Step3 FAIL → Comp2 → Comp1 (rückwärts)
-  → Saga FAILED (mit Compensations-Status)
+  Step1 OK → Comp1 registered
+  Step2 OK → Comp2 registered
+  Step3 FAIL → Comp2 → Comp1 (backwards)
+  → Saga FAILED (with compensation status)
 ```
 
-### 6.2 Datenmodell
+### 6.2 Data Model
 
 ```java
 public record SagaStep(
@@ -231,17 +229,17 @@ public record SagaExecution(
     List<String> completedSteps, List<String> compensationsRun, SagaState state) {}
 ```
 
-### 6.3 Kompensations-Regeln
+### 6.3 Compensation Rules
 
-1. Jeder abgeschlossene Step kann eine Kompensation haben.
-2. Bei Fehler: Kompensationen in **umgekehrter** Reihenfolge.
-3. Kompensationen müssen **idempotent** sein.
-4. Kompensationen werden im Journal protokolliert
+1. Every completed step can have a compensation.
+2. On failure: compensations in **reverse** order.
+3. Compensations must be **idempotent**.
+4. Compensations are logged in the journal
    (`SagaCompensationStarted/Ended`).
-5. Wenn eine Kompensation fehlschlägt: `SagaCompensationFailed` →
-   manuelle Intervention (Alert).
+5. If a compensation fails: `SagaCompensationFailed` →
+   manual intervention (alert).
 
-### 6.4 Journal-Events für SAGA
+### 6.4 Journal Events for SAGA
 
 ```
 SagaStarted, SagaStepStarted, SagaStepCompleted, SagaStepFailed,
@@ -249,53 +247,53 @@ SagaCompensationStarted, SagaCompensationCompleted,
 SagaCompensationFailed, SagaCompleted, SagaFailed, SagaCancelled
 ```
 
-### 6.5 Persistenz
+### 6.5 Persistence
 
-- SAGA-Tasks **müssen** durable sein (Journal + Claim).
-- Bei Neustart: laufende SAGA → `ORPHANED`; Recovery entscheidet
-  (Fortsetzen oder Kompensieren).
-- Die `BackgroundTasks`-Registry allein reicht nicht; sie muss durch
-  Journal-basierte Persistenz ergänzt werden.
+- SAGA tasks **must** be durable (journal + claim).
+- On restart: running SAGA → `ORPHANED`; recovery decides
+  (resume or compensate).
+- The `BackgroundTasks` registry alone is not enough; it must be
+  supplemented by journal-based persistence.
 
 ---
 
-## 7. Versions- und Schemaversionierung
+## 7. Version and Schema Versioning
 
-### 7.1 Definitionsversion
+### 7.1 Definition Version
 
-- Jeder Task/Saga trägt `version` (Integer oder SemVer).
-- Bei Änderung der Definition wird die Version erhöht.
-- Laufende Tasks behalten ihre Version (kein Upgrade mid-flight).
-- Ergebnisse tragen die Version mit (`TaskResult.metadata.version`).
+- Every task/saga carries `version` (integer or SemVer).
+- When the definition changes, the version is incremented.
+- Running tasks keep their version (no upgrade mid-flight).
+- Results carry the version (`TaskResult.metadata.version`).
 
-### 7.2 Schemaversionierung
+### 7.2 Schema Versioning
 
-- Task-Payloads sind JSON mit optionalem `schemaVersion`-Feld.
-- Fehlendes Feld → Default-Version annehmen.
-- Migration: alte Payloads werden beim Laden normalisiert.
+- Task payloads are JSON with an optional `schemaVersion` field.
+- Missing field → assume default version.
+- Migration: old payloads are normalized on load.
 
-### 7.3 Agent-Konfiguration
+### 7.3 Agent Configuration
 
-- Agent-Definitionen haben bereits `hash` und `updatedAt`
+- Agent definitions already have `hash` and `updatedAt`
   (`Engine.agent()`).
-- Bei Task-Start wird der Agent-Hash gespeichert.
-- Bei Resume wird geprüft, ob sich die Definition geändert hat
-  (Warnung, kein automatisches Upgrade).
+- The agent hash is stored at task start.
+- On resume it is checked whether the definition changed
+  (warning, no automatic upgrade).
 
-**Warum wichtig?** Ohne Versionierung bricht ein Update der
-Agent-Definitionen alle laufenden Tasks. Mit Versionierung können alte
-Definitionen weiterlaufen, während neue Tasks die neue Version nutzen.
+**Why important?** Without versioning, an update to agent definitions
+breaks all running tasks. With versioning, old definitions can keep
+running while new tasks use the new version.
 
 ---
 
-## 8. Durable Task-Persistenz
+## 8. Durable Task Persistence
 
-### 8.1 Was
+### 8.1 What
 
-Tasks überleben Prozess-Neustarts. Aktuell ist die
-`BackgroundTasks`-Registry **in-memory** und verliert alles.
+Tasks survive process restarts. Currently the `BackgroundTasks` registry is
+**in-memory** and loses everything.
 
-### 8.2 Lösung (Journal-basiert)
+### 8.2 Solution (Journal-based)
 
 ```
 TaskStarted   { taskId, parentSession, agent, promptHash, created }
@@ -306,79 +304,78 @@ TaskFailed    { taskId, at, error }
 TaskCancelled { taskId, at, reason }
 ```
 
-### 8.3 Ablauf
+### 8.3 Flow
 
-1. Task-Start: `Journal.append(TaskStarted)` (durable).
-2. Heartbeat: periodisch `TaskHeartbeat` (durable oder nur in-memory).
+1. Task start: `Journal.append(TaskStarted)` (durable).
+2. Heartbeat: periodically `TaskHeartbeat` (durable or in-memory only).
 3. Terminal: `TaskSucceeded/Failed/Cancelled` (durable).
-4. `BackgroundTasks` wird zum **Read-Model** aus dem Journal.
-5. Bei Neustart: `TaskStarted` ohne Terminal → `ORPHANED`; Recovery
-   entscheidet (neu starten oder als `FAILED(orphaned)` markieren).
+4. `BackgroundTasks` becomes the **read model** from the journal.
+5. On restart: `TaskStarted` without terminal → `ORPHANED`; recovery
+   decides (restart or mark as `FAILED(orphaned)`).
 
-### 8.4 Claim-Interaktion
+### 8.4 Claim Interaction
 
-Ein durabler Task muss den Claim der Parent-Session halten, solange er
-läuft. Bei Neustart wird der Claim als „offen" erkannt und die
-Task-Recovery gestartet.
+A durable task must hold the parent session's claim while it runs. On
+restart the claim is recognized as "open" and task recovery is started.
 
 ---
 
-## 9. Cross-Session-Wake bei Task-Ende
+## 9. Cross-Session Wake on Task Completion
 
-### 9.1 Was
+### 9.1 What
 
-Wenn ein Background-Task (z. B. Subagent) beendet ist, wird die
-Parent-Session **automatisch geweckt**, statt dass sie pollen muss.
+When a background task (e.g. subagent) finishes, the parent session is
+**automatically woken**, instead of polling.
 
-### 9.2 Heute vs. Ziel
+### 9.2 Today vs. Goal
 
-| Aspekt | Heute | Ziel |
+| Aspect | Today | Goal |
 |---|---|---|
-| Mechanismus | `taskPoll` (`index.html:1331`), Polling alle 5 s | Event-Driven |
-| Latenz | bis 5 s | sofort |
-| Parent-Zustand | muss laufen | wird geweckt |
-| Ergebnis-Zustellung | Abruf via `GET /tasks` | Inbox-Delivery (`steer`) |
+| Mechanism | `taskPoll` (`index.html:1331`), polling every 5 s | Event-driven |
+| Latency | up to 5 s | immediate |
+| Parent state | must be running | is woken |
+| Result delivery | fetch via `GET /tasks` | Inbox delivery (`steer`) |
 
-### 9.3 Ablauf (Ziel)
+### 9.3 Flow (Goal)
 
 ```
-Task beendet → Journal.append(TaskSucceeded)
-            → InboxEnqueued(parent, result)
-            → SessionWake.wake(parent)
-            → Parent-Step: Delivery → neuer Step mit Ergebnis
+Task finished → Journal.append(TaskSucceeded)
+             → InboxEnqueued(parent, result)
+             → SessionWake.wake(parent)
+             → Parent step: Delivery → new step with result
 ```
 
-### 9.4 Vorteile
+### 9.4 Advantages
 
-- Kein Polling, keine Latenz.
-- Parent kann in der Zwischenzeit andere Arbeit erledigen oder schlafen.
-- Ergebnis kommt als `steer`-Item in die Inbox.
+- No polling, no latency.
+- Parent can do other work or sleep in the meantime.
+- Result arrives as a `steer` item in the inbox.
 
-### 9.5 Grenzen
+### 9.5 Limits
 
-- Ergebnis-Größe: große Ergebnisse als `ArtifactRef` in die Inbox, nicht
+- Result size: large results as `ArtifactRef` in the inbox, not
   inline.
-- Reihenfolge: Delivery happens at safe step boundaries.
-- Parent muss laufen können, um das Ergebnis zu verarbeiten (oder wird beim
-  nächsten Wake geweckt).
+- Ordering: Delivery happens at safe step boundaries.
+- The parent must be able to run to process the result (or is woken at the
+  next wake).
 
 ---
 
-## 10. Task-Quota pro Session
+## 10. Task Quota per Session
 
-### 10.1 Was
+### 10.1 What
 
-Begrenzung, wie viele Background-Tasks eine Session gleichzeitig haben darf.
+Limit on how many background tasks a session may have at the same time.
 
-### 10.2 Heute vs. Vorschlag
+### 10.2 Today vs. Proposal
 
-| Quota | Heute | Vorschlag |
+| Quota | Today | Proposal |
 |---|---|---|
-| Global (alle Sessions) | 4 (`Engine.java:2249`) | konfigurierbar |
-| Pro Session | – | 2 (neu) |
-| Pro Parent (Depth) | max. 2 (`DEFAULT_MAX_DEPTH`) | bleibt |
-| Pro Task-Queue | – | 100 (neu) |
-| Task-Laufzeit (Hard-Limit) | – | konfigurierbar (neu) |
+| Global (all sessions) | 4 (`Engine.java:2249`) | configurable |
+| Per session | – | 2 (new) |
+| Per parent (depth) | max. 2 (`DEFAULT_MAX_DEPTH`) | stays |
+| Per task queue | – | 100 (new) |
+| Task runtime (hard limit) | – | configurable (new) |
 
 ### 10.3 Enforcement
 
@@ -392,92 +389,92 @@ public String create(SessionId parent, String agent, List<String> dependsOn) {
 }
 ```
 
-**Backpressure:** Wenn die Queue voll ist, wird der Aufruf abgelehnt
-(`429`/`TaskQuotaExceeded`), nicht blockiert. Blockieren würde den
-Execution-Thread belegen.
+**Backpressure:** When the queue is full, the call is rejected
+(`429`/`TaskQuotaExceeded`), not blocked. Blocking would occupy the
+execution thread.
 
 ---
 
-## 11. Umsetzung in QOC: was ist da, was fehlt
+## 11. Implementation in QOC: what exists, what is missing
 
-| Fähigkeit | Status | Datei |
+| Capability | Status | File |
 |---|---|---|
-| Background-Task-Registry (in-memory) | ✅ | `BackgroundTasks.java` |
-| Virtual-Thread-Execution | ✅ | `SubagentTool.java:183` |
-| Batch-Execution (sequenziell) | ✅ | `SubagentTool.executeBatch` |
-| Task-Status/Wait/Cancel/List | ✅ | `TaskTool.java` |
-| Parent/Child-Tracking | ✅ | `SubagentSessionRegistry` |
-| Live-Events (Start/Finish/Cancel) | ✅ | `Engine.java:2404-2454` |
-| HTTP-Tasks-Endpoints | ✅ | `HttpApi.java:513,525` |
-| Task-Abhängigkeiten (`dependsOn`) | ❌ | neu |
-| DAG-Scheduler | ❌ | neu |
-| Ergebnis-Interpolation | ❌ | neu |
-| Tier-Modell (research/analyze/execute/saga) | ❌ | neu |
-| SAGA mit Kompensationen | ❌ | neu |
-| Versions-/Schemaversionierung | ❌ | neu |
-| Durable Task-Persistenz | ❌ | neu (siehe `Async-use.md`) |
-| Cross-Session-Wake bei Task-Ende | ❌ | neu |
-| Task-Quota pro Session | ❌ | neu |
+| Background-task registry (in-memory) | ✅ | `BackgroundTasks.java` |
+| Virtual-thread execution | ✅ | `SubagentTool.java:183` |
+| Batch execution (sequential) | ✅ | `SubagentTool.executeBatch` |
+| Task status/wait/cancel/list | ✅ | `TaskTool.java` |
+| Parent/child tracking | ✅ | `SubagentSessionRegistry` |
+| Live events (start/finish/cancel) | ✅ | `Engine.java:2404-2454` |
+| HTTP tasks endpoints | ✅ | `HttpApi.java:513,525` |
+| Task dependencies (`dependsOn`) | ❌ | new |
+| DAG scheduler | ❌ | new |
+| Result interpolation | ❌ | new |
+| Tier model (research/analyze/execute/saga) | ❌ | new |
+| SAGA with compensations | ❌ | new |
+| Version/schema versioning | ❌ | new |
+| Durable task persistence | ❌ | new (see `Async-use.md`) |
+| Cross-session wake on task completion | ❌ | new |
+| Task quota per session | ❌ | new |
 
 ---
 
-## 12. Umsetzungsplan (phased)
+## 12. Implementation Plan (phased)
 
-1. **Task-Abhängigkeiten** (`dependsOn`, DAG-Scheduler, Ergebnis-Interpolation)
-2. **Tier-Modell** (research/analyze/execute/saga)
-3. **SAGA** mit Kompensationen
-4. **Versions-/Schemaversionierung**
-5. **Durable Task-Persistenz** (Journal)
-6. **Cross-Session-Wake** (Inbox-Delivery)
-7. **Task-Quota pro Session**
+1. **Task dependencies** (`dependsOn`, DAG scheduler, result interpolation)
+2. **Tier model** (research/analyze/execute/saga)
+3. **SAGA** with compensations
+4. **Version/schema versioning**
+5. **Durable task persistence** (journal)
+6. **Cross-session wake** (inbox delivery)
+7. **Task quota per session**
 
-Jede Phase baut auf der vorherigen auf. Phase 1+2 sind relativ klein und
-haben hohen Nutzen. Phase 3 (SAGA) ist die komplexeste und sollte erst nach
-Durable Persistenz (Phase 5) implementiert werden.
+Each phase builds on the previous one. Phases 1+2 are relatively small and
+high-value. Phase 3 (SAGA) is the most complex and should only be
+implemented after durable persistence (phase 5).
 
 ---
 
-## 13. Beispiel: Research → Analyze → Execute → Saga
+## 13. Example: Research → Analyze → Execute → Saga
 
 ```
-Task A (research)   → recherchiert Fakten
-  └─ Task B (analyze, dependsOn=[A]) → analysiert A's Ergebnis
-       └─ Task C (execute, dependsOn=[B]) → implementiert
-            └─ Task D (saga, dependsOn=[C]) → Multi-Step mit Kompensation
+Task A (research)   → researches facts
+  └─ Task B (analyze, dependsOn=[A]) → analyzes A's result
+       └─ Task C (execute, dependsOn=[B]) → implements
+            └─ Task D (saga, dependsOn=[C]) → multi-step with compensation
 ```
 
-- A: read-only, 5 Steps, kein Durability.
-- B: write in Scratch, 10 Steps.
-- C: voller Katalog, 20 Steps, durable.
-- D: 50 Steps, Kompensationen bei Fehler.
+- A: read-only, 5 steps, no durability.
+- B: write in scratch, 10 steps.
+- C: full catalog, 20 steps, durable.
+- D: 50 steps, compensations on failure.
 
-Bei Fehler in C: B und A bleiben (keine Kompensation nötig, da C noch nicht
-abgeschlossen). Bei Fehler in D: Kompensationen für D's abgeschlossene Steps,
-dann C's Kompensation (falls definiert).
+On failure in C: B and A remain (no compensation needed, since C has not
+completed yet). On failure in D: compensations for D's completed steps,
+then C's compensation (if defined).
 
 ---
 
-## 14. Offene Fragen
+## 14. Open Questions
 
-1. Soll `dependsOn` auf Task-IDs oder auf Session-IDs verweisen?
-2. Soll ein fehlgeschlagener Vorgänger den Nachfolger **blocken** oder
-   **abbrechen** (Policy pro Task)?
-3. Soll das Tier-Modell hart (Tool-Filter) oder weich (nur maxSteps) sein?
-4. Wer definiert SAGA-Kompensationen – der Agent, der User, oder Code?
-5. Soll ein Task-Ergebnis als `ArtifactRef` oder als Text in die Inbox?
-6. Wie wird mit parallelen Vorgängern (`dependsOn=[A,B]`) umgegangen –
-   beide müssen SUCCEEDED sein?
-7. Soll es eine globale Task-Queue oder nur per-Session-Registries geben?
+1. Should `dependsOn` refer to task IDs or session IDs?
+2. Should a failed predecessor **block** or **cancel** the successor
+   (policy per task)?
+3. Should the tier model be hard (tool filter) or soft (only maxSteps)?
+4. Who defines SAGA compensations – the agent, the user, or code?
+5. Should a task result be an `ArtifactRef` or text in the inbox?
+6. How to handle parallel predecessors (`dependsOn=[A,B]`) – do both have
+   to SUCCEEDED?
+7. Should there be a global task queue or only per-session registries?
 
-## 15. Referenzen
+## 15. References
 
 - `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/BackgroundTasks.java`
 - `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/SubagentTool.java`
 - `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/TaskTool.java`
 - `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/SubagentSessionRegistry.java`
-- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java` (Subagent-Wiring, Live-Events, Semaphore)
-- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/HttpApi.java` (Tasks-Endpoints)
-- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java` (Claim, Doorbell)
-- [`Async-use.md`](./Async-use.md) (Variante B/C, Heartbeat, Recovery)
-- [`Core.md`](./Core.md) (Coordinator, Journal, Inbox)
-- [`Storage-alternative.md`](./Storage-alternative.md) (Persistenz, Journal als Source of Truth)
+- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java` (Subagent wiring, live events, semaphore)
+- `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/HttpApi.java` (Tasks endpoints)
+- `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java` (Claim, doorbell)
+- [`Async-use.md`](./Async-use.md) (Variant B/C, heartbeat, recovery)
+- [`Core.md`](./Core.md) (Coordinator, journal, inbox)
+- [`Storage-alternative.md`](./Storage-alternative.md) (Persistence, journal as source of truth)

@@ -1,198 +1,198 @@
-# Plan: Tool-Call-Leak erkennen, reparieren und retryen
+# Plan: Detect, repair, and retry tool-call leaks
 
-**Status:** Implementiert — 2026-11-17
-**Bezug:** `docs/spec/provider/03-classification.md`, `docs/spec/session-engine/`,
+**Status:** Implemented — 2026-11-17
+**Reference:** `docs/spec/provider/03-classification.md`, `docs/spec/session-engine/`,
 `docs/plans/strict-structured-outputs.md`
-**Auslöser:** DB-Analyse `session_message` seit `2026-11-16 00:00 UTC`
+**Trigger:** DB analysis of `session_message` since `2026-11-16 00:00 UTC`
 
 ---
 
-## 1. Befund
+## 1. Finding
 
-In der Postgres-Historie (`qoc.session_message`) liegt mindestens ein
-Assistenten-Turn, in dem der Provider native Tool-Call-Markup als **normalen
-Text** zurückgegeben hat, statt `tool_calls` zu liefern:
+In the Postgres history (`qoc.session_message`) there is at least one
+assistant turn in which the provider returned native tool-call markup as
+**normal text** instead of delivering `tool_calls`:
 
 - Session: `ses_825b704fbbf9859f87ae3e6499c06f6b`
 - Seq: `40`
-- Länge: 3342 Zeichen
+- Length: 3342 characters
 - Finish: `NORMAL`
-- Muster: `<｜｜DSML｜｜ calls>` / `<｜｜DSML｜｜ invoke name="shell">` /
-  `<｜｜DSML｜｜ parameter ...>` mit zwei verlorenen `shell`-Aufrufen.
+- Pattern: `<｜｜DSML｜｜ calls>` / `<｜｜DSML｜｜ invoke name="shell">` /
+  `<｜｜DSML｜｜ parameter ...>` with two lost `shell` calls.
 
-Das ist kein gültiger Endtext. Der Turn wurde trotzdem als Assistenten-Nachricht
-persistiert, weil `Step` den Leak nur bei deaktivierten Tools (`Choice.None`)
-prüfte. Zusätzlich normalisierte der Detektor doppelte Fullwidth-Bars
-(`｜｜`) nicht zu einem einzelnen `|`, sodass selbst die vorhandene Prüfung den
-echten Payload verfehlt hätte.
+This is not valid final text. The turn was persisted as an assistant message
+anyway, because `Step` only checked for the leak when tools were disabled
+(`Choice.None`). In addition, the detector did not normalize double fullwidth
+bars (`｜｜`) down to a single `|`, so even the existing check would have
+missed the real payload.
 
-Weitere Randbedingungen aus der Analyse:
+Further edge conditions from the analysis:
 
-- 358 Assistenten-Nachrichten, davon 10 ohne Tool-Nutzung; nur ein DSML-Leak.
-- 213 von 608 Tool-Aufrufen waren `permission_denied` (kein Leak, aber
-  Retry-/UX-relevant).
-- Eine verwaiste Session (`ses_544a19e56ba19e2a4f544a8744dbe7db`, Prompt `ls`)
-  endete ohne Assistenten-Schritt.
+- 358 assistant messages, of which 10 used no tools; only one DSML leak.
+- 213 of 608 tool calls were `permission_denied` (not a leak, but
+  retry-/UX-relevant).
+- One orphaned session (`ses_544a19e56ba19e2a4f544a8744dbe7db`, prompt `ls`)
+  ended without an assistant step.
 
-## 2. Zielbild
+## 2. Target state
 
-Sechs Maßnahmen, in dieser Reihenfolge:
+Six measures, in this order:
 
-1. **Detektor härten** — echte Leak-Marker zuverlässig erkennen, unabhängig von
-   Tool-Freigabe.
-2. **Klassifikation** — eigener, typisierter Fehler `TOOL_CALL_LEAK`, der
-   retrybar ist.
-3. **Engine-Retry** — Retry-Entscheidung über die Fehlermatrix (nicht über
-   Meldungstext), Repair-Hint im Systemprompt, begrenzte Leak-Retries.
-4. **Provider-Signal** — `finish_reason=tool_calls` ohne geparste Tool-Calls
-   früh als Fehler erkennen.
-5. **Salvage** — wohlgeformte DSML-Blöcke in echte Tool-Calls umwandeln, statt
-   den Turn zu verlieren.
-6. **Observability/Audit** — Logging, Live-Status und SQL-Audit-Job.
+1. **Harden the detector** — reliably detect real leak markers, regardless of
+   tool approval.
+2. **Classification** — a dedicated, typed error `TOOL_CALL_LEAK` that is
+   retryable.
+3. **Engine retry** — retry decision via the error matrix (not via message
+   text), repair hint in the system prompt, bounded leak retries.
+4. **Provider signal** — `finish_reason=tool_calls` without parsed tool calls
+   detected early as an error.
+5. **Salvage** — convert well-formed DSML blocks into real tool calls instead
+   of losing the turn.
+6. **Observability/audit** — logging, live status, and an SQL audit job.
 
-## 3. Punkt 1 — Detektor härten
+## 3. Point 1 — Harden the detector
 
-**Datei:** `engine/.../core/eval/ToolCallLeak.java`
+**File:** `engine/.../core/eval/ToolCallLeak.java`
 
-- Normalisierung:
+- Normalization:
   - `U+FF5C` (`｜`), `U+2502` (`│`), `U+01C0` (`ǀ`) → `|`
   - `U+2581` (`▁`) → `_`
-  - Läufe von `|` auf ein `|` reduzieren
-  - case-insensitive vergleichen
-- Marker: `<|dsml|`, `</|dsml|`, `<|tool`, `[tool_calls]`
-- Signaturprüfung: Marker allein reicht nicht (Doku-Zitat), zusätzlich muss
-  `invoke`, `parameter`, `calls`, `call` oder `[tool_calls]` vorkommen.
-- `find(text)` liefert `Finding(startIndex, endIndex, marker)` für Cleaning und
-  Salvage; `endIndex` umfasst den schließenden DSML-Block, sonst Textende.
+  - Runs of `|` reduced to a single `|`
+  - case-insensitive comparison
+- Markers: `<|dsml|`, `</|dsml|`, `<|tool`, `[tool_calls]`
+- Signature check: markers alone are not enough (documentation quote); in
+  addition `invoke`, `parameter`, `calls`, `call`, or `[tool_calls]` must
+  appear.
+- `find(text)` returns `Finding(startIndex, endIndex, marker)` for cleaning
+  and salvage; `endIndex` covers the closing DSML block, otherwise end of
+  text.
 
-**Datei:** `engine/.../runtime/step/Step.java`
+**File:** `engine/.../runtime/step/Step.java`
 
-- Leak-Prüfung nicht mehr an `toolsDisabled(prepared)` koppeln.
-- Nur prüfen, wenn keine strukturierten Tool-Calls vorliegen.
-- Leak → `TOOL_CALL_LEAK` statt `UNKNOWN`.
-- Salvage versuchen (Punkt 5); wenn nicht möglich → `StepResult.Failed`.
-- Bei erfolgreichem Salvage: Text-Events durch bereinigten Text ersetzen und
-  die wiederhergestellten Tool-Calls wie normale Calls ausführen.
+- Leak check no longer coupled to `toolsDisabled(prepared)`.
+- Only checked when no structured tool calls are present.
+- Leak → `TOOL_CALL_LEAK` instead of `UNKNOWN`.
+- Attempt salvage (Point 5); if not possible → `StepResult.Failed`.
+- On successful salvage: replace text events with cleaned text and execute
+  the recovered tool calls like normal calls.
 
-**Tests:** `ToolCallLeakTest` (Double-Bar, Box-Drawing, `▁`, split, False
-Positive), `StepTest` (Tools aktiv + Leak, Salvage).
+**Tests:** `ToolCallLeakTest` (double bar, box drawing, `▁`, split, false
+positives), `StepTest` (tools active + leak, salvage).
 
-## 4. Punkt 2 — Klassifikation
+## 4. Point 2 — Classification
 
-**Dateien:**
+**Files:**
 
 - `engine/.../core/contract/provider/InvalidOutputClassification.java`
-  → `TOOL_CALL_LEAK` ergänzen.
+  → add `TOOL_CALL_LEAK`.
 - `engine/.../core/eval/ProviderClassifier.java`
-  → `TOOL_CALL_LEAK` ist retrybar.
-- `docs/spec/provider/03-classification.md` ist die fachliche Quelle; die
-  Erweiterung wird dort als offener Spec-Nachtrag vermerkt (kein stilles
-  Überschreiben).
+  → `TOOL_CALL_LEAK` is retryable.
+- `docs/spec/provider/03-classification.md` is the authoritative source; the
+  extension is noted there as an open spec addendum (no silent overwrite).
 
-**Tests:** `ProviderClassifierTest` (retrybar / non-retryable Matrix).
+**Tests:** `ProviderClassifierTest` (retryable / non-retryable matrix).
 
-## 5. Punkt 3 — Engine-Retry und Repair-Hint
+## 5. Point 3 — Engine retry and repair hint
 
-**Datei:** `engine/.../runtime/QocEngine.java`
+**File:** `engine/.../runtime/QocEngine.java`
 
-- `StepResult.Failed` wird über `ProviderClassifier.isRetryable(kind)`
-  entschieden; die bisherige Textklassifikation (`IllegalStateException` →
-  `CORRECTABLE`) entfällt für Step-Fehler.
-- `TOOL_CALL_LEAK` bekommt ein eigenes Budget:
-  `LEAK_RETRY_MAX = 1` (ein Reparaturversuch nach dem Erstauftritt).
-- Bei Leak:
-  - `LEAK_REPAIR_HINT` wird dem nächsten `Prepared` via `withSystem(...)`
-    hinzugefügt (einmalig).
-  - Delay = 0 (kein Backoff, kein Rate-Limit).
-  - Live-Status: `[Retry] Tool-call markup detected ...`.
-  - Log mit Session, Step und Aktion.
-- Der forcierte finale Schritt (Tools deaktiviert) wird ebenfalls auf
-  `StepResult.Failed` geprüft und bei Leak genau einmal mit Hint wiederholt;
-  danach typisierter Engine-Fehler.
+- `StepResult.Failed` is decided via `ProviderClassifier.isRetryable(kind)`;
+  the previous text classification (`IllegalStateException` →
+  `CORRECTABLE`) no longer applies to step failures.
+- `TOOL_CALL_LEAK` gets its own budget:
+  `LEAK_RETRY_MAX = 1` (one repair attempt after the first occurrence).
+- On leak:
+  - `LEAK_REPAIR_HINT` is added to the next `Prepared` via `withSystem(...)`
+    (once).
+  - Delay = 0 (no backoff, no rate limit).
+  - Live status: `[Retry] Tool-call markup detected ...`.
+  - Log with session, step, and action.
+- The forced final step (tools disabled) is also checked against
+  `StepResult.Failed` and, on a leak, retried exactly once with the hint;
+  afterward a typed engine error.
 
-**Tests:** `QocEngine`-Retry ist über die Matrix unit-testbar; ein
-Integrationstest mit Fake-Provider prüft: erster Step Leak → zweiter Step
-sieht Hint → Turn wird `COMPLETED`, kein Leak-Text persistiert.
+**Tests:** `QocEngine` retry is unit-testable via the matrix; an integration
+test with a fake provider verifies: first step leak → second step sees hint →
+turn becomes `COMPLETED`, no leak text persisted.
 
-## 6. Punkt 4 — Provider-Signal
+## 6. Point 4 — Provider signal
 
-**Datei:** `engine/.../runtime/provider/client/OpenAiEventTranslator.java`
+**File:** `engine/.../runtime/provider/client/OpenAiEventTranslator.java`
 
-- Rohen `finish_reason` merken.
-- In `finish()`: `finish_reason=tool_calls` **ohne** geparste Tool-Calls →
-  `ProviderFailed(InvalidOutput(TOOL_CALL_LEAK))` statt `Finished`.
-- Text-Leaks mit `finish_reason=stop` bleiben Aufgabe von `Step` (dort ist
-  Salvage möglich).
+- Keep the raw `finish_reason`.
+- In `finish()`: `finish_reason=tool_calls` **without** parsed tool calls →
+  `ProviderFailed(InvalidOutput(TOOL_CALL_LEAK))` instead of `Finished`.
+- Text leaks with `finish_reason=stop` remain the responsibility of `Step`
+  (salvage possible there).
 
-**Tests:** `OpenAiEventTranslatorTest` (Mismatch → `ProviderFailed`, normaler
-Tool-Call bleibt `Finished`).
+**Tests:** `OpenAiEventTranslatorTest` (mismatch → `ProviderFailed`, normal
+tool call remains `Finished`).
 
-## 7. Punkt 5 — Salvage-Parser
+## 7. Point 5 — Salvage parser
 
-**Datei:** `engine/.../core/eval/ToolCallLeakParser.java` (neu)
+**File:** `engine/.../core/eval/ToolCallLeakParser.java` (new)
 
-- Parst DSML `invoke`/`parameter`-Blöcke (Fullwidth-Bars, `▁`, Whitespace).
+- Parses DSML `invoke`/`parameter` blocks (fullwidth bars, `▁`, whitespace).
 - `SalvagedCall(String name, JsonValue input)`.
-- `string="true"` → String; sonst JSON parsen, Fallback String.
-- XML-Entities (`&quot;`, `&amp;`, `&lt;`, `&gt;`) auflösen.
-- Grenzen: max. 8 Calls, max. 100k Zeichen pro Parameter.
-- `Step` akzeptiert Salvage nur, wenn alle Namen in `prepared.tools()`
-  vorhanden sind und Tools nicht deaktiviert sind. Sonst Retry-Pfad.
-- Recovered Calls werden live als `ToolInputStarted` / `ToolInputEnded` /
-  `ToolCallRequested` publiziert.
+- `string="true"` → String; otherwise parse JSON, fallback to String.
+- Resolve XML entities (`&quot;`, `&amp;`, `&lt;`, `&gt;`).
+- Limits: max. 8 calls, max. 100k characters per parameter.
+- `Step` accepts salvage only if all names are present in `prepared.tools()`
+  and tools are not disabled. Otherwise retry path.
+- Recovered calls are published live as `ToolInputStarted` / `ToolInputEnded` /
+  `ToolCallRequested`.
 
-**Tests:** `ToolCallLeakParserTest` mit dem echten 2-Call-Payload,
-Malformed-Input, String-/JSON-Parameter.
+**Tests:** `ToolCallLeakParserTest` with the real 2-call payload, malformed
+input, string/JSON parameters.
 
-## 8. Punkt 6 — Observability und Audit
+## 8. Point 6 — Observability and audit
 
-- `Step`: `WARNING`-Log bei Erkennung/Salvage.
-- `QocEngine`: `WARNING`-Log bei Retry/Endfehler, Live-Statuszeile.
-- `scripts/find-tool-call-leaks.sql`: findet Assistenten-Nachrichten ohne
-  Tool-Card, deren Text DSML-/Tool-Markup enthält (Fullwidth-Bars tolerant),
-  inkl. Session, Seq, Zeit, Länge, Preview.
-- Optionaler Betriebs-Hinweis: täglicher Lauf gegen `qoc.session_message`.
+- `Step`: `WARNING` log on detection/salvage.
+- `QocEngine`: `WARNING` log on retry/final error, live status line.
+- `scripts/find-tool-call-leaks.sql`: finds assistant messages without a
+  tool card whose text contains DSML/tool markup (fullwidth bars tolerated),
+  including session, seq, time, length, preview.
+- Optional operational note: daily run against `qoc.session_message`.
 
-## 9. Akzeptanzkriterien
+## 9. Acceptance criteria
 
-- `mvn test` in `qoc/` grün.
-- Der echte 3342-Zeichen-Payload wird erkannt und in zwei `shell`-Calls
-  zerlegt.
-- Ein Leak mit aktivierten Tools erzeugt `TOOL_CALL_LEAK` (kein Endtext).
-- Ein Leak führt zu genau einem Reparatur-Retry; danach typisierter Fehler.
-- `finish_reason=tool_calls` ohne Calls erzeugt `TOOL_CALL_LEAK`.
-- Audit-SQL findet den historischen Leak.
-- Keine Änderung an `docs/`-Spec ohne separaten Auftrag (Ausnahme: Hinweis auf
-  offenen Spec-Nachtrag).
+- `mvn test` in `qoc/` green.
+- The real 3342-character payload is detected and split into two `shell`
+  calls.
+- A leak with enabled tools produces `TOOL_CALL_LEAK` (no final text).
+- A leak leads to exactly one repair retry; afterward a typed error.
+- `finish_reason=tool_calls` without calls produces `TOOL_CALL_LEAK`.
+- Audit SQL finds the historical leak.
+- No change to `docs/` spec without a separate assignment (exception: note
+  about the open spec addendum).
 
-## 10. Verifikation
+## 10. Verification
 
-- `mvn -pl engine test` → **BUILD SUCCESS** (1140+ Tests, inkl. neuer
-  Leak-, Parser-, Step-, Translator- und Engine-Retry-Tests).
+- `mvn -pl engine test` → **BUILD SUCCESS** (1140+ tests, including new
+  leak, parser, step, translator, and engine-retry tests).
 - `mvn -pl engine clean test` → **BUILD SUCCESS**.
-- `mvn -DskipTests compile` (gesamter Reaktor) → **BUILD SUCCESS**.
-- `mvn test` → **BUILD SUCCESS** (alle Module: engine, workflow-runner, quarkus, cli).
-- Audit-SQL `scripts/find-tool-call-leaks.sql` findet den Produktions-Leak
-  `ses_825b704fbbf9859f87ae3e6499c06f6b`, Seq `40`, 3342 Zeichen.
-- Neue Tests:
-  - `ToolCallLeakTest` — Double-Bar, Box-Drawing, `▁`, Produktions-Payload,
-    False Positive.
-  - `ToolCallLeakParserTest` — 2-Call-Produktions-Payload, JSON-/String-
-    Parameter, Entities, Malformed, Cap.
-  - `StepTest` — Leak mit aktiven Tools, unbekanntes Tool, erfolgreicher
-    Salvage.
-  - `OpenAiEventTranslatorTest` — `tool_calls` ohne strukturierten Call.
-  - `QocEngineLeakRetryTest` — Repair-Hint, kein Leak-Text im Ergebnis,
-    Retry-Budget.
+- `mvn -DskipTests compile` (entire reactor) → **BUILD SUCCESS**.
+- `mvn test` → **BUILD SUCCESS** (all modules: engine, workflow-runner, quarkus, cli).
+- Audit SQL `scripts/find-tool-call-leaks.sql` finds the production leak
+  `ses_825b704fbbf9859f87ae3e6499c06f6b`, Seq `40`, 3342 characters.
+- New tests:
+  - `ToolCallLeakTest` — double bar, box drawing, `▁`, production payload,
+    false positive.
+  - `ToolCallLeakParserTest` — 2-call production payload, JSON/string
+    parameters, entities, malformed, cap.
+  - `StepTest` — leak with active tools, unknown tool, successful salvage.
+  - `OpenAiEventTranslatorTest` — `tool_calls` without structured call.
+  - `QocEngineLeakRetryTest` — repair hint, no leak text in result,
+    retry budget.
 
-## 11. Risiken und Nicht-Ziele
+## 11. Risks and non-goals
 
-- **Risiko False Positive:** Text, der DSML nur zitiert, könnte einen Retry
-  auslösen. Mitigation: Signaturprüfung (Marker + `invoke`/`parameter`/`calls`).
-- **Risiko Salvage:** Ein falsch geparster Call könnte einen unerwünschten
-  Tool-Aufruf auslösen. Mitigation: Namensprüfung gegen `prepared.tools()`,
-  Permission-Gate bleibt aktiv, max. 8 Calls.
-- **Nicht-Ziel:** Beliebiges Provider-Markup (z. B. Llama-Sonderformen)
-  salvage zu unterstützen. Nur die beobachteten DSML- und Tool-Marker.
-- **Nicht-Ziel:** Strict Structured Outputs (Phase 3); siehe
+- **False-positive risk:** Text that merely quotes DSML could trigger a retry.
+  Mitigation: signature check (marker + `invoke`/`parameter`/`calls`).
+- **Salvage risk:** A wrongly parsed call could trigger an unwanted tool
+  invocation. Mitigation: name check against `prepared.tools()`, permission
+  gate remains active, max. 8 calls.
+- **Non-goal:** Supporting arbitrary provider markup (e.g. Llama-specific
+  forms) for salvage. Only the observed DSML and tool markers.
+- **Non-goal:** Strict Structured Outputs (Phase 3); see
   `docs/plans/strict-structured-outputs.md`.

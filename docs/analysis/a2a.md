@@ -1,250 +1,249 @@
 # A2A Integration Analysis for QOC
 
-**Stand:** 2026-10-28  
-**Quelle:** [Quarkus Blog - Getting Started with Quarkus and A2A Java SDK 0.3.0](https://quarkus.io/blog/quarkus-a2a-java-0-3-0-alpha-release/)  
-**Ziel:** Möglichkeiten aufzeigen, wie QOC A2A (Agent-to-Agent) nutzen kann
+**Status:** 2026-10-28  
+**Source:** [Quarkus Blog - Getting Started with Quarkus and A2A Java SDK 0.3.0](https://quarkus.io/blog/quarkus-a2a-java-0-3-0-alpha-release/)  
+**Goal:** Outline the possibilities for QOC to use A2A (Agent-to-Agent)
 
-## 1. Was ist A2A?
+## 1. What is A2A?
 
-Das [Agent2Agent (A2A) Protokoll](https://a2a-protocol.org/latest/specification/) ist ein offener Standard (ursprünglich von Google, jetzt Linux Foundation), um KI-Agenten unabhängig von Framework/Sprache/Vendor kommunizieren zu lassen. Version 0.3.0 bringt u.a.:
+The [Agent2Agent (A2A) Protocol](https://a2a-protocol.org/latest/specification/) is an open standard (originally from Google, now Linux Foundation) for letting AI agents communicate independent of framework/language/vendor. Version 0.3.0 brings, among other things:
 
-- **gRPC-Transport** zusätzlich zu JSON-RPC 2.0
-- **HTTP+JSON/REST** soll demnächst folgen
-- Überarbeitete Client-API über `ClientBuilder`
-- Bessere Multi-Transport-Unterstützung via `AgentCard.additionalInterfaces`
-- Vereinheitlichte Event-Verarbeitung auf Client-Seite
+- **gRPC transport** in addition to JSON-RPC 2.0
+- **HTTP+JSON/REST** is expected to follow soon
+- Reworked client API via `ClientBuilder`
+- Better multi-transport support via `AgentCard.additionalInterfaces`
+- Unified event processing on the client side
 
 ## 2. A2A Java SDK 0.3.0 (Quarkus)
 
-### Server-Seite
-Dependencies (Gruppe `io.github.a2asdk`, vorübergehend):
+### Server side
+Dependencies (group `io.github.a2asdk`, temporary):
 
-| Transport | Dependency | Bemerkung |
+| Transport | Dependency | Note |
 |---|---|---|
-| JSON-RPC 2.0 | `a2a-java-sdk-reference-jsonrpc` | Stellt HTTP-Endpoint für JSON-RPC bereit, AgentCard unter `/.well-known/agent-card.json` |
-| gRPC | `a2a-java-sdk-reference-grpc` | Stellt gRPC-Service bereit |
+| JSON-RPC 2.0 | `a2a-java-sdk-reference-jsonrpc` | Provides HTTP endpoint for JSON-RPC, AgentCard under `/.well-known/agent-card.json` |
+| gRPC | `a2a-java-sdk-reference-grpc` | Provides gRPC service |
 
-Beide können parallel genutzt werden. `AgentCard` muss einen Primary-Endpoint + `preferredTransport` + `additionalInterfaces` für alle unterstützten Transports enthalten (`AgentInterface` pro Transport).
+Both can be used in parallel. The `AgentCard` must contain a primary endpoint + `preferredTransport` + `additionalInterfaces` for all supported transports (`AgentInterface` per transport).
 
-### Client-Seite
+### Client side
 ```xml
 <dependency>
   <groupId>io.github.a2asdk</groupId>
   <artifactId>a2a-java-sdk-client</artifactId>
 </dependency>
-<!-- optional für gRPC -->
+<!-- optional for gRPC -->
 <dependency>
   <groupId>io.github.a2asdk</groupId>
   <artifactId>a2a-java-sdk-client-transport-grpc</artifactId>
 </dependency>
 ```
 
-`ClientBuilder` wählt Transport anhand `AgentCard` + Client-Konfiguration. `ClientConfig` steuert `acceptedOutputModes`, Streaming etc. Events werden über `BiConsumer<ClientEvent, AgentCard>` empfangen (`MessageEvent`, `TaskEvent`, `TaskUpdateEvent`). Streaming-Fehler über separaten Handler.
+`ClientBuilder` selects the transport based on `AgentCard` + client configuration. `ClientConfig` controls `acceptedOutputModes`, streaming, etc. Events are received via `BiConsumer<ClientEvent, AgentCard>` (`MessageEvent`, `TaskEvent`, `TaskUpdateEvent`). Streaming errors are handled via a separate handler.
 
-## 3. QOC-Architektur im Überblick (für A2A relevant)
+## 3. QOC architecture overview (relevant to A2A)
 
-Aus `README.md` und Code:
+From `README.md` and code:
 
-- **Module**: `engine/` (core/runtime/adapter, reines Java), `quarkus/` (HTTP/SSE, CDI, Wiring), `docs/` (Spec ist Quelle der Wahrheit)
-- **HTTP-API**: REST/SSE unter `/api/*` (siehe `HttpApi.java`) – Sessions, Prompts, Events (SSE), Permissions, Questions, Tools/Files, MCP, Agents/Skills/Models
-- **Session-Engine**: Inbox (`STEER`/`QUEUE`), Ausführung, Kompaktierung/Revert, parallele Tool-Calls, Subagents
-- **Tools**: Registry, Permission-Enforcement, viele Builtins (fs, shell, web, skill, subagent, todo, question, worktree, MCP)
-- **Provider**: über Engine/Ports, modelliert als Provider-Adapter
-- **MCP**: bereits integriert (Server-Liste, Status, OAuth-Flow)
-- **Security**: Auth-Modes, Principal-Propagation, Trusted-Proxy, Webhook-Guardrails, Audit
+- **Modules**: `engine/` (core/runtime/adapter, pure Java), `quarkus/` (HTTP/SSE, CDI, wiring), `docs/` (spec is source of truth)
+- **HTTP API**: REST/SSE under `/api/*` (see `HttpApi.java`) – sessions, prompts, events (SSE), permissions, questions, tools/files, MCP, agents/skills/models
+- **Session engine**: inbox (`STEER`/`QUEUE`), execution, compaction/revert, parallel tool calls, subagents
+- **Tools**: registry, permission enforcement, many builtins (fs, shell, web, skill, subagent, todo, question, worktree, MCP)
+- **Provider**: via engine/ports, modelled as provider adapter
+- **MCP**: already integrated (server list, status, OAuth flow)
+- **Security**: auth modes, principal propagation, trusted proxy, webhook guardrails, audit
 
-Wichtige Punkte für A2A:
-- QOC hat bereits ein eigenes Session/Task-Modell und eigene HTTP/SSE-API
-- Agent-Definitionen existieren (`/api/agent`)
-- Tools/MCP sind vorhanden
-- Quarkus wird bereits genutzt
+Important points for A2A:
+- QOC already has its own session/task model and its own HTTP/SSE API
+- Agent definitions exist (`/api/agent`)
+- Tools/MCP are present
+- Quarkus is already in use
 
-## 4. Integrationsmöglichkeiten für QOC
+## 4. Integration options for QOC
 
-### 4.1 QOC als A2A-Server (exponiert)
-QOC-Agenten für andere A2A-Clients zugänglich machen.
+### 4.1 QOC as A2A server (exposed)
+Make QOC agents accessible to other A2A clients.
 
-**Ziele:**
-- Externe Agenten (z.B. andere Frameworks) können QOC über A2A aufrufen
-- Interoperabilität ohne QOC-spezifisches Client-SDK
-- Multi-Transport (JSON-RPC + gRPC)
+**Goals:**
+- External agents (e.g. other frameworks) can call QOC via A2A
+- Interoperability without a QOC-specific client SDK
+- Multi-transport (JSON-RPC + gRPC)
 
-**Ansatz:**
-1. **AgentCard-Produktion**: Für jeden QOC-Agenten (oder konfigurierbaren Satz) eine `AgentCard` erzeugen. Mapping aus QOC-Agent-Definition (`/api/agent`) + Skills/Capabilities.
-2. **A2A-Server-Endpoints**: Quarkus-Module/Extension für A2A-Server referenzieren. `/.well-known/agent-card.json` automatisch exponieren.
-3. **Task/Message-Mapping**: A2A-`Task`/`Message`/`Part` auf QOC-Session + Prompt abbilden. QOC-Sessions können A2A-Tasks zugeordnet werden.
-4. **Streaming**: A2A-Streaming-Events auf QOC-SSE/Event-Stream mappen oder direkt A2A-Transport nutzen.
-5. **AuthN/Z**: A2A-Requests gegen QOC-Security (Principal/Permissions) validieren.
+**Approach:**
+1. **AgentCard production**: generate an `AgentCard` for each QOC agent (or a configurable set). Mapping from QOC agent definition (`/api/agent`) + skills/capabilities.
+2. **A2A server endpoints**: reference the Quarkus module/extension for the A2A server. Automatically expose `/.well-known/agent-card.json`.
+3. **Task/message mapping**: map A2A `Task`/`Message`/`Part` to QOC session + prompt. QOC sessions can be associated with A2A tasks.
+4. **Streaming**: map A2A streaming events to the QOC SSE/event stream or use the A2A transport directly.
+5. **AuthN/Z**: validate A2A requests against QOC security (principal/permissions).
 
-**Vorteile:** Interoperabilität, Ökosystem-Zugriff  
-**Aufwand:** Mittel-Hoch (Mapping A2A<->QOC-Domain, Task-Lifecycle)
+**Pros:** interoperability, ecosystem access  
+**Effort:** medium-high (mapping A2A<->QOC domain, task lifecycle)
 
-### 4.2 QOC als A2A-Client (konsumiert)
-QOC kann andere A2A-Server aufrufen und deren Fähigkeiten als Tools nutzen.
+### 4.2 QOC as A2A client (consumer)
+QOC can call other A2A servers and use their capabilities as tools.
 
-**Ziele:**
-- Externe A2A-Agents als Tools in QOC-Sessions einbinden
-- Agent-Handoffs / Delegation
-- Hybride Multi-Agent-Workflows
+**Goals:**
+- Integrate external A2A agents as tools in QOC sessions
+- Agent handoffs / delegation
+- Hybrid multi-agent workflows
 
-**Ansatz:**
-1. **Client-Integration**: `a2a-java-sdk-client` + ggf. gRPC-Transport in `quarkus/` hinzufügen
-2. **A2A-Tool-Fabrik**: Aus `AgentCard` Tools generieren (z.B. `a2a.<agentId>.<skillId>`). Tool-Input/Output an A2A-Message/Task mappen
-3. **Discovery**: Konfiguration von A2A-Endpoints (URLs) in QOC-Config/Settings
-4. **Task-Verwaltung**: A2A-Client (`Client`) verwalten, Tasks verfolgen, auf Updates reagieren
-5. **Permissions**: Aufrufe externer A2A-Agents durch QOC-Permissions abbilden
-6. **Auth**: Tokens/Credentials für externe A2A-Server (analog MCP-OAuth)
+**Approach:**
+1. **Client integration**: add `a2a-java-sdk-client` + optionally the gRPC transport to `quarkus/`
+2. **A2A tool factory**: generate tools from an `AgentCard` (e.g. `a2a.<agentId>.<skillId>`). Map tool input/output to A2A message/task
+3. **Discovery**: configuration of A2A endpoints (URLs) in QOC config/settings
+4. **Task management**: manage the A2A client (`Client`), track tasks, react to updates
+5. **Permissions**: map calls to external A2A agents through QOC permissions
+6. **Auth**: tokens/credentials for external A2A servers (analogous to MCP OAuth)
 
-**Vorteile:** Sehr praktisch, nutzt bestehendes Tool-System  
-**Aufwand:** Mittel (Tool-Adapter, Discovery, Config)
+**Pros:** very practical, uses existing tool system  
+**Effort:** medium (tool adapter, discovery, config)
 
-### 4.3 Hybrid: A2A als Transport für QOC-MCP/Tools
-A2A könnte MCP ergänzen oder teilweise ablösen, aber MCP ist bereits stark integriert. Wahrscheinlicher ist **komplementär**: A2A für Agent-zu-Agent, MCP für Tool-zu-Server.
+### 4.3 Hybrid: A2A as transport for QOC MCP/tools
+A2A could complement or partially replace MCP, but MCP is already strongly integrated. The more likely scenario is **complementary**: A2A for agent-to-agent, MCP for tool-to-server.
 
-### 4.4 Subagent-Nutzung über A2A
-QOC hat bereits Subagents. A2A könnte Remote-Subagents ermöglichen (andere Prozesse/Services).
+### 4.4 Subagent use over A2A
+QOC already has subagents. A2A could enable remote subagents (other processes/services).
 
-## 5. Konkreter Implementierungsplan für QOC
+## 5. Concrete implementation plan for QOC
 
-### Phase 0: Vorbereitung & Analyse (abgeschlossen)
-- [x] A2A-Spec lesen (Task/Message/Part, AgentCard, Transports, Streaming)
-- [x] A2A-Java-SDK API prüfen
-- [x] QOC-Tool-Contract & Permission-System verstehen
-- [x] Entscheidung: Client zuerst, danach Server
+### Phase 0: Preparation & analysis (completed)
+- [x] Read the A2A spec (Task/Message/Part, AgentCard, transports, streaming)
+- [x] Review the A2A Java SDK API
+- [x] Understand the QOC tool contract & permission system
+- [x] Decision: client first, then server
 
-### Phase 1: A2A-Client als QOC-Tool (umgesetzt)
-Externe A2A-Agents werden als QOC-Tools registriert.
+### Phase 1: A2A client as QOC tool (implemented)
+External A2A agents are registered as QOC tools.
 
-**Umsetzung:**
+**Implementation:**
 1. **Dependencies**: `org.a2aproject.sdk:a2a-java-sdk-client:1.4.0.Final`
-   (optional `a2a-java-sdk-client-transport-grpc`).
-2. **Config**: `engine.a2a.urls` (kommasepariert) und
+   (optionally `a2a-java-sdk-client-transport-grpc`).
+2. **Config**: `engine.a2a.urls` (comma-separated) and
    `engine.a2a.endpoints` (`url=...|id=...|tool=...|enabled=true;`).
-3. **Tool-Provider**: `runtime/tool/a2a/A2AToolProvider` lädt AgentCards und
-   baut je Endpoint ein Tool.
-4. **Tool-Implementierung**: `A2ATool` mappt JSON-Input auf eine A2A-Message,
-   ruft den Agenten blockierend auf und mappt Task/Message-Antworten auf
+3. **Tool provider**: `runtime/tool/a2a/A2AToolProvider` loads AgentCards and
+   builds one tool per endpoint.
+4. **Tool implementation**: `A2ATool` maps JSON input to an A2A message,
+   calls the agent synchronously and maps task/message responses to
    `ToolResult`.
-5. **Registry-Integration**: Die Tools laufen durch dieselbe Registry,
-   Permission- und Hook-Kette wie Builtins.
-6. **Egress**: Host-/IP-Allowlists und TLS-Prüfung gelten auch für A2A-Ziele.
+5. **Registry integration**: the tools go through the same registry,
+   permission and hook chain as builtins.
+6. **Egress**: host/IP allowlists and TLS checks also apply to A2A targets.
 
-### Phase 2: A2A-Server (QOC exponiert) (umgesetzt)
-QOC-Agenten werden als A2A-Agent angeboten. Transport ist JSON-RPC.
+### Phase 2: A2A server (QOC exposed) (implemented)
+QOC agents are offered as an A2A agent. Transport is JSON-RPC.
 
-**Umsetzung:**
-1. **Dependencies**: `a2a-java-sdk-reference-jsonrpc` und
-   `a2a-java-sdk-client` in `1.4.0.Final`. Die SDK-eigenen CDI-Beans
+**Implementation:**
+1. **Dependencies**: `a2a-java-sdk-reference-jsonrpc` and
+   `a2a-java-sdk-client` at `1.4.0.Final`. The SDK's own CDI beans
    (`TaskStore`, `QueueManager`, `DefaultRequestHandler`,
-   `MainEventBusProcessor`, `A2AServerRoutes`) werden mitgenutzt.
-2. **AgentCard-Producer**: `A2AAgentCardProducer` erzeugt die Card aus
-   `AgentCatalogue`; jeder sichtbare QOC-Agent wird ein Skill. Die Card
-   deklariert JSON-RPC für Protokollversion 1.0 und 0.3.
-3. **AgentExecutor**: `QocAgentExecutor` übersetzt A2A-Tasks in
-   QOC-Sessions und Prompts und liefert das Ergebnis als Text-Artifact.
-4. **Session-Mapping**: `A2ASessionRegistry` ordnet `contextId` (bzw. `taskId`
-   ohne Context) einer QOC-Session zu, LRU-begrenzt auf 1000 Kontexte.
-5. **Streaming**: Die Card meldet `streaming=true`; die Ausführung ist aktuell
-   blockierend und liefert ein finales Artifact. SSE-Feintuning folgt.
-6. **Auth**: `A2AAuthenticationMechanism` versorgt die Vert.x-Routen mit einer
-   Quarkus-Identität (none/basic/proxy; OIDC überlässt sie dem OIDC-Modul).
-   `A2ATaskAuthorizationProvider` erzwingt Task-Ownership und ist fail-closed.
-7. **Opt-in**: `engine.a2a.server.enabled=false` ist Default; ein Route-Gate
-   beantwortet die A2A-Pfade sonst mit `404`.
-8. **Konfiguration**:
+   `MainEventBusProcessor`, `A2AServerRoutes`) are reused.
+2. **AgentCard producer**: `A2AAgentCardProducer` builds the card from
+   `AgentCatalogue`; every visible QOC agent becomes a skill. The card
+   declares JSON-RPC for protocol versions 1.0 and 0.3.
+3. **Agent executor**: `QocAgentExecutor` translates A2A tasks into
+   QOC sessions and prompts and returns the result as a text artifact.
+4. **Session mapping**: `A2ASessionRegistry` maps `contextId` (or `taskId`
+   without a context) to a QOC session, LRU-capped at 1000 contexts.
+5. **Streaming**: the card reports `streaming=true`; execution is currently
+   blocking and returns a final artifact. SSE fine-tuning to follow.
+6. **Auth**: `A2AAuthenticationMechanism` supplies the Vert.x routes with a
+   Quarkus identity (none/basic/proxy; OIDC defers to the OIDC module).
+   `A2ATaskAuthorizationProvider` enforces task ownership and is fail-closed.
+7. **Opt-in**: `engine.a2a.server.enabled=false` is the default; a route gate
+   otherwise answers the A2A paths with `404`.
+8. **Configuration**:
    - `engine.a2a.server.enabled`
    - `engine.a2a.server.name`
    - `engine.a2a.server.description`
    - `engine.a2a.server.version`
-   - `engine.a2a.server.base-url` (öffentliche URL in der AgentCard)
-   - `engine.a2a.server.agent` (`none` = Primär-Agent)
+   - `engine.a2a.server.base-url` (public URL in the AgentCard)
+   - `engine.a2a.server.agent` (`none` = primary agent)
 
-### Phase 3: Discovery & UI (umgesetzt)
+### Phase 3: Discovery & UI (implemented)
 
-- `GET /api/a2a/agents` listet alle konfigurierten externen Agents mit
-  effektiver Konfiguration, AgentCard-Metadaten (Name, Version, Protokoll,
-  Skills), Tool-Namen und Status (`ok`, `error`, `disabled`).
-- `POST /api/a2a/agents/refresh` (oder `GET ...?refresh=true`) invalidiert den
-  Card-Cache und lädt die Karten neu.
-- **AgentCard-Caching**: gemeinsamer TTL-Cache für Tool-Registrierung und
-  Discovery (`engine.a2a.cache.ttl-seconds`, Default 300, `0` deaktiviert,
-  Maximum 86400). Fehlgeschlagene Fetches werden nicht gecacht; der nächste
-  Aufruf versucht es erneut. Der Cache ist prozesslokal und thread-safe.
-- **UI**: Button „A2A" in der Web-Oberfläche öffnet eine read-only Übersicht
-  der konfigurierten Agents inkl. Status, Skills und Refresh.
-- **Konfiguration** bleibt datei-/umgebungsbasiert (`engine.a2a.urls`,
-  `engine.a2a.endpoints`). Eine Bearbeitung zur Laufzeit ist bewusst nicht
-  enthalten, weil das eine Neuregistrierung der Tool-Snapshots erfordern würde.
+- `GET /api/a2a/agents` lists all configured external agents with
+  effective configuration, AgentCard metadata (name, version, protocol,
+  skills), tool names and status (`ok`, `error`, `disabled`).
+- `POST /api/a2a/agents/refresh` (or `GET ...?refresh=true`) invalidates the
+  card cache and reloads the cards.
+- **AgentCard caching**: shared TTL cache for tool registration and
+  discovery (`engine.a2a.cache.ttl-seconds`, default 300, `0` disables,
+  maximum 86400). Failed fetches are not cached; the next call retries.
+  The cache is process-local and thread-safe.
+- **UI**: the "A2A" button in the web UI opens a read-only overview of the
+  configured agents including status, skills and refresh.
+- **Configuration** remains file/environment-based (`engine.a2a.urls`,
+  `engine.a2a.endpoints`). Runtime editing is intentionally not included,
+  because it would require re-registering the tool snapshots.
 
+## 6. Evaluation against QOC principles
 
-## 6. Bewertung nach QOC-Prinzipien
+QOC follows: pure Java core, ports/adapters, spec as source of truth, ArchUnit, tests.
 
-QOC folgt: reines Java-Core, Ports/Adapter, Spec als Quelle der Wahrheit, ArchUnit, Tests.
-
-| Aspekt | Bewertung | Bemerkung |
+| Aspect | Rating | Note |
 |---|---|---|
-| **Core-Freiheit** | Gut | A2A-Client/Server nur in `runtime.tool` oder `adapter.a2a` / `quarkus/`, nicht in `core` |
-| **Tool-System** | Sehr gut | Passt perfekt - A2A-Agents werden wie Tools behandelt |
-| **Permissions** | Gut | Bereits vorhanden, erweiterbar |
-| **MCP-Kompatibilität** | Gut | Komplementär, nicht konfliktierend |
-| **Transports** | Gut | JSON-RPC/gRPC über Quarkus unterstützt |
-| **Aufwand Client-first** | Gering-Mittel | Sofort nutzbar, kein eigener Server nötig |
+| **Core freedom** | Good | A2A client/server only in `runtime.tool` or `adapter.a2a` / `quarkus/`, not in `core` |
+| **Tool system** | Very good | Fits perfectly - A2A agents are treated like tools |
+| **Permissions** | Good | Already present, extensible |
+| **MCP compatibility** | Good | Complementary, not conflicting |
+| **Transports** | Good | JSON-RPC/gRPC supported via Quarkus |
+| **Client-first effort** | Low-medium | Immediately usable, no own server needed |
 
-## 7. Empfehlungen
+## 7. Recommendations
 
-**Empfehlung: Client-first, Server opt-in (umgesetzt)**
+**Recommendation: client-first, server opt-in (implemented)**
 
-Gründe:
-1. **Minimal invasiv**: Client ist nur ein Tool-Adapter, keine Änderung an Core-Session-Logik
-2. **Sofortiger Nutzen**: QOC kann andere Agents delegieren
-3. **Nutzt bestehendes Design**: Tool-Registry, Permissions, Execution-Chain
-4. **Testbar**: Gegen den eigenen Server und externe A2A-Agents testbar
-5. **Server bleibt opt-in**: keine ungewollte Exposition
+Reasons:
+1. **Minimally invasive**: client is only a tool adapter, no change to core session logic
+2. **Immediate benefit**: QOC can delegate to other agents
+3. **Uses existing design**: tool registry, permissions, execution chain
+4. **Testable**: testable against the own server and external A2A agents
+5. **Server stays opt-in**: no unwanted exposure
 
-**Nächste konkrete Schritte:**
-1. Push-Notifications an QOC-Events anbinden (optional, niedrige Priorität)
-2. Egress-Gating über Custom-HTTP-Client auf Transport-Ebene (aktuell Application-Level-Guard)
-3. Tenant-Support (`/{tenant}`) — separat geplant
-4. Automatisierte Interop-Suite gegen externe Referenz-Agents
+**Next concrete steps:**
+1. Connect push notifications to QOC events (optional, low priority)
+2. Egress gating via custom HTTP client at transport level (currently application-level guard)
+3. Tenant support (`/{tenant}`) — planned separately
+4. Automated interop suite against external reference agents
 
-## 8. Offene Fragen
+## 8. Open questions
 
-- [x] SDK-Version finalisiert (`org.a2aproject.sdk:1.4.0.Final`)
-- [x] Skill-to-Tool-Mapping: ein Tool pro Agent, Description mit Skills angereichert, optionaler `skill`-Parameter
-- [x] Task-Lifecycle: Blocking und SSE-Streaming (inkrementelle Chunks via EventBus) implementiert
-- [x] Auth für externe A2A-Agents: `auth=bearer:...`/`basic:...`/`headers=...` in `engine.a2a.endpoints`
-- [x] Content-Typen: TextPart, DataPart, FilePart werden client- und serverseitig verarbeitet
-- [x] Egress-Gating: Application-Level-Guard (`A2AEgress`) mit Host/IP-Allowlists und TLS; Transport-Level offen
-- [ ] Wie mappt man QOC-Tool-Schemas auf A2A Message Parts vollständig? (DataPart genutzt; FilePart als Referenz)
-- [ ] Tenant-Support (`/{tenant}`) — separat geplant
-- [ ] Caching von AgentCards auf Server-Seite? (Client-Cache implementiert)
+- [x] SDK version finalized (`org.a2aproject.sdk:1.4.0.Final`)
+- [x] Skill-to-tool mapping: one tool per agent, description enriched with skills, optional `skill` parameter
+- [x] Task lifecycle: blocking and SSE streaming (incremental chunks via EventBus) implemented
+- [x] Auth for external A2A agents: `auth=bearer:...`/`basic:...`/`headers=...` in `engine.a2a.endpoints`
+- [x] Content types: TextPart, DataPart, FilePart are processed client- and server-side
+- [x] Egress gating: application-level guard (`A2AEgress`) with host/IP allowlists and TLS; transport level open
+- [ ] How to fully map QOC tool schemas to A2A message parts? (DataPart used; FilePart as reference)
+- [ ] Tenant support (`/{tenant}`) — planned separately
+- [ ] Caching of AgentCards on the server side? (client cache implemented)
 
-## 9. Verbesserungen / TODOs (nicht blockierend)
+## 9. Improvements / TODOs (non-blocking)
 
-### 9.1 Push-Notifications (optional, niedrige Priorität)
-- **Was:** SDK unterstützt `TaskPushNotificationConfig` (Webhook-URL, Auth) für asynchrone Task-Updates. QOC kann als Push-Empfänger fungieren.
-- **Warum noch nicht:** Erfordert `PushNotificationConfigStore`-Implementierung und Anbindung an QOC-EventBus/Webhooks. Nur für Clients relevant, die nicht blockierend warten können.
-- **Aufwand:** mittel. **Priorität:** niedrig.
+### 9.1 Push notifications (optional, low priority)
+- **What:** SDK supports `TaskPushNotificationConfig` (webhook URL, auth) for asynchronous task updates. QOC can act as a push receiver.
+- **Why not yet:** requires a `PushNotificationConfigStore` implementation and wiring into the QOC EventBus/webhooks. Only relevant for clients that cannot wait synchronously.
+- **Effort:** medium. **Priority:** low.
 
-### 9.2 Egress-Gating auf Transport-Ebene
-- **Was:** Aktuell Application-Level-Guard in `A2AEgress` (prüft vor Card-Fetch und vor `sendMessage`). Ein Custom-`A2AHttpClient` (JDK-basiert) würde die Prüfung auf Transport-Ebene durchsetzen.
-- **Warum noch nicht:** Der SDK-HTTP-Client ist intern; ein Wrapper erfordert Implementierung aller Builder-Interfaces (`GetBuilder`, `PostBuilder`, `DeleteBuilder`).
-- **Aufwand:** mittel-hoch. **Priorität:** mittel (Sicherheit).
+### 9.2 Egress gating at transport level
+- **What:** currently an application-level guard in `A2AEgress` (checks before card fetch and before `sendMessage`). A custom `A2AHttpClient` (JDK-based) would enforce the check at transport level.
+- **Why not yet:** the SDK HTTP client is internal; a wrapper requires implementing all builder interfaces (`GetBuilder`, `PostBuilder`, `DeleteBuilder`).
+- **Effort:** medium-high. **Priority:** medium (security).
 
-### 9.3 Automatisierte Interop-Suite
-- **Was:** Docker-Konzept (`docs/spec/qualitaet/04-docker-a2a-mcp-e2e.md`) und Compose-Stack (Profil `a2a` in `deploy/docker-compose.yml`) existieren und wurden manuell getestet. Keine automatisierte Test-Suite.
-- **Warum noch nicht:** Erfordert Runner-Container mit SDK-Client und Szenarien A2A-01…10 / MCP-01…06.
-- **Aufwand:** mittel. **Priorität:** mittel (Qualitätssicherung).
+### 9.3 Automated interop suite
+- **What:** Docker concept (`docs/spec/qualitaet/04-docker-a2a-mcp-e2e.md`) and Compose stack (profile `a2a` in `deploy/docker-compose.yml`) exist and were tested manually. No automated test suite.
+- **Why not yet:** requires a runner container with an SDK client and scenarios A2A-01…10 / MCP-01…06.
+- **Effort:** medium. **Priority:** medium (quality assurance).
 
-### 9.4 Server-Card-Caching
-- **Was:** AgentCard wird bei jedem Request neu aus `AgentCatalogue` gebaut. Caching könnte sinnvoll sein.
-- **Aufwand:** gering. **Priorität:** niedrig.
+### 9.4 Server-side card caching
+- **What:** the AgentCard is rebuilt from `AgentCatalogue` on every request. Caching could be worthwhile.
+- **Effort:** low. **Priority:** low.
 
-### 9.5 QOC-Tool-Schema → A2A Message Parts
-- **Was:** Aktuell werden QOC-Tool-Ergebnisse als Text an den Remote-Agent gesendet. DataPart/FilePart werden clientseitig verarbeitet, aber das Mapping von QOC-Tool-Schemas auf A2A Message Parts ist nicht vollständig.
-- **Aufwand:** mittel. **Priorität:** niedrig.
+### 9.5 QOC tool schema → A2A message parts
+- **What:** currently QOC tool results are sent to the remote agent as text. DataPart/FilePart are processed client-side, but mapping QOC tool schemas onto A2A message parts is not complete.
+- **Effort:** medium. **Priority:** low.
 
-## Referenzen
+## References
 
 - [A2A Spec](https://a2a-protocol.org/latest/specification/)
 - [A2A Java SDK](https://github.com/a2aproject/a2a-java)

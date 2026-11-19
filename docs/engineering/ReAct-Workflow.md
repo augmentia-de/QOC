@@ -1,108 +1,108 @@
-# ReAct-Workflow — Deterministische React-Flow-Agenten-Engine
+# ReAct Workflow — Deterministic React Flow Agent Engine
 
-**Status:** Draft (2026-11-11) · Quelle: `qoc/docs/ReAct.txt` (Chat-Konversation zur Architektur)
-**Scope:** Hybride Engine, die ReAct-Agenten-Loop-Mechanik (Thought → Action → Observation) mit einem React-Flow-Graphen kombiniert — 100 % deterministisch, ohne LLM-Raten für Pfadsteuerung.
-
----
-
-## 1. Ziel
-
-Ein Workflow-System, das:
-
-- den **visuellen Designer** (React Flow, Nodes + Edges) als primäre Definition nutzt,
-- den **ReAct-Loop** strukturell (Thought → Action → Observation) beibehält,
-- aber den **LLM-Call (Thought)** durch eine deterministische `getNextStep`-Methode ersetzt,
-- Daten über Platzhalter (`${node_1.output.field}`) zwischen Nodes durchreicht,
-- Java-`record`s als typsichere Verträge zwischen Agent und Workflow-Engine nutzt,
-- optional LLM-Nodes für unklare Zustände/Zusammenfassungen einbindet (Hybrid).
+**Status:** Draft (2026-11-11) · Source: `qoc/docs/ReAct.txt` (chat conversation on architecture)
+**Scope:** Hybrid engine that combines the ReAct agent loop mechanics (Thought → Action → Observation) with a React Flow graph — 100% deterministic, with no LLM guessing for path control.
 
 ---
 
-## 2. Grundidee: ReAct → Deterministischer Loop
+## 1. Goal
 
-### 2.1 Klassischer ReAct-Loop (KI-gesteuert)
+A workflow system that:
+
+- uses the **visual designer** (React Flow, Nodes + Edges) as the primary definition,
+- keeps the **ReAct loop** structurally (Thought → Action → Observation),
+- but replaces the **LLM call (Thought)** with a deterministic `getNextStep` method,
+- passes data between nodes through placeholders (`${node_1.output.field}`),
+- uses Java `record`s as type-safe contracts between agent and workflow engine,
+- optionally embeds LLM nodes for unclear states/summaries (hybrid).
+
+---
+
+## 2. Core Idea: ReAct → Deterministic Loop
+
+### 2.1 Classic ReAct Loop (AI-driven)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ReAct-Agent (LLM-basiert)                                  │
+│  ReAct Agent (LLM-based)                                    │
 │                                                             │
-│   Thought   → LLM plant den nächsten Schritt                │
-│   Action    → LLM wählt Tool + Parameter                    │
-│   Observation → Tool-Ergebnis zurück in Kontext             │
-│   ... bis fertig                                            │
+│   Thought   → LLM plans the next step                       │
+│   Action    → LLM selects tool + parameters                 │
+│   Observation → Tool result back into context               │
+│   ... until done                                            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 Deterministischer ReAct-Loop (Code-gesteuert)
+### 2.2 Deterministic ReAct Loop (code-driven)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Deterministische Engine                                    │
+│  Deterministic Engine                                       │
 │                                                             │
 │   getNextStep(context, graph) → "execute <nodeId>"          │
-│   executeNodeAction(nodeId)   → Tool ausführen              │
-│   Observation                 → in AgentContext speichern    │
-│   ... bis keine ausgehenden Edges mehr ("DONE")             │
+│   executeNodeAction(nodeId)   → execute tool                │
+│   Observation                 → stored in AgentContext       │
+│   ... until no outgoing edges remain ("DONE")               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Unterschied:** Nur das "Gehirn" (Thought) wird ausgetauscht. Die Struktur (Loop, Tool-Execution, State-Update, Observation) bleibt identisch. Wenn man später ein LLM einsteuern will, muss nur `getNextStep` angepasst werden.
+**Difference:** Only the "brain" (Thought) is swapped out. The structure (loop, tool execution, state update, observation) stays identical. If you later want to steer an LLM, only `getNextStep` needs to be adjusted.
 
-**Vorteile:**
-- 100 % reproduzierbar, kein Halluzinationsrisiko, keine Endlos-Loops durch falsche LLM-Interpretation
-- Keine LLM-Kosten/Latenz für Pfadsteuerung
-- Volles Logging/Debugging jedes Schritts
-- Typsichere Verträge via Java-Records
+**Advantages:**
+- 100% reproducible, no hallucination risk, no infinite loops from wrong LLM interpretation
+- No LLM cost/latency for path control
+- Full logging/debugging of every step
+- Type-safe contracts via Java records
 
-**Nachteil:** Starr — kann nicht dynamisch auf völlig unvorhergesehene Situationen reagieren, für die kein Pfad programmiert wurde.
+**Disadvantage:** Rigid — cannot dynamically react to completely unforeseen situations for which no path was programmed.
 
 ---
 
-## 3. Architektur
+## 3. Architecture
 
-### 3.1 Datenfluss
+### 3.1 Data flow
 
 ```
 ┌────────────────────┐
 │ React Flow JSON    │  { nodes, edges, agents }
-│ (Frontend-Export)  │
+│ (Frontend export)  │
 └────────┬───────────┘
          │
          ▼
 ┌────────────────────┐
-│ getNextStep()      │  Liest Graph + AgentContext
+│ getNextStep()      │  Reads graph + AgentContext
 │                    │  → "execute <nodeId>"
 └────────┬───────────┘
          │
          ▼
 ┌────────────────────┐
-│ Tool Dispatcher    │  führt Node aus
-│                    │  → structured Output
+│ Tool Dispatcher    │  executes node
+│                    │  → structured output
 └────────┬───────────┘
          │
          ▼
 ┌────────────────────┐
-│ AgentContext       │  speichert nodeOutputs
-│ (State + History)  │  → für nächste Iteration
+│ AgentContext       │  stores nodeOutputs
+│ (State + History)  │  → for next iteration
 └────────────────────┘
 ```
 
-### 3.2 Komponenten
+### 3.2 Components
 
-| Komponente | Verantwortung |
+| Component | Responsibility |
 |---|---|
-| `FlowGraph` | React-Flow-Datenmodell (Nodes, Edges, Conditions) |
-| `AgentContext` | Zentraler State: Chat-Historie, `nodeOutputs`, `workflowState`, `currentNodeId` |
-| `getNextStep` | Deterministische Navigation im Graphen |
-| `ToolDispatcher` | Mapping `node.type` → Tool-Ausführung |
-| `resolveTemplate` | Data-Piping: Platzhalter → echte Werte |
-| `WorkflowSchemas` | Java-Records als typsichere Verträge |
+| `FlowGraph` | React Flow data model (Nodes, Edges, Conditions) |
+| `AgentContext` | Central state: chat history, `nodeOutputs`, `workflowState`, `currentNodeId` |
+| `getNextStep` | Deterministic navigation in the graph |
+| `ToolDispatcher` | Mapping `node.type` → tool execution |
+| `resolveTemplate` | Data piping: placeholders → actual values |
+| `WorkflowSchemas` | Java records as type-safe contracts |
 
 ---
 
-## 4. Datenmodelle
+## 4. Data Models
 
-### 4.1 React-Flow-JSON (Input)
+### 4.1 React Flow JSON (Input)
 
 ```json
 {
@@ -116,7 +116,7 @@ Ein Workflow-System, das:
 }
 ```
 
-### 4.2 Java-Datenmodelle
+### 4.2 Java Data Models
 
 ```java
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -124,7 +124,7 @@ import java.util.*;
 
 public class DeterministicReactFlowEngine {
 
-    // --- React-Flow Datenmodelle ---
+    // --- React Flow data models ---
     public static class FlowGraph {
         public List<FlowNode> nodes;
         public List<FlowEdge> edges;
@@ -132,18 +132,18 @@ public class DeterministicReactFlowEngine {
 
     public static class FlowNode {
         public String id;
-        public String type;        // z.B. "subagent_node", "api_node", "db_node"
-        public Map<String, Object> data;  // Konfiguration & Parameter
+        public String type;        // e.g. "subagent_node", "api_node", "db_node"
+        public Map<String, Object> data;  // Configuration & parameters
     }
 
     public static class FlowEdge {
         public String id;
         public String source;
         public String target;
-        public String condition;  // z.B. "status == 'SUCCESS'"
+        public String condition;  // e.g. "status == 'SUCCESS'"
     }
 
-    // --- Agenten-Message-Struktur (LLM-Standard) ---
+    // --- Agent message structure (LLM standard) ---
     public interface Message { String getRole(); }
 
     public static class UserMessage implements Message {
@@ -186,11 +186,11 @@ public class DeterministicReactFlowEngine {
         public String getContent() { return content; }
     }
 
-    // --- Zentraler Agenten-Kontext ---
+    // --- Central agent context ---
     public static class AgentContext {
         private final List<Message> history = new ArrayList<>();
         private final Map<String, Object> workflowState = new HashMap<>();
-        private final Map<String, Object> nodeOutputs = new HashMap<>();  // Outputs per Node-ID
+        private final Map<String, Object> nodeOutputs = new HashMap<>();  // outputs per node ID
         private String currentNodeId;
 
         public void addMessage(Message msg) { history.add(msg); }
@@ -208,35 +208,35 @@ public class DeterministicReactFlowEngine {
 
 ---
 
-## 5. Die `getNextStep`-Logik
+## 5. The `getNextStep` Logic
 
-Das Herzstück: Liest den React-Flow-Graphen und bestimmt den nächsten Node.
+The heart of it: reads the React Flow graph and determines the next node.
 
 ```java
 public static AssistantMessage getNextStep(FlowGraph graph, AgentContext ctx) {
     String currentId = ctx.getCurrentNodeId();
 
-    // Fall A: Workflow-Start (noch kein Node gesetzt)
+    // Case A: Workflow start (no node set yet)
     if (currentId == null) {
         String startNodeId = findStartNode(graph);
         ctx.setCurrentNodeId(startNodeId);
         return buildToolCallForNode(startNodeId, graph, ctx);
     }
 
-    // Fall B: Finde ausgehende Edges im React-Flow
+    // Case B: Find outgoing edges in React Flow
     List<FlowEdge> outgoingEdges = new ArrayList<>();
     for (FlowEdge edge : graph.edges) {
         if (edge.source.equals(currentId)) outgoingEdges.add(edge);
     }
 
     if (outgoingEdges.isEmpty()) {
-        return new AssistantMessage("Workflow erfolgreich beendet.", Collections.emptyList(), true);
+        return new AssistantMessage("Workflow successfully completed.", Collections.emptyList(), true);
     }
 
-    // Fall C: Nächsten Node ermitteln (mit Bedingungsprüfung bei Verzweigungen)
+    // Case C: Determine next node (with condition checks on branches)
     String nextNodeId = null;
     if (outgoingEdges.size() == 1) {
-        nextNodeId = outgoingEdges.get(0).target;  // Linearer Pfad
+        nextNodeId = outgoingEdges.get(0).target;  // Linear path
     } else {
         for (FlowEdge edge : outgoingEdges) {
             if (evaluateCondition(edge.condition, ctx)) {
@@ -247,7 +247,7 @@ public static AssistantMessage getNextStep(FlowGraph graph, AgentContext ctx) {
     }
 
     if (nextNodeId == null) {
-        throw new IllegalStateException("Keine gültige Kante ab Node " + currentId + " erfüllt.");
+        throw new IllegalStateException("No valid edge from node " + currentId + " satisfied.");
     }
 
     ctx.setCurrentNodeId(nextNodeId);
@@ -255,7 +255,7 @@ public static AssistantMessage getNextStep(FlowGraph graph, AgentContext ctx) {
 }
 ```
 
-### Hilfsmethoden
+### Helper methods
 
 ```java
 private static String findStartNode(FlowGraph graph) {
@@ -269,7 +269,7 @@ private static String findStartNode(FlowGraph graph) {
 
 private static boolean evaluateCondition(String condition, AgentContext ctx) {
     if (condition == null || condition.isBlank()) return true;
-    // Beispiel: Prüft den Status im globalen State oder in Node-Outputs
+    // Example: checks the status in global state or in node outputs
     if (condition.equals("status == 'SUCCESS'")) {
         return "SUCCESS".equals(ctx.getState("lastStatus"));
     }
@@ -280,14 +280,14 @@ private static boolean evaluateCondition(String condition, AgentContext ctx) {
 }
 ```
 
-### Node → ToolCall Mapping
+### Node → ToolCall mapping
 
 ```java
 private static AssistantMessage buildToolCallForNode(String nodeId, FlowGraph graph, AgentContext ctx) {
     FlowNode node = graph.nodes.stream()
             .filter(n -> n.id.equals(nodeId))
             .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException("Node " + nodeId + " nicht gefunden"));
+            .orElseThrow(() -> new IllegalArgumentException("Node " + nodeId + " not found"));
 
     Map<String, Object> resolvedArgs = new HashMap<>();
 
@@ -302,18 +302,18 @@ private static AssistantMessage buildToolCallForNode(String nodeId, FlowGraph gr
         }
     }
 
-    // Dynamisches Mapping von node.type auf Tool-Namen
+    // Dynamic mapping from node.type to tool name
     String toolName = switch (node.type != null ? node.type : "default") {
         case "subagent_node" -> "subagentTool";
         case "api_node"      -> "apiTool";
         case "db_node"       -> "dbTool";
         case "email_node"    -> "emailTool";
-        case "llm_node"      -> "llmTool";   // Hybrid: LLM-Evaluierung
+        case "llm_node"      -> "llmTool";   // Hybrid: LLM evaluation
         default              -> "defaultTool";
     };
 
     return new AssistantMessage(
-        "Führe React-Flow Node [" + node.id + "] aus.",
+        "Execute React Flow node [" + node.id + "].",
         List.of(new ToolCall("call_" + nodeId, toolName, resolvedArgs)),
         false
     );
@@ -322,9 +322,9 @@ private static AssistantMessage buildToolCallForNode(String nodeId, FlowGraph gr
 
 ---
 
-## 6. Data-Piping & Structured Outputs
+## 6. Data Piping & Structured Outputs
 
-### 6.1 Template-Resolver mit verschachteltem Zugriff
+### 6.1 Template resolver with nested access
 
 ```java
 private static final Pattern TEMPLATE_PATTERN =
@@ -335,16 +335,16 @@ private static Object resolveTemplate(String template, AgentContext ctx) {
 
     if (matcher.find()) {
         String targetNodeId = matcher.group(1);
-        String propertyPath = matcher.group(3);  // z.B. "status" oder "user.email"
+        String propertyPath = matcher.group(3);  // e.g. "status" or "user.email"
         Object previousOutput = ctx.getNodeOutput(targetNodeId);
 
         if (previousOutput == null) return null;
 
         if (propertyPath == null || propertyPath.isEmpty()) {
-            return previousOutput;  // Ganzer Output (${node_1.output})
+            return previousOutput;  // Whole output (${node_1.output})
         }
 
-        // Verschachtelte Eigenschaft auflösen
+        // Resolve nested property
         return resolveNestedProperty(previousOutput, propertyPath);
     }
     return template;
@@ -356,7 +356,7 @@ private static Object resolveNestedProperty(Object target, String path) {
     for (String part : parts) {
         if (current instanceof Map) {
             current = ((Map<?, ?>) current).get(part);
-            if (current == null) return null;  // Key nicht gefunden → kein Absturz
+            if (current == null) return null;  // Key not found → no crash
         } else {
             return null;
         }
@@ -365,7 +365,7 @@ private static Object resolveNestedProperty(Object target, String path) {
 }
 ```
 
-### 6.2 Beispiel: Data-Piping über Nodes
+### 6.2 Example: data piping across nodes
 
 ```json
 {
@@ -379,10 +379,10 @@ private static Object resolveNestedProperty(Object target, String path) {
 }
 ```
 
-- `node_1` speichert `{ "status": "SUCCESS", "data": "Verarbeitete Daten" }` im Kontext
-- `node_2` erhält `"Verarbeitete Daten"` als `payload`-Parameter
+- `node_1` stores `{ "status": "SUCCESS", "data": "Verarbeitete Daten" }` in the context
+- `node_2` receives `"Verarbeitete Daten"` as its `payload` parameter
 
-### 6.3 Typsichere Verträge via Java-Records
+### 6.3 Type-safe contracts via Java records
 
 ```java
 import dev.langchain4j.model.output.structured.Description;
@@ -391,15 +391,15 @@ public record OrderAnalysisResult(
     @Description("Eindeutige Bestellnummer") String orderId,
     @Description("Klassifizierung: VIP_ORDER, STANDARD, FRAUD_SUSPECT") String classification,
     @Description("Konfidenz-Score 0.0–1.0") double confidenceScore,
-    @Description("Zusätzliche extrahierte Daten") Map<String, Object> extractedData
+    @Description("Additional extracted data") Map<String, Object> extractedData
 ) {}
 ```
 
-LangChain4j generiert daraus ein JSON-Schema, zwingt das LLM zur Einhaltung und deserialisiert/validiert automatisch.
+LangChain4j generates a JSON schema from this, forces the LLM to comply, and deserializes/validates automatically.
 
 ---
 
-## 7. Der Haupt-Loop
+## 7. The Main Loop
 
 ```java
 public static void runWorkflowLoop(String reactFlowJson) throws Exception {
@@ -417,18 +417,18 @@ public static void runWorkflowLoop(String reactFlowJson) throws Exception {
     while (step < maxSteps) {
         step++;
 
-        // 1. Deterministischer Next-Step (ersetzt LLM-Thought)
+        // 1. Deterministic next step (replaces LLM thought)
         AssistantMessage assistantMsg = getNextStep(graph, context);
         context.addMessage(assistantMsg);
 
         System.out.println("[Step " + step + "] " + assistantMsg.getThought());
 
         if (assistantMsg.isFinished() || assistantMsg.getToolCalls().isEmpty()) {
-            System.out.println(" ✨ Workflow regulär beendet.");
+            System.out.println(" ✨ Workflow finished normally.");
             break;
         }
 
-        // 2. Tool-Aufrufe ausführen (Action)
+        // 2. Execute tool calls (action)
         for (ToolCall call : assistantMsg.getToolCalls()) {
             String nodeId = call.getId().replace("call_", "");
 
@@ -438,7 +438,7 @@ public static void runWorkflowLoop(String reactFlowJson) throws Exception {
             String observationString = observationMap.toString();
             System.out.println(" 👁️  Observation: " + observationString);
 
-            // 3. Observation in Historie schreiben (ToolMessage)
+            // 3. Write observation into history (ToolMessage)
             context.addMessage(new ToolMessage(call.getId(), observationString));
         }
         System.out.println("--------------------------------------------------");
@@ -446,13 +446,13 @@ public static void runWorkflowLoop(String reactFlowJson) throws Exception {
 }
 ```
 
-### Tool-Dispatcher
+### Tool dispatcher
 
 ```java
 public static Map<String, Object> executeTool(
         String nodeId, String toolName, Map<String, Object> arguments, AgentContext ctx) {
 
-    System.out.println("   [Tool: " + toolName + "] Ausführung für Node [" + nodeId + "]");
+    System.out.println("   [Tool: " + toolName + "] Execution for node [" + nodeId + "]");
 
     Map<String, Object> structuredResult = new HashMap<>();
 
@@ -474,10 +474,10 @@ public static Map<String, Object> executeTool(
             break;
     }
 
-    // Globalen State aktualisieren (für Edge-Bedingungen)
+    // Update global state (for edge conditions)
     ctx.setState("lastStatus", structuredResult.get("status"));
 
-    // Structured Output für Data-Piping abspeichern
+    // Store structured output for data piping
     ctx.setNodeOutput(nodeId, structuredResult);
 
     return structuredResult;
@@ -486,58 +486,58 @@ public static Map<String, Object> executeTool(
 
 ---
 
-## 8. Hybrid-Ansatz: Deterministisch + LLM
+## 8. Hybrid Approach: Deterministic + LLM
 
-### 8.1 LLM als Node-Typ
+### 8.1 LLM as node type
 
-Im React-Flow-Graphen ist ein LLM-Schritt einfach ein weiterer Node-Typ (`llm_eval_node`, `llm_summarize_node`).
+In the React Flow graph, an LLM step is simply another node type (`llm_eval_node`, `llm_summarize_node`).
 
-- Die Engine führt den Node aus, indem sie den gesamten `AgentContext` (Chat-Historie, bisherige `nodeOutputs`) an einen LLM-Service übergibt.
-- Das LLM liefert ein **Structured Output** (JSON), das im Kontext gespeichert und per Data-Piping weitergegeben wird.
+- The engine executes the node by passing the entire `AgentContext` (chat history, previous `nodeOutputs`) to an LLM service.
+- The LLM delivers a **structured output** (JSON) that is stored in the context and passed on via data piping.
 
-### 8.2 Anwendungsfall: Unklare Zustände klären
+### 8.2 Use case: clarifying unclear states
 
 ```
-User: "Ich will das Zeug zurückschicken, aber weiß nicht wohin."
+User: "I want to return the stuff, but I don't know where to."
   ↓
-Deterministische Edge schlägt fehl → Routing zu llm_eval_node
+Deterministic edge fails → routing to llm_eval_node
   ↓
-LLM klassifiziert: { "intent": "REFUND", "confidence": 0.9 }
+LLM classifies: { "intent": "REFUND", "confidence": 0.9 }
   ↓
-Edge-Bedingung: ${llm_eval.output.intent} == 'REFUND' → process_refund_node
+Edge condition: ${llm_eval.output.intent} == 'REFUND' → process_refund_node
 ```
 
-### 8.3 Anwendungsfall: Daten zusammenfassen
+### 8.3 Use case: summarizing data
 
 ```json
 {
   "id": "summarize_node",
   "type": "llm_summarize_node",
   "data": {
-    "prompt": "Fasse die folgenden Rohdaten für den Kunden zusammen:",
+    "prompt": "Summarize the following raw data for the customer:",
     "sourceData1": "${node_db.output}",
     "sourceData2": "${node_api.output}"
   }
 }
 ```
 
-Der LLM-Node füttert das LLM mit den Daten, das Ergebnis wird als `ctx.setNodeOutput("summarize_node", summaryText)` abgelegt und vom nachfolgenden `email_node` verwendet.
+The LLM node feeds the data to the LLM; the result is stored as `ctx.setNodeOutput("summarize_node", summaryText)` and used by the subsequent `email_node`.
 
-### 8.4 Beliebige Verschachtelung
+### 8.4 Arbitrary nesting
 
 ```
-Makro (Deterministisch): React-Flow-Graph steuert groben Ablauf
-  → Meso (LLM/Subagent): LLM startet eigenen Sub-Loop
-    → Mikro (Deterministisch): Subagent nutzt feste Tools (API, DB)
+Macro (deterministic): React Flow graph steers the coarse flow
+  → Meso (LLM/subagent): LLM starts its own sub-loop
+    → Micro (deterministic): subagent uses fixed tools (API, DB)
 ```
 
-Für die Engine ist das transparent — jedes Teilstück liefert einen strukturierten Output im gemeinsamen Kontext.
+For the engine this is transparent — each part delivers a structured output in the shared context.
 
 ---
 
-## 9. Fehlerbehandlung & Retry
+## 9. Error Handling & Retry
 
-### 9.1 Sichere Ausführung mit Fallback
+### 9.1 Safe execution with fallback
 
 ```java
 public static void executeLlmAgentNodeSafely(
@@ -553,17 +553,17 @@ public static void executeLlmAgentNodeSafely(
     } catch (Exception e) {
         System.err.println(" ⚠️ Validierungsfehler im Node [" + nodeId + "]: " + e.getMessage());
 
-        // Fallback-Objekt, damit der Workflow nicht crasht
+        // Fallback object so the workflow doesn't crash
         OrderAnalysisResult errorResult = new OrderAnalysisResult(
             "UNKNOWN", "ERROR", 0.0, Map.of(), true, e.getMessage()
         );
         ctx.setNodeOutput(nodeId, errorResult);
-        ctx.setState("lastNodeStatus", "ERROR");  // Leitet Flow in Fehlerpfad
+        ctx.setState("lastNodeStatus", "ERROR");  // routes flow into error path
     }
 }
 ```
 
-### 9.2 Error-Edges im React-Flow
+### 9.2 Error edges in React Flow
 
 ```json
 {
@@ -579,7 +579,7 @@ public static void executeLlmAgentNodeSafely(
 }
 ```
 
-### 9.3 Automatischer Retry
+### 9.3 Automatic retry
 
 ```java
 public static OrderAnalysisResult runAgentWithRetry(
@@ -602,9 +602,9 @@ public static OrderAnalysisResult runAgentWithRetry(
 
 ---
 
-## 10. LangChain4j-Integration (Structured Output)
+## 10. LangChain4j Integration (Structured Output)
 
-### 10.1 Agent-Service mit erzwungenem Output
+### 10.1 Agent service with enforced output
 
 ```java
 import dev.langchain4j.service.UserMessage;
@@ -625,28 +625,28 @@ public class WorkflowAgentService {
     }
 
     public OrderAnalysisResult runAgent(String rawInput) {
-        // LangChain4j generiert JSON-Schema aus dem Record,
-        // zwingt das LLM zur Einhaltung und validiert automatisch.
+        // LangChain4j generates a JSON schema from the record,
+        // forces the LLM to comply and validates automatically.
         return agent.analyze(rawInput);
     }
 }
 ```
 
-### 10.2 Integration in die Engine
+### 10.2 Integration into the engine
 
 ```java
 public static OrderAnalysisResult executeLlmAgentNode(
         String nodeId, Map<String, Object> nodeData,
         WorkflowAgentService agentService, AgentContext ctx) {
 
-    System.out.println("   [LLM Agent Node " + nodeId + "] Starte LLM-Ausführung mit Record-Validierung...");
+    System.out.println("   [LLM Agent Node " + nodeId + "] Starting LLM execution with record validation...");
 
     String rawInput = (String) nodeData.getOrDefault("inputData", "Standard-Bestellung");
 
-    // Automatische JSON-Schema-Generierung, LLM-Zwang & Validierung
+    // Automatic JSON schema generation, LLM enforcement & validation
     OrderAnalysisResult validatedResult = agentService.runAgent(rawInput);
 
-    // Typsicher im Kontext hinterlegen (kein unsicheres Casting)
+    // Type-safe storage in context (no unsafe casting)
     ctx.setNodeOutput(nodeId, validatedResult);
 
     System.out.println(" 👁️  Validierter Structured Output: Klassifizierung = " + validatedResult.classification());
@@ -656,9 +656,9 @@ public static OrderAnalysisResult executeLlmAgentNode(
 
 ---
 
-## 11. React Flow Frontend-Unterstützung
+## 11. React Flow Frontend Support
 
-### 11.1 Statische Datenübergabe
+### 11.1 Static data passing
 
 ```javascript
 const initialNodes = [
@@ -675,13 +675,13 @@ const initialNodes = [
 ];
 ```
 
-### 11.2 Dynamischer Datenfluss (React Flow Hooks)
+### 11.2 Dynamic data flow (React Flow hooks)
 
-- **`useNodeConnections`** — Findet heraus, welche Nodes an welchen Handles verknüpft sind
-- **`useNodesData`** — Holt die aktuellen Daten des verbundenen Quell-Nodes
-- **`updateNodeData`** — Erlaubt Laufzeit-Updates (z. B. nach Tool-Call), sodass nachfolgende Nodes darauf zugreifen können
+- **`useNodeConnections`** — finds out which nodes are connected to which handles
+- **`useNodesData`** — fetches the current data of the connected source node
+- **`updateNodeData`** — allows runtime updates (e.g. after a tool call) so that downstream nodes can access them
 
-### 11.3 Edge-Daten (Bedingungen)
+### 11.3 Edge data (conditions)
 
 ```javascript
 const initialEdges = [
@@ -697,9 +697,9 @@ const initialEdges = [
 
 ---
 
-## 12. Typsichere Edge-Auswertung mit Java-Records
+## 12. Type-safe Edge Evaluation with Java Records
 
-### 12.1 Gemeinsames Schema als Vertrag
+### 12.1 Shared schema as contract
 
 ```java
 public record OrderAnalysisResult(
@@ -712,7 +712,7 @@ public record OrderAnalysisResult(
 ) {}
 ```
 
-### 12.2 Edge-Bedingung auswerten
+### 12.2 Evaluating an edge condition
 
 ```java
 public static boolean evaluateCondition(String condition, AgentContext ctx) {
@@ -729,7 +729,7 @@ public static boolean evaluateCondition(String condition, AgentContext ctx) {
 }
 ```
 
-### 12.3 Data-Piping auf strukturierte Felder
+### 12.3 Data piping on structured fields
 
 ```java
 public static Map<String, Object> resolveNodeParameters(FlowNode node, AgentContext ctx) {
@@ -755,34 +755,34 @@ public static Map<String, Object> resolveNodeParameters(FlowNode node, AgentCont
 
 ---
 
-## 13. Projektstruktur & Dependencies
+## 13. Project Structure & Dependencies
 
-### 13.1 Projektstruktur
+### 13.1 Project structure
 
 ```
 my-agent-engine/
-├── build.gradle.kts  (oder pom.xml)
+├── build.gradle.kts  (or pom.xml)
 └── src/
     ├── main/
     │   ├── java/com/example/engine/
-    │   │   ├── CoreWorkflowEngine.java     # Hauptschleife & getNextStep
-    │   │   ├── AgentContext.java          # Chat-Historie, State, Node-Outputs
+    │   │   ├── CoreWorkflowEngine.java     # Main loop & getNextStep
+    │   │   ├── AgentContext.java          # Chat history, state, node outputs
     │   │   ├── model/
-    │   │   │   ├── FlowGraphDto.java      # React-Flow JSON (Nodes, Edges)
-    │   │   │   └── WorkflowSchemas.java   # Java Records (Structured Outputs)
+    │   │   │   ├── FlowGraphDto.java      # React Flow JSON (Nodes, Edges)
+    │   │   │   └── WorkflowSchemas.java   # Java records (structured outputs)
     │   │   ├── tools/
-    │   │   │   ├── ToolDispatcher.java    # Verteilt ToolCalls an API, DB, Subagenten
-    │   │   │   └── ActionTools.java       # Konkrete Tool-Implementierungen
+    │   │   │   ├── ToolDispatcher.java    # Dispatches tool calls to APIs, DBs, subagents
+    │   │   │   └── ActionTools.java       # Concrete tool implementations
     │   │   └── agent/
-    │   │       └── WorkflowAgentService.java  # LangChain4j AI Service
+    │   │       └── WorkflowAgentService.java  # LangChain4j AI service
     │   └── resources/
-    │       └── workflow-graph.json        # Beispielhafter React-Flow-Export
+    │       └── workflow-graph.json        # Example React Flow export
     └── test/
         └── java/com/example/engine/
             └── WorkflowEngineTest.java
 ```
 
-### 13.2 Maven-Dependencies
+### 13.2 Maven dependencies
 
 ```xml
 <properties>
@@ -793,14 +793,14 @@ my-agent-engine/
 </properties>
 
 <dependencies>
-    <!-- JSON Parsing -->
+    <!-- JSON parsing -->
     <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
         <artifactId>jackson-databind</artifactId>
         <version>${jackson.version}</version>
     </dependency>
 
-    <!-- LangChain4j Core & OpenAI -->
+    <!-- LangChain4j core & OpenAI -->
     <dependency>
         <groupId>dev.langchain4j</groupId>
         <artifactId>langchain4j</artifactId>
@@ -836,21 +836,21 @@ my-agent-engine/
 
 ---
 
-## 14. Warum dieser Ansatz?
+## 14. Why this approach?
 
-1. **Vollständige Entkopplung von LLMs:** Die Engine arbeitet rein deterministisch auf Basis von `FlowGraph` und `AgentContext`. Das LLM ist lediglich ein spezialisierter Node-Typ, der eingeklinkt werden kann.
-2. **Standardisierte Message-Historie:** Durch `UserMessage`, `AssistantMessage` (mit `ToolCall`) und `ToolMessage` ist die Architektur zu 100 % kompatibel mit KI-Agenten-Frameworks. Wenn man `getNextStep` durch einen echten LLM-Aufruf ersetzt, muss der Rest der Engine nicht geändert werden.
-3. **Structured Outputs & Sicheres Data-Piping:** Tools liefern strukturierte Maps/Records zurück. Der Template-Resolver fängt fehlende Schlüssel oder `null`-Werte ab, sodass der Workflow bei Datenfehlern nicht abstürzt.
-4. **Typsicherheit durchgängig:** Java-Records als Single Source of Truth — sowohl Agent (via LangChain4j) als auch Workflow-Engine (für Edge-Bedingungen und Data-Piping) nutzen dieselben Typen. Der Compiler deckt Abweichungen sofort auf.
+1. **Complete decoupling from LLMs:** The engine works purely deterministically on the basis of `FlowGraph` and `AgentContext`. The LLM is merely a specialized node type that can be hooked in.
+2. **Standardized message history:** Through `UserMessage`, `AssistantMessage` (with `ToolCall`) and `ToolMessage`, the architecture is 100% compatible with AI agent frameworks. If you replace `getNextStep` with a real LLM call, the rest of the engine does not need to change.
+3. **Structured outputs & safe data piping:** Tools return structured maps/records. The template resolver catches missing keys or `null` values so the workflow does not crash on data errors.
+4. **Type safety end to end:** Java records as the single source of truth — both the agent (via LangChain4j) and the workflow engine (for edge conditions and data piping) use the same types. The compiler catches deviations immediately.
 
 ---
 
-## 15. Referenzen
+## 15. References
 
-- Original-Konversation: `qoc/docs/ReAct.txt`
-- ReactFlow-Format & Temporal-Integration: `qoc/docs/engineering/ReactFlow-temporal.md`
-- QOC Engine: `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/QocEngine.java`
-- Workflow-Runner (ReactFlow-Format, Backend): `qoc/workflow-runner/`
-- Workflow-UI (ReactFlow-Editor): `qoc/workflow-ui/`
+- Original conversation: `qoc/docs/ReAct.txt`
+- React Flow format & Temporal integration: `qoc/docs/engineering/ReactFlow-temporal.md`
+- QOC engine: `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/QocEngine.java`
+- Workflow runner (React Flow format, backend): `qoc/workflow-runner/`
+- Workflow UI (React Flow editor): `qoc/workflow-ui/`
 - LangChain4j: https://docs.langchain4j.dev/
 - React Flow: https://reactflow.dev/

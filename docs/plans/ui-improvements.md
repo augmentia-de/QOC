@@ -1,138 +1,138 @@
-# UI-Improvements – Plan zur weiteren Prüfung
+# UI Improvements – Plan for Further Review
 
 **Status:** Plan (2026-11-15)
-**Bezug:** `docs/engineering/Unified-Storage.md` §8, `docs/plans/mobile-workflow-ui.md`
+**Reference:** `docs/engineering/Unified-Storage.md` §8, `docs/plans/mobile-workflow-ui.md`
 
-Dieses Dokument sammelt die bekannten UI-Verbesserungspunkte und offenen
-Architektur-Fragen, die noch nicht implementiert sind.
-
----
-
-## 1. Echter File-Journal für Runtime (Offline-Crash-Recovery)
-
-**Problem:** Im `file`-Modus (`engine.storage=file`) ist die Engine-Runtime
-in-memory — keine Crash-Recovery. Bei einem Neustart gehen Sessions, Journal
-und Snapshots verloren.
-
-**Aktueller Zustand:**
-- `memory`-Modus: alles ephemeral (bewusst)
-- `file`-Modus: Workflows/Agents aus Dateien, Runtime in-memory
-- `sqlite`/`postgres`-Modus: volle Persistenz + Crash-Recovery
-
-**Mögliche Umsetzung:**
-- File-basiertes Journal (`wf-data/journal/`) das Sessions, Events und
-  Snapshots als JSON-Dateien persistiert
-- Analog zu `SqliteAdapters` / `SqlAdapters`, aber mit File-Backend
-- Crash-Recovery: beim Start offene Claims (session_claim) laden und
-  Workflows resumen
-
-**Aufwand:** 3–5 Tage
-**Abhängigkeit:** `ClaimStore`, `Journal`, `SessionStore`, `SnapshotStore` Ports
-**Risiko:** Hoher Aufwand, geringer Nutzen (sqlite ist bereits lightweight)
-
-**Empfehlung:** Niedrige Priorität. SQLite bietet bereits Offline-Persistenz
-mit geringem Overhead. File-Journal nur implementieren, wenn explizit
-Offline-Nutzung ohne SQLite gewünscht ist.
+This document collects the known UI improvement items and open architecture
+questions that are not yet implemented.
 
 ---
 
-## 2. UI-basierte Konfiguration für Agents, Permissions und MCP-Server
+## 1. Real File Journal for Runtime (Offline Crash Recovery)
 
-**Problem:** Aktuell werden Agents, Permissions und MCP-Server über
-JSON-Dateien (`settings.json`, `application.properties`) oder
-Umgebungsvariablen konfiguriert. Keine UI für diese Konfiguration.
+**Problem:** In `file` mode (`engine.storage=file`) the engine runtime is
+in-memory — no crash recovery. On restart, sessions, journal, and snapshots
+are lost.
 
-**Aktueller Zustand:**
-- Agents: UI vorhanden (`/workflow/agents`) mit CRUD, aber keine
-  Permission-Konfiguration
-- MCP-Server: UI vorhanden (`/workflow/mcp-servers`) mit Add/Remove/Reload
-- Permissions: nur über `application.properties` oder Agent-Frontmatter
+**Current state:**
+- `memory` mode: everything ephemeral (by design)
+- `file` mode: Workflows/Agents from files, runtime in-memory
+- `sqlite`/`postgres` mode: full persistence + crash recovery
 
-**Mögliche Umsetzung:**
+**Possible implementation:**
+- File-based journal (`wf-data/journal/`) persisting sessions, events, and
+  snapshots as JSON files
+- Analogous to `SqliteAdapters` / `SqlAdapters`, but with a file backend
+- Crash recovery: on startup, load open claims (session_claim) and
+  resume workflows
 
-### 2.1 Agent-Permissions in der Agents-UI
-- `PropertyPanel` / `Agents.tsx`: Feld für `rolesAllowed` (Multi-Select)
-- Feld für `toolAllow` / `toolDeny` (Tool-Picker, bereits vorhanden)
-- Guardrails-Konfiguration (Input/Output Filter)
+**Effort:** 3–5 days
+**Dependency:** `ClaimStore`, `Journal`, `SessionStore`, `SnapshotStore` ports
+**Risk:** High effort, low benefit (sqlite is already lightweight)
 
-### 2.2 Permissions-Dashboard
-- Neue Seite `/permissions` mit Übersicht aller Agent-Permission-Regeln
-- Matrix-Ansicht: Agent × Tool → Allow/Deny/Ask
-- Export/Import als JSON
-
-### 2.3 MCP-Server-Konfiguration in der UI
-- Bereits teilweise vorhanden (`/workflow/mcp-servers`)
-- Erweiterung: OAuth-Konfiguration, Timeout-Einstellungen, Header-Config
-- Health-Status mit automatischem Retry
-
-### 2.4 Settings-UI
-- `Settings.tsx` erweitern: Provider, Model, Permissions-Default
-- Live-Reload der Konfiguration ohne Neustart
-
-**Aufwand:** 5–8 Tage
-**Abhängigkeit:** Backend-Endpoints für Config-CRUD (teilweise vorhanden)
-**Risiko:** Großer Umfang, viele Edge-Cases
-
-**Empfehlung:** Mittlere Priorität. Die Agents-UI (Phase 2.1) ist der
-größte Quick-Win, da `rolesAllowed` und `toolAllow`/`toolDeny` bereits im
-Datenmodell vorhanden sind und nur in der UI exponiert werden müssen.
+**Recommendation:** Low priority. SQLite already provides offline persistence
+with low overhead. Implement the file journal only if offline use without
+SQLite is explicitly desired.
 
 ---
 
-## 3. MCP-Server DB-Persistenz (Migration V12)
+## 2. UI-based Configuration for Agents, Permissions, and MCP Servers
 
-**Problem:** MCP-Server werden in `mcp-servers.json` gespeichert, nicht in
-der DB. Bei postgres/sqlite-Modus wäre DB-Persistenz konsistenter.
+**Problem:** Agents, permissions, and MCP servers are currently configured via
+JSON files (`settings.json`, `application.properties`) or environment
+variables. There is no UI for this configuration.
 
-**Aktueller Zustand:** Implementiert (Commit `ca40412`):
-- `SqlMcpServerStore` (DB-backed, nutzt `DataSource` wenn verfügbar)
-- `McpServerPersistence` delegiert an `SqlMcpServerStore` bei gesetztem DataSource
-- `Engine.wire()` setzt `McpServerPersistence.setDataSource(dataSource)`
-- V12-Migration (postgres + sqlite) für `mcp_server`-Tabelle
+**Current state:**
+- Agents: UI available (`/workflow/agents`) with CRUD, but no
+  permission configuration
+- MCP servers: UI available (`/workflow/mcp-servers`) with Add/Remove/Reload
+- Permissions: only via `application.properties` or agent frontmatter
 
-**Verbleibende Arbeit:**
-- Tests für `SqlMcpServerStore`
-- Verifikation im DB-Modus (postgres/sqlite)
-- Fallback-Verhalten bei DB-Fehler (aktuell: stille Fehler, kein Fallback auf File)
+**Possible implementation:**
 
-**Aufwand:** 0.5 Tage (Tests + Verifikation)
+### 2.1 Agent Permissions in the Agents UI
+- `PropertyPanel` / `Agents.tsx`: field for `rolesAllowed` (multi-select)
+- Field for `toolAllow` / `toolDeny` (tool picker, already present)
+- Guardrail configuration (input/output filters)
+
+### 2.2 Permissions Dashboard
+- New page `/permissions` with an overview of all agent permission rules
+- Matrix view: Agent × Tool → Allow/Deny/Ask
+- Export/import as JSON
+
+### 2.3 MCP Server Configuration in the UI
+- Already partially present (`/workflow/mcp-servers`)
+- Extension: OAuth configuration, timeout settings, header config
+- Health status with automatic retry
+
+### 2.4 Settings UI
+- Extend `Settings.tsx`: provider, model, permissions default
+- Live reload of configuration without restart
+
+**Effort:** 5–8 days
+**Dependency:** Backend endpoints for config CRUD (partially present)
+**Risk:** Large scope, many edge cases
+
+**Recommendation:** Medium priority. The Agents UI (phase 2.1) is the biggest
+quick win, since `rolesAllowed` and `toolAllow`/`toolDeny` already exist in
+the data model and only need to be exposed in the UI.
 
 ---
 
-## 4. Weitere UI-Verbesserungen
+## 3. MCP Server DB Persistence (Migration V12)
 
-### 4.1 Mobile-Optimierung (siehe mobile-workflow-ui.md)
-- Phase 1–3 implementiert (Responsive Layout, NodeListView, BottomSheet)
-- Phase 4 (Tests & Polish) noch offen
-- Card-Layouts statt Tabellen für Workflows/Runs/Agents/McpServers
+**Problem:** MCP servers are stored in `mcp-servers.json`, not in the DB.
+With postgres/sqlite mode, DB persistence would be more consistent.
+
+**Current state:** Implemented (commit `ca40412`):
+- `SqlMcpServerStore` (DB-backed, uses `DataSource` when available)
+- `McpServerPersistence` delegates to `SqlMcpServerStore` when a DataSource is set
+- `Engine.wire()` sets `McpServerPersistence.setDataSource(dataSource)`
+- V12 migration (postgres + sqlite) for the `mcp_server` table
+
+**Remaining work:**
+- Tests for `SqlMcpServerStore`
+- Verification in DB mode (postgres/sqlite)
+- Fallback behavior on DB error (currently: silent errors, no fallback to file)
+
+**Effort:** 0.5 days (tests + verification)
+
+---
+
+## 4. Further UI Improvements
+
+### 4.1 Mobile Optimization (see mobile-workflow-ui.md)
+- Phases 1–3 implemented (responsive layout, NodeListView, BottomSheet)
+- Phase 4 (tests & polish) still open
+- Card layouts instead of tables for Workflows/Runs/Agents/McpServers
 
 ### 4.2 Workflow-Generate UI
-- `Generate.tsx` vorhanden, aber Backend-Endpunkt jetzt implementiert
-- UI könnte generierten Workflow direkt im Editor öffnen
+- `Generate.tsx` exists, but the backend endpoint is now implemented
+- UI could open the generated workflow directly in the editor
 
-### 4.3 Context-Picker (siehe node-data-contracts plan)
-- PropertyPanel Tab "Context" für explizite Node-Auswahl
-- Token-Budget-Anzeige
+### 4.3 Context Picker (see node-data-contracts plan)
+- PropertyPanel tab "Context" for explicit node selection
+- Token budget display
 
 ### 4.4 Dark/Light Theme Toggle
-- Aktuell nur Dark Mode
-- Tailwind `dark:` Prefix bereits vorhanden
+- Currently dark mode only
+- Tailwind `dark:` prefix already present
 
-### 4.5 Keyboard-Shortcuts
+### 4.5 Keyboard Shortcuts
 - GraphEditor: Delete, Copy/Paste, Undo/Redo
-- Globale Shortcuts für Navigation
+- Global shortcuts for navigation
 
 ---
 
-## Priorisierung
+## Prioritization
 
-| Priorität | Item | Aufwand | Nutzen |
+| Priority | Item | Effort | Benefit |
 |---|---|---|---|
-| 1 | 2.1 Agent-Permissions in Agents-UI | 1 Tag | Hoch |
-| 2 | 3.1 SqlMcpServerStore Tests | 0.5 Tag | Mittel |
-| 3 | 4.1 Mobile Card-Layouts | 2 Tage | Mittel |
-| 4 | 2.2 Permissions-Dashboard | 3 Tage | Mittel |
-| 5 | 4.5 Keyboard-Shortcuts | 2 Tage | Mittel |
-| 6 | 1. File-Journal für Runtime | 3–5 Tage | Niedrig |
-| 7 | 2.3 MCP-Server OAuth-UI | 2 Tage | Niedrig |
-| 8 | 4.4 Theme Toggle | 1 Tag | Niedrig |
+| 1 | 2.1 Agent permissions in Agents UI | 1 day | High |
+| 2 | 3.1 SqlMcpServerStore tests | 0.5 day | Medium |
+| 3 | 4.1 Mobile card layouts | 2 days | Medium |
+| 4 | 2.2 Permissions dashboard | 3 days | Medium |
+| 5 | 4.5 Keyboard shortcuts | 2 days | Medium |
+| 6 | 1. File journal for runtime | 3–5 days | Low |
+| 7 | 2.3 MCP server OAuth UI | 2 days | Low |
+| 8 | 4.4 Theme toggle | 1 day | Low |

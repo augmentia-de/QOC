@@ -1,47 +1,47 @@
-# Hybrid Workflow/Agent-Ausführung — Implementierungsplan
+# Hybrid Workflow/Agent Execution — Implementation Plan
 
-Stand: 2026-11-12  
-Status: Plan (keine Implementierung)  
-Bezug: `docs/engineering/ReAct-Workflow.md`, `docs/engineering/Additional-Nodes.md`
+Date: 2026-11-12  
+Status: Plan (no implementation)  
+Reference: `docs/engineering/ReAct-Workflow.md`, `docs/engineering/Additional-Nodes.md`
 
-## 1. Ziel und Abgrenzung
+## 1. Goal and Scope
 
-Der Workflow-Runner soll einen hybriden Modus unterstützen:
+The workflow runner should support a hybrid mode:
 
-- **Deterministische Knoten** (`start`, `decision`, `fork`, `join`, `loop`, `end`,
-  `mcp_call`, …) bleiben unverändert und laufen ohne LLM.
-- **Normale `agent`-Knoten** behalten ihr bisheriges Verhalten: eigener
-  Agent-Systemprompt, minimaler Input (Vorgänger-Output).
-- **Neuer Knoten `context_agent_executor`** führt einen Agenten mit dem
-  **gesamten bisherigen Workflow-Kontext** aus:
-  - optional gemeinsamer, byte-identischer Workflow-Systemprompt
-    (`WorkflowDefinition.systemPrompt`) für Prompt-Caching,
-  - sonst der Agent-Systemprompt,
-  - danach der vollständige Workflow-Kontext als User-Nachricht,
-  - danach eine kleine aktuelle Aufgabe („Task“).
-- Nach dem vollständigen Agent-Loop (inkl. aller Tool-Calls) wird **nur das
-  Agent-Ergebnis** in den Workflow-Kontext übernommen. Der intermediäre
-  Kind-Session-Kontext (Tool-Calls, Zwischennachrichten) wird verworfen.
-- **Kein Summarize-Knoten** und **kein Runtime-Compaction** im
-  `context_agent_executor`-Lauf. Die Kontextgröße wird vorab geschätzt; reicht
-  sie nicht, muss der Workflow-Verfasser vorher einen Compact-Schritt
-  (z. B. `llm_summarize`) einbauen.
+- **Deterministic nodes** (`start`, `decision`, `fork`, `join`, `loop`, `end`,
+  `mcp_call`, …) remain unchanged and run without an LLM.
+- **Normal `agent` nodes** keep their previous behavior: their own
+  agent system prompt, minimal input (predecessor output).
+- **New node `context_agent_executor`** runs an agent with the
+  **entire previous workflow context**:
+  - optionally a shared, byte-identical workflow system prompt
+    (`WorkflowDefinition.systemPrompt`) for prompt caching,
+  - otherwise the agent system prompt,
+  - then the complete workflow context as a user message,
+  - then a small current task ("Task").
+- After the complete agent loop (including all tool calls), **only the
+  agent result** is taken into the workflow context. The intermediate
+  child-session context (tool calls, intermediate messages) is discarded.
+- **No summarize node** and **no runtime compaction** in the
+  `context_agent_executor` run. The context size is estimated up front; if it
+  is insufficient, the workflow author must add a compact step
+  (e.g. `llm_summarize`) beforehand.
 
-Nicht Teil dieses Plans:
+Not part of this plan:
 
-- Änderungen an `SubagentTool`: über `SubagentTool` aufgerufene Agenten
-  erhalten weiterhin **nicht** den Shared-Kontext und laufen isoliert.
-- Ein separates Phasenfeld: die Phase wird im Initial-Prompt / Kontext
-  mitgeführt.
-- Ein `contextTemplate`: es wird immer der volle Kontext übergeben.
+- Changes to `SubagentTool`: agents invoked via `SubagentTool` still
+  receive **no** shared context and run isolated.
+- A separate phase field: the phase is carried along in the initial prompt /
+  context.
+- A `contextTemplate`: the full context is always passed.
 
-## 2. Ablauf des neuen Knotens
+## 2. Flow of the New Node
 
 ```
 Workflow-Kontext (WorkflowContext)
-  ├─ initialPrompt            (Workflow-Eingabe, enthält Phase A/B/C)
+  ├─ initialPrompt            (workflow input, contains phase A/B/C)
   ├─ nodeOutputs              (deterministisch in def.nodes()-Reihenfolge)
-  └─ workflowState            (sortierte Schlüssel)
+  └─ workflowState            (sorted keys)
             │
             ▼
   buildFullContext(def, ctx)  →  fullContext (String)
@@ -64,18 +64,19 @@ Workflow-Kontext (WorkflowContext)
   ctx.setNodeOutput(node.id(), structured != null ? structured : result.text())
 ```
 
-Wichtig: `systemPrompt` bleibt in beiden Fällen stabil. Der Gesamtkontext
-liegt immer in der User-Nachricht, nie im Systemprompt. Dadurch ist der
-Systemprompt cachefähig (shared) bzw. ebenfalls stabil (Agent-Systemprompt).
+Important: `systemPrompt` stays stable in both cases. The full context
+always lives in the user message, never in the system prompt. As a result
+the system prompt is cacheable (shared) or likewise stable (agent system
+prompt).
 
-## 3. Datenmodell
+## 3. Data Model
 
 ### 3.1 `WorkflowDefinition.systemPrompt`
 
-**Datei:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/model/WorkflowDefinition.java`
+**File:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/model/WorkflowDefinition.java`
 
-Neues letztes Record-Feld `String systemPrompt` und Default im
-Compact-Constructor:
+New last record field `String systemPrompt` and default in the
+compact constructor:
 
 ```java
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -97,18 +98,18 @@ public record WorkflowDefinition(
 }
 ```
 
-- Jackson: alte JSON-Dateien ohne `systemPrompt` bleiben ladbar
-  (`@JsonIgnoreProperties(ignoreUnknown = true)`, fehlendes Feld → `null` →
+- Jackson: old JSON files without `systemPrompt` remain loadable
+  (`@JsonIgnoreProperties(ignoreUnknown = true)`, missing field → `null` →
   `""`).
-- `NodeData` bleibt **unverändert**. Insbesondere gibt es kein
-  `contextTemplate`, kein `phase`-Feld und keine neuen Pflichtfelder.
+- `NodeData` remains **unchanged**. In particular there is no
+  `contextTemplate`, no `phase` field, and no new required fields.
 
 ### 3.2 `WorkflowContext.initialPrompt`
 
-**Datei:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/runner/WorkflowContext.java`
+**File:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/runner/WorkflowContext.java`
 
 ```java
-/** Ursprüngliche Workflow-Eingabe; enthält die Phaseninformation. */
+/** Original workflow input; contains phase information. */
 private String initialPrompt;
 
 public String getInitialPrompt() {
@@ -123,7 +124,7 @@ public void setInitialPrompt(String initialPrompt) {
 public void restore(Map<String, Object> nodeOutputs,
                     Map<String, Object> workflowState,
                     String currentNodeId) {
-    // unverändert
+    // unchanged
 }
 
 /** Neuer Restore-Pfad inkl. Initial-Prompt. */
@@ -136,18 +137,18 @@ public void restore(Map<String, Object> nodeOutputs,
 }
 ```
 
-Die maßgebliche Persistenz ist bereits vorhanden: `WorkflowExecutor` schreibt
-die Eingabe über `sink.runStarted(..., context)` ins Journal, und
-`WorkflowRunSnapshot.input()` liefert sie beim Resume. `CheckpointStore` ist
-im aktuellen Runner nicht verdrahtet; die Erweiterung dort ist optional
-(siehe 3.4).
+The authoritative persistence already exists: `WorkflowExecutor` writes the
+input via `sink.runStarted(..., context)` into the journal, and
+`WorkflowRunSnapshot.input()` delivers it on resume. `CheckpointStore` is not
+wired up in the current runner; the extension there is optional
+(see 3.4).
 
 ### 3.3 `ExecutionOverrides.compactionEnabled`
 
-**Datei:** `engine/src/main/java/de/augmentia/oc/engine/runtime/QocEngine.java`
+**File:** `engine/src/main/java/de/augmentia/oc/engine/runtime/QocEngine.java`
 
-Record um ein Feld erweitern und einen rückwärtskompatiblen 6-Arg-Konstruktor
-beibehalten:
+Extend the record by one field and keep a backward-compatible 6-arg
+constructor:
 
 ```java
 public record ExecutionOverrides(
@@ -159,7 +160,7 @@ public record ExecutionOverrides(
         SkillSelection skillSelection,
         boolean compactionEnabled
 ) {
-    /** Rückwärtskompatibel: Compaction standardmäßig aktiv. */
+    /** Backward compatible: compaction enabled by default. */
     public ExecutionOverrides(AgentProfile agentProfile,
                               ModelInfo modelInfo,
                               Step step,
@@ -172,7 +173,7 @@ public record ExecutionOverrides(
 }
 ```
 
-Compaction-Gate in `runPrompt` (aktuell Zeile 817):
+Compaction gate in `runPrompt` (currently line 817):
 
 ```java
 if (!workflowMode
@@ -182,27 +183,27 @@ if (!workflowMode
 }
 ```
 
-Damit bleibt das Verhalten aller bestehenden Aufrufer unverändert
-(`overrides == null` ⇒ Compaction aktiv), und der neue Knoten kann sie
-gezielt abschalten.
+This keeps the behavior of all existing callers unchanged
+(`overrides == null` ⇒ compaction active), and the new node can disable it
+selectively.
 
-### 3.4 `CheckpointStore.initialPrompt` (optional, Konsistenz)
+### 3.4 `CheckpointStore.initialPrompt` (optional, consistency)
 
-**Datei:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/store/CheckpointStore.java`
+**File:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/store/CheckpointStore.java`
 
 - `save(...)`: `data.put("initialPrompt", ctx.getInitialPrompt());`
 - `load(...)`: `ctx.setInitialPrompt((String) data.get("initialPrompt"));`
 
-Auch wenn der Runner den Store derzeit nicht nutzt, bleibt das
-Checkpoint-Format damit vollständig.
+Even though the runner does not currently use the store, the checkpoint
+format stays complete this way.
 
-## 4. Dispatcher: neuer Knoten `context_agent_executor`
+## 4. Dispatcher: new node `context_agent_executor`
 
-**Datei:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/runner/DefaultNodeDispatcher.java`
+**File:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/runner/DefaultNodeDispatcher.java`
 
-### 4.1 Neuer `switch`-Case
+### 4.1 New `switch` case
 
-Direkt nach dem `case "agent"`-Block (aktuell Zeile 82) einfügen:
+Insert directly after the `case "agent"` block (currently line 82):
 
 ```java
 case "context_agent_executor" -> {
@@ -211,7 +212,7 @@ case "context_agent_executor" -> {
 
     // Eigener Registry-Name pro Knoten, damit der Systemprompt dieses
     // Knotens nicht durch eine bereits registrierte Agent-Config
-    // (resolveAgentConfig: first registration wins) überschrieben wird.
+    // (resolveAgentConfig: first registration wins) is overridden.
     String prefixedName = "wf:ctx:" + node.id();
 
     String fullContext = buildFullContext(def, ctx);
@@ -237,19 +238,18 @@ case "context_agent_executor" -> {
 }
 ```
 
-Begründung für `wf:ctx:<nodeId>`:
+Rationale for `wf:ctx:<nodeId>`:
 
-- `QocEngine.resolveAgentConfig(name, config)` gibt eine bereits registrierte
-  Config zurück und ignoriert die übergebene. Würde der Knoten denselben
-  Namen wie ein normaler `agent`-Knoten verwenden, könnte der Shared-Prompt
-  verloren gehen.
-- Ein eigener Name pro Knoten hält Modell/Tools/Systemprompt dieses Knotens
-  stabil und isoliert.
+- `QocEngine.resolveAgentConfig(name, config)` returns an already registered
+  config and ignores the one passed in. If the node used the same name as a
+  normal `agent` node, the shared prompt could be lost.
+- A separate name per node keeps this node's model/tools/system prompt stable
+  and isolated.
 
-### 4.2 `runAgent`-Overload
+### 4.2 `runAgent` overload
 
-Bestehende `runAgent`-Signatur bleibt; ein Overload mit `ExecutionOverrides`
-kommt hinzu:
+The existing `runAgent` signature remains; an overload with
+`ExecutionOverrides` is added:
 
 ```java
 private NodeResult runAgent(WorkflowDefinition.Node node, String prefixedName,
@@ -268,20 +268,20 @@ private NodeResult runAgent(WorkflowDefinition.Node node, String prefixedName,
     SessionId child = engine.createSession(prefixedName, principal.id(), "workspace");
     EngineResult result = engine.runPrompt(
             child, prefixedName, prompt, config, true, null, null, principal, overrides);
-    // ... bestehende Fehler-/Pause-Prüfung ...
+    // ... existing error/pause check ...
     Map<String, Object> structured = StructuredOutputConverter.toMap(result.structured());
     ctx.setNodeOutput(node.id(), structured != null ? structured : result.text());
     return new NodeResult(result.text(), structured, child.value());
 }
 ```
 
-Wichtig: Nur `result.text()` / `result.structured()` werden in den
-Workflow-Kontext geschrieben. Tool-Calls und Zwischennachrichten der
-Kind-Session werden nicht übernommen.
+Important: Only `result.text()` / `result.structured()` are written into the
+workflow context. Tool calls and intermediate messages of the child session
+are not carried over.
 
-### 4.3 `toAgentConfig`-Overload
+### 4.3 `toAgentConfig` overload
 
-**Datei:** gleiche Datei, aktuell Zeile 266.
+**File:** same file, currently line 266.
 
 ```java
 private QocEngine.AgentConfig toAgentConfig(WorkflowDefinition.Agent a,
@@ -298,7 +298,7 @@ private QocEngine.AgentConfig toAgentConfig(WorkflowDefinition.Agent a,
 
 ### 4.4 `buildFullContext`
 
-Package-private `static`, damit direkt testbar:
+Package-private `static`, so it can be tested directly:
 
 ```java
 static String buildFullContext(WorkflowDefinition def, WorkflowContext ctx) {
@@ -337,16 +337,16 @@ private static String renderValue(Object value) {
 }
 ```
 
-- **Determinismus:** Node-Outputs in `def.nodes()`-Reihenfolge (nicht in
-  `HashMap`-Iterationsreihenfolge), State-Schlüssel sortiert. Das hält den
-  Prompt über Läufe hinweg stabil (Cache).
-- `lastResult` wird aus dem State weggelassen, weil der letzte Node-Output
-  bereits enthalten ist.
-- Import ergänzen: `de.augmentia.qoc.workflowrunner.store.WorkflowJson`.
+- **Determinism:** node outputs in `def.nodes()` order (not in `HashMap`
+  iteration order), state keys sorted. This keeps the prompt stable across
+  runs (cache).
+- `lastResult` is omitted from the state because the last node output is
+  already included.
+- Add import: `de.augmentia.qoc.workflowrunner.store.WorkflowJson`.
 
-### 4.5 Größen-Schätzung (kein Compaction im Lauf)
+### 4.5 Size estimation (no compaction in the run)
 
-Vor dem `runPrompt` schätzen und bei Überschreitung nur warnen:
+Estimate before `runPrompt` and only warn on overflow:
 
 ```java
 private static final int CHARS_PER_TOKEN = 4;
@@ -357,7 +357,7 @@ private static int estimateTokens(String text) {
 }
 ```
 
-Im Case:
+In the case:
 
 ```java
 int estimated = estimateTokens(systemPrompt) + estimateTokens(userPrompt);
@@ -368,21 +368,20 @@ if (estimated > CONTEXT_BUDGET_TOKENS) {
 }
 ```
 
-Bewusst **keine** automatische Compaction: `compactionEnabled=false` schaltet
-den Runtime-Pfad ab; die Vorverdichtung ist Aufgabe des Workflow-Autors
-(z. B. `llm_summarize`-Knoten davor). Später kann ein optionaler
-`compactContext(...)`-Helfer ergänzt werden, ohne die Semantik dieses Knotens
-zu ändern.
+Deliberately **no** automatic compaction: `compactionEnabled=false` switches
+off the runtime path; pre-compaction is the workflow author's job (e.g.
+`llm_summarize` node before it). Later an optional `compactContext(...)`
+helper can be added without changing this node's semantics.
 
 ## 5. Executor, Expander, Resource, Defaults
 
 ### 5.1 `WorkflowExecutor`
 
-**Datei:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/runner/WorkflowExecutor.java`
+**File:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/runner/WorkflowExecutor.java`
 
-- Owner-Stempelung (Zeile 93): `def.systemPrompt()` als letztes Argument.
-- `run(...)` (Zeile 182) setzt den Initial-Prompt zentral für Start und
-  Resume:
+- Owner stamping (line 93): `def.systemPrompt()` as the last argument.
+- `run(...)` (line 182) sets the initial prompt centrally for start and
+  resume:
 
 ```java
 private WorkflowExecution run(SessionId session, String runId,
@@ -396,12 +395,12 @@ private WorkflowExecution run(SessionId session, String runId,
 }
 ```
 
-Damit ist `ctx.getInitialPrompt()` nach `executeRun` und nach `resume`
-(snapshot.input()) gefüllt.
+This ensures `ctx.getInitialPrompt()` is populated after `executeRun` and
+after `resume` (`snapshot.input()`).
 
 ### 5.2 `SubWorkflowExpander`
 
-**Datei:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/runner/SubWorkflowExpander.java`, Zeile 53
+**File:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/runner/SubWorkflowExpander.java`, line 53
 
 ```java
 return new WorkflowDefinition(
@@ -410,51 +409,51 @@ return new WorkflowDefinition(
 );
 ```
 
-Hinweis: Der Shared-Prompt des **Eltern**-Workflows bleibt maßgeblich.
-Sub-Workflows bringen ihren eigenen Prompt nur mit, wenn sie eigenständig
-ausgeführt werden; beim Inlining wird der Eltern-Prompt verwendet. Das ist
-gewollt, weil der Kontext des Eltern-Workflows weiterläuft.
+Note: the **parent** workflow's shared prompt remains authoritative.
+Sub-workflows only bring their own prompt when executed standalone; when
+inlined, the parent prompt is used. This is intended, because the parent
+workflow's context keeps running.
 
 ### 5.3 `WorkflowDefaults`
 
-**Datei:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/store/WorkflowDefaults.java`
+**File:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/store/WorkflowDefaults.java`
 
-- `create(...)` (Zeile 24): `..., ""`
-- `withId(...)` (Zeile 33): `..., definition.systemPrompt()`
+- `create(...)` (line 24): `..., ""`
+- `withId(...)` (line 33): `..., definition.systemPrompt()`
 
 ### 5.4 `WorkflowResource`
 
-**Datei:** `quarkus/src/main/java/de/augmentia/oc/engine/http/WorkflowResource.java`
+**File:** `quarkus/src/main/java/de/augmentia/oc/engine/http/WorkflowResource.java`
 
-- Zeile 71 (`createWorkflow`): `..., def.systemPrompt()`
-- Zeile 99 (`saveWorkflow`): `..., def.systemPrompt()`
+- Line 71 (`createWorkflow`): `..., def.systemPrompt()`
+- Line 99 (`saveWorkflow`): `..., def.systemPrompt()`
 
-Beim Speichern eines bestehenden Workflows bleibt der Shared-Prompt damit
-erhalten; beim Anlegen ist er `""`.
+When saving an existing workflow the shared prompt is preserved this way;
+when creating one it is `""`.
 
-## 6. Validierung
+## 6. Validation
 
-**Datei:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/validation/GraphCompiler.java`
+**File:** `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/validation/GraphCompiler.java`
 
-- `VALID_NODE_TYPES` (Zeile 14) um `"context_agent_executor"` erweitern.
-- Agent-Pflicht-Ref auch für den neuen Typ prüfen. Empfehlung: Menge
-  einführen:
+- Extend `VALID_NODE_TYPES` (line 14) with `"context_agent_executor"`.
+- Also check the mandatory agent ref for the new type. Recommendation:
+  introduce a set:
 
 ```java
 private static final Set<String> AGENT_NODE_TYPES =
         Set.of("agent", "context_agent_executor");
 ```
 
-und die beiden `"agent".equals(n.type())`-Prüfungen (Zeilen 56 und 80) auf
-`AGENT_NODE_TYPES.contains(n.type())` umstellen. Damit gilt: ein
-`context_agent_executor` ohne `agentRef` ist ungültig, und die `agentRef` muss
-in `agents[]` oder im externen Agent-Store existieren.
+and switch the two `"agent".equals(n.type())` checks (lines 56 and 80) to
+`AGENT_NODE_TYPES.contains(n.type())`. This means a
+`context_agent_executor` without `agentRef` is invalid, and the `agentRef`
+must exist in `agents[]` or in the external agent store.
 
 ## 7. UI
 
-### 7.1 Typen
+### 7.1 Types
 
-**Datei:** `workflow-ui/src/types/workflow.ts`
+**File:** `workflow-ui/src/types/workflow.ts`
 
 ```ts
 export interface WorkflowDefinition {
@@ -469,44 +468,45 @@ export interface WorkflowDefinition {
 }
 ```
 
-`NodeData` bleibt unverändert (kein Template, kein Phasenfeld).
+`NodeData` remains unchanged (no template, no phase field).
 
-### 7.2 Graph-Handles und Verbindungsregeln
+### 7.2 Graph handles and connection rules
 
-**Datei:** `workflow-ui/src/lib/workflowGraph.ts`
+**File:** `workflow-ui/src/lib/workflowGraph.ts`
 
 - `SINGLE_SOURCE_HANDLES`: `context_agent_executor: 'out'`
 - `SINGLE_TARGET_HANDLES`: `context_agent_executor: 'in'`
 
-**Datei:** `workflow-ui/src/lib/connectionRules.ts`
+**File:** `workflow-ui/src/lib/connectionRules.ts`
 
-- `SINGLE_INCOMING`: `'context_agent_executor'` ergänzen
-- `SINGLE_OUTGOING`: `'context_agent_executor'` ergänzen
+- `SINGLE_INCOMING`: add `'context_agent_executor'`
+- `SINGLE_OUTGOING`: add `'context_agent_executor'`
 
-### 7.3 Node-Komponente
+### 7.3 Node component
 
-**Neu:** `workflow-ui/src/components/ContextAgentExecutorNode.tsx`
+**New:** `workflow-ui/src/components/ContextAgentExecutorNode.tsx`
 
-Modell: `AgentNode.tsx`. Eigene Farbe (z. B. `bg-cyan-700 border-cyan-400`),
-Titel `data.title || 'Context Agent'`, Untertitel `data.agentRef || 'no agent'`,
-Ports `in`/`out`, optionaler Hinweis „full context“.
+Modelled on `AgentNode.tsx`. Its own color (e.g.
+`bg-cyan-700 border-cyan-400`), title `data.title || 'Context Agent'`,
+subtitle `data.agentRef || 'no agent'`, ports `in`/`out`, optional hint
+"full context".
 
-**Datei:** `workflow-ui/src/pages/GraphEditor.tsx`
+**File:** `workflow-ui/src/pages/GraphEditor.tsx`
 
-- Import ergänzen.
-- `nodeTypes` (Zeile 43): `context_agent_executor: ContextAgentExecutorNode`
-- Palette (Zeile 362 ff.):
+- Add the import.
+- `nodeTypes` (line 43): `context_agent_executor: ContextAgentExecutorNode`
+- Palette (from line 362):
 
 ```ts
 { label: '+ Context Agent', type: 'context_agent_executor',
   color: 'bg-cyan-700', data: { title: 'Context Agent', agentRef: '' } },
 ```
 
-### 7.4 Property-Panel
+### 7.4 Property panel
 
-**Datei:** `workflow-ui/src/components/PropertyPanel.tsx`
+**File:** `workflow-ui/src/components/PropertyPanel.tsx`
 
-Neuen Block analog zum `agent`-Block (Zeile 649) ergänzen:
+Add a new block analogous to the `agent` block (line 649):
 
 ```tsx
 {selectedNode.type === 'context_agent_executor' && (
@@ -528,22 +528,22 @@ Neuen Block analog zum `agent`-Block (Zeile 649) ergänzen:
       </select>
     </div>
     <p className="text-xs text-gray-500">
-      Übergibt den vollständigen bisherigen Workflow-Kontext als User-Nachricht.
+      Passes the full prior workflow context as a user message.
       Der Shared-Systemprompt wird aus den Workflow-Einstellungen verwendet.
     </p>
   </div>
 )}
 ```
 
-Die bestehende `applyBuildAgent`-/Copy-Logik ist an `type === 'agent'`
-gebunden; für den neuen Typ nicht nötig.
+The existing `applyBuildAgent`/copy logic is bound to `type === 'agent'`;
+not needed for the new type.
 
-### 7.5 Workflow-Systemprompt editieren
+### 7.5 Editing the workflow system prompt
 
-**Datei:** `workflow-ui/src/pages/WorkflowDetail.tsx`
+**File:** `workflow-ui/src/pages/WorkflowDetail.tsx`
 
-Der Shared-Prompt ist eine Workflow-Eigenschaft, kein Knotenfeld. Oberhalb des
-Graphs (oder als einklappbarer Block) ein Textarea ergänzen:
+The shared prompt is a workflow property, not a node field. Add a textarea
+above the graph (or as a collapsible block):
 
 ```tsx
 <div className="rounded border border-gray-700 bg-gray-800 p-3">
@@ -558,93 +558,93 @@ Graphs (oder als einklappbarer Block) ein Textarea ergänzen:
       setJsonText(JSON.stringify(updated, null, 2));
     }}
     className="h-24 w-full rounded bg-gray-900 p-2 font-mono text-xs"
-    placeholder="Optional: gemeinsamer Systemprompt für alle context_agent_executor-Knoten"
+    placeholder="Optional: shared system prompt for all context_agent_executor nodes"
   />
 </div>
 ```
 
-`save()` übernimmt `workflow.systemPrompt` bereits, weil das gesamte
-Workflow-Objekt gespeichert wird.
+`save()` already takes over `workflow.systemPrompt`, because the entire
+workflow object is saved.
 
 ## 8. Tests
 
-### 8.1 Neue/angepasste Java-Tests
+### 8.1 New/adjusted Java tests
 
-| Test | Datei | Inhalt |
+| Test | File | Content |
 |---|---|---|
-| `buildFullContext` | neu: `workflow-runner/src/test/java/de/augmentia/qoc/workflowrunner/runner/DefaultNodeDispatcherContextTest.java` | Initial-Prompt, Node-Outputs in `def.nodes()`-Reihenfolge, sortierte State-Keys, `lastResult` nicht doppelt, Map/List als JSON |
-| Shared-Prompt | dito | `resolveSystemPrompt` liefert den Workflow-Prompt; User-Prompt enthält `## Previous context` und `## Current task` |
-| Fallback | dito | ohne Shared-Prompt: Agent-Systemprompt bleibt System; Kontext in User-Nachricht |
-| Determinismus | dito | gleicher Kontext ⇒ identischer String (Cache-Stabilität) |
-| `initialPrompt` | neu/erweitert: `WorkflowContextTest` | set/get, `restore(..., initialPrompt)` |
-| JSON-Kompatibilität | neu/erweitert: `WorkflowDefinitionJsonTest` | altes JSON ohne `systemPrompt` ⇒ `""` |
-| `ExecutionOverrides` | `engine/src/test/java/de/augmentia/oc/engine/runtime/QocEngineTest.java` | 6-Arg-Konstruktor ⇒ `compactionEnabled() == true`; 7-Arg mit `false` |
-| GraphCompiler | neu/erweitert: `GraphCompilerTest` | `context_agent_executor` gültig; ohne `agentRef` ungültig |
-| Store-Contract | `WorkflowStoreContractTest.java`, Zeile 83 | Konstruktor um `""` erweitern |
+| `buildFullContext` | new: `workflow-runner/src/test/java/de/augmentia/qoc/workflowrunner/runner/DefaultNodeDispatcherContextTest.java` | Initial prompt, node outputs in `def.nodes()` order, sorted state keys, `lastResult` not duplicated, Map/List as JSON |
+| Shared prompt | same | `resolveSystemPrompt` returns the workflow prompt; user prompt contains `## Previous context` and `## Current task` |
+| Fallback | same | without shared prompt: agent system prompt stays system; context in user message |
+| Determinism | same | same context ⇒ identical string (cache stability) |
+| `initialPrompt` | new/extended: `WorkflowContextTest` | set/get, `restore(..., initialPrompt)` |
+| JSON compatibility | new/extended: `WorkflowDefinitionJsonTest` | old JSON without `systemPrompt` ⇒ `""` |
+| `ExecutionOverrides` | `engine/src/test/java/de/augmentia/oc/engine/runtime/QocEngineTest.java` | 6-arg constructor ⇒ `compactionEnabled() == true`; 7-arg with `false` |
+| GraphCompiler | new/extended: `GraphCompilerTest` | `context_agent_executor` valid; without `agentRef` invalid |
+| Store contract | `WorkflowStoreContractTest.java`, line 83 | extend constructor with `""` |
 
-Hinweis zu Dispatcher-Tests: `DefaultNodeDispatcher` benötigt eine
-`QocEngine`. Für reine Kontext-/Prompt-Tests die Helfer
-`buildFullContext(...)` und `resolveSystemPrompt(...)` package-private
-statisch machen und direkt testen. Ein vollständiger Dispatch-Test kann mit
-einer schlanken `QocEngine`-Testinstanz (In-Memory-Stores, Fake-Provider)
-ergänzt werden; er ist nicht Voraussetzung für die erste Umsetzung.
+Note on dispatcher tests: `DefaultNodeDispatcher` needs a `QocEngine`. For
+pure context/prompt tests, make the helpers `buildFullContext(...)` and
+`resolveSystemPrompt(...)` package-private static and test them directly. A
+full dispatch test can be added with a lean `QocEngine` test instance
+(in-memory stores, fake provider); it is not a prerequisite for the first
+implementation.
 
 ### 8.2 UI
 
-- TypeScript-Build (`npm run build` bzw. vorhandener Lint/Build-Task).
-- Manuell: Knoten hinzufügen, Agent wählen, speichern, neu laden; JSON
-  enthält `systemPrompt` und `type: "context_agent_executor"`.
+- TypeScript build (`npm run build` or the existing lint/build task).
+- Manual: add node, choose agent, save, reload; JSON contains `systemPrompt`
+  and `type: "context_agent_executor"`.
 
-## 9. Rückwärtskompatibilität und Migration
+## 9. Backward Compatibility and Migration
 
-- `WorkflowDefinition` ist ein Jackson-Record mit
-  `@JsonIgnoreProperties(ignoreUnknown = true)`. Alte Definitionen ohne
-  `systemPrompt` laden weiter (`""`).
-- Alle bestehenden Workflows behalten das Verhalten normaler `agent`-Knoten;
-  der neue Knoten wird nur bei expliziter Verwendung aktiv.
-- `ExecutionOverrides` behält den 6-Arg-Konstruktor; bestehende Aufrufer und
-  Tests bleiben kompilierbar.
-- `NodeData` bleibt unverändert; keine Migrationslogik nötig.
+- `WorkflowDefinition` is a Jackson record with
+  `@JsonIgnoreProperties(ignoreUnknown = true)`. Old definitions without
+  `systemPrompt` still load (`""`).
+- All existing workflows keep the behavior of normal `agent` nodes; the new
+  node is only activated on explicit use.
+- `ExecutionOverrides` keeps the 6-arg constructor; existing callers and
+  tests stay compilable.
+- `NodeData` remains unchanged; no migration logic needed.
 
-## 10. Risiken und Gegenmaßnahmen
+## 10. Risks and Mitigations
 
-| Risiko | Wirkung | Gegenmaßnahme |
+| Risk | Impact | Mitigation |
 |---|---|---|
-| Kontext zu groß | Provider-Fehler, Lauf scheitert | Größe vorab schätzen und warnen; Workflow-Autor baut `llm_summarize` davor; `compactionEnabled=false` verhindert stillen Runtime-Compact |
-| Cache wird nicht geteilt | Shared-Prompt bringt keinen Cache-Vorteil | Systemprompt ist byte-identisch; Cache-Affinity ist session-basiert (`CacheAffinity`). Für echte Prefix-Wiederverwendung müsste die Kind-Session die Parent-Affinity erben — als Folgeoptimierung dokumentiert, nicht Teil dieses Plans |
-| Registry-Kollision | Falscher Systemprompt | Eigener Name `wf:ctx:<nodeId>` pro Knoten |
-| Kind-Session-Kontext wächst | Speicher/Journal | Nur das Ergebnis wird übernommen; Kind-Session bleibt für Audit erhalten, wird aber nicht in Folgeprompts verwendet |
-| Sub-Workflow-Shared-Prompt | Falscher Prompt | Beim Inlining gewinnt der Eltern-Prompt (`wf.systemPrompt()` wird propagiert) |
-| Resume ohne Initial-Prompt | Kontext unvollständig | `run(...)` setzt `initialPrompt` aus `input`; `snapshot.input()` liefert ihn beim Resume |
-| Kontext-Reihenfolge nicht deterministisch | Cache-Miss | `def.nodes()`-Reihenfolge + sortierte State-Keys |
+| Context too large | Provider error, run fails | Estimate size up front and warn; workflow author adds `llm_summarize` before it; `compactionEnabled=false` prevents silent runtime compact |
+| Cache not shared | Shared prompt brings no cache benefit | System prompt is byte-identical; cache affinity is session-based (`CacheAffinity`). For real prefix reuse the child session would have to inherit the parent affinity — documented as a follow-up optimization, not part of this plan |
+| Registry collision | Wrong system prompt | Separate name `wf:ctx:<nodeId>` per node |
+| Child-session context grows | Memory/journal | Only the result is carried over; the child session is kept for audit but not used in follow-up prompts |
+| Sub-workflow shared prompt | Wrong prompt | On inlining the parent prompt wins (`wf.systemPrompt()` is propagated) |
+| Resume without initial prompt | Context incomplete | `run(...)` sets `initialPrompt` from `input`; `snapshot.input()` delivers it on resume |
+| Context order non-deterministic | Cache miss | `def.nodes()` order + sorted state keys |
 
-## 11. Umsetzungsreihenfolge
+## 11. Implementation Order
 
-1. **Modell:** `WorkflowDefinition.systemPrompt` + alle 6 Konstruktor-Aufrufer
+1. **Model:** `WorkflowDefinition.systemPrompt` + all 6 constructor callers
    (`WorkflowResource` 71/99, `WorkflowDefaults` 24/33, `SubWorkflowExpander`
    53, `WorkflowExecutor` 93, `WorkflowStoreContractTest` 83).
-2. **Kontext:** `WorkflowContext.initialPrompt` + `WorkflowExecutor.run(...)`
-   setzt ihn; optional `CheckpointStore`.
-3. **Engine:** `ExecutionOverrides.compactionEnabled` + Compaction-Gate +
-   Test.
-4. **Dispatcher:** neuer Case, `runAgent`-Overload, `toAgentConfig`-Overload,
+2. **Context:** `WorkflowContext.initialPrompt` + `WorkflowExecutor.run(...)`
+   sets it; optional `CheckpointStore`.
+3. **Engine:** `ExecutionOverrides.compactionEnabled` + compaction gate +
+   test.
+4. **Dispatcher:** new case, `runAgent` overload, `toAgentConfig` overload,
    `buildFullContext`, `estimateTokens`, `renderValue`.
-5. **Validierung:** `GraphCompiler`.
-6. **UI:** Typen, Handles, Knotenkomponente, Palette, Property-Panel,
-   Workflow-Systemprompt-Editor.
-7. **Tests:** Helfer-Tests, Kontext-/JSON-/Overrides-/Compiler-Tests,
-   Store-Contract.
-8. **Build:** `cd qoc && mvn test` (bzw. `mvn -pl workflow-runner -am test`),
-   danach UI-Build.
+5. **Validation:** `GraphCompiler`.
+6. **UI:** types, handles, node component, palette, property panel,
+   workflow system prompt editor.
+7. **Tests:** helper tests, context/JSON/overrides/compiler tests,
+   store contract.
+8. **Build:** `cd qoc && mvn test` (or `mvn -pl workflow-runner -am test`),
+   then UI build.
 
-## 12. Offene Punkte (bewusst entschieden)
+## 12. Open Points (decided)
 
-| Frage | Entscheidung |
+| Question | Decision |
 |---|---|
-| Phasenfeld? | Nein. Phase steckt im `initialPrompt` und damit im Full-Context. |
-| `contextTemplate`? | Nein. Immer voller Kontext. |
-| Summarize-Knoten? | Nein. Kein automatisches Summarize; optionaler vorgelagerter `llm_summarize`. |
-| Compaction im Lauf? | Nein. `compactionEnabled=false`; Größe vorab schätzen. |
-| Subagent-Shared-Kontext? | Nein. `SubagentTool` bleibt isoliert. |
-| Shared-Prompt Fallback? | Agent-Systemprompt bleibt System; Kontext als User-Nachricht. |
-| Ergebnis-Persistenz? | Nur `result.text()`/`result.structured()` als `nodeOutput`. |
+| Phase field? | No. The phase lives in `initialPrompt` and thus in the full context. |
+| `contextTemplate`? | No. Always the full context. |
+| Summarize node? | No. No automatic summarize; optional preceding `llm_summarize`. |
+| Compaction in the run? | No. `compactionEnabled=false`; estimate size up front. |
+| Subagent shared context? | No. `SubagentTool` stays isolated. |
+| Shared prompt fallback? | Agent system prompt stays system; context as user message. |
+| Result persistence? | Only `result.text()`/`result.structured()` as `nodeOutput`. |

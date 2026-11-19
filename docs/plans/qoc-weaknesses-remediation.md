@@ -1,138 +1,137 @@
-# Implementierungsplan: Behebung der gefundenen QOC-Schwächen (P0–P2)
+# Implementation Plan: Remediation of Identified QOC Weaknesses (P0–P2)
 
-> **Ziel:** Die im Vergleich zu OpenCode gefundenen QOC-Schwächen (Sicherheit,
-> Semantik, Performance, Produktreife) in priorisierter Reihenfolge beheben.
+> **Goal:** Fix the QOC weaknesses identified in comparison with OpenCode (security,
+> semantics, performance, product maturity) in prioritized order.
 >
-> **Bezug:**
+> **References:**
 > - `qoc/docs/QOC-vs-OpenCode-Extensions.md`
 > - `qoc/docs/Features.md`
-> - Code unter `qoc/engine/`, `qoc/workflow-runner/`, `qoc/quarkus/`, `qoc/reactflow/`
+> - Code under `qoc/engine/`, `qoc/workflow-runner/`, `qoc/quarkus/`, `qoc/reactflow/`
 >
 > **Status:** Plan (2026-11-18)  
-> **Prioritäten:** P0 = sofort, P1 = nächste Iteration, P2 = nach Stabilisierung
+> **Priorities:** P0 = immediate, P1 = next iteration, P2 = after stabilization
 
 ---
 
-## Umsetzungsstatus (2026-11-18)
+## Implementation Status (2026-11-18)
 
-Bereits umgesetzt:
-- P0-1 Ownership für Workflow-Runs (`WorkflowResource` list/status/resume).
-- P0-2 Stabile HITL-Approval-IDs (kein `System.identityHashCode` mehr).
-- P0-3 Geschachtelte Subworkflow-Ausführung (`DefaultNodeDispatcher`) mit Tiefenlimit.
-- P0-4 Fork/Join als strukturelle Knoten dokumentiert und validiert.
-- P1-1 Journal `lastSeq(...)` statt Full-History-Scans in Hot Paths.
-- P1-2 `SessionStore.listByTitlePrefix(...)` für Run-Scan-Optimierung.
-- P1-4 MCP-Server bleibt Tool-only; OAuth-Stubs sind dokumentiert, nicht implementiert.
-- P1-10 Editor-Palette um `guard` und `inject` ergänzt (16 Node-Typen).
-- P1-3 Fork/Join-Formvalidierung in `GraphCompiler`.
-- P1-5 Opt-in Strict Structured Output (`qoc.structured-output.strict` / `QOC_STRUCTURED_OUTPUT_STRICT`).
-- P1-7 Tool-Outputs auf Dateisystem (`FileSystemToolOutputStore`) statt DB-Blobs für SQL/Postgres.
-- P1-9 Resilience-Metriken in `/api/metrics` (`resilienceMetrics()`).
+Already implemented:
+- P0-1 Ownership for workflow runs (`WorkflowResource` list/status/resume).
+- P0-2 Stable HITL approval IDs (no more `System.identityHashCode`).
+- P0-3 Nested subworkflow execution (`DefaultNodeDispatcher`) with depth limit.
+- P0-4 Fork/Join documented and validated as structural nodes.
+- P1-1 Journal `lastSeq(...)` instead of full-history scans in hot paths.
+- P1-2 `SessionStore.listByTitlePrefix(...)` for run-scan optimization.
+- P1-4 MCP server remains tool-only; OAuth stubs are documented, not implemented.
+- P1-10 Editor palette extended with `guard` and `inject` (16 node types).
+- P1-3 Fork/Join form validation in `GraphCompiler`.
+- P1-5 Opt-in strict structured output (`qoc.structured-output.strict` / `QOC_STRUCTURED_OUTPUT_STRICT`).
+- P1-7 Tool outputs on filesystem (`FileSystemToolOutputStore`) instead of DB blobs for SQL/Postgres.
+- P1-9 Resilience metrics in `/api/metrics` (`resilienceMetrics()`).
 
-Noch offen: P1-9 Metriken, P2-1 bis P2-5.
-
----
-
-## 0. Leitprinzipien
-
-1. **Keine stillen Semantikänderungen.** Wenn `subworkflow`, `fork` oder `guard`
-   heute nur strukturell/expandierend arbeiten, wird entweder wirklich ausgeführt
-   oder die UI/Doku sagt das explizit.
-2. **Sicherheit vor Komfort.** Workflow-Runs sind Sessions; Ownership-Checks sind
-   für Run-Liste, Status und Resume verpflichtend.
-3. **Durable IDs statt Prozessidentität.** IDs für HITL und Replay müssen aus
-   Session/Run/Node abgeleitet werden, nicht aus `System.identityHashCode`.
-4. **Performance als Feature.** Journal-Scans, Run-Scans und DB-Blobs werden als
-   technische Schulden behandelt, nicht als Detail.
-5. **Konzepte bleiben Konzepte.** Runtime-Adaptation und MCP-OAuth
-   werden nicht als fertig verkauft, bis Code und Tests existieren. Temporal
-   wird nicht benötigt.
+Still open: P1-9 metrics, P2-1 through P2-5.
 
 ---
 
-## 1. P0 – Sicherheit und Kernsemantik
+## 0. Guiding Principles
 
-### P0-1: Ownership für Workflow-Runs schließen
+1. **No silent semantic changes.** If `subworkflow`, `fork`, or `guard`
+   currently work only structurally/expansively, either actually execute them
+   or have the UI/docs say so explicitly.
+2. **Security before convenience.** Workflow runs are sessions; ownership checks are
+   mandatory for run list, status, and resume.
+3. **Durable IDs instead of process identity.** IDs for HITL and replay must be
+   derived from session/run/node, not from `System.identityHashCode`.
+4. **Performance as a feature.** Journal scans, run scans, and DB blobs are treated
+   as technical debt, not details.
+5. **Concepts remain concepts.** Runtime adaptation and MCP OAuth are not
+   advertised as complete until code and tests exist. Temporal is not needed.
 
-**Problem:** `WorkflowResource.listRuns`, `runStatus` und `resumeRun` prüfen keine
-Ownership, obwohl Workflow-Runs normale Sessions sind.
+---
 
-**Ziel:** Nur Admins oder Owner dürfen Runs listen, lesen oder resumen.
+## 1. P0 – Security and Core Semantics
 
-**Umsetzung:**
-- `listRuns`: Runs nach `SessionInfo.ownerId()` filtern, analog zu
+### P0-1: Close Ownership for Workflow Runs
+
+**Problem:** `WorkflowResource.listRuns`, `runStatus`, and `resumeRun` perform no
+ownership check, even though workflow runs are normal sessions.
+
+**Goal:** Only admins or owners may list, read, or resume runs.
+
+**Implementation:**
+- `listRuns`: filter runs by `SessionInfo.ownerId()`, analogous to
   `listWorkflows()`.
-- `runStatus`: `accessGuard.requireAccess(runId)` oder
-  `requireWorkflowAccess(ownerId)` vor Replay.
-- `resumeRun`: vor `executor().resume(runId)` Ownership prüfen; bei fremdem Run
-  `403`.
-- Optional: Owner aus `WorkflowRunSnapshot`/`SessionInfo` in `WorkflowRunJournal`
-  exponieren, damit keine zweite Session-Abfrage nötig ist.
+- `runStatus`: `accessGuard.requireAccess(runId)` or
+  `requireWorkflowAccess(ownerId)` before replay.
+- `resumeRun`: check ownership before `executor().resume(runId)`; return `403`
+  for foreign runs.
+- Optional: expose owner from `WorkflowRunSnapshot`/`SessionInfo` in
+  `WorkflowRunJournal`, so no second session query is needed.
 
-**Dateien:**
+**Files:**
 - `quarkus/.../http/WorkflowResource.java`
 - `quarkus/.../http/SessionAccessGuard.java`
 - `workflow-runner/.../runner/WorkflowRunJournal.java`
 
 **Tests:**
-- Quarkus-Integrationstest: User A kann Run von User B nicht lesen/resumen.
-- Admin kann alle Runs lesen.
-- Anonymous/leerer Principal verhält sich wie bisher (shared mode).
+- Quarkus integration test: User A cannot read/resume User B's run.
+- Admin can read all runs.
+- Anonymous/empty principal behaves as before (shared mode).
 
-**Akzeptanz:**
+**Acceptance:**
 - `GET /api/workflows/runs`, `GET /api/workflows/runs/{runId}`,
-  `POST /api/workflows/runs/{runId}/resume` liefern `403` für fremde Runs.
+  `POST /api/workflows/runs/{runId}/resume` return `403` for foreign runs.
 
 ---
 
-### P0-2: Stabile HITL-Approval-IDs
+### P0-2: Stable HITL Approval IDs
 
-**Problem:** `DefaultNodeDispatcher` erzeugt
-`"hitl:" + currentNodeId + ":" + System.identityHashCode(ctx)`. Die ID ist
-nicht stabil über Neustarts und widerspricht dem Kommentar „deterministic“.
+**Problem:** `DefaultNodeDispatcher` creates
+`"hitl:" + currentNodeId + ":" + System.identityHashCode(ctx)`. The ID is
+not stable across restarts and contradicts the "deterministic" comment.
 
-**Ziel:** Approval-ID aus Run/Session/Node ableiten, nicht aus Objektidentität.
+**Goal:** Derive approval ID from run/session/node, not from object identity.
 
-**Umsetzung:**
-- `WorkflowStepProviderImpl`/`WorkflowContext` Run-ID oder Session-ID in
-  `NodeDispatcher`/`DefaultNodeDispatcher` verfügbar machen.
-- Approval-ID als `hitl:<sessionId>:<nodeId>` oder `hitl:<runId>:<nodeId>`.
-- Bei Replay muss dieselbe ID rekonstruiert werden.
-- `DurableApprovalSource.resolve(...)` bleibt tokenbasiert; nur die intern
-  referenzierte Approval-ID wird stabil.
+**Implementation:**
+- Make run ID or session ID available to `NodeDispatcher`/`DefaultNodeDispatcher`
+  via `WorkflowStepProviderImpl`/`WorkflowContext`.
+- Approval ID as `hitl:<sessionId>:<nodeId>` or `hitl:<runId>:<nodeId>`.
+- The same ID must be reconstructed on replay.
+- `DurableApprovalSource.resolve(...)` stays token-based; only the internally
+  referenced approval ID becomes stable.
 
-**Dateien:**
+**Files:**
 - `workflow-runner/.../runner/DefaultNodeDispatcher.java`
 - `workflow-runner/.../runner/WorkflowStepProviderImpl.java`
 - `workflow-runner/.../runner/WorkflowContext.java`
 - `workflow-runner/.../runner/WorkflowExecutor.java`
 
 **Tests:**
-- Unit-Test: gleicher Run/Node ergibt gleiche `approvalId`.
-- Resume-Test: Approval-ID nach Replay identisch.
+- Unit test: same run/node yields same `approvalId`.
+- Resume test: approval ID identical after replay.
 
-**Akzeptanz:**
-- Kein `System.identityHashCode(ctx)` mehr in Approval-Pfaden.
+**Acceptance:**
+- No more `System.identityHashCode(ctx)` in approval paths.
 
 ---
 
-### P0-3: Subworkflow-Semantik klären und umsetzen
+### P0-3: Clarify and Implement Subworkflow Semantics
 
-**Problem:** `subworkflow` expandiert den Kindgraphen, führt ihn aber nicht aus.
-UI/Doku suggerieren Workflow-Ausführung.
+**Problem:** `subworkflow` expands the child graph but does not execute it.
+UI/docs suggest workflow execution.
 
-**Option A (empfohlen kurzfristig): Semantik explizit machen**
-- Node als „Subworkflow-Referenz/Expansion“ dokumentieren.
-- Keine Ausführung behaupten.
-- Validierung prüft Existenz des Kindworkflows.
+**Option A (recommended short-term): make semantics explicit**
+- Document node as "subworkflow reference/expansion".
+- Do not claim execution.
+- Validation checks existence of the child workflow.
 
-**Option B (mittelfristig): echte geschachtelte Ausführung**
-- `DefaultNodeDispatcher` ruft `WorkflowExecutor.executeRun(subWf, input, principal)` auf.
-- Child-Run-ID und Child-Session-ID journaled.
-- Fehler/ Pause des Kindlaufs propagieren in den Parent-Run.
-- Rekursions-/Tiefenlimit und Cycle-Schutz.
+**Option B (medium-term): real nested execution**
+- `DefaultNodeDispatcher` calls `WorkflowExecutor.executeRun(subWf, input, principal)`.
+- Child run ID and child session ID journaled.
+- Errors/pauses of the child run propagate to the parent run.
+- Recursion/depth limit and cycle protection.
 
-**Dateien:**
+**Files:**
 - `workflow-runner/.../runner/DefaultNodeDispatcher.java`
 - `workflow-runner/.../runner/SubWorkflowExpander.java`
 - `workflow-runner/.../runner/WorkflowExecutor.java`
@@ -140,181 +139,182 @@ UI/Doku suggerieren Workflow-Ausführung.
 - `docs/Features.md`, `docs/engineering/Workflow.md`
 
 **Tests:**
-- Unit: fehlender Kindworkflow liefert deterministischen Fehler.
-- Integration: erfolgreicher Kindlauf schreibt Output in Parent-State.
-- Pause: Kindlauf `paused` pausiert Parent durabel.
+- Unit: missing child workflow yields deterministic error.
+- Integration: successful child run writes output into parent state.
+- Pause: child run `paused` durably pauses parent.
 
-**Akzeptanz:**
-- Entweder echte Ausführung mit Tests oder UI/Doku ohne Ausführungsbehauptung.
-- Keine Mischform in öffentlicher Doku.
+**Acceptance:**
+- Either real execution with tests or UI/docs without execution claims.
+- No mixed form in public docs.
 
 ---
 
-### P0-4: Fork/Join-Semantik klären
+### P0-4: Clarify Fork/Join Semantics
 
-**Problem:** `fork`/`join` sind strukturelle Marker, keine parallele Ausführung.
+**Problem:** `fork`/`join` are structural markers, not parallel execution.
 
-**Umsetzung:**
-- Kurzfristig: Doku/UI als „strukturelle Branch-/Merge-Knoten“ bezeichnen.
-- Mittelfristig: entweder echte Fan-out/Fan-in im Step-Loop oder Entfernung des
-  Eindrucks paralleler Ausführung.
-- `join` sollte Outputs aller eingehenden Nodes deterministisch zusammenführen
-  (bereits teilweise).
+**Implementation:**
+- Short-term: describe in docs/UI as "structural branch/merge nodes".
+- Medium-term: either real fan-out/fan-in in the step loop or remove the
+  impression of parallel execution.
+- `join` should deterministically merge outputs of all incoming nodes
+  (already partially).
 
-**Dateien:**
+**Files:**
 - `workflow-runner/.../runner/DefaultNodeDispatcher.java`
 - `docs/Features.md`, `docs/engineering/Workflow.md`, `reactflow/src/nodeTypes.tsx`
 
-**Akzeptanz:**
-- Keine Formulierung „parallele Ausführung“ ohne Implementierung.
+**Acceptance:**
+- No wording "parallel execution" without implementation.
 
 ---
 
-## 2. P1 – Produktreife, Performance und Integration
+## 2. P1 – Product Maturity, Performance, and Integration
 
-### P1-1: Journal-Performance (`history().size()`)
+### P1-1: Journal Performance (`history().size()`)
 
-**Problem:** `Engine.java` ruft `journal.history(id, Seq.zero()).size()` mehrfach
-pro Prompt; jeder Aufruf lädt die gesamte Historie.
+**Problem:** `Engine.java` calls `journal.history(id, Seq.zero()).size()` multiple
+times per prompt; each call loads the entire history.
 
-**Umsetzung:**
-- `Journal.lastSeq(session)` / `nextSeq(session)` ergänzen oder
-  `event_sequence`-Tabelle nutzen wie OC.
-- `history()` nur für Replay/Projektion.
-- ConversationStore `nextSeq` aus Journal ableiten statt `max(seq)`.
+**Implementation:**
+- Add `Journal.lastSeq(session)` / `nextSeq(session)` or use an
+  `event_sequence` table as in OC.
+- Use `history()` only for replay/projection.
+- Derive ConversationStore `nextSeq` from journal instead of `max(seq)`.
 
-**Dateien:**
+**Files:**
 - `engine/.../core/port/store/Journal.java`
 - `engine/.../adapter/sql/SqlJournal.java`
 - `engine/.../adapter/sqlite/SqliteJournal.java`
 - `engine/.../http/Engine.java`
 
 **Tests:**
-- Performance-Test/Benchmark: 1000 Events, keine Full-Scan bei Prompt.
-- Regression: Replay und Sequenznummern bleiben korrekt.
+- Performance test/benchmark: 1000 events, no full scan on prompt.
+- Regression: replay and sequence numbers remain correct.
 
-**Akzeptanz:**
-- Kein `history(...).size()` im Hot Path.
+**Acceptance:**
+- No `history(...).size()` in hot path.
 
 ---
 
-### P1-2: Run-Scan und Pagination
+### P1-2: Run Scan and Pagination
 
-**Problem:** `WorkflowRunJournal.scan(limit)` lädt alle Sessions, filtert nach
-Titelpräfix und replayt jede Session. Bei vielen Runs O(n) und hohe Latenz.
+**Problem:** `WorkflowRunJournal.scan(limit)` loads all sessions, filters by
+title prefix, and replays each session. With many runs this is O(n) with high
+latency.
 
-**Umsetzung:**
-- DB-Query mit `title LIKE 'workflow:%'` und `ORDER BY updated DESC LIMIT ?`.
-- Optional Owner-Filter in SQL.
-- Cursor/Pagination statt nur `limit`.
+**Implementation:**
+- DB query with `title LIKE 'workflow:%'` and `ORDER BY updated DESC LIMIT ?`.
+- Optional owner filter in SQL.
+- Cursor/pagination instead of just `limit`.
 
-**Dateien:**
+**Files:**
 - `workflow-runner/.../runner/WorkflowRunJournal.java`
 - `engine/.../core/port/store/SessionReader.java`
-- SQL/SQLite-Adapter
+- SQL/SQLite adapter
 
 **Tests:**
-- 1000 Sessions, Scan bleibt unter akzeptabler Zeit.
-- Pagination liefert stabile Reihenfolge.
+- 1000 sessions, scan stays within acceptable time.
+- Pagination yields stable ordering.
 
-**Akzeptanz:**
-- `scan(limit)` macht keine Volltabellen-Replay für alle Sessions.
+**Acceptance:**
+- `scan(limit)` does not perform full-table replay for all sessions.
 
 ---
 
-### P1-3: Graph-Validierung schärfen
+### P1-3: Sharpen Graph Validation
 
-**Problem:** Doku behauptet „genau ein `end`“, Code verlangt mindestens einen.
-Fork/Join werden nicht auf Struktur geprüft.
+**Problem:** Docs claim "exactly one `end`", code requires at least one.
+Fork/Join are not structurally checked.
 
-**Umsetzung:**
-- Entscheidung: entweder genau ein `end` erzwingen (empfohlen für klare
-  Workflows) oder Doku an Code anpassen.
-- Validierung für `fork` (mindestens zwei ausgehende Edges) und `join`
-  (mindestens zwei eingehende Edges).
-- `subworkflow`-Existenzprüfung optional mit Store-Kontext.
+**Implementation:**
+- Decision: either enforce exactly one `end` (recommended for clear
+  workflows) or align docs with code.
+- Validation for `fork` (at least two outgoing edges) and `join`
+  (at least two incoming edges).
+- Optional `subworkflow` existence check with store context.
 
-**Dateien:**
+**Files:**
 - `workflow-runner/.../validation/GraphCompiler.java`
 - `docs/Features.md`
-- `reactflow/src` (Validierungsfeedback)
+- `reactflow/src` (validation feedback)
 
 **Tests:**
-- Unit-Tests für 0/1/mehrere `end`-Nodes.
-- Unit-Tests für degenerierte fork/join.
+- Unit tests for 0/1/multiple `end` nodes.
+- Unit tests for degenerate fork/join.
 
-**Akzeptanz:**
-- Doku und Code stimmen überein.
+**Acceptance:**
+- Docs and code agree.
 
 ---
 
-### P1-4: MCP-Server erweitern oder begrenzen
+### P1-4: Extend or Limit MCP Server
 
-**Problem:** MCP-Server bietet nur zwei Tools; keine Resources/Prompts/Sessions;
-OAuth-Endpoints sind Stubs.
+**Problem:** MCP server offers only two tools; no resources/prompts/sessions;
+OAuth endpoints are stubs.
 
-**Umsetzung:**
-- Kurzfristig: OpenAPI/Doku klar als „Tool-only MCP Server“.
-- Mittelfristig:
-  - Resources für Workflow-Definitionen/Runs.
-  - Prompts für Agent-Templates.
-  - OAuth oder explizite Deaktivierung der Stubs.
-- Registry-/Serverless-Rollen weiter härten.
+**Implementation:**
+- Short-term: clearly document as "tool-only MCP server" in OpenAPI/docs.
+- Medium-term:
+  - Resources for workflow definitions/runs.
+  - Prompts for agent templates.
+  - OAuth or explicit disabling of stubs.
+- Further harden registry/serverless roles.
 
-**Dateien:**
+**Files:**
 - `quarkus/.../http/McpServerResource.java`
 - `docs/guides/*`, `docs/security.md`
 
 **Tests:**
-- Contract-Tests für `initialize`, `tools/list`, `tools/call`.
-- 401/403 Tests bei OAuth-Mode.
+- Contract tests for `initialize`, `tools/list`, `tools/call`.
+- 401/403 tests in OAuth mode.
 
-**Akzeptanz:**
-- Keine `501`-Stubs in produktivem Default-Pfad oder klare Dokumentation.
+**Acceptance:**
+- No `501` stubs in productive default path or clear documentation.
 
 ---
 
-### P1-5: Strukturierte Outputs härten
+### P1-5: Harden Structured Outputs
 
-**Problem:** `submit_result` arbeitet non-strict; Abweichungen werden reaktiv
-erkannt und können Retries auslösen.
+**Problem:** `submit_result` works non-strict; deviations are detected
+reactively and may trigger retries.
 
-**Umsetzung:**
-- Strict Mode als opt-in Flag implementieren (Weg B aus
+**Implementation:**
+- Implement strict mode as opt-in flag (Path B from
   `docs/plans/strict-structured-outputs.md`).
-- `additionalProperties(false)`, alle Felder required, `.strict(true)` nur für
+- `additionalProperties(false)`, all fields required, `.strict(true)` only for
   OpenAI/Azure.
-- Validierung beim Start: Schema strict-kompatibel?
-- Metriken: Retry-Rate, Schema-Verletzungen.
+- Validation at startup: schema strict-compatible?
+- Metrics: retry rate, schema violations.
 
-**Dateien:**
+**Files:**
 - `engine/.../core/json/Schema.java`
 - `quarkus/.../http/LangChain4jProviderAdapter.java`
 - `docs/CONFIG.md`
 
 **Tests:**
-- Unit: strict-Schema-Transformation.
-- Integration mit echtem Key (CI-Secret) optional.
+- Unit: strict schema transformation.
+- Integration with real key (CI secret) optional.
 
-**Akzeptanz:**
-- Flag `qoc.structured-output.strict` wirkt nachweisbar.
+**Acceptance:**
+- Flag `qoc.structured-output.strict` demonstrably takes effect.
 
 ---
 
-### P1-6: Guardrails erweitern oder ehrlich begrenzen
+### P1-6: Extend or Honestly Limit Guardrails
 
-**Problem:** `Features.md`/Marketing spricht von deklarativen Regeln/CDI-SPI,
-Code hat nur externen Webhook.
+**Problem:** `Features.md`/marketing speaks of declarative rules/CDI SPI,
+code only has external webhook.
 
-**Umsetzung:**
-- Kurzfristig: Doku/UI klar als „Webhook Guardrail“.
-- Mittelfristig:
-  - Lokale Regel-Definitionen (z. B. Tool-Allow/Deny, Parameter-Patterns).
-  - CDI-SPI für in-process Guardrails.
-  - Audit-Log für block/rewrite/redact.
-- Egress-Sicherheit des Webhooks beibehalten (Host/IP/TLS).
+**Implementation:**
+- Short-term: clearly document/UI as "Webhook Guardrail".
+- Medium-term:
+  - Local rule definitions (e.g. tool allow/deny, parameter patterns).
+  - CDI SPI for in-process guardrails.
+  - Audit log for block/rewrite/redact.
+- Keep webhook egress security (host/IP/TLS).
 
-**Dateien:**
+**Files:**
 - `quarkus/.../guardrail/GuardrailHooks.java`
 - `quarkus/.../guardrail/GuardrailRegistry.java`
 - `quarkus/.../guardrail/WebhookClient.java`
@@ -322,225 +322,222 @@ Code hat nur externen Webhook.
 
 **Tests:**
 - Unit: block/rewrite/redact/ask.
-- Security-Tests für nicht erlaubte Hosts/IPs.
+- Security tests for disallowed hosts/IPs.
 
-**Akzeptanz:**
-- Keine Behauptung deklarativer Regeln ohne Implementierung.
+**Acceptance:**
+- No claim of declarative rules without implementation.
 
 ---
 
-### P1-7: DB-Blobs und Tool-Outputs auf Dateisystem/Objektstorage
+### P1-7: DB Blobs and Tool Outputs to Filesystem/Object Storage
 
-**Problem:** `tool_output` und `snapshot_file` speichern große Inhalte in der DB;
-OC nutzt Dateisystem/Git.
+**Problem:** `tool_output` and `snapshot_file` store large content in the DB;
+OC uses filesystem/Git.
 
-**Umsetzung:**
-- Tool-Outputs wie OC auf FS mit Retention und Inline-Limit.
-- Snapshots weiterhin Git-basiert oder Objektstorage.
-- DB speichert nur Metadaten/Hash/URI.
+**Implementation:**
+- Tool outputs like OC on FS with retention and inline limit.
+- Snapshots continue Git-based or object storage.
+- DB stores only metadata/hash/URI.
 
-**Dateien:**
+**Files:**
 - `engine/.../adapter/sql/*ToolOutput*`
 - `engine/.../adapter/sql/*Snapshot*`
 - `engine/.../core/port/store/ToolOutputStore.java`
 - `engine/.../core/port/store/SnapshotStore.java`
 
 **Tests:**
-- Migration/Compatibility-Test.
+- Migration/compatibility test.
 - Large payload test.
 
-**Akzeptanz:**
-- Keine großen Blobs im Hot Path der DB.
+**Acceptance:**
+- No large blobs in DB hot path.
 
 ---
 
-### P1-8: Tool-Result-Cache TTL/Invalidierung
+### P1-8: Tool Result Cache TTL/Invalidation
 
-**Problem:** `tool_result_cache` hat keine TTL/Invalidierung; Cache kann veralten.
+**Problem:** `tool_result_cache` has no TTL/invalidation; cache can go stale.
 
-**Umsetzung:**
-- TTL-Feld und Cleanup-Job.
-- Invalidierung bei Write/Edit/Patch/Shell-Side-Effects.
-- Konfigurierbare Cache-Policy.
+**Implementation:**
+- TTL field and cleanup job.
+- Invalidation on Write/Edit/Patch/Shell side effects.
+- Configurable cache policy.
 
-**Dateien:**
+**Files:**
 - `engine/.../runtime/tool/runtime/ToolRuntime.java`
 - `engine/.../core/port/store/ToolResultCache.java`
-- SQL/SQLite-Adapter
+- SQL/SQLite adapter
 - Migration
 
 **Tests:**
-- Cache-Hit/Expiry.
+- Cache hit/expiry.
 - Side-effect invalidation.
 
-**Akzeptanz:**
-- Cache kann nicht unbegrenzt veraltete Ergebnisse liefern.
+**Acceptance:**
+- Cache cannot serve stale results indefinitely.
 
 ---
 
-### P1-9: Resilience-Metriken und Observability
+### P1-9: Resilience Metrics and Observability
 
-**Problem:** Preflight, Triage, Loop-Detector existieren, aber Nutzen/Health
-sind schwer beobachtbar.
+**Problem:** Preflight, triage, loop detector exist, but usefulness/health
+are hard to observe.
 
-**Umsetzung:**
-- Metriken für Preflight-Failures, Triage-Attempts, Loop-Detections,
-  Webhook-Blocks, Verify-on-Stop-Failures.
-- Health/Readiness berücksichtigt Preflight.
-- SSE/OTel-Events für Guard-Entscheidungen.
+**Implementation:**
+- Metrics for preflight failures, triage attempts, loop detections,
+  webhook blocks, verify-on-stop failures.
+- Health/readiness considers preflight.
+- SSE/OTel events for guard decisions.
 
-**Dateien:**
+**Files:**
 - `engine/.../runtime/resilience/*`
 - `quarkus/.../http/*`
-- `docs/optimization.md`, `docs/observability` (falls vorhanden)
+- `docs/optimization.md`, `docs/observability` (if present)
 
 **Tests:**
-- Unit: Metrik-Inkrement.
-- Integration: SSE-Event bei block.
+- Unit: metric increment.
+- Integration: SSE event on block.
 
-**Akzeptanz:**
-- Betrieb kann Guard-/Resilience-Ereignisse sehen.
+**Acceptance:**
+- Operations can see guard/resilience events.
 
 ---
 
-### P1-10: Editor-Palette und Node-Typen angleichen
+### P1-10: Align Editor Palette and Node Types
 
-**Problem:** Backend unterstützt 16 Typen, Editor registriert 14 (`guard`, `inject`
-fehlen).
+**Problem:** Backend supports 16 types, editor registers 14 (`guard`, `inject`
+missing).
 
-**Umsetzung:**
-- Entweder `guard`/`inject` im Editor implementieren oder aus Backend/Docs
-  entfernen.
-- UI-Validierung gegen `GraphCompiler.VALID_NODE_TYPES`.
+**Implementation:**
+- Either implement `guard`/`inject` in editor or remove from backend/docs.
+- UI validation against `GraphCompiler.VALID_NODE_TYPES`.
 
-**Dateien:**
+**Files:**
 - `reactflow/src/nodeRegistry.ts`
 - `reactflow/src/EditorPage.tsx`
 - `reactflow/src/nodeTypes.tsx`
 
 **Tests:**
-- Frontend-Tests für alle Node-Typen.
+- Frontend tests for all node types.
 
-**Akzeptanz:**
-- Keine Diskrepanz zwischen Backend und Editor.
+**Acceptance:**
+- No discrepancy between backend and editor.
 
 ---
 
-## 3. P2 – Konzepte und zukünftige Fähigkeiten
+## 3. P2 – Concepts and Future Capabilities
 
-### P2-1: Runtime-Adaptation (nur Spezifikation bis Code existiert)
+### P2-1: Runtime Adaptation (specification only until code exists)
 
-**Problem:** Dokumentiert, aber nicht implementiert.
+**Problem:** Documented but not implemented.
 
-**Umsetzung:**
-- Spec finalisieren (Inputs, Outputs, Trigger).
-- Erst dann `RequirementChecker`, `AdaptationPlan`, `RuntimePlan`, `PlanValidator`
-  implementieren.
-- Tests für Plan-Validierung.
+**Implementation:**
+- Finalize spec (inputs, outputs, triggers).
+- Only then implement `RequirementChecker`, `AdaptationPlan`, `RuntimePlan`, `PlanValidator`.
+- Tests for plan validation.
 
-**Dateien:**
+**Files:**
 - `docs/next/runtime-plan-adaptation.md`
 - `docs/plans/runtime-plan-adaptation.md`
-- neues Paket `engine/.../runtime/adaptation/`
+- new package `engine/.../runtime/adaptation/`
 
-**Akzeptanz:**
-- Kein Code-Claim vor Implementierung; Spec bleibt als Plan markiert.
-
----
-
-### P2-2: Temporal-Integration (nicht benötigt / out of scope)
-
-Temporal ist eine externe, verteilte Workflow-Orchestrierungsplattform. QOC hat
-bereits journalbasierte Recovery, Resume und Checkpoints; eine Temporal-
-Integration ist daher optional und aktuell nicht erforderlich. Sie bleibt
-Konzept/Dokumentation und wird nicht als Feature gezählt.
+**Acceptance:**
+- No code claims before implementation; spec remains marked as plan.
 
 ---
 
-### P2-3: MCP-OAuth-Server
+### P2-2: Temporal Integration (not needed / out of scope)
 
-**Problem:** Stubs liefern `501`.
+Temporal is an external, distributed workflow orchestration platform. QOC already
+has journal-based recovery, resume, and checkpoints; a Temporal integration is
+therefore optional and currently not required. It remains a concept/documentation
+and is not counted as a feature.
 
-**Umsetzung:**
-- Entweder vollständigen OAuth-Flow implementieren (Authorize, Callback, Token)
-  oder Endpoints entfernen/deaktivieren und Doku anpassen.
-- Security-Tests für Token-Validierung.
+---
 
-**Dateien:**
+### P2-3: MCP OAuth Server
+
+**Problem:** Stubs return `501`.
+
+**Implementation:**
+- Either implement full OAuth flow (authorize, callback, token) or remove/disable
+  endpoints and adjust docs.
+- Security tests for token validation.
+
+**Files:**
 - `quarkus/.../http/McpServerResource.java`
 - `quarkus/.../http/security/*`
 
-**Akzeptanz:**
-- Kein halber OAuth-Modus im Default.
+**Acceptance:**
+- No half-baked OAuth mode in default.
 
 ---
 
-### P2-4: A2A-Härtung
+### P2-4: A2A Hardening
 
-**Problem:** A2A-Server ist opt-in; AuthZ/Routing vorhanden, aber Reife und
-Tests ausbaufähig.
+**Problem:** A2A server is opt-in; AuthZ/routing present, but maturity and
+tests need expansion.
 
-**Umsetzung:**
-- Agent-Card-Discovery und Task-Lifecycle-Tests.
-- AuthN/AuthZ für A2A-Endpoints standardisieren.
-- Fehlerpfade (Timeout, Cancel, Retry) testen.
+**Implementation:**
+- Agent card discovery and task lifecycle tests.
+- Standardize AuthN/AuthZ for A2A endpoints.
+- Test error paths (timeout, cancel, retry).
 
-**Dateien:**
+**Files:**
 - `quarkus/.../http/a2a/*`
 - `engine/.../runtime/tool/a2a/*`
 
-**Akzeptanz:**
-- A2A kann als stabile Integration dokumentiert werden.
+**Acceptance:**
+- A2A can be documented as stable integration.
 
 ---
 
-### P2-5: Agent-Store-Konsistenz und Cleanup
+### P2-5: Agent Store Consistency and Cleanup
 
-**Problem:** File/DB-Agent-Store mit Cache; generierte Agenten können
-ansammeln.
+**Problem:** File/DB agent store with cache; generated agents can accumulate.
 
-**Umsetzung:**
-- Cleanup-Policy für `gen-...`-Agenten.
-- Cache-Invalidierung bei externen Änderungen.
-- Ownership/Concurrency-Tests.
+**Implementation:**
+- Cleanup policy for `gen-...` agents.
+- Cache invalidation on external changes.
+- Ownership/concurrency tests.
 
-**Dateien:**
+**Files:**
 - `workflow-runner/.../store/AgentStore.java`
 - `workflow-runner/.../store/AgentStorePort.java`
 - `quarkus/.../http/AgentStoreResource.java`
 
-**Akzeptanz:**
-- Keine veralteten generierten Agenten nach Workflow-Löschung.
+**Acceptance:**
+- No stale generated agents after workflow deletion.
 
 ---
 
-## 4. Querschnitt: Tests und Qualität
+## 4. Cross-Cutting: Tests and Quality
 
-Für jede P0/P1-Aufgabe gilt:
-- Unit-Tests für Kernlogik.
-- Integrationstests für HTTP/DB, soweit Maven/Quarkus-Testinfrastruktur vorhanden.
-- ArchUnit-Regeln bei neuen Paketen (`engine.core` bleibt frei von Quarkus/Jackson/CDI/HTTP).
-- JaCoCo ≥ 80 % Instructions für betroffene Module vor Merge.
-- `mvn test` grün.
+For every P0/P1 task:
+- Unit tests for core logic.
+- Integration tests for HTTP/DB where Maven/Quarkus test infrastructure exists.
+- ArchUnit rules for new packages (`engine.core` stays free of Quarkus/Jackson/CDI/HTTP).
+- JaCoCo ≥ 80 % instructions for affected modules before merge.
+- `mvn test` green.
 
 ---
 
-## 5. Empfohlene Reihenfolge
+## 5. Recommended Order
 
-1. **Woche 1:** P0-1, P0-2, P0-3 (Option A), P0-4 Dokumentation.
-2. **Woche 2:** P1-1, P1-2, P1-3.
-3. **Woche 3:** P1-4, P1-5, P1-6.
-4. **Woche 4:** P1-7, P1-8, P1-9, P1-10.
-5. **Danach:** P2 nach Bedarf.
+1. **Week 1:** P0-1, P0-2, P0-3 (Option A), P0-4 documentation.
+2. **Week 2:** P1-1, P1-2, P1-3.
+3. **Week 3:** P1-4, P1-5, P1-6.
+4. **Week 4:** P1-7, P1-8, P1-9, P1-10.
+5. **Afterwards:** P2 as needed.
 
 ---
 
 ## 6. Definition of Done
 
-Eine Schwäche gilt als behoben, wenn:
-- Code und Tests vorhanden sind,
-- Doku/Features konsistent sind,
-- keine überzogenen Claims mehr bestehen,
-- `mvn test` für betroffene Module grün ist,
-- und die Änderung in `qoc/docs/QOC-vs-OpenCode-Extensions.md` als erledigt
-  markiert werden kann.
+A weakness is considered fixed when:
+- code and tests exist,
+- docs/features are consistent,
+- no overstated claims remain,
+- `mvn test` is green for affected modules,
+- and the change can be marked as done in
+  `qoc/docs/QOC-vs-OpenCode-Extensions.md`.

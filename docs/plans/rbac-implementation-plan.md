@@ -1,81 +1,81 @@
-# RBAC + Workflow-OIDC – Detaillierter Umsetzungsplan
+# RBAC + Workflow-OIDC – Detailed Implementation Plan
 
-> Ablage: `/home/torsten/.opencode/plan/rbac-implementation-plan.md`
-> Ziel-Ablage (Code-Modus): `qoc/docs/plans/rbac-workflow-oidc-implementation.md`
-> Bezug: `qoc/docs/engineering/Workflow-OIDC.md`
+> Location: `/home/torsten/.opencode/plan/rbac-implementation-plan.md`
+> Target location (code mode): `qoc/docs/plans/rbac-workflow-oidc-implementation.md`
+> Reference: `qoc/docs/engineering/Workflow-OIDC.md`
 
-## Geplante Sicherheitsfunktionen
+## Planned Security Features
 
-Dieser Plan implementiert folgende Sicherheitsfunktionen für den Workflow-Runner,
-die bisher fehlen oder nur teilweise vorhanden sind:
+This plan implements the following security features for the workflow runner,
+which are currently missing or only partially present:
 
-1. **Authentifizierung (AuthN)** – Wiederverwendung der QOC-Auth-Modi:
-   - `none` (lokal, kein Login), `basic` (HTTP Basic), `oidc` (Keycloak/Auth0),
+1. **Authentication (AuthN)** – reuse of QOC auth modes:
+   - `none` (local, no login), `basic` (HTTP Basic), `oidc` (Keycloak/Auth0),
      `proxy` (Trusted-Proxy), `mcp_oauth`.
-   - System-Token-Auth via `X-System-Token`-Header für Service-Accounts.
-   - OIDC Principal-Extraktion aus JWT (Rollen, Groups, Claims).
+   - System-token auth via the `X-System-Token` header for service accounts.
+   - OIDC principal extraction from JWT (roles, groups, claims).
 
-2. **Autorisierung (AuthZ) – RBAC**:
-   - Rollen: `admin`/`qoc-admin`, `user`, `system`, `viewer`/`reader`.
-   - `@RolesAllowed`-Annotationen auf allen Workflow- und Agent-Endpoints.
-   - `SessionAccessGuard` für Ownership-Prüfungen (nur Owner/Admin/System dürfen
-     zugreifen).
-   - Agent-Level-Zugriff via `rolesAllowed` (analog zu `EngineConfig.AgentConfig`).
+2. **Authorization (AuthZ) – RBAC**:
+   - Roles: `admin`/`qoc-admin`, `user`, `system`, `viewer`/`reader`.
+   - `@RolesAllowed` annotations on all workflow and agent endpoints.
+   - `SessionAccessGuard` for ownership checks (only owner/admin/system may
+     access).
+   - Agent-level access via `rolesAllowed` (analogous to `EngineConfig.AgentConfig`).
 
-3. **Ownership-Modell**:
-   - `ownerId` auf `WorkflowDefinition` und `WorkflowDefinition.Agent`.
-   - Runs, Workflows und Agents sind user-scoped (eigene + shared).
-   - Systemuser (`Principal.system()`) für automatisch erstellte Ressourcen.
+3. **Ownership model**:
+   - `ownerId` on `WorkflowDefinition` and `WorkflowDefinition.Agent`.
+   - Runs, workflows, and agents are user-scoped (own + shared).
+   - System user (`Principal.system()`) for automatically created resources.
 
-4. **Systemuser (Service-Account)**:
-   - Synthetischer Principal mit Rolle `system`.
-   - Für Scheduler, Webhooks, Background-Jobs ohne interaktiven Login.
-   - Konfigurierbar: `ENGINE_SYSTEM_TOKEN`, `ENGINE_SYSTEM_ROLES`,
+4. **System user (service account)**:
+   - Synthetic principal with role `system`.
+   - For schedulers, webhooks, background jobs without interactive login.
+   - Configurable: `ENGINE_SYSTEM_TOKEN`, `ENGINE_SYSTEM_ROLES`,
      `ENGINE_SYSTEM_OWNERSHIP`.
 
-5. **OIDC-Integration für Workflows**:
-   - Token-Propagation: UI → `/api/workflows/*` → `WorkflowExecutor` →
-     `QocEngine.runPrompt` (Principal statt anonymous).
-   - Role-Claim-Pfad pro Profil (Keycloak `realm_access/roles`, Auth0
+5. **OIDC integration for workflows**:
+   - Token propagation: UI → `/api/workflows/*` → `WorkflowExecutor` →
+     `QocEngine.runPrompt` (principal instead of anonymous).
+   - Role-claim path per profile (Keycloak `realm_access/roles`, Auth0
      namespaced).
-   - Trusted-Proxy-Auth (`X-Forwarded-*`).
-   - Fail-closed bei fehlenden Claims (403).
+   - Trusted-proxy auth (`X-Forwarded-*`).
+   - Fail-closed on missing claims (403).
 
-6. **Audit & Traceability**:
-   - `ownerId` in Journal-Events (`WorkflowRunStarted`, `WorkflowNodeCompleted`,
+6. **Audit & traceability**:
+   - `ownerId` in journal events (`WorkflowRunStarted`, `WorkflowNodeCompleted`,
      `WorkflowRunFinished`).
-   - Systemuser-Aktionen auditierbar über `principalId="system"`.
-   - Optional: `WorkflowAgentChanged`-Event für Agent-Änderungen.
+   - System-user actions auditable via `principalId="system"`.
+   - Optional: `WorkflowAgentChanged` event for agent changes.
 
-7. **Migration & Rückwärtskompatibilität**:
-   - Feature-Flag `ENGINE_WORKFLOW_RBAC_ENABLED` (default `false`).
-   - Bestehende Daten erhalten Default-`ownerId` (`"local"`).
-   - `executeRun(def, input)` (ohne user) delegiert mit `Principal.anonymous()`
-     → kein Breaking Change.
+7. **Migration & backward compatibility**:
+   - Feature flag `ENGINE_WORKFLOW_RBAC_ENABLED` (default `false`).
+   - Existing data keeps default `ownerId` (`"local"`).
+   - `executeRun(def, input)` (without user) delegates with
+     `Principal.anonymous()` → no breaking change.
 
-8. **Sicherheits-Stufen** (aus `06-security-hardening.md`):
-   - Least-Privilege als Default (`engine.permission.default=least-privilege`).
-   - Shell-Sandbox (bwrap, `workspace-write`).
-   - Kurzlebige Tool-Tokens (60 s).
-   - Container-Hardening (read-only FS, `cap_drop ALL`, Seccomp).
+8. **Security levels** (from `06-security-hardening.md`):
+   - Least-privilege as default (`engine.permission.default=least-privilege`).
+   - Shell sandbox (bwrap, `workspace-write`).
+   - Short-lived tool tokens (60 s).
+   - Container hardening (read-only FS, `cap_drop ALL`, Seccomp).
 
-## Übersicht
+## Overview
 
-12 Implementierungsschritte in 4 Phasen. Jeder Schritt hat: Ziel, Dateien,
-Code-Änderungen, Tests, Commit. Tests müssen grün sein vor dem Commit.
+12 implementation steps across 4 phases. Each step has: goal, files,
+code changes, tests, commit. Tests must be green before the commit.
 
 ---
 
-## Phase 1: Foundation (Systemuser + Principal)
+## Phase 1: Foundation (System User + Principal)
 
-### Schritt 1: `Principal.system()` in engine.core
+### Step 1: `Principal.system()` in engine.core
 
-**Ziel:** Systemuser-Principal im Core verfügbar machen.
+**Goal:** Make the system-user principal available in the core.
 
-**Dateien:**
+**Files:**
 - `engine/src/main/java/de/augmentia/oc/engine/core/model/Principal.java`
 
-**Änderung:**
+**Change:**
 ```java
 public static Principal system() {
     return new Principal("system", "system", List.of("system"), List.of(), Map.of(), null);
@@ -83,97 +83,97 @@ public static Principal system() {
 ```
 
 **Tests:**
-- `PrincipalTest` (neu oder erweitern): `Principal.system().id() == "system"`, `roles().contains("system")`, `isAdmin() == false`.
+- `PrincipalTest` (new or extend): `Principal.system().id() == "system"`, `roles().contains("system")`, `isAdmin() == false`.
 
 **Commit:** `feat(engine): add Principal.system() for service-account principal`
 
 ---
 
-### Schritt 2: System-Token-Auth in BasicAuthFilter
+### Step 2: System-token auth in BasicAuthFilter
 
-**Ziel:** `X-System-Token`-Header gegen `ENGINE_SYSTEM_TOKEN` validieren und
-`Principal.system()` setzen.
+**Goal:** Validate the `X-System-Token` header against `ENGINE_SYSTEM_TOKEN` and
+set `Principal.system()`.
 
-**Dateien:**
+**Files:**
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/BasicAuthFilter.java`
-- `quarkus/src/main/resources/application.properties` (neue Keys)
+- `quarkus/src/main/resources/application.properties` (new keys)
 
-**Änderung:**
-- Neue Config: `engine.system.token`, `engine.system.roles`.
-- In `filter()`: wenn Header `X-System-Token` vorhanden und mit
-  `engine.system.token` übereinstimmt → `principalContext.set(new Principal("system", "system", systemRoles, ...))`.
-- Vor der Basic-Auth-Prüfung einfügen.
+**Change:**
+- New config: `engine.system.token`, `engine.system.roles`.
+- In `filter()`: if the header `X-System-Token` is present and matches
+  `engine.system.token` → `principalContext.set(new Principal("system", "system", systemRoles, ...))`.
+- Insert before the basic-auth check.
 
 **Tests:**
-- `BasicAuthFilterTest` (erweitern): System-Token gültig → Principal.system();
-  ungültig → 401; fehlend → Fallback auf Basic/OIDC.
+- `BasicAuthFilterTest` (extend): valid system token → `Principal.system()`;
+  invalid → 401; missing → fallback to Basic/OIDC.
 
 **Commit:** `feat(security): system-token auth via X-System-Token header`
 
 ---
 
-### Schritt 3: `@RolesAllowed` für `system`-Rolle
+### Step 3: `@RolesAllowed` for the `system` role
 
-**Ziel:** `RolesAllowedFilter` erkennt `system` als gültige Rolle.
+**Goal:** `RolesAllowedFilter` recognizes `system` as a valid role.
 
-**Dateien:**
+**Files:**
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/security/RolesAllowedFilter.java`
 
-**Änderung:** Bereits generisch (prüft `userRoles.contains(req)`). Keine
-Änderung nötig — `system` wird automatisch erkannt. Nur Dokumentation.
+**Change:** Already generic (checks `userRoles.contains(req)`). No change
+needed — `system` is recognized automatically. Documentation only.
 
-**Tests:** keine neuen.
+**Tests:** no new tests.
 
 ---
 
-## Phase 2: Ownership-Modell (Daten)
+## Phase 2: Ownership Model (Data)
 
-### Schritt 4: `ownerId` in `WorkflowDefinition` und `Agent`
+### Step 4: `ownerId` in `WorkflowDefinition` and `Agent`
 
-**Ziel:** Ownership-Feld in den Modellen.
+**Goal:** Ownership field in the models.
 
-**Dateien:**
+**Files:**
 - `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/model/WorkflowDefinition.java`
 
-**Änderung:**
-- `WorkflowDefinition`-Record: neues Feld `String ownerId` (nullable, Default null).
-- `WorkflowDefinition.Agent`-Record: neues Feld `String ownerId` (nullable) und
-  `List<String> rolesAllowed` (Default `List.of("*")`).
-- Compact Constructors: null-Handling.
-- `WorkflowStore` (file-based): Round-trip (Jackson serialisiert automatisch).
-- `AgentStore.save()`: ownerId/rolesAllowed durchreichen (wie responseSchema).
+**Change:**
+- `WorkflowDefinition` record: new field `String ownerId` (nullable, default null).
+- `WorkflowDefinition.Agent` record: new field `String ownerId` (nullable) and
+  `List<String> rolesAllowed` (default `List.of("*")`).
+- Compact constructors: null handling.
+- `WorkflowStore` (file-based): round-trip (Jackson serializes automatically).
+- `AgentStore.save()`: pass through ownerId/rolesAllowed (like responseSchema).
 
 **Tests:**
-- `WorkflowDefinitionTest` (falls vorhanden) oder neuer Test:
-  Serialisierung/Deserialisierung mit ownerId und rolesAllowed.
-- `AgentStoreTest` (neu): save/get mit ownerId.
+- `WorkflowDefinitionTest` (if present) or new test:
+  serialization/deserialization with ownerId and rolesAllowed.
+- `AgentStoreTest` (new): save/get with ownerId.
 
 **Commit:** `feat(workflow): add ownerId and rolesAllowed to WorkflowDefinition and Agent`
 
 ---
 
-### Schritt 5: `Principal` in `WorkflowExecutor` und `DefaultNodeDispatcher`
+### Step 5: `Principal` in `WorkflowExecutor` and `DefaultNodeDispatcher`
 
-**Ziel:** User/Principal durchreichen statt `anonymous()`.
+**Goal:** Thread user/Principal instead of `anonymous()`.
 
-**Dateien:**
+**Files:**
 - `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/runner/WorkflowExecutor.java`
 - `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/runner/DefaultNodeDispatcher.java`
 
-**Änderung:**
-- `WorkflowExecutor`: neue Overload `executeRun(def, input, String user)` und
-  `executeRun(def, input, Principal principal)`. Bestehende Methoden delegieren
-  mit `Principal.anonymous()`.
+**Change:**
+- `WorkflowExecutor`: new overload `executeRun(def, input, String user)` and
+  `executeRun(def, input, Principal principal)`. Existing methods delegate
+  with `Principal.anonymous()`.
 - `executeRun`: `engine.createSession("workflow:" + workflowId, user, "workspace")`
-  statt hardcoded `"workflow"`.
-- `def.ownerId` setzen, falls null (aus user).
-- `WorkflowExecutor.run(session, runId, ...)` → `ctx` oder `sink` mit ownerId.
-- `DefaultNodeDispatcher`: `runAgent` nutzt `engine.runPrompt(child, ..., principal)`
-  statt `Principal.anonymous()`. Principal als Feld oder Parameter.
+  instead of hardcoded `"workflow"`.
+- Set `def.ownerId` if null (from user).
+- `WorkflowExecutor.run(session, runId, ...)` → `ctx` or `sink` with ownerId.
+- `DefaultNodeDispatcher`: `runAgent` uses `engine.runPrompt(child, ..., principal)`
+  instead of `Principal.anonymous()`. Principal as field or parameter.
 
 **Tests:**
-- `WorkflowExecutorTest` (erweitern): executeRun mit user → Session ownerId == user.
-- `DefaultNodeDispatcherTest` (falls vorhanden): runAgent nutzt übergebenen Principal.
+- `WorkflowExecutorTest` (extend): executeRun with user → Session ownerId == user.
+- `DefaultNodeDispatcherTest` (if present): runAgent uses the passed Principal.
 
 **Commit:** `feat(workflow): thread Principal/user through WorkflowExecutor and NodeDispatcher`
 
@@ -181,53 +181,53 @@ public static Principal system() {
 
 ## Phase 3: Access Control (Guards)
 
-### Schritt 6: Guards in `WorkflowResource`
+### Step 6: Guards in `WorkflowResource`
 
-**Ziel:** `SessionAccessGuard` auf Workflow-Endpoints anwenden.
+**Goal:** Apply `SessionAccessGuard` to workflow endpoints.
 
-**Dateien:**
+**Files:**
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/WorkflowResource.java`
 
-**Änderung:**
+**Change:**
 - `@Inject SessionAccessGuard accessGuard;`
-- `listWorkflows()`: filtern nach ownerId (admin/system sehen alle).
-- `getWorkflow(id)`: `accessGuard.requireAccess` (oder neuer `requireWorkflowAccess`).
+- `listWorkflows()`: filter by ownerId (admin/system see all).
+- `getWorkflow(id)`: `accessGuard.requireAccess` (or new `requireWorkflowAccess`).
 - `saveWorkflow(id, def)`: owner/admin/system.
 - `deleteWorkflow(id)`: owner/admin/system.
-- `run(request)`: `@HeaderParam("X-QOC-User")`, `accessGuard.requireAgent` für eingebettete Agents, User-Durchreichung.
-- `listRuns`, `runStatus`, `resumeRun`: ownerId-Filter / requireAccess.
+- `run(request)`: `@HeaderParam("X-QOC-User")`, `accessGuard.requireAgent` for embedded agents, user propagation.
+- `listRuns`, `runStatus`, `resumeRun`: ownerId filter / requireAccess.
 
-**Neue Helper in `SessionAccessGuard`:**
-- `requireWorkflowAccess(String workflowId, String ownerId)` → 403 wenn nicht owner/admin/system.
+**New helpers in `SessionAccessGuard`:**
+- `requireWorkflowAccess(String workflowId, String ownerId)` → 403 if not owner/admin/system.
 - `isWorkflowOwner(ownerId, current)` → boolean.
 
 **Tests:**
-- `WorkflowResourceTest` (neu oder erweitern): 403 für non-owner, 200 für owner/admin, Run-Filtering.
+- `WorkflowResourceTest` (new or extend): 403 for non-owner, 200 for owner/admin, run filtering.
 
 **Commit:** `feat(workflow): apply SessionAccessGuard to WorkflowResource endpoints`
 
 ---
 
-### Schritt 7: Guards in `AgentStoreResource`
+### Step 7: Guards in `AgentStoreResource`
 
-**Ziel:** Agent-Store endpoints absichern.
+**Goal:** Secure agent-store endpoints.
 
-**Dateien:**
+**Files:**
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/AgentStoreResource.java`
 
-**Änderung:**
+**Change:**
 - `@Inject SessionAccessGuard accessGuard;`
-- `list()`: ownerId-Filter (admin/system sehen alle).
+- `list()`: ownerId filter (admin/system see all).
 - `get(id)`: requireAgentAccess.
-- `create(body)`: owner = currentUser (oder system).
+- `create(body)`: owner = currentUser (or system).
 - `save(id, body)`: owner/admin/system.
 - `delete(id)`: owner/admin/system.
 
-**AgentStore-Änderung:**
-- `AgentStore.listAll(userId, isAdmin)` Overload; bestehende `listAll()` delegiert mit `null, true` (backward-compat).
+**AgentStore change:**
+- `AgentStore.listAll(userId, isAdmin)` overload; existing `listAll()` delegates with `null, true` (backward-compat).
 
 **Tests:**
-- `AgentStoreResourceTest` (neu): 403/200, ownerId-Filter.
+- `AgentStoreResourceTest` (new): 403/200, ownerId filter.
 
 **Commit:** `feat(workflow): apply SessionAccessGuard to AgentStoreResource`
 
@@ -235,184 +235,184 @@ public static Principal system() {
 
 ## Phase 4: Audit & Tests
 
-### Schritt 8: Journal-Events mit ownerId
+### Step 8: Journal events with ownerId
 
-**Ziel:** `ownerId` in Workflow-Run-Events aufnehmen.
+**Goal:** Add `ownerId` to workflow-run events.
 
-**Dateien:**
+**Files:**
 - `engine/src/main/java/de/augmentia/oc/engine/core/model/SessionEvent.java`
 - `workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/runner/JournalWorkflowEventSink.java`
 
-**Änderung:**
-- `WorkflowRunStarted` / `WorkflowNodeCompleted` / `WorkflowRunFinished` um
-  `ownerId`-Feld erweitern (nullable).
-- `JournalWorkflowEventSink`: ownerId aus Session/Principal übergeben.
+**Change:**
+- Extend `WorkflowRunStarted` / `WorkflowNodeCompleted` / `WorkflowRunFinished`
+  with an `ownerId` field (nullable).
+- `JournalWorkflowEventSink`: pass ownerId from Session/Principal.
 
 **Tests:**
-- `WorkflowRunJournalTest` (erweitern): ownerId in Events.
+- `WorkflowRunJournalTest` (extend): ownerId in events.
 
 **Commit:** `feat(workflow): include ownerId in workflow journal events`
 
 ---
 
-### Schritt 9: `@RolesAllowed`-Annotationen
+### Step 9: `@RolesAllowed` annotations
 
-**Ziel:** JAX-RS Security-Annotationen auf Endpoints.
+**Goal:** JAX-RS security annotations on endpoints.
 
-**Dateien:**
+**Files:**
 - `WorkflowResource.java`, `AgentStoreResource.java`
 
-**Änderung:**
-- `@RolesAllowed("user", "admin", "system", "viewer")` auf GET-Endpoints.
-- `@RolesAllowed("user", "admin", "system")` auf POST/PUT/DELETE.
+**Change:**
+- `@RolesAllowed("user", "admin", "system", "viewer")` on GET endpoints.
+- `@RolesAllowed("user", "admin", "system")` on POST/PUT/DELETE.
 
 **Tests:**
-- `RolesAllowedFilter`-Tests (falls vorhanden) erweitern.
+- Extend `RolesAllowedFilter` tests (if present).
 
 **Commit:** `feat(workflow): add @RolesAllowed to workflow and agent endpoints`
 
 ---
 
-### Schritt 10: System-Token-Tests
+### Step 10: System-token tests
 
-**Ziel:** Unit-Tests für System-Token-Auth.
+**Goal:** Unit tests for system-token auth.
 
-**Dateien:**
-- `quarkus/src/test/java/.../BasicAuthFilterTest.java` (erweitern)
+**Files:**
+- `quarkus/src/test/java/.../BasicAuthFilterTest.java` (extend)
 
 **Tests:**
-- Gültiger System-Token → `Principal.id() == "system"`, roles enthält `"system"`.
-- Ungültiger Token → 401.
-- Fehlender Token → Fallback auf Basic/OIDC/NONE.
+- Valid system token → `Principal.id() == "system"`, roles contains `"system"`.
+- Invalid token → 401.
+- Missing token → fallback to Basic/OIDC/NONE.
 
 **Commit:** `test(security): system-token auth tests`
 
 ---
 
-### Schritt 11: Ownership-Tests
+### Step 11: Ownership tests
 
-**Ziel:** Integrationstests für User-Isolation.
+**Goal:** Integration tests for user isolation.
 
-**Dateien:**
-- `quarkus/src/test/java/.../WorkflowOwnershipTest.java` (neu)
+**Files:**
+- `quarkus/src/test/java/.../WorkflowOwnershipTest.java` (new)
 
 **Tests:**
-- User A erstellt Workflow → User B bekommt 403 auf get/save/delete/run.
-- Admin sieht alle Workflows.
-- System-User erstellt Workflow → ownerId = "system".
-- Shared Workflow (ownerId=null) lesbar für alle authentifizierten User.
+- User A creates workflow → User B gets 403 on get/save/delete/run.
+- Admin sees all workflows.
+- System user creates workflow → ownerId = "system".
+- Shared workflow (ownerId=null) readable by all authenticated users.
 
 **Commit:** `test(workflow): ownership isolation integration tests`
 
 ---
 
-### Schritt 12: Dokumentation
+### Step 12: Documentation
 
-**Ziel:** Workflow-OIDC.md in engineering-Ordner (bereits erstellt), CONFIG.md ergänzen.
+**Goal:** Workflow-OIDC.md in the engineering folder (already created), update CONFIG.md.
 
-**Dateien:**
-- `qoc/docs/CONFIG.md` (Systemuser-Keys ergänzen)
-- `qoc/docs/engineering/Workflow-OIDC.md` (bereits erstellt)
+**Files:**
+- `qoc/docs/CONFIG.md` (add system-user keys)
+- `qoc/docs/engineering/Workflow-OIDC.md` (already created)
 
-**Tests:** keine.
+**Tests:** none.
 
 **Commit:** `docs: add systemuser and RBAC config to CONFIG.md`
 
 ---
 
-## Migrations-Strategie
+## Migration Strategy
 
-1. **Bestehende Daten**: Workflows/Agents ohne `ownerId` → Default `"local"`
-   (NONE-Modus) oder admin-User. Migration beim ersten Laden
+1. **Existing data**: Workflows/agents without `ownerId` → default `"local"`
+   (NONE mode) or admin user. Migration on first load
    (`if (ownerId == null) ownerId = "local"`).
-2. **Rückwärtskompatibel**: `executeRun(def, input)` (ohne user) delegiert
-   mit `Principal.anonymous()` → kein Breaking Change für bestehende Aufrufer.
-3. **Feature-Flag**: `ENGINE_WORKFLOW_RBAC_ENABLED` (default `false`) für
-   schrittweise Aktivierung. Wenn `false`, Verhalten wie bisher (global,
+2. **Backward compatible**: `executeRun(def, input)` (without user) delegates
+   with `Principal.anonymous()` → no breaking change for existing callers.
+3. **Feature flag**: `ENGINE_WORKFLOW_RBAC_ENABLED` (default `false`) for
+   gradual activation. When `false`, behavior as before (global,
    anonymous).
 
-## Test-Strategie
+## Test Strategy
 
-| Stufe | Tests | Gate |
+| Level | Tests | Gate |
 |---|---|---|
-| Unit | Principal.system(), AgentStore ownerId, WorkflowDefinition Round-trip | `mvn test` |
-| Integration | Access-Guard 403/200, Ownership-Isolation, System-Token | `mvn test` (Quarkus @QuarkusTest) |
-| E2E | OIDC-Login → Workflow erstellen → Run → Resume | manuell (Keycloak/Auth0) |
+| Unit | Principal.system(), AgentStore ownerId, WorkflowDefinition round-trip | `mvn test` |
+| Integration | Access-guard 403/200, ownership isolation, system token | `mvn test` (Quarkus @QuarkusTest) |
+| E2E | OIDC login → create workflow → run → resume | manual (Keycloak/Auth0) |
 | Coverage | JaCoCo ≥ 80 % | `mvn verify` |
 
-## Code-Referenzen (präzise)
+## Code References (precise)
 
-### Schritt 1 – `Principal.system()`
-- **Datei:** `engine/src/main/java/de/augmentia/oc/engine/core/model/Principal.java`
-- **Einfügepunkt:** nach `localAdmin()` (Zeile 32), vor `isAdmin()`.
-- **Pattern:** analog zu `localAdmin()`, aber `id="system"`, `roles=List.of("system")`.
+### Step 1 – `Principal.system()`
+- **File:** `engine/src/main/java/de/augmentia/oc/engine/core/model/Principal.java`
+- **Insertion point:** after `localAdmin()` (line 32), before `isAdmin()`.
+- **Pattern:** analogous to `localAdmin()`, but `id="system"`, `roles=List.of("system")`.
 
-### Schritt 2 – System-Token-Auth
-- **Datei:** `quarkus/src/main/java/de/augmentia/oc/engine/http/BasicAuthFilter.java`
-- **Einfügepunkt:** in `filter()`, Zeile 39, nach dem `config.js`-Bypass, vor `AuthMode mode = ...`.
-- **Neue Config:** `@ConfigProperty(name="engine.system.token") String systemToken;`
-  und `@ConfigProperty(name="engine.system.roles", defaultValue="system") String systemRoles;`
-  in `EngineConfig` oder direkt in `BasicAuthFilter`.
-- **Logik:** `if (header != null && header.startsWith("X-System-Token") ...)` →
-  vergleiche mit `systemToken`, bei Match `principalContext.set(new Principal("system", "system", roles, ...))`.
+### Step 2 – System-token auth
+- **File:** `quarkus/src/main/java/de/augmentia/oc/engine/http/BasicAuthFilter.java`
+- **Insertion point:** in `filter()`, line 39, after the `config.js` bypass, before `AuthMode mode = ...`.
+- **New config:** `@ConfigProperty(name="engine.system.token") String systemToken;`
+  and `@ConfigProperty(name="engine.system.roles", defaultValue="system") String systemRoles;`
+  in `EngineConfig` or directly in `BasicAuthFilter`.
+- **Logic:** `if (header != null && header.startsWith("X-System-Token") ...)` →
+  compare with `systemToken`, on match `principalContext.set(new Principal("system", "system", roles, ...))`.
 
-### Schritt 4 – `ownerId` in `WorkflowDefinition`
-- **Datei:** `workflow-runner/.../model/WorkflowDefinition.java`
-- **WorkflowDefinition-Record:** neues Feld nach `agents`: `String ownerId`.
-  Compact Constructor: `if (ownerId == null) ownerId = "";`
-- **Agent-Record:** neue Felder nach `responseSchema`:
-  `String ownerId` und `List<String> rolesAllowed`.
-  Compact Constructor: `if (ownerId == null) ownerId = "";`,
+### Step 4 – `ownerId` in `WorkflowDefinition`
+- **File:** `workflow-runner/.../model/WorkflowDefinition.java`
+- **WorkflowDefinition record:** new field after `agents`: `String ownerId`.
+  Compact constructor: `if (ownerId == null) ownerId = "";`
+- **Agent record:** new fields after `responseSchema`:
+  `String ownerId` and `List<String> rolesAllowed`.
+  Compact constructor: `if (ownerId == null) ownerId = "";`,
   `rolesAllowed = rolesAllowed == null ? List.of("*") : List.copyOf(rolesAllowed);`
-- **AgentStore.save()** (Zeile 36–50): `withId`-Pattern in `AgentStoreResource` (Zeile 100–107)
-  muss `ownerId` und `rolesAllowed` durchreichen.
-- **AgentStoreResource.withId()** (Zeile 100): erweitern um die neuen Felder.
+- **AgentStore.save()** (line 36–50): `withId` pattern in `AgentStoreResource` (line 100–107)
+  must pass through `ownerId` and `rolesAllowed`.
+- **AgentStoreResource.withId()** (line 100): extend with the new fields.
 
-### Schritt 5 – Principal in WorkflowExecutor / DefaultNodeDispatcher
-- **WorkflowExecutor.executeRun** (Zeile 70): neue Overload
-  `executeRun(def, input, String user)` und `executeRun(def, input, Principal principal)`.
-- **Zeile 82:** `engine.createSession("workflow:" + workflowId, "workflow", "workspace")`
+### Step 5 – Principal in WorkflowExecutor / DefaultNodeDispatcher
+- **WorkflowExecutor.executeRun** (line 70): new overload
+  `executeRun(def, input, String user)` and `executeRun(def, input, Principal principal)`.
+- **Line 82:** `engine.createSession("workflow:" + workflowId, "workflow", "workspace")`
   → `engine.createSession("workflow:" + workflowId, user, "workspace")`.
-- **DefaultNodeDispatcher.runAgent** (Zeile 218): Parameter `Principal principal` hinzufügen;
+- **DefaultNodeDispatcher.runAgent** (line 218): add `Principal principal` parameter;
   `engine.runPrompt(child, prefixedName, prompt, config, true, null, null, principal)`.
-- **DefaultNodeDispatcher** Konstruktor: `Principal` als Feld (optional, Default anonymous).
+- **DefaultNodeDispatcher** constructor: `Principal` as field (optional, default anonymous).
 
-### Schritt 6 – Guards in WorkflowResource
-- **Datei:** `quarkus/.../http/WorkflowResource.java`
-- **Einfügepunkt:** nach den `@Inject`-Feldern (Zeile 30–36): `@Inject SessionAccessGuard accessGuard;`
-- **listWorkflows()** (Zeile 40): `agentStore`-ähnlicher Filter nach ownerId.
-- **run()** (Zeile 112): `@HeaderParam("X-QOC-User") String user` Parameter.
-- **executor()** (Zeile 159): `new WorkflowExecutor(engine.qocEngine(), store, mcpManager, agentStore)` —
-  bereits vorhanden; User-Durchreichung über `executeRun(def, input, user)`.
+### Step 6 – Guards in WorkflowResource
+- **File:** `quarkus/.../http/WorkflowResource.java`
+- **Insertion point:** after the `@Inject` fields (line 30–36): `@Inject SessionAccessGuard accessGuard;`
+- **listWorkflows()** (line 40): filter analogous to `agentStore` by ownerId.
+- **run()** (line 112): `@HeaderParam("X-QOC-User") String user` parameter.
+- **executor()** (line 159): `new WorkflowExecutor(engine.qocEngine(), store, mcpManager, agentStore)` —
+  already present; user propagation via `executeRun(def, input, user)`.
 
-### Schritt 7 – Guards in AgentStoreResource
-- **Datei:** `quarkus/.../http/AgentStoreResource.java`
-- **Einfügepunkt:** nach `@Inject AgentStore store;` (Zeile 37).
-- **list()** (Zeile 42): `store.listAll(userId, isAdmin)`.
-- **AgentStore.listAll()** (Zeile 61): Overload `listAll(String userId, boolean isAdmin)`.
+### Step 7 – Guards in AgentStoreResource
+- **File:** `quarkus/.../http/AgentStoreResource.java`
+- **Insertion point:** after `@Inject AgentStore store;` (line 37).
+- **list()** (line 42): `store.listAll(userId, isAdmin)`.
+- **AgentStore.listAll()** (line 61): overload `listAll(String userId, boolean isAdmin)`.
 
-### Schritt 8 – Journal-Events mit ownerId
-- **Datei:** `engine/.../core/model/SessionEvent.java`
-- **Suche:** `WorkflowRunStarted`, `WorkflowNodeCompleted`, `WorkflowRunFinished` Records.
-- **JournalWorkflowEventSink** (Zeile 45–50): `nodeCompleted(...)` um `ownerId` erweitern.
+### Step 8 – Journal events with ownerId
+- **File:** `engine/.../core/model/SessionEvent.java`
+- **Search:** `WorkflowRunStarted`, `WorkflowNodeCompleted`, `WorkflowRunFinished` records.
+- **JournalWorkflowEventSink** (line 45–50): extend `nodeCompleted(...)` with `ownerId`.
 
-### Schritt 9 – @RolesAllowed
-- **Dateien:** `WorkflowResource.java`, `AgentStoreResource.java`
-- **Pattern:** `@RolesAllowed("user", "admin", "system", "viewer")` auf Klassen-Ebene
-  oder Methoden-Ebene (analog zu `RolesAllowedFilter`).
+### Step 9 – @RolesAllowed
+- **Files:** `WorkflowResource.java`, `AgentStoreResource.java`
+- **Pattern:** `@RolesAllowed("user", "admin", "system", "viewer")` at class level
+  or method level (analogous to `RolesAllowedFilter`).
 
-## Abhängigkeiten
+## Dependencies
 
-- `Principal.system()` muss in `engine.core` ergänzt werden (Schritt 1).
-- `SessionAccessGuard` ist bereits `@RequestScoped` und `@Inject`-fähig.
-- `EngineConfig.AgentConfig` hat bereits `rolesAllowed` — als Vorbild für
+- `Principal.system()` must be added in `engine.core` (step 1).
+- `SessionAccessGuard` is already `@RequestScoped` and injectable.
+- `EngineConfig.AgentConfig` already has `rolesAllowed` — as a model for
   `WorkflowDefinition.Agent`.
 
-## Risiken
+## Risks
 
-| Risiko | Mitigation |
+| Risk | Mitigation |
 |---|---|
-| Breaking Change für bestehende Workflows | Feature-Flag + Default `"local"` |
-| `@RolesAllowed` bricht NONE-Modus | In NONE-Modus: `Principal.localAdmin()` (admin-Rolle) → alles erlaubt |
-| Performance (ownerId-Filter auf list()) | In-Memory-Filter (kleine Datenmenge); DB-Index bei Bedarf |
-| Test-Infrastruktur (OIDC) | `quarkus-test-oidc-server` (bereits in pom.xml) |
+| Breaking change for existing workflows | Feature flag + default `"local"` |
+| `@RolesAllowed` breaks NONE mode | In NONE mode: `Principal.localAdmin()` (admin role) → everything allowed |
+| Performance (ownerId filter on list()) | In-memory filter (small data volume); DB index when needed |
+| Test infrastructure (OIDC) | `quarkus-test-oidc-server` (already in pom.xml) |

@@ -1,159 +1,159 @@
-# CONFIG.md – Beispiel-Konfigurationen
+# CONFIG.md – Example Configurations
 
-> Kopierbare Konfigurations-Profile für QOC.
-> Basis: `quarkus/src/main/resources/application.properties` + Umgebungsvariablen.
-> Jede Zeile ist kommentiert. Abschnitte können einzeln in eine `.env` oder
-> `application.properties` übernommen werden.
+> Copy-paste configuration profiles for QOC.
+> Basis: `quarkus/src/main/resources/application.properties` + environment variables.
+> Every line is commented. Sections can be adopted individually into a `.env` or
+> `application.properties`.
 >
-> **Geltung:** Werte ohne `${...}`-Default sind Pflichtangaben.
-> Umgebungsvariablen überschreiben Properties (Quarkus-Standard).
+> **Validity:** values without a `${...}`-default are mandatory.
+> Environment variables override properties (Quarkus standard).
 
 ---
 
-## 0. Gemeinsame Basis (für beide Profile)
+## 0. Shared Base (for both profiles)
 
 ```properties
 # --- HTTP ---
-quarkus.http.port=8080                           # Listener-Port
-quarkus.http.host=127.0.0.1                      # nur Loopback (nginx/TLS davor)
-%test.quarkus.http.test-port=0                   # Tests: dynamischer Port
+quarkus.http.port=8080                           # Listener port
+quarkus.http.host=127.0.0.1                      # loopback only (nginx/TLS in front)
+%test.quarkus.http.test-port=0                   # Tests: dynamic port
 
-# --- Modell / Provider (LangChain4j) ---
-quarkus.langchain4j.openai.api-key=${OPENAI_API_KEY:demo-key}   # LLM-Key aus ENV
-quarkus.langchain4j.openai.chat-model.model-name=gpt-4o-mini     # Modell
+# --- Model / Provider (LangChain4j) ---
+quarkus.langchain4j.openai.api-key=${OPENAI_API_KEY:demo-key}   # LLM key from ENV
+quarkus.langchain4j.openai.chat-model.model-name=gpt-4o-mini     # Model
 quarkus.langchain4j.openai.chat-model.temperature=0.2           # Sampling
 
-# --- Engine-Provider (HTTP-Adapter) ---
+# --- Engine Provider (HTTP adapter) ---
 engine.provider.type=http                        # http | scripted
-engine.provider.scripted=true                    # true = kein echter LLM-Call (Tests/Dev)
+engine.provider.scripted=true                    # true = no real LLM call (Tests/Dev)
 engine.provider.url=${OPENAI_BASE_URL:https://api.openai.com/v1}/chat/completions
 engine.provider.api-key=${OPENAI_API_KEY:demo-key}
-engine.model.provider=openai                     # Provider-ID
-engine.model.id=${OPENAI_MODEL:gpt-4o-mini}      # Modell-ID
+engine.model.provider=openai                     # Provider ID
+engine.model.id=${OPENAI_MODEL:gpt-4o-mini}      # Model ID
 
-# --- Modell-Limits ---
-engine.model.context-limit=512000                # Context-Fenster (Tokens)
-engine.model.output-limit=128000                 # Max Output-Tokens
+# --- Model limits ---
+engine.model.context-limit=512000                # Context window (tokens)
+engine.model.output-limit=128000                 # Max output tokens
 
 # --- Workspace ---
-engine.workspace=${ENGINE_WORKSPACE:.}            # Basis-Verzeichnis
-engine.session.temp-dir=${ENGINE_SESSION_TEMP_DIR:sessions}  # für ephemeral sessions
-engine.settings.workspace-enabled=true            # Workspace-Settings erlauben
+engine.workspace=${ENGINE_WORKSPACE:.}            # Base directory
+engine.session.temp-dir=${ENGINE_SESSION_TEMP_DIR:sessions}  # for ephemeral sessions
+engine.settings.workspace-enabled=true            # Allow workspace settings
 
-# --- Provider-Retry / Resilience ---
-engine.provider.retry.max-attempts=3              # LLM-Retry-Versuche
+# --- Provider retry / resilience ---
+engine.provider.retry.max-attempts=3              # LLM retry attempts
 engine.provider.retry.delay1-seconds=10
 engine.provider.retry.delay2-seconds=30
-engine.step.timeout-seconds=30                    # pro Step
-engine.loop.detection.threshold=5                # Loop-Erkennung
-engine.preflight.enabled=true                    # Preflight-Checks (DNS/HTTP)
+engine.step.timeout-seconds=30                    # per step
+engine.loop.detection.threshold=5                # Loop detection
+engine.preflight.enabled=true                    # Preflight checks (DNS/HTTP)
 engine.preflight.ttl-seconds=60
 
-# --- Observability (Basis) ---
-quarkus.otel.enabled=false                       # OpenTelemetry aus
+# --- Observability (base) ---
+quarkus.otel.enabled=false                       # OpenTelemetry off
 quarkus.otel.service.name=qoc-engine
-quarkus.log.level=DEBUG                          # Datei-Log DEBUG
-quarkus.log.console.level=INFO                   # Konsole INFO
+quarkus.log.level=DEBUG                          # File log DEBUG
+quarkus.log.console.level=INFO                   # Console INFO
 quarkus.log.file.enabled=true
 quarkus.log.file.path=${LOG_DIR:./log}/qoc.log
 quarkus.log.file.rotation.max-file-size=2M
 quarkus.log.file.rotation.max-backup-index=10
-engine.llm-log.enabled=true                      # LLM-Trace-Datei
+engine.llm-log.enabled=true                      # LLM trace file
 engine.llm-log.path=${LOG_DIR:./log}/llm.log
-engine.llm-log.limit-bytes=2097152               # 2 MiB pro Datei
-engine.llm-log.count=20                          # 20 rotierende Dateien
+engine.llm-log.limit-bytes=2097152               # 2 MiB per file
+engine.llm-log.count=20                          # 20 rotating files
 
-# --- Workflow-Basis ---
-engine.workflow.recovery.enabled=true            # Resume unvollständiger Runs
-engine.workflow.max-steps=100                    # hartes Limit (0 = unbegrenzt+Monitoring)
+# --- Workflow base ---
+engine.workflow.recovery.enabled=true            # Resume incomplete runs
+engine.workflow.max-steps=100                    # hard limit (0 = unlimited + monitoring)
 engine.workflow.max-resume-attempts=10
 ```
 
 ---
 
-## 1. Profil: DEV (allow-all, DB)
+## 1. Profile: DEV (allow-all, DB)
 
-**Ziel:** lokale Entwicklung, schnelle Iteration, volle Persistenz,
-minimale Reibung (kein Login, alles erlaubt).
+**Goal:** local development, fast iteration, full persistence,
+minimal friction (no login, everything allowed).
 
-### 1.1 Speicher / DB
+### 1.1 Storage / DB
 
 ```properties
-# --- Storage: Postgres (oder SQLite für Single-Node) ---
+# --- Storage: Postgres (or SQLite for single-node) ---
 engine.storage=postgres                           # postgres | sqlite | file | memory
 engine.db.kind=postgresql                         # postgresql | sqlite
-engine.db.path=${ENGINE_DB_PATH:./data/qoc.db}    # nur bei sqlite
+engine.db.path=${ENGINE_DB_PATH:./data/qoc.db}    # sqlite only
 quarkus.datasource.db-kind=${engine.db.kind}
 quarkus.datasource.jdbc.driver=${ENGINE_DB_DRIVER:}
 quarkus.datasource.username=${ENGINE_DB_USER:qoc}
 quarkus.datasource.password=${ENGINE_DB_PASSWORD:qoc}
 quarkus.datasource.jdbc.url=${QUARKUS_DATASOURCE_JDBC_URL:jdbc:postgresql://localhost:5432/qoc}
-quarkus.flyway.migrate-at-start=false            # Migrationen manuell
+quarkus.flyway.migrate-at-start=false            # migrations manual
 
-# --- Workflow-Storage: folgt Engine (DB) ---
-engine.workflow.storage=auto                      # auto | file | memory | postgres | sqlite  (auto folgt engine.storage)
+# --- Workflow storage: follows engine (DB) ---
+engine.workflow.storage=auto                      # auto | file | memory | postgres | sqlite  (auto follows engine.storage)
 engine.workflow.storage-dir=./wf-data
 
-# --- Retention (Dev: kurz halten) ---
-engine.session.retention-days=${SESSION_RETENTION_DAYS:3}   # 3 Tage
-engine.audit.retention-days=${ENGINE_AUDIT_RETENTION_DAYS:1} # 1 Tag
-engine.revert.snapshot.enabled=true               # Revert-Snapshots AN (Dev-Debug)
+# --- Retention (Dev: keep short) ---
+engine.session.retention-days=${SESSION_RETENTION_DAYS:3}   # 3 days
+engine.audit.retention-days=${ENGINE_AUDIT_RETENTION_DAYS:1} # 1 day
+engine.revert.snapshot.enabled=true               # Revert snapshots ON (Dev debug)
 ```
 
-### 1.2 Auth (kein Login)
+### 1.2 Auth (no login)
 
 ```properties
 # --- Auth: none (loopback) ---
-engine.auth.password=${OPENCODE_SERVER_PASSWORD:}  # leer = kein Basic-Auth
-# ENGINE_SECURITY_MODE nicht gesetzt → NONE
-# OIDC aus (Default)
+engine.auth.password=${OPENCODE_SERVER_PASSWORD:}  # empty = no Basic Auth
+# ENGINE_SECURITY_MODE not set → NONE
+# OIDC off (default)
 quarkus.oidc.enabled=false
 ```
 
 ### 1.3 Security / Permissions (allow-all)
 
 ```properties
-# --- Permissions: Allow-All (OpenCode-kompatibel) ---
+# --- Permissions: Allow-All (OpenCode compatible) ---
 engine.permission.default=allow-all               # least-privilege | allow-all
 engine.permission.ask-mode=allow                  # allow | deny | interactive
 
-# --- Shell-Sandbox: in Dev optional aus ---
-engine.shell.sandbox.enabled=false                # bwrap in Dev nicht nötig
+# --- Shell sandbox: optional off in Dev ---
+engine.shell.sandbox.enabled=false                # bwrap not needed in Dev
 engine.shell.sandbox.mode=workspace-write
 
-# --- Tool-Token: aus (Dev) ---
+# --- Tool token: off (Dev) ---
 engine.security.tool-token.enabled=false
 
-# --- Email: an (Dev-Tests) ---
+# --- Email: on (Dev tests) ---
 engine.email.enabled=true
 engine.email.read-enabled=true
 
-# --- Agent-Authoring / Settings: an ---
+# --- Agent authoring / settings: on ---
 engine.settings.workspace-enabled=true
-# ENGINE_AGENT_AUTHORING_ENABLED nicht gesetzt → true
+# ENGINE_AGENT_AUTHORING_ENABLED not set → true
 
-# --- A2A-Server: aus ---
+# --- A2A server: off ---
 engine.a2a.server.enabled=false
 ```
 
-### 1.4 Provider / Modell (echter LLM)
+### 1.4 Provider / Model (real LLM)
 
 ```properties
-engine.provider.scripted=false                    # echter LLM-Call
+engine.provider.scripted=false                    # real LLM call
 engine.provider.type=http
 ```
 
-### 1.5 Observability (Dev: ausführlich)
+### 1.5 Observability (Dev: verbose)
 
 ```properties
 quarkus.log.level=DEBUG
-quarkus.log.console.level=DEBUG                   # alles auf Konsole
+quarkus.log.console.level=DEBUG                   # everything to console
 quarkus.log.file.enabled=true
 engine.llm-log.enabled=true
-quarkus.otel.enabled=false                       # kein Collector nötig
+quarkus.otel.enabled=false                       # no collector needed
 ```
 
-### 1.6 Zusammenfassung Dev-Start
+### 1.6 Dev startup summary
 
 ```bash
 # .env (Dev)
@@ -164,28 +164,28 @@ ENGINE_DB_KIND=postgresql
 QUARKUS_DATASOURCE_JDBC_URL=jdbc:postgresql://localhost:5432/qoc
 SESSION_RETENTION_DAYS=3
 ENGINE_AUDIT_RETENTION_DAYS=1
-# ENGINE_SECURITY_MODE nicht gesetzt (NONE)
+# ENGINE_SECURITY_MODE not set (NONE)
 ```
 
 ---
 
-## 2. Profil: SECURE (least-privilege, In-Memory, Serverless)
+## 2. Profile: SECURE (least-privilege, In-Memory, Serverless)
 
-**Ziel:** gehärteter, flüchtiger, ressourcenarmer Betrieb (kein DB,
-kein Restart-Recovery, minimale Angriffsfläche, Shell isoliert).
+**Goal:** hardened, ephemeral, resource-light operation (no DB,
+no restart recovery, minimal attack surface, isolated shell).
 
-### 2.1 Speicher / In-Memory
+### 2.1 Storage / In-Memory
 
 ```properties
-# --- Storage: In-Memory (kein DB, kein Netzwerk) ---
-# Minimal-Modus: nur Session/Conversation/Journal/Claim/Workspace/ToolOutput
-# werden gehalten; Snapshots, Approvals, Instructions, Credentials und
-# Tool-Result-Cache sind No-Ops.
+# --- Storage: In-Memory (no DB, no network) ---
+# Minimal mode: only Session/Conversation/Journal/Claim/Workspace/ToolOutput
+# are retained; Snapshots, Approvals, Instructions, Credentials and
+# Tool-Result-Cache are No-Ops.
 engine.storage=memory                            # memory | postgres | sqlite | auto
-# engine.db.kind wird ignoriert
-engine.recovery.enabled=false                    # kein Crash-Recovery
+# engine.db.kind is ignored
+engine.recovery.enabled=false                    # no crash recovery
 
-# --- Memory-Budgets (300 MiB gesamt) ---
+# --- Memory budgets (300 MiB total) ---
 engine.memory.max-bytes=314572800                # 300 MiB
 engine.memory.max-sessions=1000
 engine.memory.max-tool-output-bytes=8388608      # 8 MiB
@@ -194,19 +194,19 @@ engine.memory.max-messages-per-session=10000
 engine.memory.journal-ring-events=50000
 engine.memory.evict-finished=true
 
-# --- Workflow-Storage: Memory (flüchtig) ---
+# --- Workflow storage: Memory (ephemeral) ---
 engine.workflow.storage=memory
-engine.workflow.recovery.enabled=false            # kein Resume
-engine.workflow.max-steps=50                     # niedrigeres Limit (oder 0 + Monitoring)
+engine.workflow.recovery.enabled=false            # no resume
+engine.workflow.max-steps=50                     # lower limit (or 0 + monitoring)
 engine.workflow.max-resume-attempts=3
 
-# --- Retention (Secure: kurz) ---
-engine.session.retention-days=${SESSION_RETENTION_DAYS:1}   # 1 Tag
-engine.audit.retention-days=${ENGINE_AUDIT_RETENTION_DAYS:1} # 1 Tag
-engine.revert.snapshot.enabled=false              # kein Snapshot-Capture (Performance + Datenmenge)
+# --- Retention (Secure: short) ---
+engine.session.retention-days=${SESSION_RETENTION_DAYS:1}   # 1 day
+engine.audit.retention-days=${ENGINE_AUDIT_RETENTION_DAYS:1} # 1 day
+engine.revert.snapshot.enabled=false              # no snapshot capture (performance + data volume)
 ```
 
-### 2.2 Auth (OIDC oder Basic)
+### 2.2 Auth (OIDC or Basic)
 
 ```properties
 # --- Option A: OIDC (Auth0/Keycloak) ---
@@ -216,10 +216,10 @@ quarkus.oidc.client-id=${QOC_OIDC_CLIENT_ID:}
 quarkus.oidc.credentials.secret=${QOC_OIDC_CLIENT_SECRET:}
 quarkus.oidc.token.issuer=${QUARKUS_OIDC_TOKEN_ISSUER:${QOC_OIDC_ISSUER:}}
 quarkus.oidc.token.audience=${QUARKUS_OIDC_TOKEN_AUDIENCE:qoc-engine}
-ENGINE_SECURITY_MODE=oidc                        # oder: settings.json → security.mode=oidc
+ENGINE_SECURITY_MODE=oidc                        # or: settings.json → security.mode=oidc
 
 # --- Option B: Basic Auth (Fallback) ---
-# OPENCODE_SERVER_PASSWORD=<starkes-passwort>     # hebt NONE automatisch auf BASIC
+# OPENCODE_SERVER_PASSWORD=<strong-password>     # lifts NONE to BASIC automatically
 # ENGINE_SECURITY_MODE=basic
 ```
 
@@ -230,42 +230,42 @@ ENGINE_SECURITY_MODE=oidc                        # oder: settings.json → secur
 engine.permission.default=least-privilege         # deny-by-default
 engine.permission.ask-mode=deny                  # Headless: deny
 
-# --- Shell-Sandbox: AN, workspace-write ---
-engine.shell.sandbox.enabled=true                # bwrap (Native Host) oder Mounts (Docker)
+# --- Shell sandbox: ON, workspace-write ---
+engine.shell.sandbox.enabled=true                # bwrap (Native Host) or Mounts (Docker)
 engine.shell.sandbox.mode=workspace-write
 engine.shell.sandbox.env-allowlist=PATH,HOME,LANG,LC_ALL,LC_CTYPE,TMPDIR,TERM
-engine.shell.sandbox.extraWritable=               # leer = nur Workspace
+engine.shell.sandbox.extraWritable=               # empty = workspace only
 engine.shell.sandbox.uid=-1                      # auto
 engine.shell.sandbox.gid=-1
 
-# --- Tool-Token: AN (kurzlebig) ---
+# --- Tool token: ON (short-lived) ---
 engine.security.tool-token.enabled=true
-engine.security.tool-token.signing-key=${ENGINE_TOOL_TOKEN_SIGNING_KEY}  # Pflicht
+engine.security.tool-token.signing-key=${ENGINE_TOOL_TOKEN_SIGNING_KEY}  # Mandatory
 engine.security.tool-token.ttl-seconds=60
 
-# --- Email: AUS ---
+# --- Email: OFF ---
 engine.email.enabled=false
 engine.email.read-enabled=false
 engine.email.attachments-enabled=false
 
-# --- Agent-Authoring / Settings: AUS ---
+# --- Agent authoring / settings: OFF ---
 engine.settings.workspace-enabled=false
 
-# --- Systemuser (Service-Account) ---
-ENGINE_SYSTEM_TOKEN=${ENGINE_SYSTEM_TOKEN:}        # Service-Token (leer = deaktiviert)
-ENGINE_SYSTEM_ROLES=${ENGINE_SYSTEM_ROLES:system}  # Rollen (kommasepariert)
+# --- System user (service account) ---
+ENGINE_SYSTEM_TOKEN=${ENGINE_SYSTEM_TOKEN:}        # Service token (empty = disabled)
+ENGINE_SYSTEM_ROLES=${ENGINE_SYSTEM_ROLES:system}  # Roles (comma-separated)
 ENGINE_SYSTEM_OWNERSHIP=${ENGINE_SYSTEM_OWNERSHIP:system}  # system | caller
 # ENGINE_AGENT_AUTHORING_ENABLED=false
 
-# --- A2A-Server: AUS (Default) ---
+# --- A2A server: OFF (default) ---
 engine.a2a.server.enabled=false
 
-# --- Egress Guard (A2A) ---
+# --- Egress guard (A2A) ---
 # engine.a2a.egress.allowedHosts=example.com,api.example.com
 # engine.a2a.egress.allowedIps=10.0.0.0/8
 # engine.a2a.egress.tlsRequired=true
 
-# --- Trusted Proxies (settings.json) ---
+# --- Trusted proxies (settings.json) ---
 # security.trustedProxies = ["10.0.0.0/8"]       # in settings.json
 ```
 
@@ -274,28 +274,28 @@ engine.a2a.server.enabled=false
 ```properties
 # --- Serverless / Ephemeral ---
 engine.workspace=${ENGINE_WORKSPACE:/data/workspace}
-# mode=ephemeral → session-spezifischer Workspace unter sessions/<session-id>
-# In Non-Serverless-Mode fällt ephemeral auf normalen Workspace zurück
+# mode=ephemeral → session-specific workspace under sessions/<session-id>
+# In non-serverless mode, ephemeral falls back to the normal workspace
 
-# --- User-Isolation ---
-# Non-anonymous Users → user-ws/<user> (Path-Traversal-guarded)
+# --- User isolation ---
+# Non-anonymous users → user-ws/<user> (path-traversal-guarded)
 ```
 
-### 2.5 Observability (Secure: reduziert)
+### 2.5 Observability (Secure: reduced)
 
 ```properties
-quarkus.log.level=INFO                           # weniger Logs
+quarkus.log.level=INFO                           # fewer logs
 quarkus.log.console.level=INFO
 quarkus.log.file.enabled=true
-quarkus.log.file.level=INFO                      # kein DEBUG in Prod
-engine.llm-log.enabled=false                      # kein LLM-Trace (Secrets)
-quarkus.otel.enabled=false                       # oder true mit Collector
-engine.llm-trace.first-request-max=800           # reduziert
+quarkus.log.file.level=INFO                      # no DEBUG in prod
+engine.llm-log.enabled=false                      # no LLM trace (secrets)
+quarkus.otel.enabled=false                       # or true with collector
+engine.llm-trace.first-request-max=800           # reduced
 engine.llm-trace.subsequent-request-max=400
 engine.llm-trace.response-max=400
 ```
 
-### 2.6 Container-Hardening (Docker)
+### 2.6 Container Hardening (Docker)
 
 ```yaml
 # docker-compose (qoc-secure / qoc-secure-shell)
@@ -306,15 +306,15 @@ pids_limit: 256
 user: "1000:1000"
 tmpfs: ["/data", "/tmp"]
 # Seccomp: deploy/seccomp-qoc-shell.json (ptrace, mount, unshare, bpf, ...)
-# Mounts: nur /data/workspace + /data/home (targeted)
+# Mounts: only /data/workspace + /data/home (targeted)
 ```
 
-### 2.7 Zusammenfassung Secure-Start
+### 2.7 Secure startup summary
 
 ```bash
 # .env (Secure)
 OPENAI_API_KEY=sk-...
-ENGINE_SECURITY_MODE=oidc                        # oder basic
+ENGINE_SECURITY_MODE=oidc                        # or basic
 QOC_OIDC_ISSUER=https://your-tenant.auth0.com/
 QOC_OIDC_CLIENT_ID=...
 QOC_OIDC_CLIENT_SECRET=...
@@ -334,63 +334,63 @@ ENGINE_WORKFLOW_STORAGE=memory
 ENGINE_WORKFLOW_RECOVERY_ENABLED=false
 SESSION_RETENTION_DAYS=1
 ENGINE_AUDIT_RETENTION_DAYS=1
-# OPENCODE_SERVER_PASSWORD nur bei basic-Modus
+# OPENCODE_SERVER_PASSWORD only in basic mode
 ```
 
 ---
 
-## 3. Schnellreferenz: Welche Zeile wofür
+## 3. Quick Reference: Which line for what
 
-| Ziel | Key | Dev | Secure |
+| Goal | Key | Dev | Secure |
 |---|---|---|---|
-| Storage-Backend | `engine.storage` | `postgres` | `memory` |
-| DB-Kind | `engine.db.kind` | `postgresql` | (ignoriert) |
+| Storage backend | `engine.storage` | `postgres` | `memory` |
+| DB kind | `engine.db.kind` | `postgresql` | (ignored) |
 | Recovery | `engine.recovery.enabled` | `true` | `false` |
-| Memory-Budget | `engine.memory.max-bytes` | (n/a) | `314572800` |
-| Permission-Default | `engine.permission.default` | `allow-all` | `least-privilege` |
-| Ask-Mode | `engine.permission.ask-mode` | `allow` | `deny` |
-| Shell-Sandbox | `engine.shell.sandbox.enabled` | `false` | `true` |
-| Tool-Token | `engine.security.tool-token.enabled` | `false` | `true` |
-| Agent-Authoring | `ENGINE_AGENT_AUTHORING_ENABLED` | (true) | `false` |
-| Settings-Workspace | `engine.settings.workspace-enabled` | `true` | `false` |
-| Revert-Snapshot | `engine.revert.snapshot.enabled` | `true` | `false` |
-| Workflow-Storage | `engine.workflow.storage` | `auto` | `memory` |
-| Workflow-Recovery | `engine.workflow.recovery.enabled` | `true` | `false` |
-| Max-Steps | `engine.workflow.max-steps` | `100` | `50` |
-| Session-Retention | `engine.session.retention-days` | `3` | `1` |
-| Audit-Retention | `engine.audit.retention-days` | `1` | `1` |
-| LLM-Log | `engine.llm-log.enabled` | `true` | `false` |
-| Log-Level | `quarkus.log.level` | `DEBUG` | `INFO` |
+| Memory budget | `engine.memory.max-bytes` | (n/a) | `314572800` |
+| Permission default | `engine.permission.default` | `allow-all` | `least-privilege` |
+| Ask mode | `engine.permission.ask-mode` | `allow` | `deny` |
+| Shell sandbox | `engine.shell.sandbox.enabled` | `false` | `true` |
+| Tool token | `engine.security.tool-token.enabled` | `false` | `true` |
+| Agent authoring | `ENGINE_AGENT_AUTHORING_ENABLED` | (true) | `false` |
+| Settings workspace | `engine.settings.workspace-enabled` | `true` | `false` |
+| Revert snapshot | `engine.revert.snapshot.enabled` | `true` | `false` |
+| Workflow storage | `engine.workflow.storage` | `auto` | `memory` |
+| Workflow recovery | `engine.workflow.recovery.enabled` | `true` | `false` |
+| Max steps | `engine.workflow.max-steps` | `100` | `50` |
+| Session retention | `engine.session.retention-days` | `3` | `1` |
+| Audit retention | `engine.audit.retention-days` | `1` | `1` |
+| LLM log | `engine.llm-log.enabled` | `true` | `false` |
+| Log level | `quarkus.log.level` | `DEBUG` | `INFO` |
 | Auth | `ENGINE_SECURITY_MODE` | (unset/NONE) | `oidc`/`basic` |
 | OIDC | `quarkus.oidc.enabled` | `false` | `true` |
-| A2A-Server | `engine.a2a.server.enabled` | `false` | `false` |
+| A2A server | `engine.a2a.server.enabled` | `false` | `false` |
 | Email | `engine.email.enabled` | `true` | `false` |
 
 ---
 
-## 4. Hinweise
+## 4. Notes
 
-1. **DB-Kind ist build-time** (Quarkus): Image-Build muss zum gewählten Backend passen
-   (`build-image.sh` für Postgres, `build-image-sqlite.sh` für SQLite).
-2. **Memory-Modus deaktiviert Recovery** – kein Crash-Recovery, kein Restart.
-   Nur für embedded/single-process geeignet.
-3. **`engine.storage=memory` ignoriert `engine.db.kind`**.
-4. **Workflow-Storage `auto` folgt Engine-Storage** – bei Memory-Backend
-   sind Workflows flüchtig.
-5. **Secrets** nie im Image; über `.env` (mode 0600) oder Secrets Manager.
-6. **Engine lauscht nur auf 127.0.0.1** – öffentlicher Zugang nur über nginx/TLS.
-7. **Native Image**: workflow-runner ist Library (kein Uber-JAR).
-8. **Ephemeral Mode** (`mode=ephemeral`): session-spezifischer Workspace unter
-   `sessions/<session-id>`; fällt in Non-Serverless-Mode auf normalen Workspace zurück.
-9. **User-Isolation**: Non-anonymous Users bekommen `user-ws/<user>` unterhalb
-   der Base (Path-Traversal-guarded).
-10. **Compaction** (`engine.compaction.*`) auto-kompaktiert lange Histories.
-11. **Temp-Dir / Plan-Files**: `HOME` muss gesetzt sein (Container ohne
-    `/etc/passwd` → Java fällt auf `/` zurück → Plan-Writes schlagen fehl).
-12. **Flyway**: `quarkus.flyway.migrate-at-start=false` – Migrationen manuell
-    oder über Dev-Services.
-13. **Dev-Services** für Postgres nur in `%dev`/`%test`; prod deaktiviert.
-14. **Max-Steps als Safety Net**: `0` = unbegrenzt, aber Loop-Detection
-    (`engine.loop.detection.threshold`) + Token/Cost-Budget + Observability
-    sollten als Überwachung dienen. Temporal (im workflow-runner geplant)
-    liefert Heartbeats/Timeouts.
+1. **DB kind is build-time** (Quarkus): the image build must match the chosen backend
+   (`build-image.sh` for Postgres, `build-image-sqlite.sh` for SQLite).
+2. **Memory mode disables recovery** – no crash recovery, no restart.
+   Suitable only for embedded/single-process.
+3. **`engine.storage=memory` ignores `engine.db.kind`**.
+4. **Workflow storage `auto` follows engine storage** – with a memory backend,
+   workflows are ephemeral.
+5. **Secrets** never in the image; via `.env` (mode 0600) or secrets manager.
+6. **Engine listens only on 127.0.0.1** – public access only via nginx/TLS.
+7. **Native Image**: workflow-runner is a library (no uber-JAR).
+8. **Ephemeral mode** (`mode=ephemeral`): session-specific workspace under
+   `sessions/<session-id>`; falls back to the normal workspace in non-serverless mode.
+9. **User isolation**: non-anonymous users get `user-ws/<user>` beneath
+   the base (path-traversal-guarded).
+10. **Compaction** (`engine.compaction.*`) auto-compacts long histories.
+11. **Temp dir / plan files**: `HOME` must be set (container without
+    `/etc/passwd` → Java falls back to `/` → plan writes fail).
+12. **Flyway**: `quarkus.flyway.migrate-at-start=false` – migrations manual
+    or via Dev Services.
+13. **Dev Services** for Postgres only in `%dev`/`%test`; disabled in prod.
+14. **Max steps as safety net**: `0` = unlimited, but loop detection
+    (`engine.loop.detection.threshold`) + token/cost budget + observability
+    should serve as monitoring. Temporal (planned in workflow-runner)
+    provides heartbeats/timeouts.

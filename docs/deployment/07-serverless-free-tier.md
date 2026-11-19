@@ -1,44 +1,44 @@
-# Serverless Free Tier – Vergleich und Konfiguration
+# Serverless Free Tier – Comparison and Configuration
 
-> **Status:** spec-only (Skripte vorhanden, Implementierung ausstehend)
-> **Quelle:** `deploy/aws-lambda-serverless/deploy.sh`, `deploy/gcp-cloudrun-serverless/deploy.sh`
+> **Status:** spec-only (scripts present, implementation pending)
+> **Source:** `deploy/aws-lambda-serverless/deploy.sh`, `deploy/gcp-cloudrun-serverless/deploy.sh`
 
-## 1. Free-Tier-Übersicht
+## 1. Free-Tier Overview
 
-| Eigenschaft | AWS Lambda | GCP Cloud Run |
+| Property | AWS Lambda | GCP Cloud Run |
 |---|---|---|
-| Requests/Monat | 1.000.000 | 2.000.000 |
-| Compute/Monat | 400.000 GB-Sekunden | 360.000 vCPU-Sekunden + 180.000 GiB-Sekunden |
-| Dauer | Immer kostenlos (seit 12/2023) | Immer kostenlos |
-| Timeout | 15 Min. (900 s) | 60 Min. (3600 s) |
-| Max. RAM | 10.240 MB | 32.768 MiB |
-| Max. Ephemeral Storage | 10.240 MB | N/A (Volume Mounts) |
-| Scale-to-Zero | Ja | Ja |
+| Requests/month | 1,000,000 | 2,000,000 |
+| Compute/month | 400,000 GB-seconds | 360,000 vCPU-seconds + 180,000 GiB-seconds |
+| Duration | Always free (since 12/2023) | Always free |
+| Timeout | 15 min (900 s) | 60 min (3600 s) |
+| Max. RAM | 10,240 MB | 32,768 MiB |
+| Max. Ephemeral Storage | 10,240 MB | N/A (Volume Mounts) |
+| Scale-to-Zero | Yes | Yes |
 | Cold Start (Native) | ~1-3 s | ~1-3 s |
 
-## 2. Auswirkung der RAM-Konfiguration
+## 2. Impact of RAM Configuration
 
-### AWS Lambda (400.000 GB-Sekunden/Monat)
+### AWS Lambda (400,000 GB-seconds/month)
 
-| RAM | Sekunden/Monat | Stunden/Monat | Empfohlen für |
+| RAM | Seconds/month | Hours/month | Recommended for |
 |---|---|---|---|
-| 128 MB | ~3.125.000 | ~868 | Minimal (nur Text-Prompts) |
-| 256 MB | ~1.562.500 | ~434 | Leicht (kleine Agenten) |
-| 512 MB | ~781.250 | ~217 | **Standard** (empfohlen) |
-| 1.024 MB | ~390.625 | ~108 | Mittel (größere Workspaces) |
-| 2.048 MB | ~195.312 | ~54 | Schwer (viele Tools) |
+| 128 MB | ~3,125,000 | ~868 | Minimal (text prompts only) |
+| 256 MB | ~1,562,500 | ~434 | Light (small agents) |
+| 512 MB | ~781,250 | ~217 | **Standard** (recommended) |
+| 1,024 MB | ~390,625 | ~108 | Medium (larger workspaces) |
+| 2,048 MB | ~195,312 | ~54 | Heavy (many tools) |
 
-### GCP Cloud Run (180.000 GiB-Sekunden/Monat, memory-bound)
+### GCP Cloud Run (180,000 GiB-seconds/month, memory-bound)
 
-| Memory | Sekunden/Monat | Stunden/Monat | Empfohlen für |
+| Memory | Seconds/month | Hours/month | Recommended for |
 |---|---|---|---|
-| 128 Mi | ~1.440.000 | ~400 | Minimal |
-| 256 Mi | ~720.000 | ~200 | Leicht |
-| 512 Mi | ~360.000 | ~100 | **Standard** (empfohlen) |
-| 1.024 Gi | ~180.000 | ~50 | Mittel |
-| 2.048 Gi | ~90.000 | ~25 | Schwer |
+| 128 Mi | ~1,440,000 | ~400 | Minimal |
+| 256 Mi | ~720,000 | ~200 | Light |
+| 512 Mi | ~360,000 | ~100 | **Standard** (recommended) |
+| 1,024 Gi | ~180,000 | ~50 | Medium |
+| 2,048 Gi | ~90,000 | ~25 | Heavy |
 
-## 3. Empfohlene Konfigurationen
+## 3. Recommended Configurations
 
 ### Minimal (Free Tier optimal)
 
@@ -50,7 +50,7 @@ MEMORY_MB=256 EPHEMERAL_STORAGE_MB=512 ./deploy.sh
 MEMORY=256Mi CPU=1 MIN_INSTANCES=0 MAX_INSTANCES=1 ./deploy.sh
 ```
 
-### Standard (empfohlen)
+### Standard (recommended)
 
 ```bash
 # AWS
@@ -60,7 +60,7 @@ MEMORY_MB=512 EPHEMERAL_STORAGE_MB=1024 ./deploy.sh
 MEMORY=512Mi CPU=1 MIN_INSTANCES=0 MAX_INSTANCES=2 ./deploy.sh
 ```
 
-### Produktiv (mehr Ressourcen)
+### Production (more resources)
 
 ```bash
 # AWS
@@ -70,51 +70,51 @@ MEMORY_MB=1024 EPHEMERAL_STORAGE_MB=2048 TIMEOUT_SEC=900 ./deploy.sh
 MEMORY=1Gi CPU=2 MIN_INSTANCES=1 MAX_INSTANCES=4 ./deploy.sh
 ```
 
-## 4. Persistenz
+## 4. Persistence
 
-| Speicher | AWS Lambda | GCP Cloud Run |
+| Storage | AWS Lambda | GCP Cloud Run |
 |---|---|---|
-| Ephemeral (/tmp) | 512 MB–10 GB (konfigurierbar) | N/A (container-internal) |
-| Persistent | EFS (Mount, ~$0.30/GB/Monat) | Cloud Storage FUSE oder Volume Mounts |
-| Agent-Cache | Geht bei Cold Start verloren (ohne EFS) | Geht bei Scale-to-Zero verloren (ohne Volume) |
+| Ephemeral (/tmp) | 512 MB–10 GB (configurable) | N/A (container-internal) |
+| Persistent | EFS (mount, ~$0.30/GB/month) | Cloud Storage FUSE or Volume Mounts |
+| Agent cache | Lost on cold start (without EFS) | Lost on scale-to-zero (without volume) |
 
-**Empfehlung:** Agent-Sync-Intervall niedrig halten (z. B. 60 s), damit bei
-Cold Start schnell neu synchronisiert wird. EFS/Volume nur wenn Agent-Cache
-über Cold Starts hinweg persistieren soll.
+**Recommendation:** Keep the agent sync interval low (e.g. 60 s), so it
+resynchronizes quickly on a cold start. Use EFS/volume only if the agent
+cache should persist across cold starts.
 
-## 5. Cold-Start-Verhalten
+## 5. Cold-Start Behavior
 
-- **Native Binary:** ~1-3 s Cold Start (Quarkus Native)
-- **JVM:** ~5-15 s Cold Start
-- **Agent-Sync bei Cold Start:** +1-3 s (je nach Anzahl der Agenten)
-- **Empfehlung:** Native Image verwenden; `MIN_INSTANCES=1` bei GCP für
-  latenzkritische Workloads (kostet dann aber Free-Tier-Budget)
+- **Native Binary:** ~1-3 s cold start (Quarkus Native)
+- **JVM:** ~5-15 s cold start
+- **Agent sync on cold start:** +1-3 s (depending on the number of agents)
+- **Recommendation:** Use the native image; `MIN_INSTANCES=1` on GCP for
+  latency-critical workloads (but this consumes Free-Tier budget)
 
-## 6. Kosten außerhalb des Free Tiers
+## 6. Costs Outside the Free Tier
 
-| Komponente | AWS | GCP |
+| Component | AWS | GCP |
 |---|---|---|
-| EFS / Volume | ~$0.30/GB/Monat | ~$0.026/GB/Monat (Cloud Storage) |
-| Datenübertragung | ~$0.09/GB (ausgehend) | ~$0.12/GB (ausgehend) |
-| Secrets Manager | ~$0.40/Secret/Monat | Secret Manager: ~$0.06/10k Zugriffe |
-| Container Registry | ECR: ~$0.10/GB/Monat | Artifact Registry: ~$0.10/GB/Monat |
+| EFS / Volume | ~$0.30/GB/month | ~$0.026/GB/month (Cloud Storage) |
+| Data transfer | ~$0.09/GB (egress) | ~$0.12/GB (egress) |
+| Secrets Manager | ~$0.40/secret/month | Secret Manager: ~$0.06/10k accesses |
+| Container Registry | ECR: ~$0.10/GB/month | Artifact Registry: ~$0.10/GB/month |
 
-## 7. Einschränkungen (beide Plattformen)
+## 7. Limitations (both platforms)
 
-- Max. 15 Min. (Lambda) / 60 Min. (Cloud Run) pro Invocation
-- Keine dauerhaften Hintergrundprozesse (kein SSE-Streaming)
-- Concurrency = 1 empfohlen (Sessions/Event-Feed prozesslokal)
-- Kein bwrap (keine User Namespaces)
-- Shell-Sandbox deaktiviert (`ENGINE_SHELL_SANDBOX_ENABLED=false`)
-- Agent-Cache flüchtig (ohne EFS/Volume)
+- Max. 15 min (Lambda) / 60 min (Cloud Run) per invocation
+- No persistent background processes (no SSE streaming)
+- Concurrency = 1 recommended (sessions/event feed are process-local)
+- No bwrap (no user namespaces)
+- Shell sandbox disabled (`ENGINE_SHELL_SANDBOX_ENABLED=false`)
+- Agent cache is volatile (without EFS/volume)
 
-## 8. MCP-Nutzung
+## 8. MCP Usage
 
-Beide Varianten exponieren den MCP-Server unter:
+Both variants expose the MCP server under:
 
 ```
 https://<function-url>/mcp
 ```
 
-Tool: `qoc_run_agent` (Standard-Modus). `qoc_run_agent_with_config` ist
-spec-only (geplant) und erfordert die Implementierung des Serverless-Modus.
+Tool: `qoc_run_agent` (standard mode). `qoc_run_agent_with_config` is
+spec-only (planned) and requires the implementation of the serverless mode.

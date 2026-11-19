@@ -1,60 +1,60 @@
-# Future Work – Geplante und nicht implementierte Teile
+# Future Work – Planned and Not-Yet-Implemented Parts
 
 > **Status:** 2026-11-04
-> **Zweck:** Zentrale Übersicht aller geplanten, spec-only oder partial
-> Teile. `STATUS.md` bleibt die operative Statusquelle (was ist implementiert);
-> diese Datei ist die planerische (was ist geplant).
+> **Purpose:** Central overview of all planned, spec-only, or partial parts.
+> `STATUS.md` remains the operational status source (what is implemented);
+> this file is the planning one (what is planned).
 
-## Spec-only (noch nicht implementiert)
+## Spec-only (not yet implemented)
 
-| Bereich | Dokument | Beschreibung |
+| Area | Document | Description |
 |---|---|---|
 | Remote Shell | `spec/tools/08-remote-shell.md` | SSH exec/read/write/list/stat + download/upload |
-| AWS Lambda Serverless | `deployment/05-aws-lambda-serverless.md` | Serverless Mode mit Agent-Sync |
-| Server/Serverless-Modi | `guides/deployment-modes.md` | Zwei Modi + MCP-Tool `qoc_run_agent_with_config` |
-| OIDC/Auth0 | `spec/betrieb/04-oidc-auth0.md` | Auth0 als OIDC-Provider |
-| Quality (ArchUnit/JaCoCo) | `spec/qualitaet/` | Gates noch zu verifizieren |
+| AWS Lambda Serverless | `deployment/05-aws-lambda-serverless.md` | Serverless mode with agent sync |
+| Server/Serverless modes | `guides/deployment-modes.md` | Two modes + MCP tool `qoc_run_agent_with_config` |
+| OIDC/Auth0 | `spec/betrieb/04-oidc-auth0.md` | Auth0 as OIDC provider |
+| Quality (ArchUnit/JaCoCo) | `spec/qualitaet/` | Gates still to be verified |
 
-## Partial (teilweise implementiert)
+## Partial (partially implemented)
 
-| Bereich | Dokument | Beschreibung |
+| Area | Document | Description |
 |---|---|---|
-| Quality | `spec/qualitaet/README.md` | ArchUnit/JaCoCo Gates |
-| Async Approvals | `plans/async-approval.md` | Phase 1+2+3 umgesetzt; suspend/resume live |
-| Webhook Guardrail | `webhook.md` | Spezifikation + Service |
-| GCP Auth0 | `deployment/03-gcp-auth0.md` | Auth0 auf GCP (teilweise) |
-| A2A Server | `guides/a2a.md` | Opt-in Server |
+| Quality | `spec/qualitaet/README.md` | ArchUnit/JaCoCo gates |
+| Async Approvals | `plans/async-approval.md` | Phases 1+2+3 implemented; suspend/resume live |
+| Webhook Guardrail | `webhook.md` | Specification + service |
+| GCP Auth0 | `deployment/03-gcp-auth0.md` | Auth0 on GCP (partial) |
+| A2A Server | `guides/a2a.md` | Opt-in server |
 
-## Geplante Meilensteine (M15+)
+## Planned Milestones (M15+)
 
 | # | Deliverable |
 |---|---|
-| M15 | Agent-spezifische Config (Tools, Permissions, MCP, Model, maxSteps) |
-| M16 | Agent-scoped Tool Snapshot und Permission Rules |
-| M17 | MCP Server Subsets pro Agent |
-| M18 | Multi-Agent Workflow Handoff |
+| M15 | Agent-specific config (Tools, Permissions, MCP, Model, maxSteps) |
+| M16 | Agent-scoped tool snapshot and permission rules |
+| M17 | MCP server subsets per agent |
+| M18 | Multi-agent workflow handoff |
 
-## Offene L-Items
+## Open L-Items
 
-| ID | Beschreibung | Status |
+| ID | Description | Status |
 |---|---|---|
-| L-1 | Markdown Agent Files (`agent/<id>.md`) | entschieden, nicht implementiert |
-| L-6 | Command Macros (`command/<id>.md` mit `$ARGUMENTS`) | entschieden, nicht implementiert |
-| L-7 | Model Catalog Snapshot und Refresh | entschieden, nicht implementiert |
-| Persistent PTY | Über Aufrufe hinweg | offen |
+| L-1 | Markdown agent files (`agent/<id>.md`) | decided, not implemented |
+| L-6 | Command macros (`command/<id>.md` with `$ARGUMENTS`) | decided, not implemented |
+| L-7 | Model catalog snapshot and refresh | decided, not implemented |
+| Persistent PTY | Across calls | open |
 
-## Geplante Features (aus Guides)
+## Planned Features (from Guides)
 
-| Feature | Dokument | Beschreibung |
+| Feature | Document | Description |
 |---|---|---|
-| Server Mode (VM) | `guides/deployment-modes.md` | Agenten lokal, Admin erstellt neue |
-| Serverless Mode (Lambda) | `guides/deployment-modes.md` | Agenten vom Server laden, OIDC |
-| MCP-Tool `qoc_run_agent_with_config` | `guides/deployment-modes.md` | Stateless Subagent-Run mit Config |
-| Remote Shell | `spec/tools/08-remote-shell.md` | SSH-basierte Remote-Operationen |
+| Server Mode (VM) | `guides/deployment-modes.md` | Agents locally, admin creates new ones |
+| Serverless Mode (Lambda) | `guides/deployment-modes.md` | Agents loaded from server, OIDC |
+| MCP tool `qoc_run_agent_with_config` | `guides/deployment-modes.md` | Stateless subagent run with config |
+| Remote Shell | `spec/tools/08-remote-shell.md` | SSH-based remote operations |
 
-## Geplante Dokumentation
+## Planned Documentation
 
-| Dokument | Beschreibung |
+| Document | Description |
 |---|---|
-| `spec/betrieb/04-oidc-auth0.md` | Auth0/OIDC-Spec (spec-only) |
-| `spec/tools/10-mcp-serverless.md` | MCP-Server für Serverless (optional) |
+| `spec/betrieb/04-oidc-auth0.md` | Auth0/OIDC spec (spec-only) |
+| `spec/tools/10-mcp-serverless.md` | MCP server for serverless (optional) |

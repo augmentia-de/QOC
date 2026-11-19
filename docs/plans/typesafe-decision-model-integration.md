@@ -1,65 +1,65 @@
-# Implementierungsplan: LangChain4j TypeSafe Decision Model Integration
+# Implementation Plan: LangChain4j TypeSafe Decision Model Integration
 
 Status: Plan (2026-11-18)
-Bezug: `workflow-runner/.../runner/DefaultNodeDispatcher.java`, `workflow-runner/.../validation/GraphCompiler.java`,
-`workflow-runner/.../model/WorkflowDefinition.java`, `docs/plans/verify-on-stop-guards.md` (low_margin-Mechanismus)
+Related: `workflow-runner/.../runner/DefaultNodeDispatcher.java`, `workflow-runner/.../validation/GraphCompiler.java`,
+`workflow-runner/.../model/WorkflowDefinition.java`, `docs/plans/verify-on-stop-guards.md` (low_margin mechanism)
 
 ## 1. Problem
 
-Workflows können heute Text generieren (`agent`, `llm_eval`, `llm_summarize`) und
-deterministisch branchen (`decision`, `guard`), aber es gibt **keinen Node-Typ für
-typisierte Entscheidungen** (Klassifikation/Routing/Gating/Grading mit
-Wahrscheinlichkeiten). Routing-Entscheidungen basieren auf String-Templates oder
-LLM-Text, nicht auf kalibrierten Wahrscheinlichkeiten. Der bestehende `guard`-Node
-hat bereits einen `low_margin`-Pfad (Correction-Rounds-Limit), der auf
-Decision-Model-Margins zugeschnitten ist, aber kein Producer liefert diese Werte.
+Workflows can currently generate text (`agent`, `llm_eval`, `llm_summarize`) and
+branch deterministically (`decision`, `guard`), but there is **no node type for
+typed decisions** (classification/routing/gating/grading with probabilities).
+Routing decisions are based on string templates or LLM text, not on calibrated
+probabilities. The existing `guard` node already has a `low_margin` path
+(Correction-Rounds limit) tailored to decision-model margins, but no producer
+delivers these values.
 
-LangChain4j bietet seit 1.21 das `@Experimental`-`DecisionModel`-API und die
-`TypeSafeDecisionModel`-Implementierung (TypeSafe System One, `POST /v1/systemone`),
-die genau diese typisierten Antworten (YesNo/Choice/Scale mit Probabilities) liefert.
+LangChain4j has offered the `@Experimental` `DecisionModel` API since 1.21 and
+the `TypeSafeDecisionModel` implementation (TypeSafe System One, `POST /v1/systemone`),
+which delivers exactly these typed responses (YesNo/Choice/Scale with probabilities).
 
-## 2. Zielbild
+## 2. Target Design
 
-Ein neuer Workflow-Node-Typ **`classify`**, der:
+A new workflow node type **`classify`** that:
 
-1. Einen Input (Template-resolved) gegen ein Decision Model evaluiert.
-2. Typisierte Fragen (yesno/choice/scale) in **einem** Call beantwortet.
-3. Ergebnisse (gewählte Werte, Probabilities, Margins) in den Workflow-State
-   schreibt (`ctx.setState`, `ctx.setNodeOutput`).
-4. Bei niedriger Margin (`margin < threshold`) `low_margin=true` setzt, damit der
-   bestehende `guard`-Mechanismus (Correction-Rounds) greift.
-5. Fail-Open oder Fail-Closed konfigurierbar ist.
+1. Evaluates an input (template-resolved) against a decision model.
+2. Answers typed questions (yesno/choice/scale) in **a single** call.
+3. Writes results (chosen values, probabilities, margins) to the workflow state
+   (`ctx.setState`, `ctx.setNodeOutput`).
+4. Sets `low_margin=true` when margin is low (`margin < threshold`), so the
+   existing `guard` mechanism (Correction-Rounds) kicks in.
+5. Is configurable to fail-open or fail-closed.
 
-Die Engine (`engine.core`) bleibt unberührt (Pure-Java-Grenze, kein Use-Case).
+The engine (`engine.core`) remains untouched (pure-Java boundary, no use case).
 
-## 3. Abhängigkeiten / Versionen
+## 3. Dependencies / Versions
 
-- `workflow-runner` nutzt **keine** Quarkus-BOM → freie Versionwahl möglich.
-- **Keine neue Maven-Dependency:** Implementierung nutzt `java.net.http.HttpClient` (JDK 21)
-  und den vorhandenen Jackson-`ObjectMapper` (`WorkflowJson`). Damit bleibt `workflow-runner`
-  frei von LangChain4j und dessen Versionsdrift. Die ursprünglich geplante
-  `langchain4j-typesafe`-Dependency wurde **nicht** aufgenommen.
-- Die Quarkus-App (`quarkus/`) pinnt `langchain4j-core 1.19.3` via BOM → **nicht** anfassen;
-  der DecisionModel-Client lebt ausschließlich im Workflow-Runner.
-- API-Key über Env `TYPESAFE_API_KEY` (Fallback: Node-Config `apiKey`).
-- Modellname default `jev-latest` nur für Dev; Produktion pinnt Version
-  (z. B. `jev-1.13.0`) via Node-Config oder Env `TYPESAFE_MODEL_NAME`.
-- Protokoll: `POST <baseUrl>/v1/systemone` (Default `https://api.typesafe.ai`),
-  Header `Authorization: Bearer <apiKey>`, Body `{model, state, questions}` →
-  `{model, answers, usage}`. Entspricht 1:1 dem, was LangChain4j's `TypeSafeMapper`
-  serialisiert.
+- `workflow-runner` uses **no** Quarkus BOM → free version choice possible.
+- **No new Maven dependency:** the implementation uses `java.net.http.HttpClient` (JDK 21)
+  and the existing Jackson `ObjectMapper` (`WorkflowJson`). This keeps `workflow-runner`
+  free of LangChain4j and its version drift. The originally planned
+  `langchain4j-typesafe` dependency was **not** added.
+- The Quarkus app (`quarkus/`) pins `langchain4j-core 1.19.3` via BOM → **do not touch**;
+  the DecisionModel client lives exclusively in the Workflow Runner.
+- API key via env `TYPESAFE_API_KEY` (fallback: Node config `apiKey`).
+- Model name defaults to `jev-latest` for dev only; production pins a version
+  (e.g. `jev-1.13.0`) via Node config or env `TYPESAFE_MODEL_NAME`.
+- Protocol: `POST <baseUrl>/v1/systemone` (default `https://api.typesafe.ai`),
+  header `Authorization: Bearer <apiKey>`, body `{model, state, questions}` →
+  `{model, answers, usage}`. Matches 1:1 what LangChain4j's `TypeSafeMapper`
+  serializes.
 
-## 4. Datenmodell
+## 4. Data Model
 
-### 4.1 Node-Typ
+### 4.1 Node Type
 
-Neuer Eintrag in `GraphCompiler.VALID_NODE_TYPES`: `"classify"`.
+New entry in `GraphCompiler.VALID_NODE_TYPES`: `"classify"`.
 
-Kein neues Feld in `NodeData` nötig: Konfiguration läuft über `mcpArgs`
-(options bag), analog `guard`/`compact`/`rest_call`. Damit bleiben Schema und
-UI-Serialisierung kompatibel.
+No new field in `NodeData` required: configuration runs through `mcpArgs`
+(options bag), analogous to `guard`/`compact`/`rest_call`. This keeps schema and
+UI serialization compatible.
 
-### 4.2 Node-Config (mcpArgs)
+### 4.2 Node Config (mcpArgs)
 
 ```json
 {
@@ -82,29 +82,29 @@ UI-Serialisierung kompatibel.
 }
 ```
 
-Felder:
-- `modelName` (String, optional): Decision-Model-Name. Fallback Env/`jev-latest`.
-- `baseUrl` (String, optional): für OpenRouter/self-hosted. Default TypeSafe.
-- `input` (String oder Map): Template-resolved. Wenn String → `DecisionRequest.input(String)`;
-  wenn Map → `input(Map)`.
-- `questions` (List<Map>): je `name`, `type` ∈ {yesno, choice, scale}, `text`,
-  plus `options` (Map) für choice, `levels` (List<String>) für scale,
-  `yesWhen`/`noWhen` (optional) für yesno.
-- `thresholds` (Map): `margin` (double, default 0.2) für Choice, pro-Frage
-  Schwellen (z. B. `urgent: 0.8` für YesNo).
-- `outputMapping` (Map questionName → stateKey): schreibt gewählten Wert in State.
-  Default: Frage-Name als State-Key.
-- `failMode` ∈ {open, closed}: Verhalten bei Fehler/Refusal.
-- `apiKey` (String, optional): Override für Env.
+Fields:
+- `modelName` (String, optional): Decision-Model name. Fallback Env/`jev-latest`.
+- `baseUrl` (String, optional): for OpenRouter/self-hosted. Default TypeSafe.
+- `input` (String or Map): template-resolved. If String → `DecisionRequest.input(String)`;
+  if Map → `input(Map)`.
+- `questions` (List<Map>): each with `name`, `type` ∈ {yesno, choice, scale}, `text`,
+  plus `options` (Map) for choice, `levels` (List<String>) for scale,
+  `yesWhen`/`noWhen` (optional) for yesno.
+- `thresholds` (Map): `margin` (double, default 0.2) for Choice, per-question
+  thresholds (e.g. `urgent: 0.8` for YesNo).
+- `outputMapping` (Map questionName → stateKey): writes chosen value into state.
+  Default: question name as state key.
+- `failMode` ∈ {open, closed}: behavior on error/refusal.
+- `apiKey` (String, optional): override for Env.
 
-### 4.3 Ausgabe (NodeResult)
+### 4.3 Output (NodeResult)
 
-- `text`: kompakte Zusammenfassung, z. B. `classify: team=billing (0.91), urgent=yes (0.97)`.
-- `structured`: Map mit pro Frage `{ value, probabilities, margin, probability }`.
-- State: für jede Frage den gewählten Wert unter dem gemappten Key; plus
-  `classifyResult` (vollständige Map) und `low_margin` (boolean).
+- `text`: compact summary, e.g. `classify: team=billing (0.91), urgent=yes (0.97)`.
+- `structured`: Map with per question `{ value, probabilities, margin, probability }`.
+- State: chosen value under the mapped key for each question; plus
+  `classifyResult` (full map) and `low_margin` (boolean).
 
-## 5. Implementierung
+## 5. Implementation
 
 ### 5.1 Dependency
 
@@ -119,164 +119,164 @@ Felder:
 
 ### 5.2 GraphCompiler
 
-`VALID_NODE_TYPES` um `"classify"` erweitern.
+Extend `VALID_NODE_TYPES` with `"classify"`.
 
 ### 5.3 DefaultNodeDispatcher
 
-Neuer Case `"classify"` in `dispatchImpl`, analog `llm_eval`/`rest_call`:
+New case `"classify"` in `dispatchImpl`, analogous to `llm_eval`/`rest_call`:
 
-1. `mcpArgs` lesen (null-safe).
-2. `input` Template resolven (`TemplateResolver.resolveStrict` bzw. `resolveToObject`).
-3. `TypeSafeDecisionModel` bauen (apiKey aus Config/Env, modelName, baseUrl optional,
+1. Read `mcpArgs` (null-safe).
+2. Resolve `input` template (`TemplateResolver.resolveStrict` or `resolveToObject`).
+3. Build `TypeSafeDecisionModel` (apiKey from Config/Env, modelName, baseUrl optional,
    timeout 60s, maxRetries 2).
-4. `DecisionRequest` aus Config bauen.
-5. `model.decide(request)` aufrufen (synchron).
-6. Ergebnis mappen → `NodeResult` + State.
-7. Margin-Check → `low_margin`.
-8. Fehlerbehandlung je `failMode`.
+4. Build `DecisionRequest` from Config.
+5. Call `model.decide(request)` (synchronous).
+6. Map result → `NodeResult` + State.
+7. Margin check → `low_margin`.
+8. Error handling per `failMode`.
 
-### 5.4 Client-Klasse (testbar)
+### 5.4 Client Class (testable)
 
-Neue Klasse `workflow-runner/.../runner/TypeSafeDecisionClient` (oder innerhalb
-Dispatcher als statische Helper). Kapselt:
+New class `workflow-runner/.../runner/TypeSafeDecisionClient` (or static helpers
+inside the Dispatcher). Encapsulates:
 - `buildModel(config)` → `TypeSafeDecisionModel`
 - `buildRequest(config, input)` → `DecisionRequest`
 - `execute(...)` → `DecisionResponse`
 - `mapResponse(...)` → Map
 
-Damit lässt sich der Client in Tests mit einem Fake-Model (MockDecisionModel)
-oder einem lokalen HTTP-Server testen. `TypeSafeDecisionModel` implementiert
-`DecisionModel` → für Unit-Tests kann `dev.langchain4j.model.decision.MockDecisionModel`
-genutzt werden (falls vorhanden) oder ein eigener Fake.
+This allows testing the client in tests with a fake model (MockDecisionModel)
+or a local HTTP server. `TypeSafeDecisionModel` implements `DecisionModel` →
+for unit tests `dev.langchain4j.model.decision.MockDecisionModel` can be used
+(if available) or a custom fake.
 
-### 5.5 Margin-/Threshold-Logik
+### 5.5 Margin/Threshold Logic
 
-- Für jede `ChoiceQuestion`: wenn `answer.margin() < thresholds.margin` → `low_margin=true`.
-- Für `YesNoQuestion`: wenn `probability` zwischen `(1-threshold)` und `threshold`
-  (unsicher) → optional `low_margin=true` (konfigurierbar via `thresholds.uncertainBand`).
-- State `low_margin` wird gesetzt, sodass bestehender `guard`-Node mit
-  Condition `low_margin` reagiert.
+- For each `ChoiceQuestion`: if `answer.margin() < thresholds.margin` → `low_margin=true`.
+- For `YesNoQuestion`: if `probability` is between `(1-threshold)` and `threshold`
+  (uncertain) → optionally `low_margin=true` (configurable via `thresholds.uncertainBand`).
+- State `low_margin` is set so the existing `guard` node reacts to the
+  `low_margin` condition.
 
 ### 5.6 Fail-Mode
 
-- `open` (default): bei Fehler/Refusal → NodeResult mit Fehler-Text, Workflow
-  läuft weiter (wie `rest_call` error).
-- `closed`: bei Fehler/Refusal → `IllegalStateException` (bricht Workflow ab),
-  analog Agent-Node.
+- `open` (default): on error/refusal → NodeResult with error text, workflow
+  continues (like `rest_call` error).
+- `closed`: on error/refusal → `IllegalStateException` (aborts workflow),
+  analogous to Agent node.
 
-## 6. Dateien
+## 6. Files
 
-### Neu
+### New
 - `workflow-runner/.../runner/TypeSafeDecisionClient.java`
 - `workflow-runner/src/test/.../runner/ClassifyNodeTest.java`
 
-### Geändert
+### Changed
 - `workflow-runner/pom.xml` (Dependency)
 - `workflow-runner/.../validation/GraphCompiler.java` (VALID_NODE_TYPES)
 - `workflow-runner/.../runner/DefaultNodeDispatcher.java` (case "classify")
 
-### Nicht geändert
-- `engine/` (Pure-Java-Grenze)
-- `quarkus/` (BOM/Versionen)
-- `WorkflowDefinition.java` (mcpArgs reicht)
+### Unchanged
+- `engine/` (pure-Java boundary)
+- `quarkus/` (BOM/versions)
+- `WorkflowDefinition.java` (mcpArgs suffices)
 
-## 7. Reihenfolge der Umsetzung
+## 7. Implementation Order
 
-1. **Tag 1:** Dependency + GraphCompiler-Eintrag + `TypeSafeDecisionClient`
-   (Model-Build + Request-Build + Response-Mapping) + Unit-Tests mit Fake-Model.
-2. **Tag 1-2:** Dispatcher-Case `"classify"` + State/Output-Mapping + Margin-Logik.
-3. **Tag 2:** Fail-Mode + Template-Resolution + Tests (GraphCompiler, Dispatcher).
-4. **Tag 2-3:** Doku (`docs/CONFIG.md` oder neues `docs/decision-models.md`),
-   Beispiele in `docs/Agent-Def-Example.md`-Stil.
-5. **Tag 3:** Manueller End-to-End-Test gegen TypeSafe (mit API-Key) + Tuning.
+1. **Day 1:** Dependency + GraphCompiler entry + `TypeSafeDecisionClient`
+   (model build + request build + response mapping) + unit tests with fake model.
+2. **Day 1-2:** Dispatcher case `"classify"` + state/output mapping + margin logic.
+3. **Day 2:** Fail-mode + template resolution + tests (GraphCompiler, Dispatcher).
+4. **Day 2-3:** Docs (`docs/CONFIG.md` or new `docs/decision-models.md`),
+   examples in `docs/Agent-Def-Example.md` style.
+5. **Day 3:** Manual end-to-end test against TypeSafe (with API key) + tuning.
 
-## 8. Risiken
+## 8. Risks
 
-- **Experimental API:** LangChain4j 1.22.0-beta32; API kann sich ändern.
-  Mitigation: Client-Klasse kapselt alle LangChain4j-Typen; bei Update nur Client anpassen.
-- **Versionsdrift:** workflow-runner nutzt core 1.22.0, quarkus nutzt 1.19.3.
-  Kein gemeinsamer Classpath im Build (getrennte Module) → kein Konflikt.
-  Bei späterer Quarkus-BOM-Aktualisierung Versionsangleich prüfen.
-- **Netzwerk/Timeout:** TypeSafe-Aufrufe können 15s+60s+Retries dauern.
-  Mitigation: konfigurierbarer Timeout, Fail-Mode, Workflow-Step-Timeout.
-- **Kalibrierung:** Schwellen sind modell-/versionsabhängig. Dokumentieren, dass
-  Thresholds pro Modell neu kalibriert werden müssen.
-- **Fail-Closed bei Gating:** Missbrauchsfilter sollten `failMode=closed` nutzen
-  (Doku-Hinweis).
+- **Experimental API:** LangChain4j 1.22.0-beta32; API may change.
+  Mitigation: client class encapsulates all LangChain4j types; on update only the client needs adjustment.
+- **Version drift:** workflow-runner uses core 1.22.0, quarkus uses 1.19.3.
+  No shared classpath in the build (separate modules) → no conflict.
+  On later Quarkus BOM updates, check version alignment.
+- **Network/timeout:** TypeSafe calls can take 15s+60s+retries.
+  Mitigation: configurable timeout, fail-mode, workflow step timeout.
+- **Calibration:** thresholds are model/version dependent. Document that
+  thresholds must be recalibrated per model.
+- **Fail-closed for gating:** abuse filters should use `failMode=closed`
+  (documentation hint).
 
-## 9. Offene Fragen
+## 9. Open Questions
 
-1. Soll `classify` auch in der Quarkus-UI als Node-Typ sichtbar sein
-   (ReactFlow node renderer), oder zunächst nur Backend?
-2. Soll der Decision-Model-Client in Quarkus als CDI-Bean exponiert werden
-   (für HTTP-Endpoint `/classify`), oder nur Workflow-intern?
-3. Default-Modellversion pinnen (`jev-1.13.0`) oder `jev-latest` für Dev?
-4. Skalierung: mehrere Fragen pro Call (empfohlen) vs. ein Call pro Frage
-   (teurer) – Default: alle Fragen in einem Call.
+1. Should `classify` also be visible in the Quarkus UI as a node type
+   (ReactFlow node renderer), or initially backend only?
+2. Should the decision-model client be exposed in Quarkus as a CDI bean
+   (for HTTP endpoint `/classify`), or workflow-intern only?
+3. Pin default model version (`jev-1.13.0`) or `jev-latest` for dev?
+4. Scaling: multiple questions per call (recommended) vs. one call per question
+   (more expensive) – default: all questions in one call.
 
-## 10. Akzeptanzkriterien
+## 10. Acceptance Criteria
 
-- [ ] `mvn -q test` in `workflow-runner/` grün.
-- [ ] `GraphCompiler` akzeptiert `classify`-Nodes, lehnt ungültige Config ab.
-- [ ] Unit-Test mit Fake-`DecisionModel` prüft YesNo/Choice/Scale-Mapping,
-      State-Writes, `low_margin`-Setzung, Fail-Open/Closed.
-- [ ] Manueller Run gegen TypeSafe (mit API-Key) liefert typisierte Antworten.
-- [ ] Keine Änderungen in `engine/` oder `quarkus/`.
+- [ ] `mvn -q test` in `workflow-runner/` green.
+- [ ] `GraphCompiler` accepts `classify` nodes, rejects invalid config.
+- [ ] Unit test with fake `DecisionModel` checks YesNo/Choice/Scale mapping,
+      state writes, `low_margin` setting, fail-open/closed.
+- [ ] Manual run against TypeSafe (with API key) returns typed responses.
+- [ ] No changes in `engine/` or `quarkus/`.
 
-## 11. Entscheidungen (2026-11-18)
+## 11. Decisions (2026-11-18)
 
-### 11.1 Pure HTTP statt LangChain4j
+### 11.1 Pure HTTP instead of LangChain4j
 
-Die Implementierung nutzt **pure HTTP** (`java.net.http.HttpClient`) statt
-`dev.langchain4j.model.typesafe.TypeSafeDecisionModel`. Begründung:
+The implementation uses **pure HTTP** (`java.net.http.HttpClient`) instead of
+`dev.langchain4j.model.typesafe.TypeSafeDecisionModel`. Rationale:
 
-- `workflow-runner` bleibt frei von LangChain4j und dessen Versionsdrift
-  (Quarkus-BOM pinnt `langchain4j-core 1.19.3`, TypeSafe bräuchte ≥ 1.21).
-- Keine `@Experimental`-API im Produktivpfad.
-- Das System-One-Protokoll ist klein und stabil; das JSON-Format entspricht 1:1
-  dem, was LangChain4j's `TypeSafeMapper` serialisiert (verifiziert via Bytecode).
-- Tests nutzen einen lokalen `com.sun.net.httpserver.HttpServer` (kein Mocking).
+- `workflow-runner` stays free of LangChain4j and its version drift
+  (Quarkus BOM pins `langchain4j-core 1.19.3`, TypeSafe would need ≥ 1.21).
+- No `@Experimental` API in the production path.
+- The System One protocol is small and stable; the JSON format matches 1:1
+  what LangChain4j's `TypeSafeMapper` serializes (verified via bytecode).
+- Tests use a local `com.sun.net.httpserver.HttpServer` (no mocking).
 
-LangChain4j kann später als alternativer Adapter hinter derselben
-`TypeSafeDecisionClient`-Fassade nachgezogen werden, falls gewünscht.
+LangChain4j can later be added as an alternative adapter behind the same
+`TypeSafeDecisionClient` facade if desired.
 
-### 11.2 Logik bleibt im Workflow-Runner (nicht in der Engine)
+### 11.2 Logic stays in the Workflow Runner (not in the Engine)
 
-Die DecisionModel-Logik wird **nicht** in `engine.core` verschoben. Begründung:
+The decision-model logic is **not** moved into `engine.core`. Rationale:
 
-1. **Use-Case:** `engine.core` ist die Session-Engine (Chat/Tool-Loop, Compaction,
-   Revert). `DecisionModel` ist ein Workflow-Baustein (Klassifikation/Routing vor
-   Agent-Ausführung). Engine hat keinen Consumer (Triage läuft über `ProviderAdapter`,
-   Permission ist regelbasiert).
-2. **Pure-Java-Grenze:** Ein Port ohne Consumer verletzt YAGNI und bläht `QocEngine` auf.
-3. **Konsistenz:** `workflow-runner` nutzt die Engine als Library und hat bereits
-   HTTP-Infrastruktur (`rest_call`, `java.net.http`).
+1. **Use case:** `engine.core` is the session engine (chat/tool loop, compaction,
+   revert). `DecisionModel` is a workflow building block (classification/routing
+   before agent execution). The engine has no consumer (triage runs via
+   `ProviderAdapter`, permission is rule-based).
+2. **Pure-Java boundary:** a port without a consumer violates YAGNI and bloats `QocEngine`.
+3. **Consistency:** `workflow-runner` uses the engine as a library and already has
+   HTTP infrastructure (`rest_call`, `java.net.http`).
 
-**Falls später ein Engine-Consumer entsteht** (z. B. `/classify`-Endpoint in Quarkus,
-Triage auf DecisionModel), ist das richtige Package:
+**If an engine consumer arises later** (e.g. `/classify` endpoint in Quarkus,
+triage on DecisionModel), the right package is:
 
-- Interface: `engine.core.contract.decision.DecisionModel` (analog
-  `core.contract.provider.ProviderAdapter`) **oder**
-  `engine.core.port.world.DecisionModelClient` (wenn externer Service).
+- Interface: `engine.core.contract.decision.DecisionModel` (analogous to
+  `core.contract.provider.ProviderAdapter`) **or**
+  `engine.core.port.world.DecisionModelClient` (for external service).
 - Adapter (pure Java HTTP): `engine.adapter.decision.HttpDecisionModel`
-  (bzw. `engine.runtime.provider.client`-Stil).
-- Wiring in `QocEngine` erst, wenn ein Consumer existiert (Factory-Methode,
-  nicht Fassaden-Feld).
+  (or `engine.runtime.provider.client` style).
+- Wiring in `QocEngine` only once a consumer exists (factory method,
+  not facade field).
 
-Bis dahin bleibt der Client im `workflow-runner` und kann bei Bedarf nach
-`engine.adapter.decision` verschoben werden, ohne die Node-Semantik zu ändern.
+Until then the client stays in `workflow-runner` and can be moved to
+`engine.adapter.decision` on demand without changing node semantics.
 
-### 11.3 llm_eval/llm_summarize durch Agent-Files ersetzt
+### 11.3 llm_eval/llm_summarize replaced by agent files
 
-Die spezialisierten Node-Typen `llm_eval` und `llm_summarize` wurden entfernt.
-Stattdessen existieren zwei wiederverwendbare Agent-Definitionen als Markdown-Files:
+The specialized node types `llm_eval` and `llm_summarize` were removed.
+Instead, two reusable agent definitions exist as Markdown files:
 
-- `.opencode/agents/llm-eval.md` (System-Prompt: Eval/JSON)
-- `.opencode/agents/llm-summarize.md` (System-Prompt: Summarize)
+- `.opencode/agents/llm-eval.md` (system prompt: Eval/JSON)
+- `.opencode/agents/llm-summarize.md` (system prompt: Summarize)
 
-Diese werden über `AgentMarkdownLoader` (Quarkus) geladen und stehen als
-Agent-Refs `llm-eval` / `llm-summarize` zur Verfügung. In Workflows nutzt man
-stattdessen einen `agent`-Node mit `agentRef: "llm-eval"` bzw. `"llm-summarize"`.
+These are loaded via `AgentMarkdownLoader` (Quarkus) and are available as
+agent refs `llm-eval` / `llm-summarize`. In workflows, use an `agent` node
+with `agentRef: "llm-eval"` or `"llm-summarize"` instead.
 
-Entfernt aus: `GraphCompiler.VALID_NODE_TYPES`, `DefaultNodeDispatcher` (Cases),
-`WorkflowContractValidator`, UI (`nodeRegistry`, `workflowNodes`, `EditorPage`-Palette).
+Removed from: `GraphCompiler.VALID_NODE_TYPES`, `DefaultNodeDispatcher` (cases),
+`WorkflowContractValidator`, UI (`nodeRegistry`, `workflowNodes`, `EditorPage` palette).

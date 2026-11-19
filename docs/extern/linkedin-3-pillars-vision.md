@@ -1,70 +1,70 @@
-# LinkedIn-Beitrag: 3-Säulen-Modell für effiziente KI-Workflows (Vision)
+# LinkedIn Post: 3-Pillar Model for Efficient AI Workflows (Vision)
 
-> Ablage: `docs/linkedin-3-pillars-vision.md` (außerhalb des Git-Repos)
-> Sprache: Deutsch
-> Projektname: **QOC**
-
----
-
-## Beitrag (kopierbar für LinkedIn)
-
-Warum ein riesiger Agent, der alles im Kontext behält, in der Praxis scheitert – und wie QOC das löst.
-
-Die meisten KI-Workflows scheitern an zwei Extremen:
-
-- Zu starr: reine Skripte ohne Intelligenz.
-- Zu chaotisch und teuer: ein riesiger Agent, der alles im Kontext behält, sich verrennt und das Context-Window sprengt.
-
-Die Lösung ist eine präzise Aufgabenteilung innerhalb des Workflow-Graphen über drei klar definierte Node-Typen.
-
-🔹 1. Deterministische Nodes (Die Leitplanken)
-
-Was sie tun: Führen feste Regeln, Daten-Transformationen, API-Calls (MCP), Verzweigungen oder menschliche Freigaben aus – komplett ohne LLM.
-
-Kontext-Bedarf: Minimal (nur die exakt benötigten Input-Variablen).
-
-Warum wir sie brauchen:
-- 0 € Token-Kosten und maximale Geschwindigkeit: Was ein Skript in 5 Millisekunden löst, darf kein teures Sprachmodell berechnen.
-- 100 % Verlässlichkeit: Gleicher Input garantiert gleichen Output. Sie bilden das stabile Skelett des Prozesses und garantieren Auditierbarkeit und Replaybarkeit.
-
-🔹 2. Subagent-Nodes mit begrenztem Kontext (Die Spezialisten)
-
-Was sie tun: Kapseln einen eigenständigen, adaptiven Agent-Loop (ReAct) für eine klar umrissene Teilaufgabe – z. B. „Recherchiere Quelle X" oder „Extrahiere Daten aus PDF Y".
-
-Kontext-Bedarf: Isoliert (Sandbox-Prinzip). Der Subagent sieht nur seinen spezifischen Auftrag und die dafür nötigen Rohdaten. Nach getaner Arbeit werden alle internen Tool-Calls, Fehlversuche und Zwischenschritte verworfen – nur das saubere, strukturierte Endergebnis (JSON Schema) fließt zurück in den Haupt-Workflow.
-
-Warum wir sie brauchen:
-- Verhindert Context Pollution: Wenn ein Agent 15 Tool-Calls braucht, um eine Info zu finden, müllt dieser Prozess nicht den restlichen Workflow zu.
-- Hohe Qualität und Fokus: Ein LLM, das nicht durch irrelevante Historie abgelenkt wird, halluziniert deutlich weniger und arbeitet präziser.
-
-🔹 3. Context-Agenten mit Gesamtübersicht (Die Strategen)
-
-Was sie tun: Stehen an kritischen Knotenpunkten (Planung, Synthese, Endabnahme), an denen das Big Picture benötigt wird, um Entscheidungen zu treffen oder Ergebnisse zusammenzuführen.
-
-Kontext-Bedarf: Kuratiert und verdichtet. Sie erhalten den globalen System-Prompt, die ursprüngliche Zielsetzung sowie die komprimierten Endergebnisse der vorherigen Subagenten und deterministischen Schritte.
-
-Warum wir sie brauchen:
-- Maximales Context Caching: Da der globale System-Prompt und die Basis-Dokumente stabil am Anfang stehen und der dynamische Verlauf dank der Subagenten-Isolation extrem kompakt bleibt, greift das Prefix-Caching der LLM-Provider optimal. Das senkt die Kosten für große Kontexte um bis zu 75–90 % und beschleunigt die Antwortzeit massiv.
-- Echte Intelligenz am richtigen Ort: Das Modell nutzt seine volle Kapazität für das Verknüpfen von Zusammenhängen statt für das Suchen nach Details.
+> Location: `docs/linkedin-3-pillars-vision.md` (outside the Git repo)
+> Language: English
+> Project name: **QOC**
 
 ---
 
-Der Vergleich auf einen Blick
+## Post (copy-paste for LinkedIn)
 
-| Kriterium | Deterministische Nodes | Subagent-Nodes (Spezialisten) | Context-Agenten (Strategen) |
+Why a giant agent that keeps everything in context fails in practice – and how QOC solves it.
+
+Most AI workflows fail at two extremes:
+
+- Too rigid: pure scripts without intelligence.
+- Too chaotic and expensive: a giant agent that keeps everything in context, gets stuck, and blows up the context window.
+
+The solution is a precise division of labor inside the workflow graph across three clearly defined node types.
+
+🔹 1. Deterministic Nodes (The Guardrails)
+
+What they do: Execute fixed rules, data transformations, API calls (MCP), branching, or human approvals – completely without an LLM.
+
+Context requirement: Minimal (only the exact input variables needed).
+
+Why we need them:
+- 0 € token cost and maximum speed: what a script solves in 5 milliseconds must not be computed by an expensive language model.
+- 100 % reliability: same input guarantees same output. They form the stable skeleton of the process and guarantee auditability and replayability.
+
+🔹 2. Subagent Nodes with Bounded Context (The Specialists)
+
+What they do: Encapsulate a self-contained, adaptive agent loop (ReAct) for a clearly scoped subtask – e.g. "Research source X" or "Extract data from PDF Y".
+
+Context requirement: Isolated (sandbox principle). The subagent only sees its specific assignment and the raw data needed for it. After the work is done, all internal tool calls, failed attempts, and intermediate steps are discarded – only the clean, structured end result (JSON Schema) flows back into the main workflow.
+
+Why we need them:
+- Prevents context pollution: when an agent needs 15 tool calls to find one piece of information, that process does not clutter the rest of the workflow.
+- High quality and focus: an LLM that is not distracted by irrelevant history hallucinates significantly less and works more precisely.
+
+🔹 3. Context Agents with Overall Overview (The Strategists)
+
+What they do: Stand at critical junctions (planning, synthesis, final approval) where the big picture is needed to make decisions or merge results.
+
+Context requirement: Curated and condensed. They receive the global system prompt, the original objective, and the compressed end results of the previous subagents and deterministic steps.
+
+Why we need them:
+- Maximum context caching: because the global system prompt and base documents stand stably at the beginning and the dynamic history stays extremely compact thanks to subagent isolation, the LLM providers' prefix caching works optimally. This cuts the cost of large contexts by up to 75–90 % and massively speeds up response time.
+- Real intelligence in the right place: the model uses its full capacity for connecting relationships instead of searching for details.
+
+---
+
+The Comparison at a Glance
+
+| Criterion | Deterministic Nodes | Subagent Nodes (Specialists) | Context Agents (Strategists) |
 |---|---|---|---|
-| Aufgabe | Regeln, Routing, Transformation | Isolierte Detailarbeit & Tool-Nutzung | Synthese, Bewertung, Gesamtstrategie |
-| LLM-Einsatz | Nein (0 Tokens) | Ja (fokussiert, eigene Child-Session) | Ja (übergeordneter Überblick) |
-| Kontext-Scope | Punktuelle Variablen | Enge Sandbox (wird danach bereinigt) | Kuratierter Gesamtverlauf + Basiswissen |
-| Hauptvorteil | Geschwindigkeit, Determinismus, 0 € Kosten | Keine Kontext-Verschmutzung, hohe Präzision | Optimales Context Caching, fundierte Entscheidungen |
+| Task | Rules, routing, transformation | Isolated detail work & tool usage | Synthesis, evaluation, overall strategy |
+| LLM usage | No (0 tokens) | Yes (focused, own child session) | Yes (overarching overview) |
+| Context scope | Point-in-time variables | Tight sandbox (cleaned up afterwards) | Curated overall history + base knowledge |
+| Main advantage | Speed, determinism, 0 € cost | No context pollution, high precision | Optimal context caching, well-founded decisions |
 
 ---
 
-Das Fazit für das Team
+The Conclusion for the Team
 
-„Wir lassen deterministische Nodes die Arbeit machen, die keine KI braucht. Wir lassen Subagenten in isolierten Räumen den Lärm der Tool-Ausführung abfangen. Und wir geben den Context-Agenten genau die verdichtete Übersicht, die sie brauchen, um – unterstützt durch Context Caching – schnell, günstig und treffsicher zu entscheiden."
+"We let deterministic nodes do the work that needs no AI. We let subagents absorb the noise of tool execution in isolated rooms. And we give the context agents exactly the condensed overview they need to decide quickly, cheaply, and accurately – supported by context caching."
 
-🚀 Was fehlt noch auf eurem Weg vom Agenten-Demo zum Agenten-Service?
+🚀 What is still missing on your path from agent demo to agent service?
 
 📌 Repository: https://github.com/augmentia-de/QOC
 
@@ -72,16 +72,16 @@ Das Fazit für das Team
 
 ---
 
-## Hinweise zur Veröffentlichung
+## Publication Notes
 
-- Dieser Beitrag ist als eigenständige Vision formuliert (kein direkter Follow-up).
-- Kann als eigenständiger Post oder als Thread-Antwort zum Vorgänger (31.10.2026) verwendet werden.
-- Fakten gegen den Code geprüft:
-  - Deterministische Nodes: `decision`, `fork`, `join`, `loop`, `mcp_call`, `hitl`, `start`, `end` (kein LLM).
-  - Subagent-Isolation: `DefaultNodeDispatcher.runAgent` → Child-Session; nur `NodeResult` zurück.
+- This post is formulated as a standalone vision (not a direct follow-up).
+- Can be used as a standalone post or as a thread reply to the predecessor (31.10.2026).
+- Facts checked against the code:
+  - Deterministic Nodes: `decision`, `fork`, `join`, `loop`, `mcp_call`, `hitl`, `start`, `end` (no LLM).
+  - Subagent isolation: `DefaultNodeDispatcher.runAgent` → Child-Session; only `NodeResult` returned.
   - Structured Output: `responseSchema` + `StructuredOutputConverter`.
-  - Context Caching: `CacheAffinity` (Headers), `cacheKey`-Feld vorhanden (Provider-Integration ausstehend).
-  - Compaction: `CompactionService` für lange Histories.
-- Hashtags: 12 — für LinkedIn auf 5–8 reduzieren (Empfehlung: #AIAgents #MCP #Quarkus #Java #WorkflowOrchestration #ContextCaching).
-- Bildvorschlag: Architektur-Diagramm aus `docs/diagrams/` oder das 3-Säulen-Diagramm aus dieser Datei.
-- Die "75–90 % Einsparung" ist eine Schätzung basierend auf Prompt-Caching-Rabatten (OpenAI: 50 %, Anthropic: bis 90 % auf cached Prefixes). Vor Veröffentlichung mit echten Messungen validieren.
+  - Context Caching: `CacheAffinity` (Headers), `cacheKey` field present (provider integration pending).
+  - Compaction: `CompactionService` for long histories.
+- Hashtags: 12 — reduce to 5–8 for LinkedIn (recommendation: #AIAgents #MCP #Quarkus #Java #WorkflowOrchestration #ContextCaching).
+- Image suggestion: Architecture diagram from `docs/diagrams/` or the 3-pillar diagram in this file.
+- The "75–90 % savings" is an estimate based on prompt-caching discounts (OpenAI: 50 %, Anthropic: up to 90 % on cached prefixes). Validate with real measurements before publishing.

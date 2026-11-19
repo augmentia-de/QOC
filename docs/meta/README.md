@@ -68,7 +68,7 @@ implementation specification:
 | [`03-bounded-contexts.md`](../analysis/03-bounded-contexts.md) | Module boundaries, coupling, strangler plan |
 | [`04-change-impact.md`](../analysis/04-change-impact.md) | Hotspots, invariants, impact matrix |
 | [`flow-db-service/`](../analysis/flow-db-service/README.md) | Deep data flow of a prompt |
-| [`memory-use.md`](../memory-use.md) | Memory-Nutzung und DB-/File-Storage während eines Tasks |
+| [`memory-use.md`](../memory-use.md) | Memory usage and DB/file storage during a task |
 | [`ANALYSIS-ARCHITECTURE-JAVA.md`](../analysis/ANALYSIS-ARCHITECTURE-JAVA.md) | meta-analysis of the Java architecture |
 | [`analysis/learnings/pi.md`](../analysis/learnings/pi.md) | Experiences from the pi coding agent |
 | [`analysis/learnings/oc-open.md`](../analysis/learnings/oc-open.md) | Learnings from OpenCode for QOC |

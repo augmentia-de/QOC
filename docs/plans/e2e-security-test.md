@@ -1,77 +1,79 @@
 # E2E Security Test Plan
 
-## Ziel
-End-to-End-Verifikation aller Security-Pfade von QOC:
-Authentifizierung, Principal-Propagation, Trusted Proxy, OIDC (optional),
-Webhook-Guardrail, Egress-Schutz, Session-Ownership und MCP-OAuth.
+## Goal
+End-to-end verification of all security paths of QOC:
+Authentication, Principal propagation, Trusted proxy, OIDC (optional),
+Webhook guardrail, Egress protection, Session ownership and MCP OAuth.
 
-## Voraussetzungen
-- QOC im Test-Profil mit PostgreSQL/SQLite
-- Optionaler Keycloak-Container für OIDC
-- Webhook-Guardrail-Service (lokal oder Testcontainer)
-- Testbenutzer: `opencode` / Passwort aus Env
-- Trusted-Proxy-CIDR: `127.0.0.1/32`
+## Prerequisites
+- QOC in test profile with PostgreSQL/SQLite
+- Optional Keycloak container for OIDC
+- Webhook guardrail service (local or Testcontainer)
+- Test user: `opencode` / password from env
+- Trusted-proxy CIDR: `127.0.0.1/32`
 
-## Szenarien
+## Scenarios
 
 ### 1. Basic Auth
-1. Request ohne Credentials -> 401 + `WWW-Authenticate`
-2. Falsches Passwort -> 401
-3. Korrekte Credentials -> 200, Principal `opencode`
+1. Request without credentials -> 401 + `WWW-Authenticate`
+2. Wrong password -> 401
+3. Correct credentials -> 200, Principal `opencode`
 
-### 2. Principal-Propagation
-1. Session-Erstellung mit Basic Auth -> Session-Verzeichnis/Owner entspricht Principal
-2. `ToolContext.metadata()` enthält `principalId`
-3. Webhook-Payload enthält `principalId`/`principalName`
+### 2. Principal Propagation
+1. Session creation with Basic Auth -> session directory/owner matches principal
+2. `ToolContext.metadata()` contains `principalId`
+3. Webhook payload contains `principalId`/`principalName`
 
 ### 3. Trusted Proxy
-1. Request von nicht vertrauenswürdiger IP mit `X-Forwarded-User` -> Header ignoriert
-2. Request von vertrauenswürdiger IP (127.0.0.1) mit `X-Forwarded-User: alice` -> Principal `alice`
-3. CIDR-Match für `10.0.0.0/8`
+1. Request from untrusted IP with `X-Forwarded-User` -> header ignored
+2. Request from trusted IP (127.0.0.1) with `X-Forwarded-User: alice` -> Principal `alice`
+3. CIDR match for `10.0.0.0/8`
 
-### 4. OIDC (optional, Profil `oidc`)
-1. Ungültiger/abgelaufener Token -> 401
-2. Gültiger Token -> Principal aus Claims (`sub`, `preferred_username`, `realm_access.roles`)
-3. Issuer/Audience-Mismatch -> 401
+### 4. OIDC (optional, profile `oidc`)
+1. Invalid/expired token -> 401
+2. Valid token -> Principal from claims (`sub`, `preferred_username`, `realm_access.roles`)
+3. Issuer/audience mismatch -> 401
 
-### 5. Webhook-Guardrail
-1. `guardrails.webhook` deaktiviert -> keine HTTP-Calls, normale Ausführung
-2. `tool.before` mit Secret -> Block, Tool wird nicht ausgeführt
-3. `permission.evaluate` mit Secret -> deny
-4. `tool.after` mit PII -> redact/replace
-5. Fail-Mode `closed-before-open-after`: Webhook down -> before block, after allow
-6. Fail-Mode `open`: Webhook down -> allow
-7. Egress: nicht erlaubter Host -> Block/Fail-Closed
-8. Egress: nicht erlaubte IP -> Block
-9. TLS erforderlich: HTTP-URL bei `tlsRequired=true` -> Block
+### 5. Webhook Guardrail
+1. `guardrails.webhook` disabled -> no HTTP calls, normal execution
+2. `tool.before` with secret -> block, tool not executed
+3. `permission.evaluate` with secret -> deny
+4. `tool.after` with PII -> redact/replace
+5. Fail-mode `closed-before-open-after`: webhook down -> before blocks, after allows
+6. Fail-mode `open`: webhook down -> allow
+7. Egress: disallowed host -> block/fail-closed
+8. Egress: disallowed IP -> block
+9. TLS required: HTTP URL with `tlsRequired=true` -> block
 
 ### 6. Session Ownership
-1. User A kann eigene Sessions listen/lesen
-2. User B erhält 403 auf Sessions von User A
+1. User A can list/read own sessions
+2. User B receives 403 on sessions of User A
 
 ### 7. MCP OAuth
-1. `/mcp` mit `security.mode=mcp-oauth` ohne Token -> 401
-2. Mit gültigem Token -> Tool-Ausführung
+1. `/mcp` with `security.mode=mcp-oauth` without token -> 401
+2. With valid token -> tool execution
 
 ### 8. A2A Server
-1. `engine.a2a.server.enabled=false`: `GET /.well-known/agent-card.json` und `POST /` -> 404
-2. `enabled=true`, `security.mode=none`: AgentCard ist abrufbar, `message/send` liefert ein Text-Artifact
-3. `enabled=true`, `security.mode=basic`: ohne Credentials -> 401, mit korrekten Credentials -> 200
-4. Falsches Passwort -> 401
-5. Task-Ownership: User B kann einen Task von User A nicht lesen/fortsetzen
-6. Gleiche `contextId` verschiedener User führt zu getrennten QOC-Sessions
-7. Trusted-Proxy-Identität wird nur aus konfigurierten CIDRs akzeptiert
-8. `engine.a2a.server.base-url` zeigt auf die extern erreichbare URL
-9. A2A-Tool-Aufrufe laufen durch dieselben Permissions/Guardrails wie lokale Tools
+1. `engine.a2a.server.enabled=false`: `GET /.well-known/agent-card.json` and `POST /` -> 404
+2. `enabled=true`, `security.mode=none`: AgentCard retrievable, `message/send` returns a text artifact
+3. `enabled=true`, `security.mode=basic`: without credentials -> 401, with correct credentials -> 200
+4. Wrong password -> 401
+5. Task ownership: User B cannot read/continue a task of User A
+6. Same `contextId` of different users leads to separate QOC sessions
+7. Trusted-proxy identity only accepted from configured CIDRs
+8. `engine.a2a.server.base-url` points to the externally reachable URL
+9. A2A tool calls go through the same permissions/guardrails as local tools
 
-## Automatisierung
-- Quarkus-Integrationstests mit `@QuarkusTest` und Testprofilen
-- Testcontainers für PostgreSQL + Keycloak + Webhook-Guardrail
-- RestAssured für HTTP-Assertions
-- HMAC-Signaturen in Tests berechnen (Test-Secret)
+## Automation
+- Quarkus integration tests with `@QuarkusTest` and test profiles
+- Testcontainers for PostgreSQL + Keycloak + Webhook Guardrail
+- RestAssured for HTTP assertions
+- Compute HMAC signatures in tests (test secret)
 
-## Abnahmekriterien
-- Alle Szenarien grün
-- Keine Secrets/PII in Logs
-- Webhook deaktiviert => keine Netzwerkaufrufe
-- Egress-Verletzungen fail-closed
+## Acceptance criteria
+- All scenarios green
+- No secrets/PII in logs
+- Webhook disabled => no network calls
+- Egress violations fail-closed
+" path">
+/home/torsten/dev/my-projects/2oc/qoc/docs/plans/e2e-security-test.md

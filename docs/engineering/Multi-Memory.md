@@ -1,44 +1,44 @@
-# Multi-Memory – wählbare Speicher-Backends pro Port
+# Multi-Memory – selectable storage backends per port
 
-> **Zweck:** Implementierungsplan für eine Speicher-Architektur, bei der jeder
-> Storage-Port einzeln zwischen In-Memory, SQLite, PostgreSQL (und später
-> Redis) gewählt werden kann. Ziel sind konfigurierbare Zwischenstufen
-> („DB + Memory-Cache“, „Redis Hot Tier“, etc.) ohne Code-Änderung.
+> **Purpose:** Implementation plan for a storage architecture where each
+> storage port can individually choose between In-Memory, SQLite, PostgreSQL (and later
+> Redis). The goal is configurable intermediate stages> ("DB + Memory-Cache", "Redis Hot Tier", etc.) without code changes.
 >
-> **Status:** 2026-11-10 (Planung, nicht implementiert)
+> **Status:** 2026-11-10 (Planning, not implemented)
 >
-> **Referenzen:** [`InMemory.md`](./InMemory.md), [`Storage-alternative.md`](./Storage-alternative.md),
+> **References:** [`InMemory.md`](./InMemory.md), [`Storage-alternative.md`](./Storage-alternative.md),
 > [`Layering.md`](./Layering.md), [`Core.md`](./Core.md).
 
 ---
 
 ## 1. Problem
 
-Heute hat QOC einen **globalen** Speicher-Schalter:
+Today QOC has a **global** storage switch:
 
 ```properties
 engine.db.kind=sqlite          # oder postgresql
 ```
 
-`Engine.wire()` nutzt einen `boolean sqlite`, um zwischen `Sqlite*`- und `Sql*`-Adaptern
-zu wählen. Es gibt keine In-Memory-Adapter und keine Möglichkeit, einzelne Ports
-unterschiedlich zu speichern (z. B. Sessions in DB, Tool-Cache im Heap).
+`Engine.wire()` uses a `boolean sqlite` to choose between `Sqlite*`- and
+`Sql*`-adapters. There are no In-Memory adapters and no way to store
+individual ports differently (e.g. Sessions in DB, Tool-Cache in heap).
 
-Das Ziel: **per-Port-Auswahl** des Speicher-Backends, sodass Zwischenstufen
-wie „DB + Memory-Cache“ oder „Redis Hot Tier“ reine Konfigurationsprofile sind.
+Goal: **per-port selection** of the storage backend, so that intermediate
+stages like "DB + Memory-Cache" or "Redis Hot Tier" are pure configuration
+profiles.
 
-## 2. Grundprinzip
+## 2. Core principle
 
-### 2.1 Ein Port, ein Backend
+### 2.1 One port, one backend
 
-Jeder Storage-Port (`SessionStore`, `Journal`, `ConversationStore`, …) wird
-unabhängig konfiguriert:
+Each storage port (`SessionStore`, `Journal`, `ConversationStore`, …) is
+configured independently:
 
 ```properties
-# Globaler Default
+# Global default
 engine.storage.default=postgres
 
-# Per-Port-Overrides (Zwischenstufen)
+# Per-port overrides (intermediate stages)
 engine.storage.journal=redis
 engine.storage.sessions=postgres
 engine.storage.conversation=postgres
@@ -48,9 +48,9 @@ engine.storage.snapshots=memory
 engine.storage.claims=redis
 ```
 
-### 2.2 Adapter-Auswahl über Factory
+### 2.2 Adapter selection via factory
 
-Die einzige Stelle, die den Backend-Typ kennt, ist `StorageFactory`:
+The only place that knows the backend type is `StorageFactory`:
 
 ```java
 public final class StorageFactory {
@@ -74,30 +74,30 @@ public final class StorageFactory {
 }
 ```
 
-`Engine`, `Coordinator`, `Step` und alle Runtime-Klassen kennen nur die
-Port-Interfaces — nie den Backend-Typ.
+`Engine`, `Coordinator`, `Step` and all runtime classes only know the
+port interfaces — never the backend type.
 
-## 3. Zwischenstufen als Konfigurationsprofile
+## 3. Intermediate stages as configuration profiles
 
-Die „Stufen“ sind **keine Code-Pfade**, sondern **Konfigurationsprofile**:
+The "stages" are **not code paths**, but **configuration profiles**:
 
-| Stufe | Name | Konfiguration | Beschreibung |
+| Stage | Name | Configuration | Description |
 |---|---|---|---|
-| **0** | Full DB | alles `postgres`/`sqlite` | Aktueller Zustand, Restart-fähig |
-| **1** | DB + Memory-Cache | `tool-cache=memory`, `tool-outputs=memory`, `snapshots=memory` | Heiße Daten im Heap, Sessions durabel |
-| **2** | Redis Hot Tier | `journal=redis`, `sessions=redis`, `claims=redis`, Rest `postgres` | Schnelle Writes, durable History |
-| **3** | Redis + Memory | `sessions=redis`, `journal=redis`, `tool-*=memory`, `conversation=postgres` | Redis für Hot, DB für Cold |
-| **4** | Full Memory | alles `memory` | Kein DB, kein Restart (wie InMemory.md) |
+| **0** | Full DB | everything `postgres`/`sqlite` | Current state, restart-capable |
+| **1** | DB + Memory-Cache | `tool-cache=memory`, `tool-outputs=memory`, `snapshots=memory` | Hot data in heap, sessions durable |
+| **2** | Redis Hot Tier | `journal=redis`, `sessions=redis`, `claims=redis`, rest `postgres` | Fast writes, durable history |
+| **3** | Redis + Memory | `sessions=redis`, `journal=redis`, `tool-*=memory`, `conversation=postgres` | Redis for hot, DB for cold |
+| **4** | Full Memory | everything `memory` | No DB, no restart (like InMemory.md) |
 
-## 4. Package-Struktur
+## 4. Package structure
 
 ```
 engine/
-├─ core/port/store/          # Ports (unverändert)
+├─ core/port/store/          # Ports (unchanged)
 ├─ adapter/
-│  ├─ sql/                   # PostgreSQL (existiert)
-│  ├─ sqlite/                # SQLite (existiert)
-│  ├─ memory/                # In-Memory (neu)
+│  ├─ sql/                   # PostgreSQL (exists)
+│  ├─ sqlite/                # SQLite (exists)
+│  ├─ memory/                # In-Memory (new)
 │  │  ├─ RuntimeState.java
 │  │  ├─ MemoryBudget.java
 │  │  ├─ MemoryStores.java
@@ -120,129 +120,129 @@ engine/
 │  │  ├─ DirectSessionWake.java
 │  │  ├─ SystemClock.java
 │  │  └─ MemoryLimitExceeded.java
-│  ├─ redis/                 # Redis (später, optional)
-│  ├─ tiered/                # Hybrid (später, optional)
+│  ├─ redis/                 # Redis (later, optional)
+│  ├─ tiered/                # Hybrid (later, optional)
 │  ├─ StorageKind.java       # MEMORY | SQLITE | POSTGRES | REDIS
-│  ├─ Stores.java            # Record aller Ports
-│  ├─ StorageConfig.java      # Per-Port-Konfiguration
-│  └─ StorageFactory.java    # einziger Switch
-└─ runtime/...               # unverändert (Single Source)
+│  ├─ Stores.java            # Record of all ports
+│  ├─ StorageConfig.java     # Per-port configuration
+│  └─ StorageFactory.java    # only switch
+└─ runtime/...               # unchanged (Single Source)
 ```
 
-## 5. Implementierungsplan
+## 5. Implementation plan
 
-### Phase 0: Refactoring (keine neue Funktionalität)
+### Phase 0: Refactoring (no new functionality)
 
-1. **`StorageKind` + `Stores` + `StorageConfig`** in `engine/adapter/` anlegen.
-2. **`SqlStores`** und **`SqliteStores`** als Factory-Methoden (bündeln die
-   bestehenden Adapter).
-3. **`Engine.wire()`** von `if (sqlite)` auf `StorageFactory.create(config, …)`
-   umstellen. Die `sqlite`-Boolean-Kette verschwindet.
-4. **`StorageConfig`** mit `defaultKind` und per-Port-Overrides
+1. Create **`StorageKind` + `Stores` + `StorageConfig`** in `engine/adapter/`.
+2. **`SqlStores`** and **`SqliteStores`** as factory methods (bundle the
+   existing adapters).
+3. Switch **`Engine.wire()`** from `if (sqlite)` to `StorageFactory.create(config, …)`.
+   The `sqlite`-boolean chain disappears.
+4. **`StorageConfig`** with `defaultKind` and per-port overrides
    (`engine.storage.<port>`).
-5. Tests: bestehende Tests müssen weiterhin grün sein (reiner Refactor).
+5. Tests: existing tests must still be green (pure refactor).
 
-### Phase 1: In-Memory-Adapter
+### Phase 1: In-Memory adapters
 
-6. **`engine/adapter/memory/`** anlegen.
-7. **`RuntimeState` + `MemoryBudget`** implementieren.
-8. **Memory-Adapter** portweise implementieren.
-9. **TCK** (Contract-Tests) für alle Ports.
-10. **Startup-Guard**: Memory-Modus deaktiviert `DatabaseMigration` und `Recovery`.
-11. **`engine.storage.default=memory`** als Konfiguration.
+6. Create **`engine/adapter/memory/`**.
+7. Implement **`RuntimeState` + `MemoryBudget`**.
+8. Implement memory adapters port by port.
+9. **TCK** (contract tests) for all ports.
+10. **Startup guard**: Memory mode disables `DatabaseMigration` and `Recovery`.
+11. **`engine.storage.default=memory`** as configuration.
 
-### Phase 2: Redis-Adapter (später, bei Bedarf)
+### Phase 2: Redis adapter (later, on demand)
 
 12. Dependency `quarkus-redis-client` (optional).
-13. **`engine/adapter/redis/`** mit `RedisSessionStore`, `RedisJournal`,
+13. **`engine/adapter/redis/`** with `RedisSessionStore`, `RedisJournal`,
     `RedisClaimStore`, `RedisToolResultCache`, `RedisToolOutputStore`.
-14. TCK für Redis-Adapter.
-15. Konfiguration: `engine.storage.<port>=redis`, `engine.redis.url=...`.
+14. TCK for Redis adapters.
+15. Configuration: `engine.storage.<port>=redis`, `engine.redis.url=...`.
 
-### Phase 3: Tiered-Adapter (optional, bei Bedarf)
+### Phase 3: Tiered adapter (optional, on demand)
 
-16. **`engine/adapter/tiered/`** mit `TieredSessionStore`, `TieredJournal`.
-17. Nur wenn Stufe 3 (Redis + Memory + DB) benötigt wird.
+16. **`engine/adapter/tiered/`** with `TieredSessionStore`, `TieredJournal`.
+17. Only if stage 3 (Redis + Memory + DB) is needed.
 
-### Phase 4: Build-Optionen
+### Phase 4: Build options
 
-18. **Maven-Profil `storage-memory`** (lean Build ohne DB-Extensions).
-19. **Maven-Profil `storage-redis`** (mit Redis-Client).
-20. Native-Image-Reflect-Config für neue Adapter.
+18. **Maven profile `storage-memory`** (lean build without DB extensions).
+19. **Maven profile `storage-redis`** (with Redis client).
+20. Native-Image reflect config for new adapters.
 
-## 6. Redis: brauch ich das?
+## 6. Redis: do I need it?
 
-**Nein, nicht jetzt.** DB + Memory deckt alles ab, was QOC heute braucht.
+**No, not now.** DB + Memory covers everything QOC needs today.
 
-### Wann Redis wirklich nötig wäre
+### When Redis would really be needed
 
-| Szenario | Warum Redis? | Wann relevant? |
+| Scenario | Why Redis? | When relevant? |
 |---|---|---|
-| Multi-Node (2+ Instanzen) | Shared Session-State, distributed Locks | Horizontal skalieren |
-| Cross-Instance ClaimStore | `SET NX EX` statt DB-Lock | Mehrere Prozesse claimen gleichzeitig |
-| Cross-Instance Session-Wake | Pub/Sub statt Polling | Subagent-Ergebnisse instanzübergreifend |
-| Sub-ms Journal-Latenz | Redis als Hot-Path | Journal-Write wird Bottleneck |
+| Multi-Node (2+ instances) | Shared session state, distributed locks | Horizontal scaling |
+| Cross-instance ClaimStore | `SET NX EX` instead of DB lock | Multiple processes claim simultaneously |
+| Cross-instance Session-Wake | Pub/Sub instead of polling | Subagent results across instances |
+| Sub-ms journal latency | Redis as hot path | Journal write becomes bottleneck |
 
-**Für QOC heute (single-node, GCP VM, lokal):** Keines dieser Szenarien.
+**For QOC today (single-node, GCP VM, local):** None of these scenarios.
 
-### Aufwand Redis später nachzuziehen
+### Effort to add Redis later
 
-**1–2 Wochen**, weil die Port-Architektur es ermöglicht:
+**1–2 weeks**, because the port architecture makes it possible:
 
-1. Neues Package `engine/adapter/redis/` mit Adaptern für die Ports, die Redis
-   nutzen sollen.
-2. Neuer `StorageKind.REDIS`.
-3. Redis-Client-Dependency (optional, nur bei Redis-Config).
-4. Konfiguration `engine.redis.url`, `engine.storage.<port>=redis`.
-5. TCK-Tests.
+1. New package `engine/adapter/redis/` with adapters for the ports that should
+   use Redis.
+2. New `StorageKind.REDIS`.
+3. Redis client dependency (optional, only with Redis config).
+4. Configuration `engine.redis.url`, `engine.storage.<port>=redis`.
+5. TCK tests.
 
-**Was sich nicht ändert:** `Engine`, `Coordinator`, `Step`, `SessionService`,
-`StorageFactory`, `Stores`, bestehende Adapter.
+**What does not change:** `Engine`, `Coordinator`, `Step`, `SessionService`,
+`StorageFactory`, `Stores`, existing adapters.
 
-Redis ist also **kein jetzt-oder-nie-Entscheidung**. Die per-Port-Auswahl macht
-es zu einer reinen Adapter-Zusatzarbeit, die jederzeit nachgezogen werden kann.
+Redis is therefore **not a now-or-never decision**. The per-port selection
+makes it pure adapter add-on work that can be picked up at any time.
 
-## 7. Konfigurationsmatrix
+## 7. Configuration matrix
 
 | Property | Memory | SQLite | Postgres | Redis |
 |---|---|---|---|---|
 | `engine.storage.default` | `memory` | `sqlite` | `postgres` | `redis` |
 | `engine.db.kind` | – | `sqlite` | `postgresql` | – |
 | `engine.recovery.enabled` | `false` | `true` | `true` | `true` |
-| `quarkus.datasource.*` | nicht nötig | SQLite-URL | Postgres-URL | – |
+| `quarkus.datasource.*` | not needed | SQLite-URL | Postgres-URL | – |
 | `quarkus.flyway.enabled` | `false` | `true` | `true` | `false` |
-| `engine.memory.max-bytes` | gesetzt | – | – | – |
-| `engine.memory.max-sessions` | gesetzt | – | – | – |
-| `engine.redis.url` | – | – | – | gesetzt |
+| `engine.memory.max-bytes` | set | – | – | – |
+| `engine.memory.max-sessions` | set | – | – | – |
+| `engine.redis.url` | – | – | – | set |
 
-## 8. Risiken und Gegenmaßnahmen
+## 8. Risks and countermeasures
 
-| Risiko | Wirkung | Gegenmaßnahme |
+| Risk | Impact | Countermeasure |
 |---|---|---|
 | Unbounded Growth (Memory) | OOM | `MemoryBudget` + Eviction + Backpressure |
-| `ConcurrentHashMap`-Race | inkonsistente Reads | Per-Session-Lock + immutable Snapshots |
-| Blocking unter Lock | Pinning/Deadlock | I/O außerhalb des Locks |
-| Quarkus-Datasource startet trotzdem | Startup-Fehler | Profil ohne DB-Extensions / Config-Guard |
-| Native-Image-Größe | groß | Maven-Profil oder separates Modul |
-| Recovery versehentlich aktiv (Memory) | Inkonsistenz | Startup-Guard, `engine.recovery.enabled=false` |
-| Externe Side-Effects doppelt | Datenfehler | `ToolResultCache` + Idempotency-Key |
-| Eviction laufender Sessions | Datenverlust | Eviction nur bei `IDLE`/`FINISHED` |
+| `ConcurrentHashMap`-race | inconsistent reads | Per-session lock + immutable snapshots |
+| Blocking under lock | Pinning/Deadlock | I/O outside the lock |
+| Quarkus datasource starts anyway | Startup error | Profile without DB extensions / config guard |
+| Native-Image size | large | Maven profile or separate module |
+| Recovery accidentally active (Memory) | Inconsistency | Startup guard, `engine.recovery.enabled=false` |
+| External side effects duplicated | Data errors | `ToolResultCache` + Idempotency-Key |
+| Eviction of running sessions | Data loss | Eviction only for `IDLE`/`FINISHED` |
 
-## 9. Referenzen
+## 9. References
 
-| Thema | Pfad |
+| Topic | Path |
 |---|---|
-| Storage-Ports | `engine/core/port/store/` |
-| Runtime-Ports | `engine/core/port/runtime/` |
-| Human-Ports | `engine/core/port/human/` |
-| Welt-Ports | `engine/core/port/world/` |
-| SQLite-Adapter (Vorbild) | `engine/adapter/sqlite/` |
-| SQL-Adapter (Vorbild) | `engine/adapter/sql/` |
-| Engine-Wiring | `quarkus/http/Engine.java` (Zeile 498–560) |
-| In-Memory-Beschreibung | [`InMemory.md`](./InMemory.md) |
-| Storage-Analyse | [`Storage-alternative.md`](./Storage-alternative.md) |
-| Core-Beschreibung | [`Core.md`](./Core.md) |
+| Storage ports | `engine/core/port/store/` |
+| Runtime ports | `engine/core/port/runtime/` |
+| Human ports | `engine/core/port/human/` |
+| World ports | `engine/core/port/world/` |
+| SQLite adapter (template) | `engine/adapter/sqlite/` |
+| SQL adapter (template) | `engine/adapter/sql/` |
+| Engine wiring | `quarkus/http/Engine.java` (lines 498–560) |
+| In-Memory description | [`InMemory.md`](./InMemory.md) |
+| Storage analysis | [`Storage-alternative.md`](./Storage-alternative.md) |
+| Core description | [`Core.md`](./Core.md) |
 | Async/Heartbeat | [`Async-use.md`](./Async-use.md) |
-| Layering-Entscheidung | [`Layering.md`](./Layering.md) |
-| Task-Orchestrierung | [`Task-Orchestration.md`](./Task-Orchestration.md) |
-| Test-Matrix | [`Test.md`](./Test.md) |
+| Layering decision | [`Layering.md`](./Layering.md) |
+| Task orchestration | [`Task-Orchestration.md`](./Task-Orchestration.md) |
+| Test matrix | [`Test.md`](./Test.md) |

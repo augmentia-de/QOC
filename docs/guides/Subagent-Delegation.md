@@ -1,66 +1,66 @@
-# Subagent-Delegation – Worker-Pool, Routing und Cloud-Topologien
+# Subagent Delegation – Worker Pool, Routing, and Cloud Topologies
 
-Status: Design-/Entscheidungsdokument (nicht implementiert)
-Datum: 2026-11-04
+Status: Design/decision document (not implemented)
+Date: 2026-11-04
 
-Dieses Dokument beschreibt, wie der Orchestrator Teilaufgaben über das
-bestehende `subagent`-Tool an lokale, Serverless- und Server-Worker delegiert –
-inklusive Worker-Pool, Routing, Tool-Oberfläche, MCP-Proxy-Varianten und
-Cloud-Topologien (GCP/AWS).
+This document describes how the orchestrator delegates subtasks to local,
+serverless, and server workers via the existing `subagent` tool — including
+worker pool, routing, tool surface, MCP proxy variants, and cloud topologies
+(GCP/AWS).
 
-## 1. Ziel
+## 1. Goal
 
-Der Orchestrator (Server Mode) soll unabhängige Teilaufgaben über **ein
-einziges Tool** (`subagent`) an einen Pool aus Worker-Runtimes delegieren
-können:
+The orchestrator (Server Mode) should be able to delegate independent
+subtasks to a pool of worker runtimes through **a single tool**
+(`subagent`):
 
-- **Serverless-Worker** für parallele, stateless I/O-Aufgaben
-  (Websearch, Webfetch, MCP, Batch).
-- **Server-Worker** für Aufgaben mit gemeinsamem, persistentem Workspace.
-- **Lokale Subagents** für Workspace-gebundene Aufgaben im Orchestrator.
+- **Serverless workers** for parallel, stateless I/O tasks
+  (websearch, webfetch, MCP, batch).
+- **Server workers** for tasks with a shared, persistent workspace.
+- **Local subagents** for workspace-bound tasks in the orchestrator.
 
-Der Pool kümmert sich um Auswahl, Lastverteilung, Health, Retry, Failover,
-Timeouts und Kosten-/Token-Aggregation.
+The pool handles selection, load balancing, health, retry, failover,
+timeouts, and cost/token aggregation.
 
-## 2. Nicht-Ziele
+## 2. Non-goals
 
-- Kein neuer zentraler Broker-Dienst.
-- Keine beliebigen, vom Modell gelieferten Worker-URLs (kein SSRF).
-- Kein Ersatz für A2A-Interoperabilität mit externen Agenten.
-- Kein Shared State zwischen Serverless-Workern.
-- Kein dynamisches Autoscaling von Server-Workern im MVP.
+- No new central broker service.
+- No arbitrary worker URLs supplied by the model (no SSRF).
+- No replacement for A2A interoperability with external agents.
+- No shared state between serverless workers.
+- No dynamic autoscaling of server workers in the MVP.
 
-## 3. Begriffe
+## 3. Terminology
 
-| Begriff | Bedeutung |
+| Term | Meaning |
 |---|---|
-| **Worker** | QOC-Runtime, die `qoc_run_agent` über `/mcp` anbietet |
-| **Worker-Registry** | serverseitige Konfiguration aller Worker |
-| **SubagentRouter** | wählt Worker + Runner pro Task |
-| **LocalRunner** | heutiger In-Process-Subagent |
-| **McpWorkerRunner** | Remote-Worker-Aufruf über MCP |
-| **Capability** | Tag zur Routing-Entscheidung, z. B. `web`, `workspace`, `mcp:jira` |
-| **Placement** | `local`, `remote` oder `any` |
-| **Leaf Worker** | Worker ohne `subagent`/`task`-Tool (kein Fan-out) |
+| **Worker** | QOC runtime offering `qoc_run_agent` via `/mcp` |
+| **Worker Registry** | Server-side configuration of all workers |
+| **SubagentRouter** | Selects worker + runner per task |
+| **LocalRunner** | Today's in-process subagent |
+| **McpWorkerRunner** | Remote worker call via MCP |
+| **Capability** | Tag for routing decisions, e.g. `web`, `workspace`, `mcp:jira` |
+| **Placement** | `local`, `remote`, or `any` |
+| **Leaf Worker** | Worker without `subagent`/`task` tool (no fan-out) |
 
-## 4. Ist-Zustand
+## 4. Current State
 
-- `subagent`-Tool: `agent`, `prompt`, `name`, `background`, `tasks[]`
+- `subagent` tool: `agent`, `prompt`, `name`, `background`, `tasks[]`
   (`SubagentTool`).
-- `tasks[]` wird **sequenziell** ausgeführt (`executeBatch`).
-- `SubagentRunner` ist ein funktionales Interface; die einzige Implementierung
-  ist `Engine.runSubagent` (in-process).
-- Depth-Limit: max. 2 (`Engine.runSubagent`); globales Semaphore für
-  Subagent-Concurrency.
-- Hintergrundtasks: `BackgroundTasks` mit virtuellen Threads, in-process.
-- MCP-Server exponiert `/mcp` mit `qoc_run_agent` und
+- `tasks[]` is executed **sequentially** (`executeBatch`).
+- `SubagentRunner` is a functional interface; the only implementation is
+  `Engine.runSubagent` (in-process).
+- Depth limit: max. 2 (`Engine.runSubagent`); global semaphore for
+  subagent concurrency.
+- Background tasks: `BackgroundTasks` with virtual threads, in-process.
+- MCP server exposes `/mcp` with `qoc_run_agent` and
   `qoc_run_agent_with_config`.
-- Serverless-Modus lädt Agenten on-demand vom Server.
-- A2A-Server nutzt einen **festen** Agenten (`engine.a2a.server.agent`);
-  keine Agent-Auswahl pro Call.
-- Eine Worker-Registry und ein Router existieren noch nicht.
+- Serverless mode loads agents on demand from the server.
+- A2A server uses a **fixed** agent (`engine.a2a.server.agent`);
+  no agent selection per call.
+- A worker registry and router do not yet exist.
 
-## 5. Architektur
+## 5. Architecture
 
 ```
 Orchestrator (Server, Workspace, Plan)
@@ -72,40 +72,40 @@ Orchestrator (Server, Workspace, Plan)
             │    └─ Engine.runSubagent (in-process)
             │
             └─ WorkerPool (MCP /mcp → qoc_run_agent)
-                 ├─ sls-web-1    (serverless, ephemer, web/MCP)
-                 ├─ sls-web-2    (serverless, ephemer, web/MCP)
+                 ├─ sls-web-1    (serverless, ephemeral, web/MCP)
+                 ├─ sls-web-2    (serverless, ephemeral, web/MCP)
                  ├─ srv-shared-1 (server, shared Workspace, editor)
                  └─ srv-shared-2 (server, shared Workspace, reviewer)
 ```
 
-Der Pool ist eine **logische** Ebene im Orchestrator:
+The pool is a **logical** layer in the orchestrator:
 
-- Serverless-Worker skalieren horizontal über die Plattform.
-- Server-Worker sind registrierte, langlebige Endpunkte.
-- Der Router kennt Fähigkeiten, Last, Health und Limits.
+- Serverless workers scale horizontally via the platform.
+- Server workers are registered, long-lived endpoints.
+- The router knows capabilities, load, health, and limits.
 
 ## 6. Transport
 
-**Empfehlung: MCP (`POST /mcp` → `qoc_run_agent`) für Serverless- und
-Server-Worker.**
+**Recommendation: MCP (`POST /mcp` → `qoc_run_agent`) for serverless and
+server workers.**
 
-Begründung:
+Rationale:
 
-- `qoc_run_agent` wählt Agent + Prompt + Modus pro Call.
-- Liefert `_meta` mit Tokens, `sessionId`, `agentCreated`/`agentDeleted`.
-- Beide Worker-Arten sprechen bereits `/mcp`.
-- Einheitliche Auth (OIDC-Bearer) und Fehlerbehandlung.
+- `qoc_run_agent` selects agent + prompt + mode per call.
+- Returns `_meta` with tokens, `sessionId`, `agentCreated`/`agentDeleted`.
+- Both worker kinds already speak `/mcp`.
+- Uniform auth (OIDC bearer) and error handling.
 
-A2A bleibt für externe Agent-Interoperabilität. Der QOC-A2A-Server nutzt einen
-festen Agenten und ist daher für den internen Pool mit Agent-Auswahl pro Call
-weniger geeignet.
+A2A remains for external agent interoperability. The QOC A2A server uses a
+fixed agent and is therefore less suitable for the internal pool with
+per-call agent selection.
 
-## 7. Komponenten
+## 7. Components
 
 ### 7.1 WorkerRegistry
 
-Serverseitige Konfiguration (settings.json oder Env). **Nicht** vom Modell
-beeinflussbar.
+Server-side configuration (settings.json or env). **Not** influenced by
+the model.
 
 ```json
 {
@@ -139,16 +139,15 @@ beeinflussbar.
 }
 ```
 
-- Secrets stehen **nicht** in der Registry, sondern im Credential-Store oder
-  in Env-Variablen.
-- `auth`: `delegated` (Caller-Token/Token-Exchange), `service`
-  (Client-Credentials) oder `none` (nur lokal).
-- `workers` muss in die `KNOWN`-Key-Liste von `EngineConfig` aufgenommen
-  werden.
+- Secrets are **not** in the registry, but in the credential store or
+  env variables.
+- `auth`: `delegated` (caller token/token exchange), `service`
+  (client credentials), or `none` (local only).
+- `workers` must be added to the `KNOWN` key list of `EngineConfig`.
 
 ### 7.2 SubagentRouter
 
-Erweitert `SubagentRunner` um einen Composite-Runner:
+Extends `SubagentRunner` into a composite runner:
 
 ```java
 final class SubagentRouter implements SubagentRunner {
@@ -156,77 +155,77 @@ final class SubagentRouter implements SubagentRunner {
 }
 ```
 
-Aufgaben:
+Responsibilities:
 
-- Auswahl des Runners (local oder remote)
-- Lastverteilung
-- Health/Failover
-- Timeout/Retry
-- Metadaten (Worker-ID, Latenz, Tokens)
+- Selection of the runner (local or remote)
+- Load balancing
+- Health/failover
+- Timeout/retry
+- Metadata (worker ID, latency, tokens)
 
 ### 7.3 LocalRunner
 
-Bestehender `Engine.runSubagent`:
+Existing `Engine.runSubagent`:
 
-- Agent muss lokal existieren und `isSubagent` erfüllen.
-- Depth-Limit und Semaphore bleiben.
-- Workspace-gebunden.
+- Agent must exist locally and satisfy `isSubagent`.
+- Depth limit and semaphore remain.
+- Workspace-bound.
 
 ### 7.4 McpWorkerRunner
 
-- Baut einen JSON-RPC-Call:
+- Builds a JSON-RPC call:
   ```json
   {"jsonrpc":"2.0","id":1,"method":"tools/call",
    "params":{"name":"qoc_run_agent",
              "arguments":{"agent":"web-researcher","prompt":"...",
                           "mode":"ephemeral","sessionMode":"new","retain":false}}}
   ```
-- Optional `qoc_run_agent_with_config` mit `agentConfig` (dynamische
-  Agent-Config).
-- Header:
+- Optionally `qoc_run_agent_with_config` with `agentConfig` (dynamic
+  agent config).
+- Headers:
   - `Authorization: Bearer <delegated token>`
   - `X-QOC-Depth`, `X-QOC-Trace-Id`, `X-QOC-Parent-Session`
   - `Idempotency-Key`
-- Antwort mappen:
+- Response mapping:
   - `content[].text` → `SubagentResult.text`
   - `_meta.inputTokens/outputTokens` → `TokenCount`
   - `_meta.sessionId` → `childSession`
-  - `_meta.warnings` → Metadaten
+  - `_meta.warnings` → metadata
 
 ### 7.5 Health, Retry, Circuit Breaker
 
-- **Health:** periodischer Check (`/api/health` oder MCP `initialize`/
-  `tools/list`); Worker mit Fehler wird temporär aus dem Pool genommen.
-- **Retry:** max. 3 Versuche, Backoff 10s/30s; nur bei Transportfehler,
-  Timeout oder 5xx.
-- **Circuit Breaker:** nach N Fehlern Cooldown; danach Halb-Open-Test.
-- **Failover:** anderer Worker mit gleicher Capability.
+- **Health:** periodic check (`/api/health` or MCP `initialize`/
+  `tools/list`); a failing worker is temporarily removed from the pool.
+- **Retry:** max. 3 attempts, backoff 10s/30s; only on transport error,
+  timeout, or 5xx.
+- **Circuit breaker:** after N failures cooldown; then half-open test.
+- **Failover:** another worker with the same capability.
 
-## 8. Worker-Deskriptor
+## 8. Worker Descriptor
 
-| Feld | Typ | Bedeutung |
+| Field | Type | Meaning |
 |---|---|---|
-| `kind` | `mcp` (MVP), `a2a` (später) | Transport |
-| `url` | string | MCP-Endpunkt |
-| `auth` | `delegated`/`service`/`none` | Identität |
-| `agents[]` | string[] | unterstützte Agenten |
-| `capabilities[]` | string[] | Routing-Tags |
-| `placement` | `local`/`remote`/`any` | bevorzugter Ort |
-| `maxConcurrency` | int | parallele Calls pro Worker |
-| `timeoutMs` | int | Call-Timeout |
-| `healthPath` | string | Health-Endpunkt |
-| `retry` | object | Versuche/Backoff |
-| `circuitBreaker` | object | Fehler/Cooldown |
-| `egress` | object | Host-/TLS-Allow-List |
+| `kind` | `mcp` (MVP), `a2a` (later) | Transport |
+| `url` | string | MCP endpoint |
+| `auth` | `delegated`/`service`/`none` | Identity |
+| `agents[]` | string[] | Supported agents |
+| `capabilities[]` | string[] | Routing tags |
+| `placement` | `local`/`remote`/`any` | Preferred location |
+| `maxConcurrency` | int | Parallel calls per worker |
+| `timeoutMs` | int | Call timeout |
+| `healthPath` | string | Health endpoint |
+| `retry` | object | Attempts/backoff |
+| `circuitBreaker` | object | Failures/cooldown |
+| `egress` | object | Host/TLS allow-list |
 
-## 9. `subagent`-Tool-Interface
+## 9. `subagent` Tool Interface
 
-Bestehende Felder bleiben kompatibel. Neue optionale Felder:
+Existing fields remain compatible. New optional fields:
 
 ```json
 {
   "agent": "web-researcher",
-  "prompt": "Analysiere URL A",
+  "prompt": "Analyze URL A",
   "worker": "sls-web-1",
   "capability": "web",
   "timeoutMs": 600000,
@@ -239,71 +238,71 @@ Bestehende Felder bleiben kompatibel. Neue optionale Felder:
 }
 ```
 
-- `worker`: explizite Worker-ID (Vorrang)
-- `capability`: Pool-Auswahl nach Fähigkeit
-- `agentConfig`: Worker führt `qoc_run_agent_with_config` aus
-- `tasks[]`: Batch, parallel ausgeführt
-- `background`: wie heute, aber remote-fähig
+- `worker`: explicit worker ID (takes precedence)
+- `capability`: pool selection by capability
+- `agentConfig`: worker runs `qoc_run_agent_with_config`
+- `tasks[]`: batch, executed in parallel
+- `background`: as today, but remote-capable
 
 ## 10. Routing
 
-Priorität:
+Priority:
 
-1. Explizites `worker`
-2. `capability` + Agent-Name
-3. Agent-Name → Worker-Mapping (`agents[]`)
+1. Explicit `worker`
+2. `capability` + agent name
+3. Agent name → worker mapping (`agents[]`)
 4. `placement`:
-   - `workspace` → local oder Server-Worker mit Shared Workspace
-   - `web`/`mcp` → Serverless-Pool
-5. Lastverteilung:
+   - `workspace` → local or server worker with shared workspace
+   - `web`/`mcp` → serverless pool
+5. Load balancing:
    - least-in-flight
    - round-robin
    - random
-6. Health/Circuit-Breaker: kranke Worker überspringen
-7. Fallback: local, wenn Agent lokal existiert und `placement=any`
+6. Health/circuit breaker: skip unhealthy workers
+7. Fallback: local, if the agent exists locally and `placement=any`
 
-Der Router akzeptiert **nur registrierte Worker-IDs**. Das Modell kann keine
-URLs oder Hosts bestimmen.
+The router accepts **only registered worker IDs**. The model cannot determine
+URLs or hosts.
 
-## 11. Parallelität
+## 11. Concurrency
 
-- `tasks[]` wird parallel ausgeführt.
-- Begrenzung:
-  - globales Pool-Limit
-  - `maxConcurrency` pro Worker
-  - bestehendes Subagent-Semaphor für lokale Runner
-- `background=true`: virtueller Thread wartet auf den Remote-Call; `task`-Tool
-  pollt den Status.
-- Partielle Ergebnisse: Batch liefert pro Task `ok|failed`.
-- Timeouts pro Task; keine unendlichen Läufe.
+- `tasks[]` is executed in parallel.
+- Limits:
+  - global pool limit
+  - `maxConcurrency` per worker
+  - existing subagent semaphore for local runners
+- `background=true`: virtual thread waits on the remote call; `task` tool
+  polls status.
+- Partial results: batch returns `ok|failed` per task.
+- Timeouts per task; no unbounded runs.
 
-## 12. Fehlerbehandlung, Idempotenz, Depth
+## 12. Error Handling, Idempotency, Depth
 
-- Retry nur bei Transport/5xx/Timeout, nicht bei fachlichen Agent-Fehlern.
-- Idempotency-Key pro Task an den Worker; Worker dedupliziert.
+- Retry only on transport/5xx/timeout, not on business agent errors.
+- Idempotency key per task to the worker; worker deduplicates.
 - Depth:
-  - `X-QOC-Depth` beginnt bei 0 im Orchestrator.
-  - Remote-Worker lehnt Depth ≥ `maxDepth` ab.
-  - Leaf-Worker haben `subagent`/`task` deny.
-- Loop-Schutz zusätzlich über `X-QOC-Trace-Id` und `X-QOC-Parent-Session`.
-- Fehler werden als `ToolOutcome.Failed` mit `workerId`, `taskName` und
-  `retryable` zurückgegeben.
+  - `X-QOC-Depth` starts at 0 in the orchestrator.
+  - Remote worker rejects depth ≥ `maxDepth`.
+  - Leaf workers have `subagent`/`task` deny.
+- Loop protection additionally via `X-QOC-Trace-Id` and `X-QOC-Parent-Session`.
+- Errors are returned as `ToolOutcome.Failed` with `workerId`, `taskName`,
+  and `retryable`.
 
-## 13. Identität, Sicherheit, Audit
+## 13. Identity, Security, Audit
 
-- **User-getriggerte Calls:** Caller-Token weiterreichen oder per RFC 8693
-  Token Exchange auf die Worker-Audience tauschen (`act`-Claim).
-- **Systemtasks:** Service-Identity mit engem Scope.
-- **Scopes:** `worker:run`, `agent:read`, `mcp:run`; Worker haben kein
+- **User-triggered calls:** forward the caller token or exchange it via
+  RFC 8693 to the worker audience (`act` claim).
+- **System tasks:** service identity with narrow scope.
+- **Scopes:** `worker:run`, `agent:read`, `mcp:run`; workers have no
   `agent:write`.
-- **Egress:** Allow-List für Worker-Hosts, TLS-Pflicht optional.
-- **Audit:** pro Task `workerId`, `agent`, `principal`, `act`, Tokens, Latenz,
-  Ergebnisstatus.
-- **Keine Secrets in der Registry.**
+- **Egress:** allow-list for worker hosts, TLS requirement optional.
+- **Audit:** per task `workerId`, `agent`, `principal`, `act`, tokens,
+  latency, result status.
+- **No secrets in the registry.**
 
-## 14. Ergebnis-Contract
+## 14. Result Contract
 
-`SubagentResult` erweitern:
+Extend `SubagentResult`:
 
 ```java
 record SubagentResult(
@@ -317,7 +316,7 @@ record SubagentResult(
 )
 ```
 
-Tool-Ergebnis pro Task:
+Tool result per task:
 
 ```json
 {
@@ -331,7 +330,7 @@ Tool-Ergebnis pro Task:
 }
 ```
 
-## 15. Konfiguration
+## 15. Configuration
 
 ### settings.json
 
@@ -350,7 +349,7 @@ Tool-Ergebnis pro Task:
 }
 ```
 
-### Umgebungsvariablen (Overrides)
+### Environment variables (overrides)
 
 ```env
 ENGINE_WORKERS_CONFIG=/data/home/.config/opencode/workers.json
@@ -362,134 +361,134 @@ ENGINE_WORKER_CIRCUIT_FAILURES=3
 ENGINE_WORKER_CIRCUIT_COOLDOWN_SECONDS=60
 ```
 
-## 16. Deployment-Topologien
+## 16. Deployment Topologies
 
-### Lokal (Docker + Keycloak)
+### Local (Docker + Keycloak)
 
-- Orchestrator: `qoc-server` auf 8073.
-- Serverless-Worker: `qoc-minimal` auf 8072.
-- Registry-Eintrag:
+- Orchestrator: `qoc-server` on 8073.
+- Serverless worker: `qoc-minimal` on 8072.
+- Registry entry:
   `http://host.docker.internal:8072/mcp`.
-- Parallelität lokal: `ENGINE_MAX_CONCURRENT_PROMPTS=4` im Serverless.
+- Local concurrency: `ENGINE_MAX_CONCURRENT_PROMPTS=4` in serverless.
 
 ### VM + Serverless (GCP/AWS)
 
-- Orchestrator/Control Plane auf VM.
-- Serverless-Worker: Lambda Function URL / Cloud Run URL.
-- Server-Worker: weitere VMs mit Shared Workspace.
-- Registry-Einträge mit HTTPS, OIDC-Audience, Egress-Allow-List.
+- Orchestrator/control plane on VM.
+- Serverless workers: Lambda Function URL / Cloud Run URL.
+- Server workers: further VMs with shared workspace.
+- Registry entries with HTTPS, OIDC audience, egress allow-list.
 
-### Nur Server-Worker
+### Server workers only
 
-- Mehrere QOC-Instanzen mit gemeinsamem Workspace-Mount (read-only
-  Agent-Config).
-- Registry-Einträge per interner URL.
-- Exklusives Agent-Authoring beim Editor/Orchestrator.
+- Multiple QOC instances with a shared workspace mount (read-only
+  agent config).
+- Registry entries via internal URL.
+- Exclusive agent authoring by editor/orchestrator.
 
 ## 17. Observability
 
-- Metriken pro Worker:
+- Metrics per worker:
   - in-flight
-  - Latenz (p50/p95)
-  - Fehlerrate
-  - Retries
-  - Tokens/Kosten
-- Tracing: `traceparent` an den Worker weiterreichen; Span pro Call.
-- Audit-Log für jeden Worker-Aufruf.
-- Health-Status im `/api/worker`-Endpoint (neu) oder in `/api/config`.
+  - latency (p50/p95)
+  - error rate
+  - retries
+  - tokens/cost
+- Tracing: forward `traceparent` to the worker; span per call.
+- Audit log for every worker call.
+- Health status in the `/api/worker` endpoint (new) or in `/api/config`.
 
-## 18. Implementierungsplan
+## 18. Implementation Plan
 
-> Die cloud-spezifische Ausrollplanung (GCP-Pool + AWS-Dedicated-Tool) steht
-> in Abschnitt 22.
+> The cloud-specific rollout plan (GCP pool + AWS dedicated tool) is in
+> section 22.
 
-### Phase 1 – Registry + explizites Routing
+### Phase 1 – Registry + explicit routing
 
-1. `workers`-Block in `EngineConfig` parsen (inkl. `KNOWN`-Keys).
-2. `WorkerRegistry` mit Deskriptoren und Validierung.
+1. Parse `workers` block in `EngineConfig` (incl. `KNOWN` keys).
+2. `WorkerRegistry` with descriptors and validation.
 3. `McpWorkerRunner` (JSON-RPC `qoc_run_agent`).
-4. `SubagentRouter` mit `worker`-Feld.
-5. `subagent`-Schema um `worker`/`capability`/`timeoutMs` erweitern.
+4. `SubagentRouter` with `worker` field.
+5. Extend `subagent` schema with `worker`/`capability`/`timeoutMs`.
 
-### Phase 2 – Pool-Verhalten
+### Phase 2 – Pool behavior
 
-1. Capability- und Agent-Mapping-Routing.
-2. Least-in-flight + Round-Robin.
-3. Health-Checks, Retry, Circuit Breaker, Failover.
-4. Batch parallelisieren (bounded Executor).
-5. Background-Tasks remote-fähig.
+1. Capability and agent mapping routing.
+2. Least-in-flight + round-robin.
+3. Health checks, retry, circuit breaker, failover.
+4. Parallelize batch (bounded executor).
+5. Remote-capable background tasks.
 
-### Phase 3 – Komfort und Härtung
+### Phase 3 – Comfort and hardening
 
-1. `agentConfig` (dynamische Agent-Config) im Subagent-Tool.
-2. Token Exchange (RFC 8693) statt Raw-Forwarding.
-3. Metriken, Audit, `/api/worker`-Status.
-4. Optional: dynamische Discovery (MCP `tools/list`, A2A Agent Cards).
-5. Optional: A2A-Transport für externe Worker.
+1. `agentConfig` (dynamic agent config) in the subagent tool.
+2. Token exchange (RFC 8693) instead of raw forwarding.
+3. Metrics, audit, `/api/worker` status.
+4. Optional: dynamic discovery (MCP `tools/list`, A2A agent cards).
+5. Optional: A2A transport for external workers.
 
-## 19. Testplan
+## 19. Test Plan
 
-- Registry-Parsing und Validierung.
-- Routing: explizit, Capability, Agent-Mapping, Fallback.
-- Lastverteilung: least-in-flight, round-robin.
-- Retry: 3 Versuche, Backoff, keine Retry bei 4xx.
-- Circuit Breaker: Ausfall und Recovery.
-- Failover auf zweiten Worker.
-- Paralleler Batch: 3 Tasks, 2 Worker, korrekte Zuordnung.
-- Depth-Limit und Loop-Schutz.
-- Auth: Caller-Token/Exchange, 401/403-Fälle.
-- Egress-Allow-List (kein SSRF).
-- Ergebnis-Mapping (`_meta`, Tokens, Latenz).
-- Integration lokal: Server + Serverless via `host.docker.internal`.
+- Registry parsing and validation.
+- Routing: explicit, capability, agent mapping, fallback.
+- Load balancing: least-in-flight, round-robin.
+- Retry: 3 attempts, backoff, no retry on 4xx.
+- Circuit breaker: failure and recovery.
+- Failover to second worker.
+- Parallel batch: 3 tasks, 2 workers, correct assignment.
+- Depth limit and loop protection.
+- Auth: caller token/exchange, 401/403 cases.
+- Egress allow-list (no SSRF).
+- Result mapping (`_meta`, tokens, latency).
+- Local integration: server + serverless via `host.docker.internal`.
 - JaCoCo ≥ 80 %.
 
-## 20. Offene Entscheidungen
+## 20. Open Decisions
 
-1. Transport: MCP für alle (empfohlen) oder Server-Worker über A2A?
-2. Registry: statisch (MVP) oder dynamisch (Health/Agent-Card-Discovery)?
-3. Auth: Caller-Token forwarden oder immer Token Exchange?
-4. Dynamische Agent-Configs: `agentConfig` erlauben (empfohlen) oder nur
-   benannte Agenten?
-5. Placement: Agent-Config, Router-Policy oder Caller entscheidet?
-6. Async: synchrone MCP-Calls im Hintergrund-Thread (MVP) oder echte
-   Remote-Job-API?
-7. Pool-Grenzen: globales Limit und pro-Worker-Limit — wo konfiguriert?
-8. Sollen Server-Worker eigene `ENGINE_ROLE=worker`-Capabilities melden?
+1. Transport: MCP for all (recommended) or server workers via A2A?
+2. Registry: static (MVP) or dynamic (health/agent-card discovery)?
+3. Auth: forward caller token or always token exchange?
+4. Dynamic agent configs: allow `agentConfig` (recommended) or only
+   named agents?
+5. Placement: agent config, router policy, or caller decides?
+6. Async: synchronous MCP calls in background thread (MVP) or real
+   remote job API?
+7. Pool limits: global limit and per-worker limit — where configured?
+8. Should server workers report their own `ENGINE_ROLE=worker` capabilities?
 
-## 21. Cloud-Topologien und Tool-Oberfläche (GCP vs. AWS)
+## 21. Cloud Topologies and Tool Surface (GCP vs. AWS)
 
-### 21.1 Entscheidung
+### 21.1 Decision
 
-Die Tool-Oberfläche folgt der Vertrauens- und Cloud-Grenze, nicht der Anzahl
-der Agenten:
+The tool surface follows the trust and cloud boundary, not the number
+of agents:
 
-| Umgebung | Tool-Oberfläche | Begründung |
+| Environment | Tool surface | Rationale |
 |---|---|---|
-| Local + GCP Cloud Run | **generisches `subagent`** mit `environment=gcp` | gleiche GCP-/OIDC-/Egress-Domäne wie die Orchestrator-VM; config-getrieben, skalierbar |
-| AWS Lambda | **dediziertes `aws_worker`-Tool** | andere Cloud, andere Auth, andere Limits, andere Policy |
-| Shared-Workspace-Worker (optional) | eigenes `delegate_workspace` | Schreib-/Approval-Policy als eigene Grenze |
-| Externe A2A-Agenten (optional) | `delegate_external` | andere Vertrauensgrenze/Transport |
+| Local + GCP Cloud Run | **generic `subagent`** with `environment=gcp` | same GCP/OIDC/egress domain as the orchestrator VM; config-driven, scalable |
+| AWS Lambda | **dedicated `aws_worker` tool** | different cloud, different auth, different limits, different policy |
+| Shared-workspace workers (optional) | own `delegate_workspace` | write/approval policy as its own boundary |
+| External A2A agents (optional) | `delegate_external` | different trust boundary/transport |
 
-**Nicht** einführen: ein Tool pro Agent, pro Cloud-Run-Instanz oder pro
-MCP-Server.
+**Do not** introduce: one tool per agent, per Cloud Run instance, or per
+MCP server.
 
-### 21.2 GCP: generischer Worker-Pool
+### 21.2 GCP: generic worker pool
 
-Der Orchestrator läuft auf der GCP-VM, die Worker auf Cloud Run. Beide teilen:
+The orchestrator runs on the GCP VM, the workers on Cloud Run. Both share:
 
-- denselben OIDC-Tenant (Auth0/Keycloak),
-- dieselbe Egress-/Netzwerk-Domäne,
-- dieselbe Observability (GCP Logging/Monitoring),
-- dieselbe Secret-Verwaltung.
+- the same OIDC tenant (Auth0/Keycloak),
+- the same egress/network domain,
+- the same observability (GCP Logging/Monitoring),
+- the same secret management.
 
-Deshalb reicht ein generisches `subagent`-Tool:
+Therefore a generic `subagent` tool suffices:
 
 ```json
 {
   "agent": "web-researcher",
   "environment": "gcp",
   "capability": "web",
-  "prompt": "Analysiere URL A",
+  "prompt": "Analyze URL A",
   "tasks": [
     {"name": "source-1", "agent": "web-researcher", "prompt": "URL A"},
     {"name": "source-2", "agent": "web-researcher", "prompt": "URL B"}
@@ -529,25 +528,25 @@ Registry:
 }
 ```
 
-Vorteile:
+Benefits:
 
-- Neue Cloud-Run-Worker sind reine Config-Einträge.
-- Der Router übernimmt Lastverteilung, Health, Retry, Failover.
-- Kein zusätzliches Tool im Prompt; der Agent-Katalog führt das Modell.
-- Einheitliche Metriken/Audit über alle GCP-Worker.
+- New Cloud Run workers are pure config entries.
+- The router handles load balancing, health, retry, failover.
+- No extra tool in the prompt; the agent catalog guides the model.
+- Uniform metrics/audit across all GCP workers.
 
-### 21.3 AWS: dediziertes Tool
+### 21.3 AWS: dedicated tool
 
-Der AWS-Lambda-Worker ist eine eigene Vertrauensgrenze. Ein dediziertes Tool
-kapselt:
+The AWS Lambda worker is a separate trust boundary. A dedicated tool
+encapsulates:
 
-- festen Ziel-Worker (kein Modell-gesteuertes Routing),
-- Cross-Cloud-Auth,
-- Lambda-spezifische Limits,
-- eigene Policy (kein Workspace, keine Shell, nur Web/MCP),
-- CloudWatch-Trace-Korrelation.
+- a fixed target worker (no model-driven routing),
+- cross-cloud auth,
+- Lambda-specific limits,
+- its own policy (no workspace, no shell, only web/MCP),
+- CloudWatch trace correlation.
 
-Tool-Schema:
+Tool schema:
 
 ```json
 {
@@ -555,20 +554,20 @@ Tool-Schema:
   "description": "Run a stateless task on the AWS Lambda worker (cross-cloud, no shared workspace).",
   "input": {
     "prompt": "string",
-    "agent": "string (optional, enum aus Allow-List)",
+    "agent": "string (optional, enum from allow-list)",
     "structuredOutput": "object (optional JSON Schema)",
     "timeoutMs": "integer (optional, max 900000)"
   }
 }
 ```
 
-Intern:
+Internals:
 
-- fester Worker `aws-lambda-1`
-- `McpWorkerRunner` → `qoc_run_agent` oder `qoc_run_agent_with_config`
+- fixed worker `aws-lambda-1`
+- `McpWorkerRunner` → `qoc_run_agent` or `qoc_run_agent_with_config`
 - `mode=ephemeral`, `sessionMode=new`, `retain=false`
-- Auth: Token Exchange auf `aud=qoc-aws-worker` oder Service-Identity
-- Ergebnis: Text + `structuredContent` + `_meta` (Tokens, Latenz,
+- Auth: token exchange to `aud=qoc-aws-worker` or service identity
+- Result: text + `structuredContent` + `_meta` (tokens, latency,
   `X-Amzn-Trace-Id`)
 
 Registry:
@@ -598,90 +597,91 @@ Registry:
 }
 ```
 
-### 21.4 Tool-Landschaft
+### 21.4 Tool landscape
 
-| Tool | Ziel | Zweck |
+| Tool | Target | Purpose |
 |---|---|---|
-| `subagent` | local + GCP-Cloud-Run-Pool | generische Delegation, Batch, dynamische Agenten |
-| `aws_worker` | AWS-Lambda-Worker | dedizierte Cross-Cloud-Aufgaben |
-| `delegate_workspace` (optional) | Shared-Workspace-Worker | Schreib-/Approval-Policy getrennt |
-| `delegate_external` (optional) | A2A/externe Agenten | Interoperabilität |
+| `subagent` | local + GCP Cloud Run pool | generic delegation, batch, dynamic agents |
+| `aws_worker` | AWS Lambda worker | dedicated cross-cloud tasks |
+| `delegate_workspace` (optional) | shared-workspace workers | write/approval policy separated |
+| `delegate_external` (optional) | A2A/external agents | interoperability |
 
-Alle Tools nutzen intern denselben `SubagentRouter`/`McpWorkerRunner`. Die
-dedizierten Tools sind dünne Fassaden mit festem Ziel und engerem Schema.
+All tools use the same `SubagentRouter`/`McpWorkerRunner` internally. The
+dedicated tools are thin facades with a fixed target and a narrower schema.
 
-### 21.5 Cross-Cloud-Auth, Transport und Limits
+### 21.5 Cross-cloud auth, transport, and limits
 
-| Thema | Empfehlung |
+| Topic | Recommendation |
 |---|---|
-| Auth | Bevorzugt gleicher Auth0-Tenant + RFC 8693 Token Exchange auf `aud=qoc-aws-worker`. Alternativ Service-Token. |
-| Transport | HTTP Function URL mit MCP (`/mcp`); bei IAM-Auth ein SigV4-Adapter vor dem MCP-Call. |
-| Timeout | Lambda max. 15 min; QOC-Worker `turn.max.wall-minutes=10`; Tool-Timeout entsprechend. |
-| Payload | Lambda sync max. 6 MB; keine Workspace-Dateien übertragen, nur Text/JSON. |
-| Cold Start | Optional Provisioned Concurrency; Tool kann `background=true` nutzen. |
-| Egress | GCP-VM → AWS Function URL über öffentliches Internet oder PrivateLink/VPC-Endpoint; Allow-List. |
-| Observability | `X-Amzn-Trace-Id` und CloudWatch-Log-Referenz in `_meta` zurückgeben. |
-| Secrets | AWS Secrets Manager / GCP Secret Manager, nicht in der Registry. |
-| Funktion-URL-Auth | `auth-type NONE` nur mit OIDC im QOC-Prozess; besser IAM-Auth oder WAF davor. |
+| Auth | Prefer the same Auth0 tenant + RFC 8693 token exchange to `aud=qoc-aws-worker`. Alternatively service token. |
+| Transport | HTTP Function URL with MCP (`/mcp`); with IAM auth a SigV4 adapter before the MCP call. |
+| Timeout | Lambda max. 15 min; QOC worker `turn.max.wall-minutes=10`; tool timeout accordingly. |
+| Payload | Lambda sync max. 6 MB; no workspace files transferred, text/JSON only. |
+| Cold start | Optional provisioned concurrency; tool may use `background=true`. |
+| Egress | GCP VM → AWS Function URL via public internet or PrivateLink/VPC endpoint; allow-list. |
+| Observability | Return `X-Amzn-Trace-Id` and CloudWatch log reference in `_meta`. |
+| Secrets | AWS Secrets Manager / GCP Secret Manager, not in the registry. |
+| Function URL auth | `auth-type NONE` only with OIDC in the QOC process; better IAM auth or WAF in front. |
 
-### 21.6 Wann ein GCP-Worker ebenfalls ein dediziertes Tool bekommt
+### 21.6 When a GCP worker also gets a dedicated tool
 
-Nicht für jeden Agenten. Nur wenn mindestens zwei Punkte zutreffen:
+Not for every agent. Only if at least two points apply:
 
-1. anderer Input-/Output-Contract (z. B. Patch-Review, strukturiertes JSON),
-2. andere Security-Policy (Workspace-Writes, Approval, Egress),
-3. andere Umgebung/Topologie (Shared Workspace statt ephemer),
-4. eigener Audit-/Compliance-Pfad,
-5. häufige Nutzung mit hohem Fehlbedienungsrisiko.
+1. different input/output contract (e.g. patch review, structured JSON),
+2. different security policy (workspace writes, approval, egress),
+3. different environment/topology (shared workspace instead of ephemeral),
+4. own audit/compliance path,
+5. frequent use with high misuse risk.
 
-Sonst bleibt er ein Agent hinter dem generischen `subagent`-Tool.
+Otherwise it remains an agent behind the generic `subagent` tool.
 
-### 21.7 Sicherheit und Observability
+### 21.7 Security and observability
 
-- Der Tool-Name und die Beschreibung sagen dem Modell klar, welche Umgebung
-  gemeint ist (`aws_worker` = AWS, stateless, kein Workspace).
-- Das Modell kann keine Worker-URLs setzen; nur registrierte IDs/Aliase.
-- Audit pro Call: `workerId`, `environment`, `agent`, `principal`, `act`,
-  Tokens, Latenz, Cloud-Trace-ID.
-- Metriken getrennt nach `environment` (`gcp`, `aws`, `local`), damit
-  Cross-Cloud-Latenz und Fehlerraten sichtbar sind.
+- The tool name and description tell the model clearly which environment is
+  meant (`aws_worker` = AWS, stateless, no workspace).
+- The model cannot set worker URLs; only registered IDs/aliases.
+- Audit per call: `workerId`, `environment`, `agent`, `principal`, `act`,
+  tokens, latency, cloud trace ID.
+- Metrics separated by `environment` (`gcp`, `aws`, `local`), so that
+  cross-cloud latency and error rates are visible.
 
-### 21.8 MCP-Proxy-Variante: mehrere Tool-Profile pro Worker
+### 21.8 MCP proxy variant: multiple tool profiles per worker
 
-Ein MCP-Server kann mehrere Tools in `tools/list` anbieten. QOC registriert
-jedes Tool namespaced als `<server>_<tool>` (`McpTool`). Der Agent steuert den
-Zugriff über `mcpServers`, `tools.allow/deny` und `permissions`.
+An MCP server can offer multiple tools in `tools/list`. QOC registers each
+tool namespaced as `<server>_<tool>` (`McpTool`). The agent controls access
+via `mcpServers`, `tools.allow/deny`, and `permissions`.
 
-#### Drei Ausprägungen
+#### Three variants
 
-| Variante | Aufbau | Tool-Namen in QOC | Zusatzdienst |
+| Variant | Setup | Tool names in QOC | Additional service |
 |---|---|---|---|
-| **A: Direkt** | QOC → Lambda-`/mcp` | `aws_qoc_run_agent`, `aws_qoc_run_agent_with_config` | nein |
-| **B: MCP-Proxy** | QOC → MCP-Proxy → AWS | `aws_worker`, `aws_task_status`, … | ja |
-| **C: Proxy + QOC-Wrapper** | QOC-ToolDefinition → MCP-Proxy | stabiles `aws_worker` | ja |
+| **A: Direct** | QOC → Lambda `/mcp` | `aws_qoc_run_agent`, `aws_qoc_run_agent_with_config` | no |
+| **B: MCP proxy** | QOC → MCP proxy → AWS | `aws_worker`, `aws_task_status`, … | yes |
+| **C: Proxy + QOC wrapper** | QOC ToolDefinition → MCP proxy | stable `aws_worker` | yes |
 
-- **A** ist der schnellste Weg: Der QOC-Lambda-Worker exponiert bereits `/mcp`.
-  Der Agent sieht die generischen Worker-Tools.
-- **B** kapselt AWS-Auth, Lambda-Invoke, Limits und Trace-IDs in einem eigenen
-  MCP-Server. Der Proxy definiert die Tool-Schemas.
-- **C** wrappt den Proxy-Tool in ein QOC-`ToolDefinition` mit stabilem Namen,
-  engem Schema und eigener Policy. Der Proxy bleibt austauschbar.
+- **A** is the fastest path: the QOC Lambda worker already exposes `/mcp`.
+  The agent sees the generic worker tools.
+- **B** encapsulates AWS auth, Lambda invoke, limits, and trace IDs in a
+  separate MCP server. The proxy defines the tool schemas.
+- **C** wraps the proxy tool in a QOC `ToolDefinition` with a stable name,
+  a narrow schema, and its own policy. The proxy remains replaceable.
 
-#### Mehrere Tool-Profile auf einem Server
+#### Multiple tool profiles on one server
 
-Ein Worker bzw. Proxy kann gleichzeitig generische und dedizierte Tools
-anbieten. Empfohlene Namen (Server `aws`):
+A worker or proxy can offer both generic and dedicated tools
+simultaneously. Recommended names (server `aws`):
 
-| Tool auf dem Server | Effektiver Name | Schema | Zweck |
+| Tool on server | Effective name | Schema | Purpose |
 |---|---|---|---|
-| `worker` | `aws_worker` | `prompt`, `structuredOutput`, `timeoutMs` | dediziert, fester Agent, feste Policy |
-| `agent` | `aws_agent` | `agent`, `prompt`, `structuredOutput`, `timeoutMs` | generisch, Agent wählbar |
-| `inline` | `aws_inline` | `agentConfig`, `prompt`, `maxSteps`, `timeoutMs` | dynamische Agent-Config |
+| `worker` | `aws_worker` | `prompt`, `structuredOutput`, `timeoutMs` | dedicated, fixed agent, fixed policy |
+| `agent` | `aws_agent` | `agent`, `prompt`, `structuredOutput`, `timeoutMs` | generic, agent selectable |
+| `inline` | `aws_inline` | `agentConfig`, `prompt`, `maxSteps`, `timeoutMs` | dynamic agent config |
 
-Namens-Falle: QOC präfixt mit dem **Server-Namen**. Server `aws` + Tool `worker`
-ergibt `aws_worker`. Server `aws` + Tool `aws_worker` ergibt `aws_aws_worker`.
+Naming trap: QOC prefixes with the **server name**. Server `aws` + tool
+`worker` yields `aws_worker`. Server `aws` + tool `aws_worker` yields
+`aws_aws_worker`.
 
-Beispiel `tools/list`:
+Example `tools/list`:
 
 ```json
 [
@@ -715,14 +715,14 @@ Beispiel `tools/list`:
 ]
 ```
 
-#### Zugriff über die Agent-Config
+#### Access via agent config
 
-Drei Ebenen greifen:
+Three levels apply:
 
-1. **`mcpServers`** – Namespace-Freigabe; ohne `"aws"` werden alle AWS-Tools
-   entfernt.
-2. **`tools.allow` / `tools.deny`** – konkrete Tool-Namen.
-3. **`permissions`** – feinere Regeln pro Aktion/Ressource.
+1. **`mcpServers`** – namespace grant; without `"aws"` all AWS tools are
+   removed.
+2. **`tools.allow` / `tools.deny`** – concrete tool names.
+3. **`permissions`** – finer rules per action/resource.
 
 ```json
 {
@@ -738,19 +738,19 @@ Drei Ebenen greifen:
 }
 ```
 
-Zugriffsmatrix:
+Access matrix:
 
-| Agent | `mcpServers` | `tools.allow` | Sichtbare AWS-Tools |
+| Agent | `mcpServers` | `tools.allow` | Visible AWS tools |
 |---|---|---|---|
-| `aws-specialist` | `["aws"]` | `["aws_worker"]` | nur dediziertes Worker-Tool |
-| `aws-generalist` | `["aws"]` | `["aws_agent"]` | generisches Agent-Tool |
-| `aws-power` | `["aws"]` | `["aws_worker", "aws_agent"]` | beide |
-| `local-only` | `[]` | `["*"]` | keine AWS-Tools |
+| `aws-specialist` | `["aws"]` | `["aws_worker"]` | only dedicated worker tool |
+| `aws-generalist` | `["aws"]` | `["aws_agent"]` | generic agent tool |
+| `aws-power` | `["aws"]` | `["aws_worker", "aws_agent"]` | both |
+| `local-only` | `[]` | `["*"]` | no AWS tools |
 
-Der Namespace-Filter greift auch bei `tools.allow: ["*"]`: Ohne
-`mcpServers: ["aws"]` bleiben die Tools unsichtbar.
+The namespace filter also applies with `tools.allow: ["*"]`: without
+`mcpServers: ["aws"]` the tools remain invisible.
 
-#### MCP-Konfiguration in QOC
+#### MCP configuration in QOC
 
 ```json
 {
@@ -764,155 +764,161 @@ Der Namespace-Filter greift auch bei `tools.allow: ["*"]`: Ohne
 }
 ```
 
-- `${AWS_MCP_TOKEN}` kommt aus Env/Secret Manager, nicht aus `settings.json`.
-- `tools/list` wird beim Start gelesen; ist der Server nicht erreichbar, fehlen
-  die Tools.
-- Für Remote-MCP-Server fehlt aktuell eine Egress-Allow-List wie bei A2A
-  (`allowedHosts`/`tlsRequired`); für AWS-URLs ergänzen.
+- `${AWS_MCP_TOKEN}` comes from env/secret manager, not from
+  `settings.json`.
+- `tools/list` is read at startup; if the server is unreachable, the
+  tools are missing.
+- For remote MCP servers an egress allow-list like the one for A2A
+  (`allowedHosts`/`tlsRequired`) is currently missing; add it for AWS
+  URLs.
 
-#### Per-User-Identität (wichtige Einschränkung)
+#### Per-user identity (important limitation)
 
-QOCs MCP-Client sendet aktuell statische `headers` und optional einen aktiven
-Credential-Store-Token. Er forwards **nicht** automatisch den Bearer-Token des
-aufrufenden Users. Der AWS-Proxy sieht daher eine Service-Identity.
+QOC's MCP client currently sends static `headers` and optionally an active
+credential-store token. It does **not** automatically forward the bearer
+token of the calling user. The AWS proxy therefore sees a service identity.
 
-Optionen:
+Options:
 
-1. Token Exchange (RFC 8693) vor dem MCP-Call, `aud=aws-mcp`,
-   `scope=worker:run`, `act`-Claim.
-2. Zusätzliche Header `X-QOC-User`/`X-QOC-Act` (nur mit Vertrauensstellung).
-3. Vorerst Service-Identity akzeptieren und den QOC-Kontext auditieren.
+1. Token exchange (RFC 8693) before the MCP call, `aud=aws-mcp`,
+   `scope=worker:run`, `act` claim.
+2. Additional headers `X-QOC-User`/`X-QOC-Act` (only with a trust
+   relationship).
+3. For now accept service identity and audit the QOC context.
 
-#### Wann welche Variante?
+#### When which variant?
 
-- **A** für MVP und schnelle Inbetriebnahme ohne Zusatzdienst.
-- **B** wenn AWS-Auth/Limits/Trace-ID unabhängig von QOC entwickelt werden
-  sollen.
-- **C** wenn der Orchestrator ein stabiles, schmales `aws_worker`-Tool mit
-  eigener Policy/Audit braucht.
+- **A** for MVP and quick commissioning without an additional service.
+- **B** when AWS auth/limits/trace ID should be developed independently of
+  QOC.
+- **C** when the orchestrator needs a stable, narrow `aws_worker` tool with
+  its own policy/audit.
 
-#### Implementierungshinweis
+#### Implementation note
 
-- **A:** Der Lambda-Worker kann `McpServerResource.toolsList()`/`toolsCall()`
-  um Tool-Profile erweitern (z. B. `worker`, `agent`, `inline`), gesteuert über
-  `ENGINE_MCP_TOOL_PROFILES`.
-- **B/C:** Der externe MCP-Proxy definiert die Tools; QOC-Seite ist reine
-  Config (B) bzw. ein dünner Wrapper (C).
-- Der Agent-Config-Zugriff bleibt in allen Varianten gleich.
+- **A:** The Lambda worker can extend
+  `McpServerResource.toolsList()`/`toolsCall()` by tool profiles (e.g.
+  `worker`, `agent`, `inline`), controlled via `ENGINE_MCP_TOOL_PROFILES`.
+- **B/C:** The external MCP proxy defines the tools; on the QOC side it is
+  pure config (B) or a thin wrapper (C).
+- Agent config access remains the same in all variants.
 
 ---
 
-## 22. Umsetzungsplan GCP/AWS
+## 22. Implementation Plan GCP/AWS
 
-### Phase 1 – Gemeinsame Infrastruktur
+### Phase 1 – Common infrastructure
 
-1. `workers`-Block in `EngineConfig` parsen (inkl. `KNOWN`-Keys).
-2. `WorkerRegistry` mit Deskriptoren (`environment`, `auth`, `capabilities`,
-   Limits, Egress).
+1. Parse `workers` block in `EngineConfig` (incl. `KNOWN` keys).
+2. `WorkerRegistry` with descriptors (`environment`, `auth`,
+   `capabilities`, limits, egress).
 3. `McpWorkerRunner` (JSON-RPC `qoc_run_agent`).
-4. `SubagentRouter` mit `worker`, `environment` und `capability`.
-5. `subagent`-Schema erweitern (`environment`, `worker`, `capability`,
+4. `SubagentRouter` with `worker`, `environment`, and `capability`.
+5. Extend `subagent` schema (`environment`, `worker`, `capability`,
    `timeoutMs`, `agentConfig`).
-6. Batch parallelisieren (bounded Executor).
+6. Parallelize batch (bounded executor).
 
-### Phase 2 – GCP-Pool
+### Phase 2 – GCP pool
 
-1. Cloud-Run-Worker als Registry-Einträge (`environment=gcp`).
+1. Cloud Run workers as registry entries (`environment=gcp`).
 2. Routing: `environment=gcp` + `capability` + least-in-flight.
-3. Health-Checks gegen Cloud Run (`/api/health`).
-4. Delegated Token (Caller-Token oder Exchange) an Cloud Run.
-5. Egress-Allow-List für Cloud-Run-Hosts.
-6. Lokaler Integrationstest: Orchestrator auf 8073, Worker auf 8072.
+3. Health checks against Cloud Run (`/api/health`).
+4. Delegated token (caller token or exchange) to Cloud Run.
+5. Egress allow-list for Cloud Run hosts.
+6. Local integration test: orchestrator on 8073, worker on 8072.
 
-### Phase 3 – AWS-Dedicated-Tool
+### Phase 3 – AWS dedicated tool
 
-**Variante A – MCP-Tool-Profile im Lambda-Worker:**
+**Variant A – MCP tool profiles in the Lambda worker:**
 
-1. `McpServerResource.toolsList()`/`toolsCall()` um Tool-Profile erweitern
-   (`worker`, `agent`, `inline`), gesteuert über `ENGINE_MCP_TOOL_PROFILES`.
-2. `worker`: festes Schema (`prompt`, `structuredOutput`, `timeoutMs`), fester
-   Agent, feste Policy.
-3. `agent`: generisch (`agent`, `prompt`, `structuredOutput`, `timeoutMs`).
-4. `inline`: `agentConfig` + `prompt`, nur für explizit freigegebene Agenten.
-5. QOC-Seite: Remote-MCP-Server `aws` konfigurieren; Agent-Config steuert
-   Zugriff über `mcpServers`, `tools.allow/deny`, `permissions`.
-6. Tool-Namen: Server `aws` + Tool `worker` → `aws_worker` (kein Doppelpräfix).
+1. Extend `McpServerResource.toolsList()`/`toolsCall()` by tool profiles
+   (`worker`, `agent`, `inline`), controlled via
+   `ENGINE_MCP_TOOL_PROFILES`.
+2. `worker`: narrow schema (`prompt`, `structuredOutput`, `timeoutMs`),
+   fixed agent, fixed policy.
+3. `agent`: generic (`agent`, `prompt`, `structuredOutput`, `timeoutMs`).
+4. `inline`: `agentConfig` + `prompt`, only for explicitly allowed agents.
+5. QOC side: configure remote MCP server `aws`; agent config controls
+   access via `mcpServers`, `tools.allow/deny`, `permissions`.
+6. Tool names: server `aws` + tool `worker` → `aws_worker` (no double
+   prefix).
 
-**Variante C – QOC-Wrapper (optional):**
+**Variant C – QOC wrapper (optional):**
 
-1. `aws_worker`-Tool aus der Registry generieren (fester Worker-Alias).
-2. Enges Schema: `prompt`, optional `structuredOutput`, `timeoutMs`.
-3. Auth-Adapter: Token Exchange auf `aud=qoc-aws-worker` oder Service-Token.
+1. Generate `aws_worker` tool from the registry (fixed worker alias).
+2. Narrow schema: `prompt`, optionally `structuredOutput`, `timeoutMs`.
+3. Auth adapter: token exchange to `aud=qoc-aws-worker` or service token.
 
-**Gemeinsam:**
+**Common:**
 
-1. Lambda-Limits: Timeout ≤ 900s, Payload ≤ 6 MB, keine Workspace-Dateien.
-2. `_meta` um `environment=aws`, `workerId`, `latencyMs`, `X-Amzn-Trace-Id`
-   erweitern.
-3. Fehler-Mapping: Cold-Start-Timeout, 413 Payload Too Large, 401/403,
-   Lambda-5xx.
-4. Optional: `background=true` für lange Lambda-Läufe.
+1. Lambda limits: timeout ≤ 900s, payload ≤ 6 MB, no workspace files.
+2. Extend `_meta` by `environment=aws`, `workerId`, `latencyMs`,
+   `X-Amzn-Trace-Id`.
+3. Error mapping: cold-start timeout, 413 payload too large, 401/403,
+   Lambda 5xx.
+4. Optional: `background=true` for long Lambda runs.
 
-### Phase 4 – Härtung
+### Phase 4 – Hardening
 
-1. Retry (3 Versuche, Backoff 10s/30s) und Circuit Breaker pro Worker.
-2. Failover innerhalb des GCP-Pools; AWS-Tool mit klarer Fehlermeldung.
-3. Metriken/Audit pro `environment`.
-4. `/api/worker`-Status-Endpoint (Registry, Health, in-flight).
-5. Optional: Provisioned Concurrency für AWS; WAF/IAM vor der Function URL.
-6. Optional: dynamische Discovery (Cloud Run Service Discovery, AWS
-   Function-URL-Registry).
+1. Retry (3 attempts, backoff 10s/30s) and circuit breaker per worker.
+2. Failover within the GCP pool; AWS tool with clear error message.
+3. Metrics/audit per `environment`.
+4. `/api/worker` status endpoint (registry, health, in-flight).
+5. Optional: provisioned concurrency for AWS; WAF/IAM in front of the
+   function URL.
+6. Optional: dynamic discovery (Cloud Run service discovery, AWS
+   function URL registry).
 
 ### Tests
 
-- GCP: 3 parallele `tasks[]` auf 2 Cloud-Run-Workern, korrekte Zuordnung.
-- GCP: Failover bei einem kranken Worker.
-- AWS: `aws_worker` erreicht nur den konfigurierten Lambda-Worker.
-- AWS: Tool-Profile `aws_worker`/`aws_agent`/`aws_inline` werden korrekt
-  namespaced und nur gemäß Agent-Config sichtbar.
-- AWS: `mcpServers`-Filter greift auch bei `tools.allow: ["*"]`.
-- AWS: Auth-Fehler, Timeout, 413, Cold-Start-Retry.
-- Cross-Cloud: Token Exchange/Audience-Prüfung.
-- Security: keine freie URL, Egress-Allow-List greift.
-- Ergebnis: `_meta` enthält `environment`, `workerId`, Latenz, Cloud-Trace.
+- GCP: 3 parallel `tasks[]` on 2 Cloud Run workers, correct assignment.
+- GCP: failover when one worker is unhealthy.
+- AWS: `aws_worker` reaches only the configured Lambda worker.
+- AWS: tool profiles `aws_worker`/`aws_agent`/`aws_inline` are namespaced
+  correctly and visible only per agent config.
+- AWS: `mcpServers` filter applies even with `tools.allow: ["*"]`.
+- AWS: auth errors, timeout, 413, cold-start retry.
+- Cross-cloud: token exchange/audience verification.
+- Security: no free URL, egress allow-list applies.
+- Result: `_meta` contains `environment`, `workerId`, latency, cloud trace.
 - JaCoCo ≥ 80 %.
 
 ### Acceptance Criteria
 
-- `subagent(environment=gcp, capability=web, tasks=[...])` läuft parallel auf
-  Cloud Run und liefert pro Task ein Ergebnis.
-- `aws_worker(prompt=...)` läuft auf dem AWS-Lambda-Worker, liefert Text/
-  strukturiertes Ergebnis und eine AWS-Trace-Referenz.
-- Ein neuer GCP-Worker ist ohne Code-Deploy nur per Registry-Eintrag nutzbar.
-- Ein Worker-Ausfall führt zu Retry/Failover bzw. einer klaren Fehlermeldung.
-- AWS-Worker hat keinen Workspace-Zugriff und keine Shell.
+- `subagent(environment=gcp, capability=web, tasks=[...])` runs in parallel
+  on Cloud Run and returns a result per task.
+- `aws_worker(prompt=...)` runs on the AWS Lambda worker, returns text/
+  structured result and an AWS trace reference.
+- A new GCP worker is usable without code deploy, only via registry entry.
+- A worker failure leads to retry/failover or a clear error message.
+- AWS worker has no workspace access and no shell.
 
-### Risiken und Gegenmaßnahmen
+### Risks and Mitigations
 
-| Risiko | Gegenmaßnahme |
+| Risk | Mitigation |
 |---|---|
-| Cross-Cloud-Latenz | Timeouts, `background=true`, Provisioned Concurrency, PrivateLink |
-| Lambda Cold Start | Provisioned Concurrency oder warme Mindestinstanz |
-| Zwei IdPs/Audiences | Token Exchange zentral im Auth-Adapter, nicht im Tool |
-| Datenresidenz | AWS-Worker nur stateless Text/JSON, keine Workspace-Daten |
-| Function-URL öffentlich | IAM-Auth/WAF, OIDC im QOC-Prozess, Rate-Limit |
-| Payload-Limit | Strukturiertes Output statt Dateien, 6-MB-Check vor dem Call |
+| Cross-cloud latency | Timeouts, `background=true`, provisioned concurrency, PrivateLink |
+| Lambda cold start | Provisioned concurrency or warm minimum instance |
+| Two IdPs/audiences | Token exchange centrally in the auth adapter, not in the tool |
+| Data residency | AWS worker only stateless text/JSON, no workspace data |
+| Public function URL | IAM auth/WAF, OIDC in the QOC process, rate limit |
+| Payload limit | Structured output instead of files, 6-MB check before the call |
 
-### Offene Entscheidungen (Cloud)
+### Open Decisions (Cloud)
 
-1. AWS-Auth: Token Exchange (empfohlen) oder Service-Token?
-2. Function-URL: `auth-type NONE` + OIDC oder IAM/SigV4?
-3. AWS-Tool: fest ein Ziel oder mehrere AWS-Worker mit Alias?
-4. GCP-Worker: Cloud Run direkt oder über API Gateway?
-5. PrivateLink/VPC-Endpoint nötig oder öffentliches Internet mit Allow-List?
-6. Sollen AWS-Aufgaben standardmäßig `background=true` sein?
-7. AWS-Tool-Profile: nur `worker` (dediziert), `agent` (generisch) oder beide?
-8. Soll `inline` (`agentConfig`) überhaupt freigegeben werden – und für welche
-   Agenten?
-9. MCP-Proxy (Variante B) oder Tool-Profile direkt im Lambda-Worker
-   (Variante A)?
+1. AWS auth: token exchange (recommended) or service token?
+2. Function URL: `auth-type NONE` + OIDC or IAM/SigV4?
+3. AWS tool: fixed target or multiple AWS workers with alias?
+4. GCP worker: Cloud Run directly or via API gateway?
+5. PrivateLink/VPC endpoint needed or public internet with allow-list?
+6. Should AWS tasks default to `background=true`?
+7. AWS tool profiles: only `worker` (dedicated), `agent` (generic), or both?
+8. Should `inline` (`agentConfig`) be exposed at all — and for which
+   agents?
+9. MCP proxy (variant B) or tool profiles directly in the Lambda worker
+   (variant A)?
 
-## 23. Referenzen
+## 23. References
 
 - `engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/SubagentTool.java`
 - `engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/SubagentRunner.java`

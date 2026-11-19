@@ -1,96 +1,98 @@
-# Isomorphes Java-Workflow- und LLM-System – Zusammenfassung
+# Isomorphic Java Workflow and LLM System – Summary
 
-> **Quelle:** `docs/next/ideen.txt` (lange Architektur-Konversation).  
-> **Status:** Konzept / Referenz (2026-11-18).  
-> **Ziel:** Kompakte Extraktion der architektonischen Ideen für QOC.
+> **Source:** `docs/next/ideen.txt` (long architecture conversation).  
+> **Status:** Concept / Reference (2026-11-18).  
+> **Goal:** Compact extraction of the architectural ideas for QOC.
 
 ---
 
-## 1. Kernidee: Isomorphes Datenmodell
+## 1. Core idea: Isomorphic data model
 
-- Workflow-Struktur und LLM-Kontext haben **exakt dieselbe Struktur** (AST/JSON-Baum).
-- „Der Zustand ist der Prompt ist der Ablaufplan“ – keine Mapping-Hölle.
-- Persistenz als einheitlicher Baum (JSON), versionierbar, event-log-fähig.
+- Workflow structure and LLM context have **exactly the same structure** (AST/JSON tree).
+- "The state is the prompt is the plan" – no mapping hell.
+- Persistence as a unified tree (JSON), versionable, event-log-capable.
 - Java: `sealed interface Node` + Records + Pattern Matching / Visitor.
 
-## 2. Dynamische Planung: OODA-Loop pro Schritt
+## 2. Dynamic planning: OODA loop per step
 
-Nach jedem Node:
-1. Zustandsaktualisierung (Ergebnis in Baum schreiben).
-2. LLM bekommt den gesamten Baum als Kontext.
-3. Strukturierte Entscheidung (JSON Mode / Function Calling): `CONTINUE`, `GO_BACK`, `REPLAN`, `FINISH`.
+After each node:
+1. State update (write result into tree).
+2. LLM receives the entire tree as context.
+3. Structured decision (JSON Mode / Function Calling): `CONTINUE`, `GO_BACK`, `REPLAN`, `FINISH`.
 
-## 3. Selbstheilungs-Loop (Self-Correction)
+## 3. Self-correction loop (Self-Correction)
 
-- Native JSON-Schema-Enforcement (Constrained Decoding) für syntaktische Validität.
-- Semantische Validierung (Guardrails) für fachliche Korrektheit.
-- Bei Fehler: Exception abfangen, Prompt mit Fehlerdetails anreichern, zurück an LLM (max. N Retries).
-- In der Praxis korrigieren State-of-the-Art-Modelle im 2. Versuch in >95 % der Fälle.
+- Native JSON schema enforcement (constrained decoding) for syntactic validity.
+- Semantic validation (guardrails) for domain correctness.
+- On error: catch exception, enrich prompt with error details, return to LLM (max. N retries).
+- In practice, state-of-the-art models correct themselves on the 2nd attempt in >95% of cases.
 
-## 4. Ziel-Definition pro Knoten (`NodeGoal`)
+## 4. Goal definition per node (`NodeGoal`)
 
 ```java
 public record NodeGoal(String description, List<ValidationRule> rules, EvaluationStrategy strategy) {}
 ```
 
-- **Deterministisch (Code):** Schema, Datentypen, Formate, exakte Matches.
-- **LLM-as-a-Judge:** Semantische Vollständigkeit, Tone/Compliance, logische Konsistenz.
-- **Hybrid (empfohlen):** Code-Check zuerst (schnell, kostenlos), dann LLM-Judge (nur wenn nötig).
-- Funnel-Prinzip: Schema → Programmatische Regeln → LLM-Judge (günstig → teuer).
+- **Deterministic (code):** schema, data types, formats, exact matches.
+- **LLM-as-a-Judge:** semantic completeness, tone/compliance, logical consistency.
+- **Hybrid (recommended):** code check first (fast, free), then LLM judge (only when necessary).
+- Funnel principle: Schema → Programmatic rules → LLM judge (cheap → expensive).
 
-## 5. Persistente Chat-Session pro Agent/Subagent
+## 5. Persistent chat session per agent/subagent
 
-- Jeder Knoten behält seine eigene Chat-Historie (DB-persistent).
-- **Gezielte Nachfragen** ohne kompletten Re-Run (`node.chatSession().sendMessage(...)`).
-- **Inspect & Debug:** Entwickler können in die Chat-Session eines Knotens einsteigen.
-- **Agent-to-Agent-Kommunikation:** Peer-Review (Generator & Kritiker), Experten-Konsultation (On-Demand Sparring) via Cross-Session-Calls.
-- **Subagent-Purging:** Subagents machen intern viele Tool-Calls, aber nur das kompakte Ergebnis fließt in den übergeordneten Workflow-Kontext (Token-Bloat-Prävention).
+- Each node keeps its own chat history (DB-persistent).
+- **Targeted follow-up questions** without full re-run (`node.chatSession().sendMessage(...)`).
+- **Inspect & debug:** developers can step into a node's chat session.
+- **Agent-to-agent communication:** peer review (generator & critic), expert consultation (on-demand sparring) via cross-session calls.
+- **Subagent purging:** subagents perform many internal tool calls, but only the compact result flows into the parent workflow context (token-bloat prevention).
 
-## 6. Upstream-Korrektur & Lineage
+## 6. Upstream correction & lineage
 
-- **Root-Cause-Discovery:** Agent in Schritt N merkt fehlendes Datum → Cross-Session-Call an den Producer-Schritt.
-- **Memory-Patch:** Producer korrigiert Output und speichert Erkenntnis in seiner Chat-Historie.
-- **Selektives Rollback/Replay:** Nur konsumierende Nachfolge-Knoten werden invalidiert (`DIRTY`/`PENDING_REPLAY`) und neu ausgeführt; nicht betroffene Schritte werden übersprungen (Bypass).
-- **Data-Scope-Tracking:** Jeder Knoten weiß, welche JSON-Pfade er konsumiert hat → Impact-Scope-Berechnung.
-- **Execution Modes:** `NORMAL`, `DRY_RUN`, `IMPACT_ANALYSIS`.
+- **Root-cause discovery:** agent in step N notices missing data → cross-session call to the producer step.
+- **Memory patch:** producer corrects output and stores insight in its chat history.
+- **Selective rollback/replay:** only consuming downstream nodes are invalidated (`DIRTY`/`PENDING_REPLAY`) and re-executed; unaffected steps are skipped (bypass).
+- **Data-scope tracking:** each node knows which JSON paths it consumed → impact-scope calculation.
+- **Execution modes:** `NORMAL`, `DRY_RUN`, `IMPACT_ANALYSIS`.
 
-## 7. Hybride Knoten: Agent vs. Service
+## 7. Hybrid nodes: agent vs. service
 
 ```java
 public sealed interface WorkflowNode permits AgentNode, SubAgentNode, ServiceNode {}
 ```
 
-- **AgentNode/SubAgentNode:** Chat-Session, Self-Healing-Loop, LLM-Judge.
-- **ServiceNode:** Deterministisch (REST, DB, Code). Keine Chat-Session.
-- **Input-Hashing:** Bei Upstream-Änderung Hash der neuen Eingaben vergleichen → Rerun oder Bypass.
-- **Saga-Pattern:** Für Services mit Seiteneffekten (Kompensierende Transaktionen, Rollback).
+- **AgentNode/SubAgentNode:** chat session, self-healing loop, LLM judge.
+- **ServiceNode:** deterministic (REST, DB, code). No chat session.
+- **Input hashing:** on upstream change compare hash of new inputs → rerun or bypass.
+- **Saga pattern:** for services with side effects (compensating transactions, rollback).
 
-## 8. DB als Single Source of Truth
+## 8. DB as single source of truth
 
-- React Flow = reine Projektions-Schicht (UI View) auf die DB.
-- Jeder Schritt mit seinem exakten Input persistiert → einzeln reproduzierbar.
-- Versionierung und Event-Log für Audit-Trail und Replay.
+- React Flow = pure projection layer (UI view) on the DB.
+- Each step persisted with its exact input → individually reproducible.
+- Versioning and event log for audit trail and replay.
 
-## 9. Kritische Risiken & Gegenmaßnahmen
+## 9. Critical risks & countermeasures
 
-| Risiko | Gegenmaßnahme |
+| Risk | Countermeasure |
 |---|---|
-| Token-Bloat / Attention Drift | Subagent-Purging, selektives Data-Scoping |
-| State-Chaos / Race Conditions | DB als SSOT, React Flow nur View |
-| Reproduzierbarkeits-Desaster | Step-Input-Persistenz, Event Sourcing |
-| Prompt Injection im Baum | Wenig Außenangriff (wenig Externzugriff), Daten-/Instruktions-Trennung |
-| Kosten/Latenz-Killer | Pragmatische Validierungsmatrix (Funnel), Selbstheilungs-Loop mit max. Retries |
+| Token bloat / attention drift | Subagent purging, selective data scoping |
+| State chaos / race conditions | DB as SSOT, React Flow only view |
+| Reproducibility disaster | Step-input persistence, event sourcing |
+| Prompt injection in the tree | Little external attack surface (little external access), data/instruction separation |
+| Cost/latency killer | Pragmatic validation matrix (funnel), self-correction loop with max. retries |
 
-## 10. Implementierungsplan (aus ideen.txt)
+## 10. Implementation plan (from ideen.txt)
 
-1. **Isomorphes Datenmodell** in Java (Sealed Interface + Records) und React Flow (node.data spiegelt Java-Struktur).
-2. **Trennung Chat-Session (Isolation) vs. Workflow-State (Commit)** – Sandbox vs. Commit.
-3. **Hybride Knotentypen** (Agent vs. Service) in der Engine.
-4. **Upstream-Korrektur- & Invalidation-Flow** (Epizentrum → Lineage-Check → Rerun/Dry-Run).
-5. **UI-Synchronisation** in React Flow (Farbkodierung, Chat-Drawer pro Knoten).
+1. **Isomorphic data model** in Java (sealed interface + records) and React Flow (node.data mirrors Java structure).
+2. **Separation of chat session (isolation) vs. workflow state (commit)** – sandbox vs. commit.
+3. **Hybrid node types** (agent vs. service) in the engine.
+4. **Upstream correction & invalidation flow** (epicenter → lineage check → rerun/dry-run).
+5. **UI synchronization** in React Flow (color coding, chat drawer per node).
 
-## 11. Relevanz für QOC
+## 11. Relevance for QOC
 
-- **Bestehende Architektur:** QOC hat bereits Workflow-Engine, Agent-Catalogue, Child-Sessions, Journal, Resilience. Die isomorphe Idee (Workflow = Kontext) ist ein möglicher nächster Schritt für die Agenten-Integration.
-- **Runtime-Plan-Adaptation:** Der Doc (`runtime-plan-adaptation.md`) deckt Runtime-Reparatur ab; die isomorphe Idee ergänzt dies um dynamische Planung (OODA-Loop) und Chat-Session-Integration.
-- **Empfehlung:** Phase 0 (Goal→Plan) könnte als OODA-Loop auf Basis des isomorphen Modells implementiert werden, wobei der Supervisor (Doc) die Entscheidungslogik übernimmt.
+- **Existing architecture:** QOC already has a workflow engine, agent catalogue, child sessions, journal, resilience. The isomorphic idea (workflow = context) is a possible next step for agent integration.
+- **Runtime plan adaptation:** the doc (`runtime-plan-adaptation.md`) covers runtime repair; the isomorphic idea complements this with dynamic planning (OODA loop) and chat-session integration.
+- **Recommendation:** Phase 0 (Goal→Plan) could be implemented as an OODA loop on top of the isomorphic model, with the supervisor (doc) taking over the decision logic.
+" \
+/home/torsten/dev/my-projects/2oc/qoc/docs/next/ideen-summary.md

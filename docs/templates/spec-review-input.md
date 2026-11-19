@@ -1,94 +1,93 @@
-# Spec-Review Input — Briefing für den Pre-Flight-Agenten
+# Spec-Review Input — Briefing for the Pre-Flight Agent
 
-> Ausfüllen VOR dem Start von `aisdlc-spec-review`. Fehlende Felder werden vom
-> Agenten nachgefragt — aber nur dann, nicht für alles. "n/a" oder "unbekannt"
-> ist eine gültige Antwort und wird als offener Punkt (O-<n>) dokumentiert.
+> Fill in BEFORE starting `aisdlc-spec-review`. Missing fields are queried by
+> the agent — but only then, not for everything. "n/a" or "unknown"
+> is a valid answer and is documented as an open point (O-<n>).
 
-## 1. Auftrag (Raw Input)
+## 1. Assignment (Raw Input)
 
 ```
-<Freitext-Auftrag, unverändert>
+<Free-text assignment, unchanged>
 ```
 
-## 2. Umgebungs-Manifest
+## 2. Environment Manifest
 
-| Faktor | Wert |
+| Factor | Value |
 |---|---|
-| JDK | (z.B. 21.0.12 Temurin) |
-| Maven | (z.B. 3.9.16) |
-| Git | (z.B. 2.43) |
-| Docker | (z.B. 29.1.3, Socket gemountet) / nicht vorhanden |
-| Browser | vorhanden (Chromium/Chrome/Firefox) / **keiner** |
-| Node/Playwright | vorhanden / **nicht vorhanden** |
-| Quarkus-Version | (z.B. 3.40.1.1) |
-| Quarkus-Skills im Repo | (Anzahl + Pfad, oder "keine") |
-| Bestehender Code | Greenfield / bestehend (Pfad) |
-| CI | (GitHub Actions / GitLab / keine) |
+| JDK | (e.g. 21.0.12 Temurin) |
+| Maven | (e.g. 3.9.16) |
+| Git | (e.g. 2.43) |
+| Docker | (e.g. 29.1.3, socket mounted) / not available |
+| Browser | available (Chromium/Chrome/Firefox) / **none** |
+| Node/Playwright | available / **not available** |
+| Quarkus Version | (e.g. 3.40.1.1) |
+| Quarkus Skills in Repo | (count + path, or "none") |
+| Existing Code | Greenfield / existing (path) |
+| CI | (GitHub Actions / GitLab / none) |
 
-## 3. Repository-Inventar
+## 3. Repository Inventory
 
-- Typ: Greenfield / Brownfield
-- Framework: (z.B. Quarkus 3.40, Spring Boot, ...)
-- Verfügbare Extensions/Skills: (Liste oder "keine")
-- Bestehende Tests: (ja/nein, Framework)
-- Bestehende Konfiguration: (application.properties, opencode.jsonc, ...)
+- Type: Greenfield / Brownfield
+- Framework: (e.g. Quarkus 3.40, Spring Boot, ...)
+- Available Extensions/Skills: (list or "none")
+- Existing Tests: (yes/no, framework)
+- Existing Configuration: (application.properties, opencode.jsonc, ...)
 
-## 4. Externe Dienste
+## 4. External Services
 
 ```yaml
 external_services:
   - name: Auth0
-    provided: true          # Tenant/User/Rolle werden bereitgestellt
-    tenant_domain: ""       # oder "n/a"
-    role_claim: ""          # z.B. "https://example.com/roles" oder "roles"
-    rp_initiated_logout: true  # Default für Tenants ab 14.11.2023
+    provided: true          # Tenant/User/role are provided
+    tenant_domain: ""       # or "n/a"
+    role_claim: ""          # e.g. "https://example.com/roles" or "roles"
+    rp_initiated_logout: true  # Default for tenants from 14.11.2023
     test_user: "user@qoc.test"
     test_role: "user"
 ```
 
-## 5. Deployment-Kontext
+## 5. Deployment Context
 
 ```yaml
 deployment:
-  target: ""              # z.B. "Docker-Container", "Kubernetes", "bare metal"
-  replicas: ""            # z.B. "≥ 2 (HA)" oder "1 (single)"
-  tls: ""                 # z.B. "externer Load-Balancer" oder "kein TLS (dev only)"
-  region: ""              # z.B. "eu-central-1" oder "lokal"
-  domain: ""              # z.B. "app.example.com" oder "n/a"
+  target: ""              # e.g. "Docker container", "Kubernetes", "bare metal"
+  replicas: ""            # e.g. "≥ 2 (HA)" or "1 (single)"
+  tls: ""                 # e.g. "external load balancer" or "no TLS (dev only)"
+  region: ""              # e.g. "eu-central-1" or "local"
+  domain: ""              # e.g. "app.example.com" or "n/a"
 ```
 
-## 6. Kontrakt-Consumer
+## 6. Contract Consumers
 
-- Wer nutzt den Service? (z.B. "Browser (kein Dritt-API-Consumer)", "Mobile App", "andere Services")
-- Barrierefreiheitspflicht? (z.B. "nein — kein öffentlicher Verbraucher-Scope")
+- Who uses the service? (e.g. "Browser (no third-party API consumer)", "Mobile App", "other services")
+- Accessibility requirement? (e.g. "no — no public consumer scope")
 
-## 7. Daten & Persistenz
+## 7. Data & Persistence
 
-- Nutzer-DB? (ja/nein — wenn nein: nur Session-Cookie)
-- Multi-Tenancy? (ja/nein)
-- Session-Strategie bei Mehr-Instanzen: (Cookie / DB / Redis / "Architekt entscheidet")
+- User DB? (yes/no — if no: session cookie only)
+- Multi-tenancy? (yes/no)
+- Session strategy for multiple instances: (Cookie / DB / Redis / "architect decides")
 
-## 8. Vorheriger Review-State (nur bei Re-Runs)
+## 8. Previous Review State (re-runs only)
 
 ```yaml
 previous_decisions:
-  - "R1: BLOCKED (Grund)"
-  - "R2: READY_WITH_ASSUMPTIONS (Entscheidung)"
-  - "R3: Frage Q3-01 → Antwort"
+  - "R1: BLOCKED (reason)"
+  - "R2: READY_WITH_ASSUMPTIONS (decision)"
+  - "R3: Question Q3-01 → Answer"
 ```
 
-## 9. Bekannte Einschränkungen
+## 9. Known Constraints
 
-- (z.B. "Kein Browser in Build-Umgebung", "Kein Node/Playwright", "Kein Docker")
-- (z.B. "Auth0-Tenant wird bereitgestellt, ist aber noch nicht konfiguriert")
+- (e.g. "No browser in build environment", "No Node/Playwright", "No Docker")
+- (e.g. "Auth0 tenant is provided but not yet configured")
 
 ---
 
-## Ausfüllhinweise
+## Filling Instructions
 
-- Felder mit "n/a" oder "unbekannt" sind gültig — der Agent dokumentiert sie als
-  offene Punkte (O-<n>) mit Owner "Mensch" oder "Architekt".
-- Wenn ein Feld fehlt, fragt der Agent — aber nur für dieses Feld, nicht für alle.
-- Die Umgebungs-Fakten (Abschnitt 2) können mit `java -version`, `mvn -v`,
-  `git --version`, `docker --version`, `command -v chromium`, `command -v node`
-  ermittelt werden.
+- Fields with "n/a" or "unknown" are valid — the agent documents them as
+  open points (O-<n>) with owner "Human" or "Architect".
+- If a field is missing, the agent asks — but only for that field, not for all.
+- The environment facts (Section 2) can be determined with `java -version`, `mvn -v`,
+  `git --version`, `docker --version`, `command -v chromium`, `command -v node`.

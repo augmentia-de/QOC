@@ -1,189 +1,187 @@
-# Workflow-OIDC – RBAC, Systemuser und OIDC-Integration für Workflows
+# Workflow-OIDC – RBAC, System User, and OIDC Integration for Workflows
 
 > Status: Plan (2026-11-12)
-> Ergänzt: `Workflow.md`, `06-security-hardening.md`, `security.md`, `settings.md`
+> Supplements: `Workflow.md`, `06-security-hardening.md`, `security.md`, `settings.md`
 
-## 1. Zielbild
+## 1. Goal
 
-Workflows, Agents und Runs im Workflow-Runner werden durch dieselbe
-Authentifizierungs- und Autorisierungsinfrastruktur abgesichert wie der
-Quarkus-Engine-Kern (OIDC/Basic/Proxy/NONE). Es gibt keine eigene
-Nutzerverwaltung; Identitäten stammen aus dem IdP (OIDC) oder aus
-Basic/Proxy-Headern. Ein Systemuser (Service-Account) ermöglicht
-Automatisierung und Background-Jobs ohne interaktiven Login.
+Workflows, agents, and runs in the workflow runner are secured by the same
+authentication and authorization infrastructure as the Quarkus engine core
+(OIDC/Basic/Proxy/NONE). There is no separate user management; identities
+come from the IdP (OIDC) or from Basic/Proxy headers. A system user
+(service account) enables automation and background jobs without interactive
+login.
 
-## 2. Auth-Modi (wiederverwendet aus QOC)
+## 2. Auth Modes (reused from QOC)
 
-| Modus | Quelle | Principal.id | Rollen |
+| Mode | Source | Principal.id | Roles |
 |---|---|---|---|
-| `none` | kein Login | `local` (localAdmin) oder `anonymous` | `admin` (localAdmin) |
+| `none` | no login | `local` (localAdmin) or `anonymous` | `admin` (localAdmin) |
 | `basic` | `OPENCODE_SERVER_PASSWORD` | `opencode` | `admin` |
-| `oidc` | JWT (Keycloak/Auth0) | `preferred_username` / Subject / E-Mail | aus `realm_access.roles`, `permissions`, `roles`, `groups` |
-| `proxy` | `X-Forwarded-*`-Header (trusted) | Header-User | Header-Roles |
-| `mcp_oauth` | OAuth für MCP-Server | — | — |
+| `oidc` | JWT (Keycloak/Auth0) | `preferred_username` / Subject / Email | from `realm_access.roles`, `permissions`, `roles`, `groups` |
+| `proxy` | `X-Forwarded-*` headers (trusted) | header user | header roles |
+| `mcp_oauth` | OAuth for MCP servers | — | — |
 
-Modus-Auflösung: `ENGINE_SECURITY_MODE` → `settings.json` (`security.mode`) →
-Fallback `BASIC` wenn Passwort gesetzt, sonst `NONE`.
+Mode resolution: `ENGINE_SECURITY_MODE` → `settings.json` (`security.mode`) →
+Fallback `BASIC` if a password is set, otherwise `NONE`.
 
-## 3. Rollen
+## 3. Roles
 
-| Rolle | Alias | Bedeutung |
+| Role | Alias | Meaning |
 |---|---|---|
-| `admin` | `qoc-admin` | Vollzugriff, Authoring, User-Verwaltung |
-| `user` | — | Eigene Ressourcen CRUD, geteilte lesen |
-| `system` | — | Service-Account für Background/Automation |
+| `admin` | `qoc-admin` | Full access, authoring, user management |
+| `user` | — | CRUD on own resources, read shared ones |
+| `system` | — | Service account for background/automation |
 | `viewer` / `reader` | — | Read-only (optional) |
 
-Rollen kommen ausschließlich aus dem IdP/Proxy/Basic — keine eigene User-DB
-(ADR-004: keine Anwendungs-DB).
+Roles come exclusively from the IdP/Proxy/Basic — no own user DB
+(ADR-004: no application database).
 
-## 4. Systemuser
+## 4. System User
 
-### 4.1 Konzept
+### 4.1 Concept
 
-Ein synthetischer Principal, der für Automatisierung, Scheduler und
-Background-Jobs verwendet wird:
+A synthetic principal used for automation, schedulers, and background jobs:
 
 ```java
 Principal.system()  // id="system", name="system", roles=["system"], source="system"
 ```
 
-**Hinweis:** `Principal.system()` existiert noch nicht in `engine.core.model.Principal`
-(nur `anonymous()` und `localAdmin()`). Muss ergänzt werden (analog zu
-`localAdmin()`, aber mit Rolle `system`).
+**Note:** `Principal.system()` does not yet exist in `engine.core.model.Principal`
+(only `anonymous()` and `localAdmin()`). It must be added (analogous to
+`localAdmin()`, but with role `system`).
 
-### 4.2 Authentifizierung
+### 4.2 Authentication
 
-| Modus | Mechanismus |
+| Mode | Mechanism |
 |---|---|
-| `none` | `Principal.system()` wird automatisch für Background-Jobs gesetzt (analog zu `localAdmin()` für interaktive Calls). |
-| `basic`/`oidc`/`proxy` | Service-Token via `X-System-Token`-Header, validiert gegen `ENGINE_SYSTEM_TOKEN` (konfigurierbar). Alternativ OIDC Client-Credentials Flow. |
+| `none` | `Principal.system()` is set automatically for background jobs (analogous to `localAdmin()` for interactive calls). |
+| `basic`/`oidc`/`proxy` | Service token via `X-System-Token` header, validated against `ENGINE_SYSTEM_TOKEN` (configurable). Alternatively, the OIDC client-credentials flow. |
 
-### 4.3 Konfiguration
+### 4.3 Configuration
 
 ```properties
-ENGINE_SYSTEM_TOKEN=${ENGINE_SYSTEM_TOKEN:}        # Service-Token
-ENGINE_SYSTEM_ROLES=${ENGINE_SYSTEM_ROLES:system}  # Rollen (kommasepariert)
+ENGINE_SYSTEM_TOKEN=${ENGINE_SYSTEM_TOKEN:}        # Service token
+ENGINE_SYSTEM_ROLES=${ENGINE_SYSTEM_ROLES:system}  # Roles (comma-separated)
 ENGINE_SYSTEM_OWNERSHIP=${ENGINE_SYSTEM_OWNERSHIP:system}  # system | caller
 ```
 
-### 4.4 Verwendung
+### 4.4 Usage
 
-- Workflow-Runs, die durch Scheduler/Webhooks/Events ausgelöst werden, laufen
-  als `system`.
-- `WorkflowExecutor.executeRun` nutzt `Principal.system()` statt `anonymous()`.
-- Erstellte Workflows/Agents erhalten `ownerId = "system"` (oder den
-  auslösenden User bei `ENGINE_SYSTEM_OWNERSHIP=caller`).
+- Workflow runs triggered by schedulers/webhooks/events run as `system`.
+- `WorkflowExecutor.executeRun` uses `Principal.system()` instead of `anonymous()`.
+- Created workflows/agents receive `ownerId = "system"` (or the triggering
+  user when `ENGINE_SYSTEM_OWNERSHIP=caller`).
 
-## 5. Ownership-Modell
+## 5. Ownership Model
 
-### 5.1 Datenmodell-Erweiterungen
+### 5.1 Data Model Extensions
 
-- `WorkflowDefinition`: neues Feld `ownerId` (String, nullable = global/shared).
-- `WorkflowDefinition.Agent`: neues Feld `ownerId` **und** `rolesAllowed`
-  (List<String>, Default `["*"]` für geteilte Agents — analog zu
+- `WorkflowDefinition`: new field `ownerId` (String, nullable = global/shared).
+- `WorkflowDefinition.Agent`: new field `ownerId` **and** `rolesAllowed`
+  (List<String>, default `["*"]` for shared agents — analogous to
   `EngineConfig.AgentConfig.rolesAllowed()`).
-- `SessionInfo` hat bereits `ownerId` — Workflow-Runs erzeugen Sessions mit
-  der ownerId des auslösenden Users (oder `system`).
+- `SessionInfo` already has `ownerId` — workflow runs create sessions with
+  the ownerId of the triggering user (or `system`).
 
-### 5.2 Zugriffsregeln
+### 5.2 Access Rules
 
-| Ressource | Admin/System | User | Viewer | Anonymous (NONE) |
+| Resource | Admin/System | User | Viewer | Anonymous (NONE) |
 |---|---|---|---|---|
-| Workflow list | alle | eigene + shared (ownerId=null) | alle (read) | alle (lokal admin) |
-| Workflow get | alle | eigene + shared | alle | alle |
-| Workflow create | ja | ja (owner=self) | nein | ja (owner=local/system) |
-| Workflow save/delete | alle | eigene | nein | ja |
-| Workflow run | alle | eigene + shared | nein | ja |
-| Agent list/get | alle | eigene + shared | alle | alle |
-| Agent create/save/delete | alle | eigene | nein | ja |
-| Run list/status/resume | alle | eigene | eigene (read) | ja |
+| Workflow list | all | own + shared (ownerId=null) | all (read) | all (local admin) |
+| Workflow get | all | own + shared | all | all |
+| Workflow create | yes | yes (owner=self) | no | yes (owner=local/system) |
+| Workflow save/delete | all | own | no | yes |
+| Workflow run | all | own + shared | no | yes |
+| Agent list/get | all | own + shared | all | all |
+| Agent create/save/delete | all | own | no | yes |
+| Run list/status/resume | all | own | own (read) | yes |
 
-## 6. OIDC-Flow für Workflows
+## 6. OIDC Flow for Workflows
 
 ### 6.1 UI → Backend
 
-1. UI (React) führt OIDC Authorization Code + PKCE durch (Issuer aus
-   `localStorage` oder `/config.js`).
-2. Access-Token wird als `Authorization: Bearer <token>` an `/api/workflows/*`
-   gesendet.
-3. `OidcPrincipalProducer` (Priority AUTHENTICATION-5) extrahiert Principal +
-   Rollen aus dem JWT und setzt `PrincipalContext`.
-4. `RolesAllowedFilter` (Priority AUTHORIZATION) prüft `@RolesAllowed`.
+1. The UI (React) performs the OIDC Authorization Code + PKCE flow (issuer
+   from `localStorage` or `/config.js`).
+2. The access token is sent as `Authorization: Bearer <token>` to
+   `/api/workflows/*`.
+3. `OidcPrincipalProducer` (priority AUTHENTICATION-5) extracts the principal
+   + roles from the JWT and sets `PrincipalContext`.
+4. `RolesAllowedFilter` (priority AUTHORIZATION) checks `@RolesAllowed`.
 
 ### 6.2 Backend → Workflow-Runner
 
-1. `WorkflowResource` liest `X-QOC-User` (oder `accessGuard.currentUser()`).
-2. `WorkflowExecutor.executeRun(def, input, user)` erzeugt eine Session mit
-   `ownerId = user` und `Principal` statt `anonymous()`.
-3. `DefaultNodeDispatcher.runAgent` reicht `Principal` an `engine.runPrompt`
-   durch.
-4. Agent-Tool-Calls (Shell, Files, Web, MCP, Subagents) laufen unter dem
-   Principal des Workflow-Runs.
+1. `WorkflowResource` reads `X-QOC-User` (or `accessGuard.currentUser()`).
+2. `WorkflowExecutor.executeRun(def, input, user)` creates a session with
+   `ownerId = user` and `Principal` instead of `anonymous()`.
+3. `DefaultNodeDispatcher.runAgent` passes `Principal` through to
+   `engine.runPrompt`.
+4. Agent tool calls (Shell, Files, Web, MCP, Subagents) run under the
+   principal of the workflow run.
 
-### 6.3 Role-Claim-Pfad
+### 6.3 Role Claim Path
 
-Pro Profil konfiguriert (ADR-006):
+Configured per profile (ADR-006):
 
-| Profil | Claim-Pfad | Beispiel |
+| Profile | Claim path | Example |
 |---|---|---|
 | `%dev` (Keycloak) | `realm_access/roles` | `["admin", "user"]` |
-| `%prod` (Auth0) | namespaced Claim (z. B. `https://qoc/roles`) | `["admin", "user"]` |
+| `%prod` (Auth0) | namespaced claim (e.g. `https://qoc/roles`) | `["admin", "user"]` |
 
-Kein stiller `groups`-Fallback; fehlender Claim → 403 fail-closed.
+No silent `groups` fallback; missing claim → 403 fail-closed.
 
 ### 6.4 Trusted Proxy
 
-Wenn `ENGINE_SECURITY_MODE=proxy`, werden `X-Forwarded-User`,
-`X-Forwarded-Roles`, `X-Forwarded-Groups` ausgewertet (nur bei trusted
-Proxies, siehe `SecurityConfig.trustedProxies()`).
+When `ENGINE_SECURITY_MODE=proxy`, `X-Forwarded-User`,
+`X-Forwarded-Roles`, `X-Forwarded-Groups` are evaluated (only for trusted
+proxies, see `SecurityConfig.trustedProxies()`).
 
-## 7. Implementierungsschritte
+## 7. Implementation Steps
 
-1. `Principal.system()` in `engine.core.model.Principal` hinzufügen.
-2. `BasicAuthFilter`/`OidcPrincipalProducer` um System-Token-Support erweitern
+1. Add `Principal.system()` to `engine.core.model.Principal`.
+2. Extend `BasicAuthFilter`/`OidcPrincipalProducer` with system-token support
    (`X-System-Token` → `ENGINE_SYSTEM_TOKEN`).
-3. `SessionAccessGuard` auf `WorkflowResource` und `AgentStoreResource` anwenden
+3. Apply `SessionAccessGuard` to `WorkflowResource` and `AgentStoreResource`
    (`@Inject`, `requireAccess`, `isAdmin`).
-4. `ownerId`-Feld in `WorkflowDefinition` und `WorkflowDefinition.Agent`
-   hinzufügen (inkl. `rolesAllowed`).
-5. `WorkflowExecutor.executeRun(def, input, user)` Overload; `runAgent` mit
-   Principal.
-6. `AgentStore.listAll(userId, isAdmin)` mit ownerId-Filter.
-7. `WorkflowResource`: `@HeaderParam("X-QOC-User")`, User-Durchreichung,
-   Run-Filtering nach ownerId.
-8. `Workflow-OIDC.md` in `docs/engineering/` ablegen.
-9. Tests: Access-Guard, Ownership, Systemuser, OIDC-Principal-Extraktion.
+4. Add `ownerId` field to `WorkflowDefinition` and `WorkflowDefinition.Agent`
+   (incl. `rolesAllowed`).
+5. `WorkflowExecutor.executeRun(def, input, user)` overload; `runAgent` with
+   principal.
+6. `AgentStore.listAll(userId, isAdmin)` with ownerId filter.
+7. `WorkflowResource`: `@HeaderParam("X-QOC-User")`, user propagation, run
+   filtering by ownerId.
+8. Place `Workflow-OIDC.md` in `docs/engineering/`.
+9. Tests: access guard, ownership, system user, OIDC principal extraction.
 
-## 8. Endpunkte (nach Änderung)
+## 8. Endpoints (after changes)
 
-| Endpoint | Guard | Beschreibung |
+| Endpoint | Guard | Description |
 |---|---|---|
-| `GET /api/workflows` | `@RolesAllowed("user","admin","system","viewer")` + ownerId-Filter | Workflows des Users + shared |
-| `POST /api/workflows` | `@RolesAllowed("user","admin","system")` | Erstellen (owner=self) |
-| `GET /api/workflows/{id}` | `requireWorkflowAccess` | Lesen |
-| `PUT /api/workflows/{id}` | `requireWorkflowAccess` + owner/admin | Speichern |
-| `DELETE /api/workflows/{id}` | `requireWorkflowAccess` + owner/admin | Löschen |
-| `POST /api/workflows/run` | `@RolesAllowed("user","admin","system")` | Ausführen |
-| `GET /api/workflows/runs` | ownerId-Filter | Runs des Users (admin/system: alle) |
+| `GET /api/workflows` | `@RolesAllowed("user","admin","system","viewer")` + ownerId filter | Workflows of the user + shared |
+| `POST /api/workflows` | `@RolesAllowed("user","admin","system")` | Create (owner=self) |
+| `GET /api/workflows/{id}` | `requireWorkflowAccess` | Read |
+| `PUT /api/workflows/{id}` | `requireWorkflowAccess` + owner/admin | Save |
+| `DELETE /api/workflows/{id}` | `requireWorkflowAccess` + owner/admin | Delete |
+| `POST /api/workflows/run` | `@RolesAllowed("user","admin","system")` | Execute |
+| `GET /api/workflows/runs` | ownerId filter | Runs of the user (admin/system: all) |
 | `GET /api/workflows/runs/{id}` | `requireAccess` | Status |
-| `POST /api/workflows/runs/{id}/resume` | `requireAccess` | Fortsetzen |
-| `GET /api/agents` | `@RolesAllowed("user","admin","system","viewer")` + ownerId-Filter | Agents des Users + shared |
+| `POST /api/workflows/runs/{id}/resume` | `requireAccess` | Resume |
+| `GET /api/agents` | `@RolesAllowed("user","admin","system","viewer")` + ownerId filter | Agents of the user + shared |
 | `POST/PUT/DELETE /api/agents/{id}` | owner/admin/system | CRUD |
 
-## 9. Konfiguration
+## 9. Configuration
 
 ```properties
-# RBAC / OIDC (wiederverwendet aus QOC)
+# RBAC / OIDC (reused from QOC)
 ENGINE_SECURITY_MODE=${ENGINE_SECURITY_MODE:}     # none | basic | oidc | proxy | mcp_oauth
 QOC_OIDC_ISSUER=${QOC_OIDC_ISSUER:}
 QOC_OIDC_CLIENT_ID=${QOC_OIDC_CLIENT_ID:}
 QOC_OIDC_CLIENT_SECRET=${QOC_OIDC_CLIENT_SECRET:}
 OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:}  # basic mode
 
-# Systemuser
-ENGINE_SYSTEM_TOKEN=${ENGINE_SYSTEM_TOKEN:}        # Service-Token
-ENGINE_SYSTEM_ROLES=${ENGINE_SYSTEM_ROLES:system}  # Rollen
+# System user
+ENGINE_SYSTEM_TOKEN=${ENGINE_SYSTEM_TOKEN:}        # Service token
+ENGINE_SYSTEM_ROLES=${ENGINE_SYSTEM_ROLES:system}  # Roles
 ENGINE_SYSTEM_OWNERSHIP=${ENGINE_SYSTEM_OWNERSHIP:system}  # system | caller
 
 # Trusted Proxies (settings.json)
@@ -192,54 +190,56 @@ ENGINE_SYSTEM_OWNERSHIP=${ENGINE_SYSTEM_OWNERSHIP:system}  # system | caller
 
 ## 10. Audit
 
-- Journal-Events (`WorkflowRunStarted`, `WorkflowNodeCompleted`, etc.) enthalten
-  `ownerId` des auslösenden Users.
-- Agent-Änderungen werden als `WorkflowAgentChanged`-Event geloggt (optional).
-- Systemuser-Aktionen sind über `principalId="system"` auditierbar.
+- Journal events (`WorkflowRunStarted`, `WorkflowNodeCompleted`, etc.) include
+  the `ownerId` of the triggering user.
+- Agent changes are logged as `WorkflowAgentChanged` event (optional).
+- System user actions are auditable via `principalId="system"`.
 
-## 11. Offene Rückfragen
+## 11. Open Questions
 
-1. **Systemuser-Rolle**: Eigene Rolle `system` (empfohlen, auditierbar) oder
-   `admin` wiederverwenden (einfacher, aber nicht unterscheidbar im Audit)?
-2. **Ownership-Default**: Workflows/Agents standardmäßig `ownerId=null` (shared)
-   oder `ownerId=self` (privat)? Empfehlung: `null` (shared) für Team-Workflows,
-   opt-in privat.
-3. **Agent-Roles im Workflow-Runner**: QOC-Agenten haben `rolesAllowed`. Sollen
-   Workflow-Agenten ebenfalls `rolesAllowed` tragen? Empfehlung: ja, für
-   Konsistenz mit QOC.
-4. **Agent-Mode**: QOC-Agenten haben `mode` (primary/subagent/all). Soll
-   Workflow-Agenten ebenfalls `mode` tragen? Empfehlung: ja, für Subagent-
-   Aufrufe aus Workflows.
-5. **Migration bestehender Daten**: Bestehende Workflows/Agents haben kein
-   `ownerId`. Default auf `"anonymous"` oder `"local"`? Empfehlung:
-   `"local"` (für NONE-Modus) bzw. admin-User.
-6. **Systemuser-Authoring**: In Secure-Mode ist Agent-Authoring deaktiviert
-   (`ENGINE_AGENT_AUTHORING_ENABLED=false`). Soll der Systemuser dennoch
-   authoring dürfen? Empfehlung: ja, aber nur über API (nicht UI).
-7. **Audit-Trail**: Soll Agent-Änderung ein eigenes Journal-Event sein
-   (`AgentChanged`) oder reicht der vorhandene Audit-Log?
-8. **OIDC Client-Credentials**: Statischer Token (`ENGINE_SYSTEM_TOKEN`) oder
-   OIDC Client-Credentials Flow für Systemuser? Empfehlung: statischer Token
-   für Einfachheit, Client-Credentials für Produktion.
-9. **`Principal.system()` in engine.core**: Muss in
-   `engine.core.model.Principal` ergänzt werden (aktuell nur in
-   `quarkus.http.security.Principal`). Soll der engine.core-Principal auch
-   `authMode`/`source`/`claims` tragen? Empfehlung: minimal (id, name, roles).
-10. **Workflow-Runner als eigenständiger Service**: Der Workflow-Runner nutzt
-    `engine.qocEngine()` (in-process). Soll er einen eigenen
-    `SessionAccessGuard` haben oder den von QOC wiederverwenden? Empfehlung:
-    wiederverwenden (bereits injizierbar).
+1. **System user role**: dedicated role `system` (recommended, auditable) or
+   reuse `admin` (simpler, but not distinguishable in audit)?
+2. **Ownership default**: workflows/agents default `ownerId=null` (shared) or
+   `ownerId=self` (private)? Recommendation: `null` (shared) for team
+   workflows, opt-in private.
+3. **Agent roles in the workflow runner**: QOC agents have `rolesAllowed`.
+   Should workflow agents also carry `rolesAllowed`? Recommendation: yes, for
+   consistency with QOC.
+4. **Agent mode**: QOC agents have `mode` (primary/subagent/all). Should
+   workflow agents also carry `mode`? Recommendation: yes, for subagent calls
+   from workflows.
+5. **Migration of existing data**: existing workflows/agents have no
+   `ownerId`. Default to `"anonymous"` or `"local"`? Recommendation:
+   `"local"` (for NONE mode) or admin user.
+6. **System user authoring**: in secure mode agent authoring is disabled
+   (`ENGINE_AGENT_AUTHORING_ENABLED=false`). Should the system user still be
+   allowed to author? Recommendation: yes, but only via API (not UI).
+7. **Audit trail**: should agent changes be a dedicated journal event
+   (`AgentChanged`) or is the existing audit log sufficient?
+8. **OIDC client credentials**: static token (`ENGINE_SYSTEM_TOKEN`) or OIDC
+   client-credentials flow for the system user? Recommendation: static token
+   for simplicity, client credentials for production.
+9. **`Principal.system()` in engine.core**: must be added to
+   `engine.core.model.Principal` (currently only in
+   `quarkus.http.security.Principal`). Should the engine.core principal also
+   carry `authMode`/`source`/`claims`? Recommendation: minimal (id, name,
+   roles).
+10. **Workflow runner as a standalone service**: the workflow runner uses
+    `engine.qocEngine()` (in-process). Should it have its own
+    `SessionAccessGuard` or reuse QOC's? Recommendation: reuse (already
+    injectable).
 
-## 12. Offene Punkte (aus QOC-Plan übernommen)
+## 12. Open Items (carried over from the QOC plan)
 
-- O-02/O-13: Prod-Claim-Name (blockiert GATE 2).
-- Ob Workflows geteilt oder privat sein sollen (Produktentscheidung).
-- Ob Systemuser `admin`- oder eigene `system`-Rolle (Empfehlung: eigene).
-- Audit-Trail für Agent-Änderungen.
+- O-02/O-13: prod claim name (blocks GATE 2).
+- Whether workflows should be shared or private (product decision).
+- Whether the system user uses the `admin` role or its own `system` role
+  (recommendation: own).
+- Audit trail for agent changes.
 
-## 13. Referenzen
+## 13. References
 
-| Thema | Pfad |
+| Topic | Path |
 |---|---|
 | SessionAccessGuard | `quarkus/http/SessionAccessGuard.java` |
 | Principal (engine.core) | `engine/core/model/Principal.java` |
@@ -255,4 +255,4 @@ ENGINE_SYSTEM_OWNERSHIP=${ENGINE_SYSTEM_OWNERSHIP:system}  # system | caller
 | DefaultNodeDispatcher | `workflow-runner/runner/DefaultNodeDispatcher.java` |
 | SessionInfo (ownerId) | `engine/core/model/SessionInfo.java` |
 | WorkflowDefinition | `workflow-runner/model/WorkflowDefinition.java` |
-| RBAC-Plan | `/home/torsten/.opencode/plan/rbac-workflow-oidc.md` |
+| RBAC plan | `/home/torsten/.opencode/plan/rbac-workflow-oidc.md` |

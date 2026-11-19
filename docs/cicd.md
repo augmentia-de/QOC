@@ -1,53 +1,52 @@
-# CI/CD und Betriebsstruktur
+# CI/CD and Operations Structure
 
-> **Status:** Entwurf · 2026-11-04
-> **Ziel:** Eine Codebase, fünf Betriebsmodi, reproduzierbare Builds und
-> Deployments – lokal, auf einer GCP-VM, auf GCP Serverless und auf AWS
+> **Status:** Draft · 2026-11-04
+> **Goal:** One codebase, five operating modes, reproducible builds and
+> deployments – locally, on a GCP VM, on GCP Serverless and on AWS
 > Fargate.
 
 ---
 
-## 1. Grundsätze
+## 1. Principles
 
-1. **Eine Codebase, mehrere Artefakte.** Es gibt keinen GCP- und keinen
-   AWS-Zweig im Code. Unterschiede liegen in Build-Parametern, Konfiguration
-   und Deployment-Zielen.
-2. **Build once, deploy many.** Tests und Builds laufen einmal in der Pipeline.
-   Deployments verwenden dieselben, unveränderlichen Artefakte.
-3. **Build-Zeit von Laufzeit trennen.** Einige Quarkus-Einstellungen sind
-   build-time fixiert (Datenbank-Art, Treiber, Flyway-Locations, Native-
-   Reflection). Sie dürfen nicht zur Laufzeit geändert werden.
-4. **Single-Instance für die stateful Engine.** Die Engine hält Sessions,
-   laufende Prompts und Background-Tasks im Speicher. Bis State externalisiert
-   ist, gilt: eine Instanz pro Deployment.
-5. **Secrets nie im Repository.** Laufzeit-Secrets kommen aus Secret Manager,
-   AWS Secrets Manager oder einer geschützten Env-Datei.
-6. **Unveränderliche Artefakte.** Produktion verwendet SHA-/Versions-Tags,
-   nie `latest`.
-7. **Native Binary für Produktion.** Schnellere Cold Starts, geringerer
-   Speicherbedarf. JVM bleibt für Entwicklung und Debugging.
-8. **Health-Check als Lebenszeichen.** `/api/health` ist der gemeinsame
-   Health-Endpunkt für alle Plattformen.
+1. **One codebase, multiple artifacts.** There is no GCP and no AWS branch
+   in the code. Differences lie in build parameters, configuration and
+   deployment targets.
+2. **Build once, deploy many.** Tests and builds run once in the pipeline.
+   Deployments use the same immutable artifacts.
+3. **Separate build time from runtime.** Some Quarkus settings are fixed at
+   build time (database kind, driver, Flyway locations, native reflection).
+   They must not be changed at runtime.
+4. **Single instance for the stateful engine.** The engine holds sessions,
+   running prompts and background tasks in memory. Until state is externalized:
+   one instance per deployment.
+5. **Secrets never in the repository.** Runtime secrets come from Secret Manager,
+   AWS Secrets Manager or a protected env file.
+6. **Immutable artifacts.** Production uses SHA/version tags, never `latest`.
+7. **Native binary for production.** Faster cold starts, lower memory footprint.
+   JVM remains for development and debugging.
+8. **Health check as a vital sign.** `/api/health` is the common health endpoint
+   for all platforms.
 
 ---
 
-## 2. Betriebsmodi im Überblick
+## 2. Operating Modes at a Glance
 
-Es gibt **fünf Betriebsmodi**; Modus 2 hat zwei Varianten (JVM und Native).
+There are **five operating modes**; mode 2 has two variants (JVM and Native).
 
-| # | Modus | Artefakt | Datenbank | Auth | Workspace | Compute |
+| # | Mode | Artifact | Database | Auth | Workspace | Compute |
 |---|---|---|---|---|---|---|
-| 1 | **Lokal (Host)** | Quarkus Dev / Fast-Jar | SQLite oder lokales PostgreSQL | keine / Basic | lokale Verzeichnisse | Host-Prozess |
-| 2 | **Lokal Docker** | Container-Image | PostgreSQL (Host/Neon) | Basic | Bind-Mounts + Volume | Docker |
-| 2a | davon JVM | `qoc-engine:local` | PostgreSQL | Basic | Bind-Mounts | Docker |
-| 2b | davon Native | `qoc-engine:native` | PostgreSQL | Basic | Bind-Mounts | Docker |
-| 3 | **GCP VM Native** | Native Binary + systemd | Neon/Cloud SQL | Basic + Nginx | `/data` auf der VM | e2-micro VM |
-| 4 | **GCP Serverless** | Native Container | Cloud SQL (PostgreSQL) | IAP / Trusted Proxy | GCS FUSE oder Image | Cloud Run |
-| 5 | **AWS Fargate** | Native Container | RDS (PostgreSQL) | ALB + Cognito / Proxy | EFS oder Image | ECS Fargate |
+| 1 | **Local (Host)** | Quarkus Dev / Fast-Jar | SQLite or local PostgreSQL | none / Basic | local directories | Host process |
+| 2 | **Local Docker** | Container image | PostgreSQL (Host/Neon) | Basic | Bind mounts + Volume | Docker |
+| 2a | of which JVM | `qoc-engine:local` | PostgreSQL | Basic | Bind mounts | Docker |
+| 2b | of which Native | `qoc-engine:native` | PostgreSQL | Basic | Bind mounts | Docker |
+| 3 | **GCP VM Native** | Native binary + systemd | Neon/Cloud SQL | Basic + Nginx | `/data` on the VM | e2-micro VM |
+| 4 | **GCP Serverless** | Native container | Cloud SQL (PostgreSQL) | IAP / Trusted Proxy | GCS FUSE or image | Cloud Run |
+| 5 | **AWS Fargate** | Native container | RDS (PostgreSQL) | ALB + Cognito / Proxy | EFS or image | ECS Fargate |
 
-### 2.1 Gemeinsame Laufzeit-Env-Variablen
+### 2.1 Common Runtime Env Variables
 
-Diese Variablen gelten in allen Cloud-/Container-Modi:
+These variables apply in all cloud/container modes:
 
 ```properties
 ENGINE_WORKSPACE=/data/workspace
@@ -59,14 +58,14 @@ QUARKUS_DATASOURCE_PASSWORD=<secret>
 ENGINE_PROVIDER_URL=https://<provider>/v1/chat/completions
 ENGINE_MODEL_ID=<model>
 ENGINE_PROVIDER_API_KEY=<secret>
-OPENCODE_SERVER_PASSWORD=<secret>          # nur bei Basic Auth
+OPENCODE_SERVER_PASSWORD=<secret>          # only with Basic Auth
 HOME=/data/home
 LOG_DIR=/data/log
 ```
 
-### 2.2 Build-Zeit-Env-Variablen
+### 2.2 Build-Time Env Variables
 
-Diese Werte werden in das Artefakt eingebacken und müssen zum Ziel passen:
+These values are baked into the artifact and must match the target:
 
 ```bash
 ENGINE_DB_KIND=postgresql
@@ -74,7 +73,7 @@ ENGINE_DB_DRIVER=org.postgresql.Driver
 QUARKUS_FLYWAY_LOCATIONS=classpath:db/migration
 ```
 
-Für SQLite (nur lokal/E2E) gilt stattdessen:
+For SQLite (only local/E2E) the following applies instead:
 
 ```bash
 ENGINE_DB_KIND=sqlite
@@ -82,23 +81,22 @@ ENGINE_DB_DRIVER=org.sqlite.JDBC
 QUARKUS_FLYWAY_LOCATIONS=classpath:db/migration-sqlite
 ```
 
-> **Wichtig:** Ein für SQLite gebautes Native-Binary oder Image funktioniert
-> nicht mit PostgreSQL – und umgekehrt. Cloud-Deployments müssen mit
-> PostgreSQL gebaut werden.
+> **Important:** A native binary or image built for SQLite does not work with
+> PostgreSQL – and vice versa. Cloud deployments must be built with PostgreSQL.
 
 ---
 
-## 3. Build-Artefakte
+## 3. Build Artifacts
 
-| Artefakt | Erzeugung | Verwendung |
+| Artifact | Production | Usage |
 |---|---|---|
-| **JVM Fast-Jar** | `mvn -pl quarkus -am package -DskipTests` | Lokal, Docker-JVM, Debugging |
-| **Native Binary** | `mvn -pl quarkus -am package -Dnative ...` | Lokal native, GCP VM, Cloud Run, Fargate |
-| **JVM-Image** | `deploy/build-image.sh` | Lokal Docker JVM |
-| **Native-Image** | `deploy/Dockerfile.native` | Lokal Docker native, Cloud Run, Fargate |
-| **Agent-/Workspace-Dateien** | `deploy/AGENTS.native.md`, `.opencode/` | In Image backen oder mounten |
+| **JVM Fast-Jar** | `mvn -pl quarkus -am package -DskipTests` | Local, Docker-JVM, Debugging |
+| **Native Binary** | `mvn -pl quarkus -am package -Dnative ...` | Local native, GCP VM, Cloud Run, Fargate |
+| **JVM Image** | `deploy/build-image.sh` | Local Docker JVM |
+| **Native Image** | `deploy/Dockerfile.native` | Local Docker native, Cloud Run, Fargate |
+| **Agent-/Workspace files** | `deploy/AGENTS.native.md`, `.opencode/` | Bake into image or mount |
 
-### 3.1 Native Build (Referenz)
+### 3.1 Native Build (Reference)
 
 ```bash
 cd qoc
@@ -115,18 +113,18 @@ mvn -pl quarkus -am clean package \
   -DskipTests -Djacoco.skip=true
 ```
 
-Ergebnis: `quarkus/target/quarkus-1.0.0-SNAPSHOT-runner`.
+Result: `quarkus/target/quarkus-1.0.0-SNAPSHOT-runner`.
 
-### 3.2 Versionierung
+### 3.2 Versioning
 
-- **Git-SHA** als primärer Tag: `qoc:<sha>`
-- **SemVer** bei Releases: `qoc:1.2.3`
-- `latest` nur für lokale/Dev-Images, nie in Produktion.
-- Native Binary ebenfalls mit SHA/Version im Namen archivieren.
+- **Git SHA** as primary tag: `qoc:<sha>`
+- **SemVer** on releases: `qoc:1.2.3`
+- `latest` only for local/dev images, never in production.
+- Archive the native binary with SHA/version in the name as well.
 
 ---
 
-## 4. Repository-Struktur (Zielbild)
+## 4. Repository Structure (Target State)
 
 ```
 qoc/
@@ -137,63 +135,63 @@ qoc/
 │       ├── deploy-gcp-cloudrun.yml    # Cloud Run
 │       └── deploy-aws-fargate.yml     # ECS Fargate
 ├── deploy/
-│   ├── Dockerfile                     # JVM-Image (vorhanden)
-│   ├── Dockerfile.native              # Native-Image (vorhanden)
-│   ├── docker-compose.yml             # Alle Varianten als Profil-Services
-│   ├── docker-compose.oidc.yml        # OIDC-Overlay (qoc-local/qoc-dev)
-│   ├── docker-compose.dev-jvm.yml     # JVM-Mode-Overlay (qoc-dev)
-│   ├── docker-compose.docker-socket.yml # Testcontainers-Overlay (qoc-dev)
-│   ├── seccomp-qoc-shell.json         # Seccomp-Profil qoc-secure-shell
-│   ├── .env.example                   # gemeinsame Umgebung aller Varianten
-│   ├── .env.oidc.example              # OIDC-Overlay-Vorlage
-│   ├── docker-dev/                    # Dev-Image, Entrypoint, Devcontainer
-│   ├── docker-secure-shell/           # Shell-isolierte Variante (+ home/)
-│   ├── docker-<variante>/             # README je Variante, sonst keine Compose
-│   ├── build-image.sh                 # JVM-Image (vorhanden)
-│   ├── build-image-sqlite.sh          # SQLite/E2E (vorhanden)
-│   ├── gcp-vm/                        # GCP-VM-Deployment (systemd/nginx/Auth0)
+│   ├── Dockerfile                     # JVM image (present)
+│   ├── Dockerfile.native              # Native image (present)
+│   ├── docker-compose.yml             # All variants as profile services
+│   ├── docker-compose.oidc.yml        # OIDC overlay (qoc-local/qoc-dev)
+│   ├── docker-compose.dev-jvm.yml     # JVM mode overlay (qoc-dev)
+│   ├── docker-compose.docker-socket.yml # Testcontainers overlay (qoc-dev)
+│   ├── seccomp-qoc-shell.json         # Seccomp profile qoc-secure-shell
+│   ├── .env.example                   # common environment of all variants
+│   ├── .env.oidc.example              # OIDC overlay template
+│   ├── docker-dev/                    # Dev image, entrypoint, devcontainer
+│   ├── docker-secure-shell/           # Shell-isolated variant (+ home/)
+│   ├── docker-<variant>/              # README per variant, otherwise no compose
+│   ├── build-image.sh                 # JVM image (present)
+│   ├── build-image-sqlite.sh          # SQLite/E2E (present)
+│   ├── gcp-vm/                        # GCP VM deployment (systemd/nginx/Auth0)
 │   │   ├── gcp-auth0.sh
 │   │   ├── gcp-auth0.env.example
 │   │   ├── gcp-ssl.sh
 │   │   ├── nginx.conf
-│   │   ├── qoc-native.service         # systemd für GCP VM
+│   │   ├── qoc-native.service         # systemd for GCP VM
 │   │   ├── qoc.service                # systemd JVM (Legacy)
 │   │   ├── qoc-prepare.sh
-│   │   └── vm.md                      # VM-Runbook
+│   │   └── vm.md                      # VM runbook
 │   ├── gcp/
-│   │   ├── cloudrun-service.yaml      # Cloud-Run-Service (neu)
-│   │   ├── cloudsql.md                # Cloud-SQL-Anbindung (neu)
-│   │   └── iap.md                     # IAP/Trusted-Proxy (neu)
+│   │   ├── cloudrun-service.yaml      # Cloud Run service (new)
+│   │   ├── cloudsql.md                # Cloud SQL connection (new)
+│   │   └── iap.md                     # IAP/trusted proxy (new)
 │   └── aws/
-│       ├── task-definition.json       # ECS-Task (neu)
-│       ├── service.json               # ECS-Service (neu)
-│       └── alb-cognito.md             # ALB/Cognito (neu)
+│       ├── task-definition.json       # ECS task (new)
+│       ├── service.json               # ECS service (new)
+│       └── alb-cognito.md             # ALB/Cognito (new)
 ├── scripts/
-│   ├── build-native.sh                # Native Build kapseln (neu)
-│   ├── build-images.sh                # Beide Images bauen (neu)
-│   ├── deploy-gcp-vm.sh               # scp + systemd (neu)
-│   └── deploy-cloudrun.sh             # gcloud run deploy (neu)
-├── start.sh                           # Lokaler Dev-Start (vorhanden)
-├── start-native.sh                    # Lokaler Native-Start (vorhanden)
+│   ├── build-native.sh                # encapsulate native build (new)
+│   ├── build-images.sh                # build both images (new)
+│   ├── deploy-gcp-vm.sh               # scp + systemd (new)
+│   └── deploy-cloudrun.sh             # gcloud run deploy (new)
+├── start.sh                           # local dev start (present)
+├── start-native.sh                    # local native start (present)
 └── docs/
-    └── cicd.md                        # dieses Dokument
+    └── cicd.md                        # this document
 ```
 
-> Die mit „neu" markierten Dateien sind Vorschläge für die nächste
-> Ausbaustufe. Die vorhandenen Dateien funktionieren bereits.
+> The files marked "neu" are suggestions for the next expansion stage. The
+> existing files already work.
 
 ---
 
-## 5. CI/CD-Pipeline
+## 5. CI/CD Pipeline
 
-### 5.1 Trigger
+### 5.1 Triggers
 
-| Trigger | Zweck |
+| Trigger | Purpose |
 |---|---|
-| Pull Request | Tests, Build-Prüfung, kein Deploy |
-| Push auf `main` | Tests, Build, Images, Deploy in Staging |
-| Git-Tag `v*` | Release-Build, Deploy in Produktion |
-| `workflow_dispatch` | Manuelles Deploy/Rollback |
+| Pull Request | Tests, build check, no deploy |
+| Push to `main` | Tests, build, images, deploy to staging |
+| Git tag `v*` | Release build, deploy to production |
+| `workflow_dispatch` | Manual deploy/rollback |
 
 ### 5.2 Stages
 
@@ -203,17 +201,17 @@ test ──► build-jvm ──► build-native ──► image ──► deploy
                                   └──► archive binary
 ```
 
-| Stage | Inhalt | Gate |
+| Stage | Content | Gate |
 |---|---|---|
-| **test** | `mvn test`, JaCoCo-Report | ≥ 80 % Instructions |
-| **build-jvm** | Fast-Jar mit PostgreSQL-Buildzeitwerten | Tests grün |
-| **build-native** | GraalVM-Native-Binary | Tests grün |
-| **image** | JVM- und Native-Image bauen, taggen, pushen | Binary vorhanden |
-| **deploy-gcp-vm** | Binary per `gcloud compute scp`, systemd-Restart | manuelle Freigabe |
-| **deploy-gcp-cloudrun** | `gcloud run deploy` | manuelle Freigabe |
-| **deploy-aws-fargate** | `aws ecs update-service` | manuelle Freigabe |
+| **test** | `mvn test`, JaCoCo report | ≥ 80 % instructions |
+| **build-jvm** | Fast-Jar with PostgreSQL build-time values | Tests green |
+| **build-native** | GraalVM native binary | Tests green |
+| **image** | Build, tag and push JVM and native images | Binary present |
+| **deploy-gcp-vm** | Binary via `gcloud compute scp`, systemd restart | manual approval |
+| **deploy-gcp-cloudrun** | `gcloud run deploy` | manual approval |
+| **deploy-aws-fargate** | `aws ecs update-service` | manual approval |
 
-### 5.3 Beispiel: GitHub Actions (Skelett)
+### 5.3 Example: GitHub Actions (Skeleton)
 
 ```yaml
 name: ci
@@ -259,49 +257,49 @@ jobs:
           path: quarkus/target/*-runner
 ```
 
-### 5.4 Auth der Pipeline gegenüber GCP/AWS
+### 5.4 Pipeline Auth Against GCP/AWS
 
-- **GCP:** Workload Identity Federation (OIDC), kein Service-Account-Key.
+- **GCP:** Workload Identity Federation (OIDC), no service account key.
   `google-github-actions/auth@v2`.
-- **AWS:** OIDC-Provider + IAM-Role, keine statischen Keys.
+- **AWS:** OIDC provider + IAM role, no static keys.
   `aws-actions/configure-aws-credentials@v4`.
-- **Registry:** GCP Artifact Registry und AWS ECR; optional zusätzlich GHCR
-  als gemeinsame Ablage.
+- **Registry:** GCP Artifact Registry and AWS ECR; optionally additionally GHCR
+  as a shared store.
 
 ### 5.5 Caching
 
-- Maven-Repository (`~/.m2`) cachen.
-- GraalVM-/Native-Build-Cache, falls verfügbar.
-- Docker-Layer-Cache (`docker/build-push-action` mit `cache-from`/`cache-to`).
+- Maven repository (`~/.m2`) cache.
+- GraalVM/native build cache, if available.
+- Docker layer cache (`docker/build-push-action` with `cache-from`/`cache-to`).
 
 ---
 
-## 6. Betriebsmodi im Detail
+## 6. Operating Modes in Detail
 
-### 6.1 Modus 1 – Lokal (Host)
+### 6.1 Mode 1 – Local (Host)
 
-**Zweck:** Entwicklung, Debugging, schnelle Iteration.
+**Purpose:** Development, debugging, fast iteration.
 
 ```bash
 cd qoc
-cp .env.example .env        # anpassen
-./start.sh                  # Quarkus Dev, Port 8007
+cp .env.example .env        # adjust
+./start.sh                  # Quarkus Dev, port 8007
 ```
 
-- DB: SQLite oder lokales PostgreSQL (`ENGINE_DB_KIND`).
-- Auth: keine (Loopback) oder Basic über `OPENCODE_SERVER_PASSWORD`.
-- Workspace: lokales Verzeichnis (`ENGINE_WORKSPACE`).
+- DB: SQLite or local PostgreSQL (`ENGINE_DB_KIND`).
+- Auth: none (loopback) or Basic via `OPENCODE_SERVER_PASSWORD`.
+- Workspace: local directory (`ENGINE_WORKSPACE`).
 - Health: `curl http://127.0.0.1:8007/api/health`.
 
-**Native lokal:**
+**Native locally:**
 
 ```bash
 ./start-native.sh
 ```
 
-Voraussetzung: Native Binary wurde mit passender DB-Art gebaut.
+Prerequisite: Native binary was built with the matching DB kind.
 
-### 6.2 Modus 2a – Lokal Docker JVM
+### 6.2 Mode 2a – Local Docker JVM
 
 ```bash
 cd qoc
@@ -312,39 +310,39 @@ docker compose up -d qoc-local
 ```
 
 - Image: `qoc-engine:local`.
-- Port: `8071` (fest).
-- DB: PostgreSQL (Host/Neon), Buildzeitwert PostgreSQL.
-- Workspace/Logs: gezielte Bind-Mounts, kein breites `/data`.
+- Port: `8071` (fixed).
+- DB: PostgreSQL (Host/Neon), build-time value PostgreSQL.
+- Workspace/Logs: targeted bind mounts, no broad `/data`.
 - Health: `curl http://127.0.0.1:8071/api/health/ready`.
 
-### 6.3 Modus 2b – Lokal Docker Native
+### 6.3 Mode 2b – Local Docker Native
 
 ```bash
 cd qoc
-# Native Binary mit PostgreSQL bauen (siehe 3.1)
+# Build native binary with PostgreSQL (see 3.1)
 cd deploy
 docker compose --profile native up -d --build
 ```
 
 - Image: `qoc-engine:native`.
-- Port: `8077` (fest).
-- Gleiche Mounts und Hardening-Optionen wie JVM-Variante.
+- Port: `8077` (fixed).
+- Same mounts and hardening options as the JVM variant.
 - Health: `curl http://127.0.0.1:8077/api/health/ready`.
 
-### 6.4 Modus 3 – GCP VM Native (ohne Docker)
+### 6.4 Mode 3 – GCP VM Native (without Docker)
 
-**Ziel:** Native Binary direkt auf einer GCP-VM, betrieben über systemd.
+**Goal:** Native binary directly on a GCP VM, operated via systemd.
 
-**Voraussetzungen:**
+**Prerequisites:**
 
-- Debian/Ubuntu VM, `qoc`-User, `/opt/qoc`, `/data`, `/etc/qoc/env`.
-- Native Binary für PostgreSQL gebaut.
-- Nginx als Reverse-Proxy und Basic-Auth (optional).
+- Debian/Ubuntu VM, `qoc` user, `/opt/qoc`, `/data`, `/etc/qoc/env`.
+- Native binary built for PostgreSQL.
+- Nginx as reverse proxy and Basic Auth (optional).
 
 **Build:**
 
 ```bash
-# Siehe 3.1; Ergebnis: quarkus/target/quarkus-1.0.0-SNAPSHOT-runner
+# See 3.1; result: quarkus/target/quarkus-1.0.0-SNAPSHOT-runner
 ```
 
 **Deploy:**
@@ -368,7 +366,7 @@ gcloud compute ssh <vm> --zone=<zone> --command '
 '
 ```
 
-**systemd-Unit:** `deploy/gcp-vm/qoc-native.service`.
+**systemd unit:** `deploy/gcp-vm/qoc-native.service`.
 
 **Health:**
 
@@ -376,23 +374,21 @@ gcloud compute ssh <vm> --zone=<zone> --command '
 curl -fsS -u "opencode:$PASS" https://<domain>/api/health
 ```
 
-**Rollback:** Backup-Binary zurückkopieren und `systemctl restart qoc`.
+**Rollback:** Copy back the backup binary and `systemctl restart qoc`.
 
-### 6.5 Modus 4 – GCP Serverless (Cloud Run)
+### 6.5 Mode 4 – GCP Serverless (Cloud Run)
 
-**Ziel:** Native Container auf Cloud Run, Single-Instance, externe Identität
-über IAP.
+**Goal:** Native container on Cloud Run, single instance, external identity via IAP.
 
-**Voraussetzungen:**
+**Prerequisites:**
 
-- Artifact Registry-Repository.
-- Cloud SQL PostgreSQL-Instanz und Verbindung (Unix-Socket oder VPC).
-- Secret Manager für LLM-/DB-Secrets.
-- Cloud Run Service mit `min-instances=1`, `max-instances=1`.
-- CPU „always allocated" für Background-Tasks.
+- Artifact Registry repository.
+- Cloud SQL PostgreSQL instance and connection (Unix socket or VPC).
+- Secret Manager for LLM/DB secrets.
+- Cloud Run service with `min-instances=1`, `max-instances=1`.
+- CPU "always allocated" for background tasks.
 
-**Build & Push** (setzt das mit PostgreSQL gebaute Native Binary aus 3.1
-voraus):
+**Build & Push** (assumes the native binary built with PostgreSQL from 3.1):
 
 ```bash
 docker build -f deploy/Dockerfile.native \
@@ -417,37 +413,36 @@ gcloud run deploy qoc \
 
 **Workspace:**
 
-- Option A: Konfiguration (Agents, Settings) ins Image backen; Session-Dirs auf
+- Option A: Bake configuration (agents, settings) into the image; session dirs on
   tmpfs.
-- Option B: GCS-Bucket per Cloud Storage FUSE mounten (kein File-Locking,
-  eventual consistency beachten).
+- Option B: Mount a GCS bucket via Cloud Storage FUSE (no file locking, mind
+  eventual consistency).
 
 **Auth:**
 
-- IAP vor Cloud Run; QOC in `AuthMode.PROXY`.
-- GCP-Header (`X-Goog-Authenticated-User-Email`) müssen im
-  `TrustedProxyFilter` ergänzt werden (siehe Abschnitt 8).
+- IAP in front of Cloud Run; QOC in `AuthMode.PROXY`.
+- GCP headers (`X-Goog-Authenticated-User-Email`) must be added in the
+  `TrustedProxyFilter` (see section 8).
 
-**Health:** Cloud Run Health-Check auf `/api/health`.
+**Health:** Cloud Run health check on `/api/health`.
 
 **Rollback:** `gcloud run services update-traffic qoc --to-revisions=<prev>=100`.
 
-### 6.6 Modus 5 – AWS Fargate
+### 6.6 Mode 5 – AWS Fargate
 
-**Ziel:** Native Container auf ECS Fargate, Single-Task, externe Identität über
+**Goal:** Native container on ECS Fargate, single task, external identity via
 ALB/Cognito.
 
-**Voraussetzungen:**
+**Prerequisites:**
 
-- ECR-Repository.
+- ECR repository.
 - RDS PostgreSQL.
 - Secrets Manager.
-- ECS-Cluster, Task-Definition, Service mit `desired-count=1`.
-- ALB + Cognito (oder Trusted Proxy) für Auth.
-- EFS für Workspace (optional; alternativ Config im Image).
+- ECS cluster, task definition, service with `desired-count=1`.
+- ALB + Cognito (or Trusted Proxy) for auth.
+- EFS for workspace (optional; alternatively config in image).
 
-**Build & Push** (setzt das mit PostgreSQL gebaute Native Binary aus 3.1
-voraus):
+**Build & Push** (assumes native binary built with PostgreSQL from 3.1):
 
 ```bash
 aws ecr get-login-password --region <region> | \
@@ -467,7 +462,7 @@ aws ecs update-service \
   --task-definition qoc:<revision>
 ```
 
-**Task-Definition (Auszug):**
+**Task definition (excerpt):**
 
 ```json
 {
@@ -500,195 +495,195 @@ aws ecs update-service \
 }
 ```
 
-> **Hinweis:** Das aktuelle `Dockerfile.native` enthält kein `curl`. Für den
-> ECS-Health-Check entweder `curl` ins Image aufnehmen oder den Check auf
-> einen TCP-/HTTP-Check des ALB verlagern.
+> **Note:** The current `Dockerfile.native` contains no `curl`. For the ECS
+> health check either include `curl` in the image or move the check to a
+> TCP/HTTP check of the ALB.
 
 **Auth:**
 
-- ALB mit OIDC/Cognito; Header `x-amzn-oidc-identity` im
-  `TrustedProxyFilter` ergänzen.
-- Alternativ: QOC Basic Auth und ALB nur als TLS-Terminator.
+- ALB with OIDC/Cognito; header `x-amzn-oidc-identity` in
+  `TrustedProxyFilter`.
+- Alternatively: QOC Basic Auth and ALB only as TLS terminator.
 
-**Health:** ALB Target-Group-Health-Check auf `/api/health`.
+**Health:** ALB target group health check on `/api/health`.
 
-**Rollback:** Vorherige Task-Definition-Revision aktivieren.
+**Rollback:** Activate previous task definition revision.
 
 ---
 
-## 7. Plattform-Konfiguration
+## 7. Platform Configuration
 
 ### 7.1 GCP
 
-| Baustein | Empfehlung |
+| Component | Recommendation |
 |---|---|
 | Registry | Artifact Registry |
 | Compute (Serverless) | Cloud Run, `min=max=1`, CPU always allocated |
-| DB | Cloud SQL PostgreSQL (Unix-Socket) |
+| DB | Cloud SQL PostgreSQL (Unix socket) |
 | Secrets | Secret Manager |
-| Storage | GCS FUSE oder Config im Image |
+| Storage | GCS FUSE or config in image |
 | Auth | IAP + `AuthMode.PROXY` |
 | Logs/Metrics | Cloud Logging / Cloud Monitoring / OpenTelemetry |
-| Deploy-Auth | Workload Identity Federation |
+| Deploy auth | Workload Identity Federation |
 
 ### 7.2 AWS
 
-| Baustein | Empfehlung |
+| Component | Recommendation |
 |---|---|
 | Registry | ECR |
 | Compute | ECS Fargate, `desired-count=1` |
 | DB | RDS PostgreSQL |
 | Secrets | Secrets Manager |
-| Storage | EFS oder Config im Image |
+| Storage | EFS or config in image |
 | Auth | ALB + Cognito / Trusted Proxy |
 | Logs/Metrics | CloudWatch / OpenTelemetry |
-| Deploy-Auth | OIDC + IAM-Role |
+| Deploy auth | OIDC + IAM role |
 
-### 7.3 Gemeinsame Anforderungen
+### 7.3 Common Requirements
 
-- PostgreSQL mit `sslmode=require`.
-- Flyway-Migrationen beim Start (`QUARKUS_FLYWAY_LOCATIONS`).
-- Health-Check `/api/health`.
-- Ausgehender Netzwerkzugriff nur zu LLM-/DB-/Tool-Endpunkten.
-- Persistente DB-Backups (Cloud SQL automated backups / RDS snapshots).
+- PostgreSQL with `sslmode=require`.
+- Flyway migrations on startup (`QUARKUS_FLYWAY_LOCATIONS`).
+- Health check `/api/health`.
+- Outbound network access only to LLM/DB/tool endpoints.
+- Persistent DB backups (Cloud SQL automated backups / RDS snapshots).
 
 ---
 
-## 8. Auth und Identität
+## 8. Auth and Identity
 
-### 8.1 Modi
+### 8.1 Modes
 
-| Umgebung | AuthMode | Identität |
+| Environment | AuthMode | Identity |
 |---|---|---|
-| Lokal | `NONE` oder `BASIC` | keine / `opencode` |
-| Docker lokal | `BASIC` | `opencode` |
+| Local | `NONE` or `BASIC` | none / `opencode` |
+| Local Docker | `BASIC` | `opencode` |
 | GCP VM | `BASIC` (Nginx) | `opencode` |
-| GCP Serverless | `PROXY` (IAP) | GCP-User |
-| AWS Fargate | `PROXY` (ALB/Cognito) | Cognito-User |
+| GCP Serverless | `PROXY` (IAP) | GCP user |
+| AWS Fargate | `PROXY` (ALB/Cognito) | Cognito user |
 
-### 8.2 Header-Mapping
+### 8.2 Header Mapping
 
-Der `TrustedProxyFilter` liest aktuell:
+The `TrustedProxyFilter` currently reads:
 
 - `X-Forwarded-User`
 - `X-Remote-User`
 - `Remote-User`
 
-Für GCP/AWS müssen zusätzlich erkannt werden:
+For GCP/AWS the following must additionally be recognized:
 
-| Plattform | Header |
+| Platform | Header |
 |---|---|
 | GCP IAP | `X-Goog-Authenticated-User-Email`, `X-Goog-Authenticated-User-Id` |
 | AWS ALB OIDC | `x-amzn-oidc-identity`, `x-amzn-oidc-data` (JWT) |
 
-**Empfehlung:** Ein kleiner Header-Mapper im `TrustedProxyFilter`, der alle
-Quellen in einen `Principal` überführt. Das ist eine einmalige, kleine
-Erweiterung und macht die App plattformunabhängig.
+**Recommendation:** A small header mapper in the `TrustedProxyFilter` that
+converts all sources into a `Principal`. This is a one-time, small extension
+and makes the app platform-independent.
 
-### 8.3 Identitäts-Propagation (Ausbaustufe)
+### 8.3 Identity Propagation (Expansion Stage)
 
-Aktuell endet die Identität an der HTTP-Schicht. Für vollständige Trennung
-müssen folgende Stellen erweitert werden:
+Currently identity ends at the HTTP layer. For full separation the following
+points must be extended:
 
-1. `ToolContext` um `principalId`/`Principal`.
-2. `Engine`/`ToolRuntime` reichen den Principal an Tools weiter.
-3. `PermissionEngine` erhält rollen-/gruppenbasierte Regeln.
-4. Webhook-Payload um `principalId`, `roles`, `groups`.
-5. MCP-Credential-Lookup pro (Agent, Server, Principal).
+1. `ToolContext` with `principalId`/`Principal`.
+2. `Engine`/`ToolRuntime` pass the principal to tools.
+3. `PermissionEngine` receives role-/group-based rules.
+4. Webhook payload with `principalId`, `roles`, `groups`.
+5. MCP credential lookup per (agent, server, principal).
 
-Das ist ein separater Refactor und nicht Teil der CI/CD-Grundstruktur.
+This is a separate refactor and not part of the CI/CD base structure.
 
 ---
 
-## 9. Datenbank und Storage
+## 9. Database and Storage
 
-### 9.1 Datenbank
+### 9.1 Database
 
-| Umgebung | DB | Build-Zeitwert |
+| Environment | DB | Build-time value |
 |---|---|---|
-| Lokal Dev | SQLite oder PostgreSQL | `sqlite` oder `postgresql` |
-| Docker lokal | PostgreSQL | `postgresql` |
+| Local Dev | SQLite or PostgreSQL | `sqlite` or `postgresql` |
+| Local Docker | PostgreSQL | `postgresql` |
 | GCP VM | Neon/Cloud SQL | `postgresql` |
 | GCP Serverless | Cloud SQL | `postgresql` |
 | AWS Fargate | RDS | `postgresql` |
 
-- Migrationen: Flyway, `classpath:db/migration` (PostgreSQL) bzw.
+- Migrations: Flyway, `classpath:db/migration` (PostgreSQL) resp.
   `classpath:db/migration-sqlite` (SQLite).
-- Migrationen müssen rückwärtskompatibel sein (Rolling Deploy).
-- Backups: Cloud SQL automated backups, RDS snapshots, Neon-PITR.
+- Migrations must be backward compatible (rolling deploy).
+- Backups: Cloud SQL automated backups, RDS snapshots, Neon PITR.
 
 ### 9.2 Workspace
 
-| Umgebung | Persistenz |
+| Environment | Persistence |
 |---|---|
-| Lokal | lokales Verzeichnis |
-| Docker | Bind-Mount + Volume |
-| GCP VM | `/data` auf der VM (persistente Disk) |
-| GCP Serverless | GCS FUSE oder Image |
-| AWS Fargate | EFS oder Image |
+| Local | local directory |
+| Docker | Bind mount + volume |
+| GCP VM | `/data` on the VM (persistent disk) |
+| GCP Serverless | GCS FUSE or image |
+| AWS Fargate | EFS or image |
 
-Empfehlung: Agent-/Settings-Konfiguration ins Image backen (immutable,
-reproduzierbar). Nur veränderliche Session-/Tool-Daten persistieren.
+Recommendation: Bake agent/settings configuration into the image (immutable,
+reproducible). Only persist mutable session/tool data.
 
 ---
 
-## 10. Stabilitäts-Checkliste
+## 10. Stability Checklist
 
-- [ ] `mvn test` grün, JaCoCo ≥ 80 % Instructions.
-- [ ] Native Build reproduzierbar (GraalVM-Version gepinnt).
-- [ ] Build-Zeit-DB-Werte passen zum Ziel.
-- [ ] Health-Check `/api/health` in jeder Umgebung erreichbar.
-- [ ] Single-Instance (`min=max=1` bzw. `desired-count=1`).
-- [ ] CPU always allocated (Cloud Run) für Background-Tasks.
-- [ ] Secrets aus Secret Manager / Secrets Manager, nicht im Image.
-- [ ] Image-Tags unveränderlich (SHA/SemVer), kein `latest` in Prod.
-- [ ] Rollback-Pfad dokumentiert und getestet.
-- [ ] DB-Backups aktiviert.
-- [ ] Flyway-Migrationen rückwärtskompatibel.
-- [ ] Logs zentral (Cloud Logging / CloudWatch / OTel).
-- [ ] Ausgehender Netzwerkzugriff restringiert.
-- [ ] Basic-Auth-Passwörter rotierbar.
-- [ ] Native-Image enthält `git`, `util-linux`, `bubblewrap` (falls benötigt).
+- [ ] `mvn test` green, JaCoCo ≥ 80 % instructions.
+- [ ] Native build reproducible (GraalVM version pinned).
+- [ ] Build-time DB values match the target.
+- [ ] Health check `/api/health` reachable in every environment.
+- [ ] Single instance (`min=max=1` or `desired-count=1`).
+- [ ] CPU always allocated (Cloud Run) for background tasks.
+- [ ] Secrets from Secret Manager / Secrets Manager, not in the image.
+- [ ] Image tags immutable (SHA/SemVer), no `latest` in prod.
+- [ ] Rollback path documented and tested.
+- [ ] DB backups enabled.
+- [ ] Flyway migrations backward compatible.
+- [ ] Logs centralized (Cloud Logging / CloudWatch / OTel).
+- [ ] Outbound network access restricted.
+- [ ] Basic Auth passwords rotatable.
+- [ ] Native image contains `git`, `util-linux`, `bubblewrap` (if needed).
 
 ---
 
 ## 11. Rollback
 
-| Modus | Rollback |
+| Mode | Rollback |
 |---|---|
-| Lokal | vorherigen Commit auschecken |
-| Docker | vorheriges Image-Tag starten |
-| GCP VM | Backup-Binary aus `/opt/qoc/qoc-runner.bak-*` zurückkopieren, `systemctl restart qoc` |
-| GCP Cloud Run | Traffic auf vorherige Revision |
-| AWS Fargate | vorherige Task-Definition-Revision aktivieren |
+| Local | check out previous commit |
+| Docker | start previous image tag |
+| GCP VM | copy back backup binary from `/opt/qoc/qoc-runner.bak-*`, `systemctl restart qoc` |
+| GCP Cloud Run | traffic to previous revision |
+| AWS Fargate | activate previous task definition revision |
 
 ---
 
-## 12. Offene Punkte / nächste Schritte
+## 12. Open Points / Next Steps
 
-1. **CI-Workflows anlegen:** `.github/workflows/ci.yml`,
+1. **Create CI workflows:** `.github/workflows/ci.yml`,
    `deploy-gcp-vm.yml`, `deploy-gcp-cloudrun.yml`, `deploy-aws-fargate.yml`.
-2. **Build-Skripte kapseln:** `scripts/build-native.sh`,
+2. **Encapsulate build scripts:** `scripts/build-native.sh`,
    `scripts/build-images.sh`, `scripts/deploy-*.sh`.
-3. **TrustedProxyFilter erweitern:** GCP-/AWS-Header-Mapping.
-4. **Cloud-Run-/ECS-Vorlagen:** `deploy/gcp/`, `deploy/aws/`.
-5. **Optional IaC:** Terraform-Module für GCP und AWS, damit Infrastruktur
-   reproduzierbar wird.
-6. **Optional State-Externalisierung:** Redis/DB für Sessions, falls echtes
-   Multi-Instance-Scaling benötigt wird.
+3. **Extend TrustedProxyFilter:** GCP/AWS header mapping.
+4. **Cloud Run/ECS templates:** `deploy/gcp/`, `deploy/aws/`.
+5. **Optional IaC:** Terraform modules for GCP and AWS so infrastructure
+   becomes reproducible.
+6. **Optional state externalization:** Redis/DB for sessions if true
+   multi-instance scaling is needed.
 
 ---
 
-## 13. Kurzreferenz
+## 13. Quick Reference
 
 ```bash
 # Tests
 cd qoc && mvn test
 
-# Lokal Dev
+# Local Dev
 ./start.sh
 
-# Lokal Native (Binary vorhanden)
+# Local Native (binary present)
 ./start-native.sh
 
 # Docker JVM
@@ -698,11 +693,11 @@ cd qoc && mvn test
 (cd deploy && docker compose --profile native up -d --build)
 
 # GCP VM Native
-#   Native Binary bauen, per gcloud scp kopieren, systemctl restart qoc
+#   Build native binary, copy via gcloud scp, systemctl restart qoc
 
 # Cloud Run
-#   Native Image bauen/pushen, gcloud run deploy ...
+#   Build/push native image, gcloud run deploy ...
 
 # AWS Fargate
-#   Native Image bauen/pushen, aws ecs update-service ...
+#   Build/push native image, aws ecs update-service ...
 ```

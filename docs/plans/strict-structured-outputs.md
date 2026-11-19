@@ -1,95 +1,95 @@
-# Plan: Strict Structured Outputs (Phase 3 — offen)
+# Plan: Strict Structured Outputs (Phase 3 — open)
 
-**Status:** Offen (nicht implementiert) — 2026-11-16
-**Bezug:** `docs/plans/node-data-contracts-and-context-economy.md` (Phase 3),
+**Status:** Open (not implemented) — 2026-11-16
+**References:** `docs/plans/node-data-contracts-and-context-economy.md` (Phase 3),
 `docs/plans/node-data-contracts-progress.md`
 
-## 1. Aktuelle Implementierung (Option 1) — mit Schwächen
+## 1. Current Implementation (Option 1) — with weaknesses
 
-qoc nutzt für strukturierte Ausgaben das reservierte `submit_result`-Tool (Function Calling).
-OpenAI validiert Tool-Argumente gegen das Schema, aber im **non-strict**-Modus kann das
-Modell Abweichungen machen (zusätzliche Felder, fehlende required, falsche Enums).
-Diese werden von qoc reaktiv catcht (`ToolRuntime.decode`, `NodeContractValidator`), was
-retries nötig macht → höhere Latenz und Kosten.
+qoc uses the reserved `submit_result` tool (Function Calling) for structured outputs.
+OpenAI validates tool arguments against the schema, but in **non-strict** mode the
+model can deviate (extra fields, missing required fields, wrong enums).
+These are caught reactively by qoc (`ToolRuntime.decode`, `NodeContractValidator`),
+which makes retries necessary → higher latency and cost.
 
-**Schwächen:**
-- OpenAI kann Abweichungen machen → retries nötig → höhere Latenz/Kosten.
-- Validierung ist **reaktiv** (nach dem Call), nicht **präventiv** (während der Generierung).
-- `submit_result`-Tool-Schema ist nicht strict-kompatibel (additionalProperties: true, optionale Felder).
-- Kein Constrained Decoding → Modell kann in seltenen Fällen ungültiges JSON produzieren.
+**Weaknesses:**
+- OpenAI can deviate → retries necessary → higher latency/cost.
+- Validation is **reactive** (after the call), not **preventive** (during generation).
+- `submit_result` tool schema is not strict-compatible (additionalProperties: true, optional fields).
+- No Constrained Decoding → in rare cases the model can produce invalid JSON.
 
-**Stärken (bereits vorhanden):**
-- Abweichungen werden durch `ToolRuntime.decode()` und `NodeContractValidator` catcht.
-- Semantische Fehler (`Empty`/`InvalidArgument`/`Unavailable`/`Failed`) sind unterscheidbar.
-- Node-Outputs werden gegen `outputContract` validiert.
-- Funktioniert mit allen Providern (Function Calling ist portabel).
+**Strengths (already present):**
+- Deviations are caught by `ToolRuntime.decode()` and `NodeContractValidator`.
+- Semantic errors (`Empty`/`InvalidArgument`/`Unavailable`/`Failed`) are distinguishable.
+- Node outputs are validated against `outputContract`.
+- Works with all providers (Function Calling is portable).
 
-## 2. OpenAI Strict als nächste Erweiterung (Option 2)
+## 2. OpenAI Strict as the next extension (Option 2)
 
-**Ziel:** Strict-Enforcement (Constrained Decoding) aktivieren, damit das Modell
-technisch keine Abweichungen machen kann.
+**Goal:** Enable strict enforcement (Constrained Decoding) so the model
+technically cannot deviate.
 
-Zwei Wege, um "strict" in qoc zu erreichen:
+Two ways to achieve "strict" in qoc:
 
-### Weg A: `response_format`-Weg
+### Approach A: `response_format` route
 
-Statt `submit_result`-Tool → `response_format: json_schema` auf dem ChatRequest setzen.
+Instead of the `submit_result` tool → set `response_format: json_schema` on the ChatRequest.
 
-**Ablauf:**
-1. `response_format: { type: "json_schema", json_schema: { strict: true } }` wird auf den ChatRequest gesetzt.
-2. OpenAI enforced das Schema via Constrained Decoding.
-3. Bei Parse-Fehler → force-prompt + retry.
+**Flow:**
+1. `response_format: { type: "json_schema", json_schema: { strict: true } }` is set on the ChatRequest.
+2. OpenAI enforces the schema via Constrained Decoding.
+3. On parse error → force-prompt + retry.
 
-**Vorteile:**
-- Nutzt OpenAI's Constrained Decoding direkt (strict garantiert).
-- Kein Tool-Call-Overhead für structured output.
+**Advantages:**
+- Uses OpenAI's Constrained Decoding directly (strict guaranteed).
+- No tool-call overhead for structured output.
 
-**Nachteile:**
-- Großer Refactor — verliert die Tool-Integration.
-- Structured output und tools koexistieren schlecht (structured output wird ignoriert wenn tool calls present).
-- qoc's `submit_result`-Tool müsste entfernt/umgebaut werden.
-- Verliert `NodeContractValidator`-Integration (kein Node-Output-Contract mehr).
+**Disadvantages:**
+- Large refactor — loses the tool integration.
+- Structured output and tools coexist poorly (structured output is ignored when tool calls are present).
+- qoc's `submit_result` tool would have to be removed/reworked.
+- Loses `NodeContractValidator` integration (no node-output contract anymore).
 
-**Aufwand:** Hoch (Architektur-Änderung)
+**Effort:** High (architectural change)
 
-**Empfehlung:** ❌ Nicht empfohlen für qoc — qoc's Architektur ist auf Function Calling aufgebaut.
+**Recommendation:** ❌ Not recommended for qoc — qoc's architecture is built on Function Calling.
 
-### Weg B: `strict: true` auf `ToolSpecification` (Function-Calling-Strict)
+### Approach B: `strict: true` on `ToolSpecification` (Function-Calling-Strict)
 
-`strict(true)` auf dem `submit_result`-Tool setzen. OpenAI enforced dann das Schema
-bei der Generierung der Tool-Argumente.
+Set `strict(true)` on the `submit_result` tool. OpenAI then enforces the schema
+when generating the tool arguments.
 
-**Ablauf:**
-1. `LangChain4jProviderAdapter.toToolSpecification()` setzt `.strict(true)`.
-2. `toJsonObjectSchema()` setzt `additionalProperties(false)` (statt `true` oder unset).
-3. Alle Felder müssen `required` sein (keine `Schema.Opt` auf Top-Level).
-4. OpenAI garantiert Schema-Einhaltung bei der Generierung.
+**Flow:**
+1. `LangChain4jProviderAdapter.toToolSpecification()` sets `.strict(true)`.
+2. `toJsonObjectSchema()` sets `additionalProperties(false)` (instead of `true` or unset).
+3. All fields must be `required` (no `Schema.Opt` at top level).
+4. OpenAI guarantees schema compliance during generation.
 
-**Vorteile:**
-- Behält qoc's Architektur (submit_result-Tool, Tool-Integration, NodeContractValidator).
-- Kein großer Refactor.
-- Präventiv statt reaktiv (keine retries nötig).
+**Advantages:**
+- Keeps qoc's architecture (submit_result tool, tool integration, NodeContractValidator).
+- No large refactor.
+- Preventive rather than reactive (no retries necessary).
 
-**Nachteile:**
-- Erfordert Schema-Anpassungen (additionalProperties: false, all required).
-- `Schema.Opt` (optionale Felder) nicht erlaubt auf Top-Level in strict mode.
-- Nur OpenAI/Azure (keine Provider-Portabilität).
-- Erfordert echtes API-Testing.
+**Disadvantages:**
+- Requires schema adjustments (additionalProperties: false, all required).
+- `Schema.Opt` (optional fields) not allowed at top level in strict mode.
+- Only OpenAI/Azure (no provider portability).
+- Requires real API testing.
 
-**Aufwand:** Mittel (Schema-Anpassungen + Testing)
+**Effort:** Medium (schema adjustments + testing)
 
-**Empfehlung:** ✅ Empfohlen für qoc.
+**Recommendation:** ✅ Recommended for qoc.
 
-## 3. Implementierungsschritte (Weg B)
+## 3. Implementation steps (Approach B)
 
-### Schritt 1: Tool-Schemas strict-kompatibel machen
+### Step 1: Make tool schemas strict-compatible
 
-**Datei:** `engine/src/main/java/de/augmentia/oc/engine/core/json/Schema.java`
+**File:** `engine/src/main/java/de/augmentia/oc/engine/core/json/Schema.java`
 
-- `Schema.Opt` (optionale Felder) auf Top-Level verbieten, wenn strict mode aktiv.
-- Alternativ: `Schema.Opt` in strict mode als `required` mit `null`-Default behandeln.
+- Forbid `Schema.Opt` (optional fields) at top level when strict mode is active.
+- Alternatively: treat `Schema.Opt` in strict mode as `required` with a `null` default.
 
-**Datei:** `quarkus/src/main/java/de/augmentia/oc/engine/http/LangChain4jProviderAdapter.java`
+**File:** `quarkus/src/main/java/de/augmentia/oc/engine/http/LangChain4jProviderAdapter.java`
 
 ```java
 private ToolSpecification toToolSpecification(ToolDefinition definition) {
@@ -97,7 +97,7 @@ private ToolSpecification toToolSpecification(ToolDefinition definition) {
             .name(definition.effectiveName())
             .description(definition.description())
             .parameters(toJsonObjectSchema(definition.inputSchema()))
-            .strict(true)  // ← NEU
+            .strict(true)  // ← NEW
             .build();
 }
 
@@ -110,7 +110,7 @@ private JsonObjectSchema toJsonObjectSchema(Schema schema) {
             boolean optional = inner instanceof Schema.Opt;
             Schema unwrapped = optional ? ((Schema.Opt) inner).inner() : inner;
             builder.addProperty(field.getKey(), toLcSchema(unwrapped));
-            // strict: alle Felder required
+            // strict: all fields required
             required.add(field.getKey());
         }
         // strict: additionalProperties: false
@@ -121,65 +121,65 @@ private JsonObjectSchema toJsonObjectSchema(Schema schema) {
 }
 ```
 
-### Schritt 2: `strict`-Flag konfigurierbar machen
+### Step 2: Make the `strict` flag configurable
 
-- System-Property: `qoc.structured-output.strict=true` (Default: `false` für Abwärtskompatibilität).
-- Wenn `false`: aktuelles Verhalten (non-strict, eigene Validierung fängt Abweichungen).
-- Wenn `true`: strict mode aktiviert (Constrained Decoding).
+- System property: `qoc.structured-output.strict=true` (Default: `false` for backward compatibility).
+- When `false`: current behavior (non-strict, own validation catches deviations).
+- When `true`: strict mode activated (Constrained Decoding).
 
-### Schritt 3: Tests
+### Step 3: Tests
 
-**Unit-Tests:**
-- `toJsonObjectSchema` setzt `additionalProperties(false)` wenn strict.
-- `toJsonObjectSchema` setzt alle Felder als `required` wenn strict.
-- `toToolSpecification` setzt `.strict(true)` wenn strict-Flag aktiv.
+**Unit tests:**
+- `toJsonObjectSchema` sets `additionalProperties(false)` when strict.
+- `toJsonObjectSchema` sets all fields as `required` when strict.
+- `toToolSpecification` sets `.strict(true)` when the strict flag is active.
 
-**Integration-Tests (erfordert echten API-Key):**
-- LLM mit strict mode gibt schema-konformes `submit_result` zurück.
-- LLM ohne strict mode kann Abweichungen machen (Baseline).
-- Vergleich: Latenz/Kosten mit/ohne strict.
+**Integration tests (requires a real API key):**
+- LLM with strict mode returns a schema-conforming `submit_result`.
+- LLM without strict mode can deviate (baseline).
+- Comparison: latency/cost with/without strict.
 
-### Schritt 4: Dokumentation
+### Step 4: Documentation
 
-- `docs/CONFIG.md`: neues Property `qoc.structured-output.strict`.
-- `docs/guides/langchain4j.md`: Strict-Mode-Erklärung.
+- `docs/CONFIG.md`: new property `qoc.structured-output.strict`.
+- `docs/guides/langchain4j.md`: Strict-Mode explanation.
 
-## 4. Risiken
+## 4. Risks
 
-| Risiko | Mitigation |
+| Risk | Mitigation |
 |---|---|
-| Schema nicht strict-kompatibel → OpenAI lehnt ab | Validierung beim Start: prüfen ob Schema strict-kompatibel |
-| `Schema.Opt` (optionale Felder) nicht erlaubt | Entweder entfernen oder als required mit null-Default |
-| Provider-Portabilität verloren (nur OpenAI/Azure) | Feature hinter Flag, Default: false (portabel) |
-| Tests mit demo-key schlagen fehl | Integration-Tests nur mit echtem Key (CI-Secret) |
+| Schema not strict-compatible → OpenAI rejects it | Validation at startup: check whether the schema is strict-compatible |
+| `Schema.Opt` (optional fields) not allowed | Either remove or treat as required with null default |
+| Provider portability lost (only OpenAI/Azure) | Feature behind flag, default: false (portable) |
+| Tests with demo-key fail | Integration tests only with a real key (CI secret) |
 
-## 5. Abhängigkeiten
+## 5. Dependencies
 
-- LangChain4j `ToolSpecification.strict(Boolean)` — verfügbar seit 1.19.3 (verifiziert).
-- OpenAI Function-Calling-Strict-Mode — verfügbar seit Aug 2024 (gpt-4o, gpt-4o-mini).
+- LangChain4j `ToolSpecification.strict(Boolean)` — available since 1.19.3 (verified).
+- OpenAI Function-Calling-Strict-Mode — available since Aug 2024 (gpt-4o, gpt-4o-mini).
 
-## 6. Warum offen?
+## 6. Why open?
 
-1. **Schema-Anpassungen** erfordern Änderungen an `Schema.java` und allen Tool-Definitionen.
-2. **Echtes API-Testing** nötig — die Quarkus-Tests laufen mit `demo-key` und können strict mode nicht validieren.
-3. **Provider-Portabilität** — strict mode ist OpenAI-exklusiv; Default muss `false` bleiben.
-4. **Priorität** — qoc's aktuelle Umsetzung (non-strict + eigene Validierung) ist funktional sicher. Strict ist ein Performance/Reliability-Gewinn, kein Sicherheitsgewinn.
+1. **Schema adjustments** require changes to `Schema.java` and all tool definitions.
+2. **Real API testing** necessary — the Quarkus tests run with `demo-key` and cannot validate strict mode.
+3. **Provider portability** — strict mode is OpenAI-exclusive; the default must remain `false`.
+4. **Priority** — qoc's current implementation (non-strict + own validation) is functionally safe. Strict is a performance/reliability gain, not a security gain.
 
-## 7. Empfehlung
+## 7. Recommendation
 
-- **Sofort:** Nicht nötig — qoc's aktuelle Umsetzung ist funktional ausreichend.
-- **Mittelfristig:** Wenn hohes Volumen oder kritische Anwendungen → Weg B implementieren.
-- **Langfristig:** Wenn Provider-Portabilität nicht mehr nötig → Weg A evaluieren (response_format).
+- **Immediately:** Not necessary — qoc's current implementation is functionally sufficient.
+- **Medium term:** If high volume or critical applications → implement Approach B.
+- **Long term:** If provider portability is no longer needed → evaluate Approach A (response_format).
 
-## 8. Dritte Option: Beibehaltung der aktuellen Umsetzung (Option 1)
+## 8. Third option: Keeping the current implementation (Option 1)
 
-Falls weder Weg A noch Weg B umgesetzt wird, bleibt die aktuelle Implementierung
-(Option 1) bestehen:
+If neither Approach A nor Approach B is implemented, the current implementation
+(Option 1) remains in place:
 
-- Non-strict Function Calling + eigene Validierung (`ToolRuntime.decode`, `NodeContractValidator`).
-- Abweichungen werden reaktiv catcht → retries möglich.
-- Funktional sicher, aber nicht optimal effizient.
-- Portabel über alle Provider.
+- Non-strict Function Calling + own validation (`ToolRuntime.decode`, `NodeContractValidator`).
+- Deviations are caught reactively → retries possible.
+- Functionally safe, but not optimally efficient.
+- Portable across all providers.
 
-**Empfehlung für Option 1:** Ausreichend für die meisten Use Cases. Strict-Mode (Weg B)
-lohnt sich nur bei hohen Volumen oder kritischen Anwendungen.
+**Recommendation for Option 1:** Sufficient for most use cases. Strict mode (Approach B)
+is worthwhile only at high volume or for critical applications.

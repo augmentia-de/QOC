@@ -1,71 +1,71 @@
-# In-Memory-Runtime
+# In-Memory Runtime
 
-> **Zweck:** Beschreibung einer vollständig flüchtigen Runtime, in der alle
-> Storage- und Koordinations-Ports durch In-Memory-Adapter ersetzt sind.
-> Kein Restart-Recovery, dafür konsistente und fehlertolerante Ausführung
-> innerhalb der Prozess-Lebensdauer.
+> **Purpose:** Description of a fully volatile runtime in which all
+> storage and coordination ports are replaced by in-memory adapters.
+> No restart recovery, but consistent and fault-tolerant execution
+> within the process lifetime.
 >
 > **Status:** 2026-11-09
 >
-> **Abgrenzung:** Ergänzt [`Storage-alternative.md`](./Storage-alternative.md)
-> und [`Core.md`](./Core.md). Bei Widersprüchen gilt die Spec unter
-> [`spec/`](../spec/README.md).
+> **Scope:** Complements [`Storage-alternative.md`](./Storage-alternative.md)
+> and [`Core.md`](./Core.md). In case of contradictions, the spec under
+> [`spec/`](../spec/README.md) applies.
 
-## 1. Zielbild
+## 1. Target picture
 
-Eine **In-Memory-Runtime** ist ein Betriebsmodus, in dem der gesamte
-Engine-Zustand im Heap des laufenden Prozesses liegt:
+An **In-Memory Runtime** is an operating mode in which the entire
+engine state lives on the heap of the running process:
 
-- keine Datenbank,
-- kein Netzwerk-Storage,
-- keine Persistenz,
-- keine Wiederaufnahme nach einem Neustart.
+- no database,
+- no network storage,
+- no persistence,
+- no resumption after a restart.
 
-Dafür:
+In exchange:
 
-- minimale Latenz (keine I/O-Roundtrips),
-- einfache Deployment-Topologie (ein Prozess),
-- deterministische Tests,
-- volle Nutzung der bestehenden Ports und Invarianten.
+- minimal latency (no I/O round-trips),
+- simple deployment topology (single process),
+- deterministic tests,
+- full use of the existing ports and invariants.
 
-**Leitbild:** *Fehlertoleranz im Prozess, keine Dauerhaftigkeit über den
-Prozess hinaus.*
+**Guiding principle:** *Fault tolerance within the process, no durability
+beyond the process.*
 
-## 2. Garantien und Grenzen
+## 2. Guarantees and limits
 
-### 2.1 Garantien
+### 2.1 Guarantees
 
-| Garantie | Umsetzung |
+| Guarantee | Implementation |
 |---|---|
-| Ein Schritt ist atomar (kein halber Zustand) | Commit am Step-Ende unter Per-Session-Lock |
-| Höchstens eine Execution pro Session | `ClaimStore` als `ConcurrentHashMap` |
-| Tool-Call vor Side-Effect sichtbar (G-03) | In-Memory-Journal, Append vor Ausführung |
-| Genau ein Terminal-Event pro Execution | `Coordinator` publiziert einmalig |
-| Konsistente Reads | Immutable Snapshots (`List.copyOf`, `Map.copyOf`) |
-| Kein Datenverlust bei Exception/Timeout | Buffer verwerfen oder gezielt committen |
-| Isolation zwischen Sessions | Per-Session-Lock, keine globalen Hot-Path-Locks |
+| A step is atomic (no half-state) | Commit at step end under per-session lock |
+| At most one execution per session | `ClaimStore` as `ConcurrentHashMap` |
+| Tool call visible before side effect (G-03) | In-memory journal, append before execution |
+| Exactly one terminal event per execution | `Coordinator` publishes once |
+| Consistent reads | Immutable snapshots (`List.copyOf`, `Map.copyOf`) |
+| No data loss on exception/timeout | Discard buffer or commit deliberately |
+| Isolation between sessions | Per-session lock, no global hot-path locks |
 
-### 2.2 Bewusste Grenzen
+### 2.2 Deliberate limits
 
-| Nicht garantiert | Grund |
+| Not guaranteed | Reason |
 |---|---|
-| Verlustfreier Neustart | Zustand liegt nur im Heap |
-| Crash-Recovery | Kein durables Journal |
-| Multi-Node / HA | Kein geteilter Store |
-| Audit über Prozessgrenzen | Keine persistierten Events |
-| Große Histories über Wochen | Speicherlimit |
-| Doppelte externe Side-Effects bei Crash | Nur Idempotenz hilft |
+| Lossless restart | State lives only on the heap |
+| Crash recovery | No durable journal |
+| Multi-node / HA | No shared store |
+| Audit across process boundaries | No persisted events |
+| Large histories over weeks | Memory limit |
+| Duplicate external side effects on crash | Only idempotency helps |
 
-## 3. Architektur
+## 3. Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Prozess (JVM oder Native Image)                              │
+│ Process (JVM or Native Image)                                │
 │                                                              │
 │  Engine / Coordinator / ExecutionRunner                      │
 │    │                                                         │
 │    ▼                                                         │
-│  RuntimeState (autoritativ, im Heap)                         │
+│  RuntimeState (authoritative, on the heap)                    │
 │    ├─ sessions        ConcurrentHashMap<SessionId, Session>  │
 │    ├─ conversations   Map<SessionId, AppendList<Message>>    │
 │    ├─ journal         Map<AggregateId, EventList + AtomicLong>│
@@ -78,115 +78,115 @@ Prozess hinaus.*
 │    ├─ toolOutputs     Content-addressed Map + LRU            │
 │    └─ toolCache       LRU                                   │
 │                                                              │
-│  Welt bleibt echt:                                           │
+│  The world stays real:                                       │
 │    ProviderAdapter, FileSystem, ProcessRunner,               │
 │    HttpTransport, RemoteShell, EmailClient                   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-**Wichtig:** „Alle Ports in In-Memory" betrifft die **Storage- und
-Koordinations-Ports**. Die **Welt-Ports** (LLM, Dateisystem, Prozesse, HTTP,
-E-Mail) bleiben echte Adapter – sonst wäre es eine Simulation. Für Tests
-gibt es zusätzlich Fake-Adapter (Record/Replay, `FixedClock`, Stub-Provider).
+**Important:** "All ports in-memory" applies to the **storage and
+coordination ports**. The **world ports** (LLM, file system, processes, HTTP,
+email) remain real adapters — otherwise it would be a simulation. For tests
+there are additional fake adapters (record/replay, `FixedClock`, stub provider).
 
-## 4. Port → In-Memory-Adapter
+## 4. Port → In-memory adapter
 
-> **Hinweis (Minimal-Modus):** Der In-Memory-Modus ist fest auf das Minimum
-> gekürzt. Nur die für direkte Ausführung nötigen Ports haben echte Adapter:
+> **Note (minimal mode):** The in-memory mode is trimmed to the minimum.
+> Only the ports needed for direct execution have real adapters:
 > `SessionStore`/`SessionReader`, `ConversationStore`, `Journal`, `ClaimStore`,
-> `SessionWorkspaceStore` (in `SessionStore` gefaltet) und `ToolOutputStore`
-> (LRU-begrenzt). Alle übrigen Ports (`ApprovalStore`, `InstructionStore`,
-> `CredentialStore`, `SnapshotStore`, `ToolResultCache`) werden durch No-Op-Adapter
-> bedient und halten keinen Zustand. `MemoryBudget` wird nicht mehr verwendet.
+> `SessionWorkspaceStore` (folded into `SessionStore`) and `ToolOutputStore`
+> (LRU-bounded). All other ports (`ApprovalStore`, `InstructionStore`,
+> `CredentialStore`, `SnapshotStore`, `ToolResultCache`) are served by no-op
+> adapters and hold no state. `MemoryBudget` is no longer used.
 
-### 4.1 Storage-Ports
+### 4.1 Storage ports
 
-| Port | Adapter | Datenstruktur | Hinweise |
+| Port | Adapter | Data structure | Notes |
 |---|---|---|---|
-| `SessionStore` / `SessionReader` | `InMemorySessionStore` | `ConcurrentHashMap<SessionId, SessionInfo>`; Inbox als `ArrayDeque<InboxEntry>` pro Session | Inbox-Zugriff unter Session-Lock; `list()` liefert Snapshot |
-| `ConversationStore` / `Conversation` | `InMemoryConversationStore` | pro Session `ArrayList<StoredMessage>` + `AtomicLong seq` | `nextSeq` = `incrementAndGet`; `deleteFrom` = Truncate unter Lock |
-| `Journal` | `InMemoryJournal` | pro Aggregat `ArrayList<StoredEvent>` + `AtomicLong seq`; optional Ringbuffer | `append` unter Lock; `history` immutable; Retention per Ring/Konfiguration |
-| `ClaimStore` | `InMemoryClaimStore` | `ConcurrentHashMap<SessionId, Claim>` | `acquire` = `putIfAbsent`; `release` = `remove`; optional Lease-Timestamp |
-| `ApprovalStore` | `NoOpApprovalStore` | – | No-Op in Minimal-Modus |
-| `InstructionStore` | `NoOpInstructionStore` | – | No-Op in Minimal-Modus |
-| `SessionWorkspaceStore` | `InMemorySessionStore` (gefällt) | `Map<SessionId, WorkspaceState>` | klein, unkritisch |
-| `CredentialStore` | `NoOpCredentialStore` | – | No-Op in Minimal-Modus |
-| `SnapshotStore` | `NoOpSnapshotStore` | – | No-Op in Minimal-Modus (kein Revert) |
-| `ToolOutputStore` | `InMemoryToolOutputStore` | `Map<String, byte[]>` (content-addressed) + LRU (max 256) | Limit pro Blob und global |
-| `ToolResultCache` | `NoOpToolResultCache` | – | No-Op in Minimal-Modus |
+| `SessionStore` / `SessionReader` | `InMemorySessionStore` | `ConcurrentHashMap<SessionId, SessionInfo>`; inbox as `ArrayDeque<InboxEntry>` per session | Inbox access under session lock; `list()` returns snapshot |
+| `ConversationStore` / `Conversation` | `InMemoryConversationStore` | per session `ArrayList<StoredMessage>` + `AtomicLong seq` | `nextSeq` = `incrementAndGet`; `deleteFrom` = truncate under lock |
+| `Journal` | `InMemoryJournal` | per aggregate `ArrayList<StoredEvent>` + `AtomicLong seq`; optional ring buffer | `append` under lock; `history` immutable; retention per ring/config |
+| `ClaimStore` | `InMemoryClaimStore` | `ConcurrentHashMap<SessionId, Claim>` | `acquire` = `putIfAbsent`; `release` = `remove`; optional lease timestamp |
+| `ApprovalStore` | `NoOpApprovalStore` | – | No-op in minimal mode |
+| `InstructionStore` | `NoOpInstructionStore` | – | No-op in minimal mode |
+| `SessionWorkspaceStore` | `InMemorySessionStore` (folded) | `Map<SessionId, WorkspaceState>` | small, non-critical |
+| `CredentialStore` | `NoOpCredentialStore` | – | No-op in minimal mode |
+| `SnapshotStore` | `NoOpSnapshotStore` | – | No-op in minimal mode (no revert) |
+| `ToolOutputStore` | `InMemoryToolOutputStore` | `Map<String, byte[]>` (content-addressed) + LRU (max 256) | Limit per blob and globally |
+| `ToolResultCache` | `NoOpToolResultCache` | – | No-op in minimal mode |
 
-### 4.2 Runtime-/Human-Ports
+### 4.2 Runtime/human ports
 
-| Port | Adapter | Datenstruktur | Hinweise |
+| Port | Adapter | Data structure | Notes |
 |---|---|---|---|
-| `Clock` | `SystemClock` / `FixedClock` | – | testbar |
-| `SessionWake` | `DirectSessionWake` | direkter `Coordinator.wake` | ggf. auf virtuellem Thread |
-| `ApprovalSource` | `InMemoryApprovalSource` | `Map<RequestId, CompletableFuture<ApprovalResult>>` | blockiert bis Antwort/Timeout |
-| `QuestionSource` | `InMemoryQuestionSource` | `Map<QuestionId, CompletableFuture<Answer>>` | dito |
-| `PolicySource` | `StaticPolicySource` | `List<PolicyStatement>` | unveränderlich |
-| `NotificationChannel` | `InMemoryNotificationChannel` | `List<Notification>` | für UI/SSE |
-| `EventBus` | `InProcessEventBus` | Subscriber-Liste + `publishLive` | SSE-Anbindung |
+| `Clock` | `SystemClock` / `FixedClock` | – | testable |
+| `SessionWake` | `DirectSessionWake` | direct `Coordinator.wake` | possibly on a virtual thread |
+| `ApprovalSource` | `InMemoryApprovalSource` | `Map<RequestId, CompletableFuture<ApprovalResult>>` | blocks until answer/timeout |
+| `QuestionSource` | `InMemoryQuestionSource` | `Map<QuestionId, CompletableFuture<Answer>>` | same |
+| `PolicySource` | `StaticPolicySource` | `List<PolicyStatement>` | immutable |
+| `NotificationChannel` | `InMemoryNotificationChannel` | `List<Notification>` | for UI/SSE |
+| `EventBus` | `InProcessEventBus` | subscriber list + `publishLive` | SSE integration |
 
-### 4.3 Welt-Ports (bleiben echt)
+### 4.3 World ports (remain real)
 
-| Port | Adapter | Anmerkung |
+| Port | Adapter | Note |
 |---|---|---|
-| `ProviderAdapter` | `HttpProviderAdapter` | Netzwerk/Streaming; für Tests `FakeProvider` |
-| `FileSystem` | `NioFileSystem` / `CachedFileSystem` | echte Dateien |
-| `ProcessRunner` | `JdkProcessRunner` / `SandboxedProcessRunner` | echte Prozesse |
-| `HttpTransport` | `JdkHttpTransport` | echtes HTTP |
-| `RemoteShell` | `MinaSshRemoteShell` | echtes SSH |
-| `EmailClient` | SMTP/IMAP-Adapter | echte E-Mails |
-| `InstructionLoader` | `NioInstructionLoader` | echte Dateien |
+| `ProviderAdapter` | `HttpProviderAdapter` | network/streaming; `FakeProvider` for tests |
+| `FileSystem` | `NioFileSystem` / `CachedFileSystem` | real files |
+| `ProcessRunner` | `JdkProcessRunner` / `SandboxedProcessRunner` | real processes |
+| `HttpTransport` | `JdkHttpTransport` | real HTTP |
+| `RemoteShell` | `MinaSshRemoteShell` | real SSH |
+| `EmailClient` | SMTP/IMAP adapter | real emails |
+| `InstructionLoader` | `NioInstructionLoader` | real files |
 
-## 5. Nebenläufigkeit und Konsistenz
+## 5. Concurrency and consistency
 
-**Regeln aus der Spec:**
+**Rules from the spec:**
 
-- **X-2:** eine virtuelle Thread pro Execution.
-- **X-3:** Tool-Calls eines Steps parallel, Quota max. 8 (FIFO).
-- **X-4:** kein I/O unter Lock; `ReentrantLock` nur um State-Change.
-- **X-5:** kein `ThreadLocal` für Session-Kontext; Session-ID wird durchgereicht.
-- **X-8:** wartende Sessions belegen keinen Thread (Inbox).
+- **X-2:** one virtual thread per execution.
+- **X-3:** tool calls within a step run in parallel, quota max. 8 (FIFO).
+- **X-4:** no I/O under lock; `ReentrantLock` only around state change.
+- **X-5:** no `ThreadLocal` for session context; session ID is passed through.
+- **X-8:** waiting sessions occupy no thread (inbox).
 
-**Locking-Modell:**
+**Locking model:**
 
 ```
-per Session:  ReentrantLock sessionLock
-global:       keine globalen Locks im Hot-Path
-Reader:       immutable Snapshots (List.copyOf, Map.copyOf)
-Sequenzen:    AtomicLong pro Aggregat
+per session:  ReentrantLock sessionLock
+global:       no global locks in the hot path
+readers:      immutable snapshots (List.copyOf, Map.copyOf)
+sequences:    AtomicLong per aggregate
 ```
 
-**Commit-Modell pro Step:**
+**Commit model per step:**
 
 ```
 lock(session):
-  1. Events und Projektionen in einen Buffer schreiben
-  2. Tool-Calls ausführen (außerhalb des Locks!)
-  3. Ergebnisse + ToolSuccess/ToolFailed in den Buffer
-  4. Commit: Buffer in Journal/Conversation/Session anwenden
+  1. Write events and projections into a buffer
+  2. Execute tool calls (outside the lock!)
+  3. Add results + ToolSuccess/ToolFailed to the buffer
+  4. Commit: apply buffer to Journal/Conversation/Session
 unlock
 ```
 
-Damit gibt es **keinen halb gespeicherten Schritt**. Schlägt der Step vor dem
-Commit fehl, wird der Buffer verworfen; der Zustand bleibt konsistent.
+Thus there is **no half-persisted step**. If the step fails before the
+commit, the buffer is discarded; the state remains consistent.
 
-## 6. Fehlertoleranz ohne Restart
+## 6. Fault tolerance without restart
 
-| Fehlerfall | Verhalten |
+| Failure | Behavior |
 |---|---|
-| **Tool-Exception** | `ToolFailed`-Event, Fehler an das Modell, Step läuft weiter |
-| **Provider-Fehler transient** | Retry mit Backoff (`RetryPolicy`) |
-| **Provider-Fehler permanent** | `ExecutionFailed`, Claim frei |
-| **Timeout** | Tool-/Provider-Timeout, typisierter Fehler |
-| **Thread-Interrupt** | `Aborted`/`Interrupted`, Terminal-Event |
-| **Cancel durch User** | Interrupt + `TaskCancelled`/`ExecutionInterrupted` |
-| **Exception im Runner** | `ExecutionFailed`, Cleanup, Claim frei |
-| **OOM-Gefahr** | Speicherbudget + Backpressure (siehe §7) |
-| **Shutdown (SIGTERM)** | Admission stoppen, Executions interrupten, Terminal-Events versuchen |
+| **Tool exception** | `ToolFailed` event, error to the model, step continues |
+| **Provider error (transient)** | Retry with backoff (`RetryPolicy`) |
+| **Provider error (permanent)** | `ExecutionFailed`, claim released |
+| **Timeout** | Tool/provider timeout, typed error |
+| **Thread interrupt** | `Aborted`/`Interrupted`, terminal event |
+| **Cancel by user** | Interrupt + `TaskCancelled`/`ExecutionInterrupted` |
+| **Exception in runner** | `ExecutionFailed`, cleanup, claim released |
+| **OOM risk** | Memory budget + backpressure (see §7) |
+| **Shutdown (SIGTERM)** | Stop admission, interrupt executions, attempt terminal events |
 
-### Effect-Ledger (optional)
+### Effect ledger (optional)
 
 ```
 Map<CallId, ToolEffect> effects
@@ -198,53 +198,53 @@ after tool:
     effects.put(callId, result)
 ```
 
-Das verhindert doppelte Side-Effects bei Retries **innerhalb** des Prozesses.
-Für externe Tools zusätzlich `IdempotencyKey` an den Anbieter.
+This prevents duplicate side effects on retries **within** the process.
+For external tools, also pass an `IdempotencyKey` to the provider.
 
-**Grenze:** Ein Crash zwischen Side-Effect und Ledger-Eintrag ist ohne
-Persistenz nicht erkennbar. Deshalb sollten Tools idempotent sein.
+**Limit:** A crash between side effect and ledger entry is not detectable
+without persistence. Therefore tools should be idempotent.
 
-## 7. Speicherbudget und Backpressure
+## 7. Memory budget and backpressure
 
-| Limit | Default-Vorschlag | Verhalten bei Überschreitung |
+| Limit | Default suggestion | Behavior on exceed |
 |---|---|---|
-| Max. Sessions | 1.000 | neue Session ablehnen (HTTP 429/503) |
-| Max. Bytes gesamt | 512 MB – 2 GB (heap-abhängig) | Admission ablehnen, beendete Sessions evicten |
-| Max. Messages/Session | 10.000 | Compaction erzwingen oder ablehnen |
-| Max. Journal-Events/Session | 50.000 (Ringbuffer) | älteste Events verwerfen (nur beendete Sessions) |
-| Max. Tool-Output/Blob | 1–8 MB | ablehnen oder auf FS spillen (Hybrid) |
-| Max. Snapshot-Größe | 64 MB | ablehnen oder auf FS |
-| Max. ToolResultCache | 10.000 Einträge / 128 MB | LRU-Eviction |
-| Max. Background-Tasks | 4 global, 2/Session | Semaphore |
+| Max sessions | 1,000 | reject new session (HTTP 429/503) |
+| Max total bytes | 512 MB – 2 GB (heap-dependent) | reject admission, evict finished sessions |
+| Max messages/session | 10,000 | force compaction or reject |
+| Max journal events/session | 50,000 (ring buffer) | discard oldest events (finished sessions only) |
+| Max tool output/blob | 1–8 MB | reject or spill to FS (hybrid) |
+| Max snapshot size | 64 MB | reject or move to FS |
+| Max ToolResultCache | 10,000 entries / 128 MB | LRU eviction |
+| Max background tasks | 4 global, 2/session | semaphore |
 
-**Regeln:**
+**Rules:**
 
-- Nur **beendete** Sessions dürfen evicted werden. Laufende Sessions nie.
-- Eviction erzeugt ein `SessionEvicted`-Event (UI/Audit).
-- `MemoryBudget` zählt Bytes pro Kategorie (Messages, Events, ToolOutputs,
-  Snapshots, Caches) und prüft **vor** dem Commit.
-- Bei hohem Druck: neue Prompts mit `429`/`503` ablehnen, nicht OOM laufen
-  lassen.
+- Only **finished** sessions may be evicted. Running sessions never.
+- Eviction produces a `SessionEvicted` event (UI/audit).
+- `MemoryBudget` counts bytes per category (messages, events, tool outputs,
+  snapshots, caches) and checks **before** the commit.
+- Under high pressure: reject new prompts with `429`/`503`, do not let it
+  run into OOM.
 
-## 8. Ausfallmatrix
+## 8. Failure matrix
 
-| Ausfall | Zustand | Ergebnis |
+| Failure | State | Result |
 |---|---|---|
-| Exception im Step | Buffer verworfen, Session konsistent | sicher |
-| Provider-Timeout | Retry oder `ExecutionFailed` | sicher |
-| Tool hängt | Timeout/Cancel, `ToolFailed` | sicher |
-| JVM-Crash | **alles weg** | kein Ergebnis |
-| OOM | Prozess stirbt | alles weg |
-| Shutdown | Terminal-Events versucht, dann weg | kein Resume |
-| Neustart | leerer State | keine Recovery |
+| Exception in step | Buffer discarded, session consistent | safe |
+| Provider timeout | Retry or `ExecutionFailed` | safe |
+| Tool hangs | Timeout/cancel, `ToolFailed` | safe |
+| JVM crash | **everything gone** | no result |
+| OOM | Process dies | everything gone |
+| Shutdown | Terminal events attempted, then gone | no resume |
+| Restart | empty state | no recovery |
 
-Das ist die bewusste Abgrenzung: **Fehlertoleranz im Prozess, keine
-Dauerhaftigkeit über den Prozess hinaus.**
+This is the deliberate boundary: **fault tolerance within the process, no
+durability beyond the process.**
 
-## 9. Konfiguration
+## 9. Configuration
 
 ```properties
-# Profil "memory"
+# profile "memory"
 engine.storage=memory
 engine.memory.max-sessions=1000
 engine.memory.max-bytes=314572800
@@ -256,46 +256,46 @@ engine.memory.evict-finished=true
 engine.recovery.enabled=false
 ```
 
-**Startup-Guard:** Wenn `engine.storage=memory` und `engine.db.kind`
-gesetzt ist, warnen oder fail-fast. Kein stiller Mischbetrieb. Der
-bestehende Schalter `engine.db.kind=sqlite` bleibt davon unberührt.
+**Startup guard:** If `engine.storage=memory` and `engine.db.kind` is set,
+warn or fail fast. No silent mixed operation. The existing switch
+`engine.db.kind=sqlite` remains unaffected.
 
-## 10. Einsatzszenarien
+## 10. Use cases
 
-| Geeignet | Nicht geeignet |
+| Suitable | Not suitable |
 |---|---|
-| Lokaler Desktop-/CLI-Agent (single user) | Multi-User-Produktionsserver |
-| Tests, CI, deterministische E2E-Läufe | HA/Cluster mit Failover |
-| Ephemere Assistenten („ein Lauf, dann weg") | Audit-/Compliance-Anforderungen |
-| Edge-/Embedded-Szenarien | Lange Histories über Wochen |
-| Prototyping, Demos | Große Snapshots/Tool-Outputs |
+| Local desktop/CLI agent (single user) | Multi-user production server |
+| Tests, CI, deterministic E2E runs | HA/cluster with failover |
+| Ephemeral assistants ("one run, then gone") | Audit/compliance requirements |
+| Edge/embedded scenarios | Long histories over weeks |
+| Prototyping, demos | Large snapshots/tool outputs |
 
-## 11. Optionale „Soft-Persistenz" (nicht Teil der Garantie)
+## 11. Optional "soft persistence" (not part of the guarantee)
 
-| Option | Nutzen | Aufwand |
+| Option | Benefit | Effort |
 |---|---|---|
-| **Debug-Dump bei Shutdown** (JSON: Sessions, Journal, Conversation) | Post-Mortem, Support | klein |
-| **Periodischer Snapshot auf Platte** (write-behind) | Notfall-Wiederherstellung | mittel |
-| **Journal-WAL auf Platte** | Restart-fähig | groß (dann Hybrid) |
+| **Debug dump on shutdown** (JSON: sessions, journal, conversation) | Post-mortem, support | small |
+| **Periodic snapshot to disk** (write-behind) | Emergency recovery | medium |
+| **Journal WAL on disk** | Restart-capable | large (then hybrid) |
 
-Wenn „ohne Restart" gilt, sind diese Optionen **nicht** nötig. Ein
-Debug-Dump ist trotzdem sinnvoll.
+If "no restart" applies, these options are **not** needed. A debug dump is
+still useful.
 
-## 12. Detaillierte Umsetzung
+## 12. Detailed implementation
 
-### 12.1 Package-Struktur
+### 12.1 Package structure
 
 ```
 qoc/
 ├─ engine/
 │  └─ src/main/java/de/augmentia/oc/engine/
-│     ├─ core/port/...                         # unverändert (Single Source)
-│     ├─ core/model/...                        # unverändert (Single Source)
-│     ├─ runtime/...                           # unverändert (Single Source)
-│     ├─ adapter/memory/                       # NEU
-│     │  ├─ RuntimeState.java                  # Container aller In-Memory-Stores
-│     │  ├─ MemoryBudget.java                  # Bytes-Accounting + Limits
-│     │  ├─ MemoryStores.java                  # Bündel/Fassade
+│     ├─ core/port/...                         # unchanged (single source)
+│     ├─ core/model/...                        # unchanged (single source)
+│     ├─ runtime/...                           # unchanged (single source)
+│     ├─ adapter/memory/                       # NEW
+│     │  ├─ RuntimeState.java                  # container for all in-memory stores
+│     │  ├─ MemoryBudget.java                  # byte accounting + limits
+│     │  ├─ MemoryStores.java                  # bundle/facade
 │     │  ├─ InMemorySessionStore.java
 │     │  ├─ InMemoryConversationStore.java
 │     │  ├─ InMemoryJournal.java
@@ -314,18 +314,18 @@ qoc/
 │     │  ├─ InProcessEventBus.java
 │     │  ├─ DirectSessionWake.java
 │     │  ├─ SystemClock.java
-│     │  └─ MemoryLimitExceeded.java           # typisierter Fehler
-│     └─ runtime/wiring/                       # NEU
+│     │  └─ MemoryLimitExceeded.java           # typed error
+│     └─ runtime/wiring/                       # NEW
 │        ├─ StorageKind.java                   # MEMORY | SQLITE | POSTGRES
-│        ├─ Stores.java                        # Record aller Ports
-│        └─ StorageFactory.java                # einziger Switch
+│        ├─ Stores.java                        # record of all ports
+│        └─ StorageFactory.java                # single switch
 ├─ quarkus/
 │  └─ src/main/java/de/augmentia/oc/engine/http/
-│     ├─ Engine.java                           # nutzt StorageFactory
-│     ├─ StorageProducers.java                 # optional: CDI-Producer
-│     └─ DatabaseMigration.java                # im Memory-Modus deaktivieren
+│     ├─ Engine.java                           # uses StorageFactory
+│     ├─ StorageProducers.java                 # optional: CDI producer
+│     └─ DatabaseMigration.java                # disabled in memory mode
 └─ engine/src/test/java/de/augmentia/oc/engine/
-   └─ adapter/contract/                        # NEU: gemeinsame TCK
+   └─ adapter/contract/                        # NEW: shared TCK
       ├─ SessionStoreContract.java
       ├─ ConversationStoreContract.java
       ├─ JournalContract.java
@@ -337,29 +337,29 @@ qoc/
       └─ ToolResultCacheContract.java
 ```
 
-### 12.2 Klassen und Verantwortlichkeiten
+### 12.2 Classes and responsibilities
 
-| Klasse | Verantwortung | Thread-Safety |
+| Class | Responsibility | Thread safety |
 |---|---|---|
-| `RuntimeState` | Hält alle Maps/Logs und die Per-Session-Locks | `ConcurrentHashMap` + `ReentrantLock` |
-| `MemoryBudget` | Bytes reservieren/freigeben, High-Watermark | `AtomicLong`/CAS |
-| `MemoryStores` | Erzeugt alle Adapter über einem `RuntimeState` | immutable |
-| `InMemoryJournal` | Append/History/Sequenz pro Aggregat | Lock pro `EventLog` |
-| `InMemoryConversationStore` | Messages, `nextSeq`, `deleteFrom` | Lock pro Session |
-| `InMemorySessionStore` | Session-Info, Inbox | Lock pro Session |
+| `RuntimeState` | Holds all maps/logs and per-session locks | `ConcurrentHashMap` + `ReentrantLock` |
+| `MemoryBudget` | Reserve/release bytes, high-watermark | `AtomicLong`/CAS |
+| `MemoryStores` | Creates all adapters over a `RuntimeState` | immutable |
+| `InMemoryJournal` | Append/history/sequence per aggregate | lock per `EventLog` |
+| `InMemoryConversationStore` | Messages, `nextSeq`, `deleteFrom` | lock per session |
+| `InMemorySessionStore` | Session info, inbox | lock per session |
 | `InMemoryClaimStore` | `acquire`/`release`/`open` | `putIfAbsent` |
-| `InMemoryApprovalStore` | gespeicherte Approvals pro Projekt | Copy-on-Write |
-| `InMemoryInstructionStore` | State/Einträge/Blobs | Lock pro Session |
-| `InMemorySessionWorkspaceStore` | Workspace-/Instance-Zuordnung | `ConcurrentHashMap` |
-| `InMemoryCredentialStore` | Credentials (nur aus ENV/Secret-Manager) | `ConcurrentHashMap` |
-| `InMemorySnapshotStore` | Snapshot-Metadaten + Dateiinhalte | Lock pro Snapshot |
-| `InMemoryToolOutputStore` | Content-addressed Blobs + LRU | Lock + LRU |
-| `InMemoryToolResultCache` | Idempotenz-Cache | LRU |
-| `InProcessEventBus` | In-Process-Pub/Sub für SSE | `CopyOnWriteArrayList` |
-| `DirectSessionWake` | `Coordinator.wake` direkt | – |
-| `MemoryLimitExceeded` | typisierter Fehler bei Budgetüberschreitung | – |
+| `InMemoryApprovalStore` | Saved approvals per project | copy-on-write |
+| `InMemoryInstructionStore` | State/entries/blobs | lock per session |
+| `InMemorySessionWorkspaceStore` | Workspace/instance mapping | `ConcurrentHashMap` |
+| `InMemoryCredentialStore` | Credentials (only from ENV/secret manager) | `ConcurrentHashMap` |
+| `InMemorySnapshotStore` | Snapshot metadata + file contents | lock per snapshot |
+| `InMemoryToolOutputStore` | Content-addressed blobs + LRU | lock + LRU |
+| `InMemoryToolResultCache` | Idempotency cache | LRU |
+| `InProcessEventBus` | In-process pub/sub for SSE | `CopyOnWriteArrayList` |
+| `DirectSessionWake` | Direct `Coordinator.wake` | – |
+| `MemoryLimitExceeded` | Typed error on budget exceedance | – |
 
-### 12.3 Code-Skizzen
+### 12.3 Code sketches
 
 #### `RuntimeState`
 
@@ -387,8 +387,8 @@ public final class RuntimeState {
 }
 ```
 
-> `RuntimeState` ist **nicht** Teil der Ports. Es ist das gemeinsame
-> Backend der Memory-Adapter und bleibt im `adapter.memory`-Paket.
+> `RuntimeState` is **not** part of the ports. It is the shared backend of
+> the memory adapters and stays in the `adapter.memory` package.
 
 #### `MemoryBudget`
 
@@ -416,19 +416,18 @@ public final class MemoryBudget {
 }
 ```
 
-**Reservierungspunkte:**
+**Reservation points:**
 
-| Store | Reserviert |
+| Store | Reserves |
 |---|---|
-| `InMemoryJournal` | geschätzte Event-Größe (JSON + Metadaten) |
-| `InMemoryConversationStore` | Message-Größe |
-| `InMemoryToolOutputStore` | Blob-Bytes |
-| `InMemorySnapshotStore` | Datei-Bytes |
-| `InMemoryToolResultCache` | Eintragsgröße |
-| `InMemorySessionStore` | kleine Metadaten (optional) |
+| `InMemoryJournal` | estimated event size (JSON + metadata) |
+| `InMemoryConversationStore` | message size |
+| `InMemoryToolOutputStore` | blob bytes |
+| `InMemorySnapshotStore` | file bytes |
+| `InMemoryToolResultCache` | entry size |
+| `InMemorySessionStore` | small metadata (optional) |
 
-Bei `reserve == false` → `MemoryLimitExceeded` (typisiert), nie halb
-schreiben.
+On `reserve == false` → `MemoryLimitExceeded` (typed), never write half.
 
 #### `InMemoryJournal`
 
@@ -468,7 +467,7 @@ public final class InMemoryJournal implements Journal {
 
     @Override
     public void deleteOlderThan(Instant cutoff) {
-        // In-Memory: Retention nur über Ringbuffer/Eviction, kein Zeit-Scan.
+        // In-memory: retention only via ring buffer/eviction, no time scan.
     }
 }
 
@@ -487,7 +486,7 @@ final class EventLog {
     Seq append(EventDraft draft) {
         lock.lock();
         try {
-            int size = estimateBytes(draft); // z. B. über EventCodec/Json
+            int size = estimateBytes(draft); // e.g. via EventCodec/Json
             if (!budget.reserve(size)) throw new MemoryLimitExceeded("journal");
             seq++;
             events.add(StoredEvent.from(draft.aggregateId(), Seq.of(seq), draft, clock.now()));
@@ -509,7 +508,7 @@ final class EventLog {
 }
 ```
 
-> **Wichtig:** `lastSeq`/`nextSeq` werden aus `seq` gelesen – kein
+> **Important:** `lastSeq`/`nextSeq` are read from `seq` — not from
 > `history().size()`.
 
 #### `InMemoryClaimStore`
@@ -572,7 +571,7 @@ public final class InMemoryConversationStore implements ConversationStore {
 }
 ```
 
-#### `InMemoryToolOutputStore` (Content-addressed + LRU)
+#### `InMemoryToolOutputStore` (content-addressed + LRU)
 
 ```java
 public final class InMemoryToolOutputStore implements ToolOutputStore {
@@ -616,7 +615,7 @@ public final class InMemoryToolOutputStore implements ToolOutputStore {
 
     @Override
     public synchronized void sweep(Instant olderThan) {
-        // In-Memory: Retention über LRU/Eviction, kein Zeit-Scan.
+        // In-memory: retention via LRU/eviction, no time scan.
     }
 
     private void evictIfNeeded() {
@@ -644,9 +643,9 @@ public final class DirectSessionWake implements SessionWake {
 }
 ```
 
-### 12.4 Commit- und Locking-Implementierung
+### 12.4 Commit and locking implementation
 
-**Ziel:** Ein Step ist atomar; Leser sehen nie einen halben Zustand.
+**Goal:** A step is atomic; readers never see a half-state.
 
 ```java
 final class SessionMutex {
@@ -660,7 +659,7 @@ final class SessionMutex {
 }
 ```
 
-**Step-Buffer:**
+**Step buffer:**
 
 ```java
 final class StepBuffer {
@@ -681,32 +680,32 @@ final class StepBuffer {
 }
 ```
 
-**Regeln:**
+**Rules:**
 
-1. Tool-Calls laufen **außerhalb** des Session-Locks.
-2. Nur der Commit (Events + Projektionen) läuft unter dem Lock.
-3. Reader bekommen `List.copyOf`/`Map.copyOf`.
-4. Sequenzen werden **im selben Lock** erhöht wie der Append.
-5. Kein `synchronized` um I/O (X-4).
+1. Tool calls run **outside** the session lock.
+2. Only the commit (events + projections) runs under the lock.
+3. Readers receive `List.copyOf`/`Map.copyOf`.
+4. Sequences are incremented **under the same lock** as the append.
+5. No `synchronized` around I/O (X-4).
 
-### 12.5 Eviction und Retention
+### 12.5 Eviction and retention
 
-| Kategorie | Strategie |
+| Category | Strategy |
 |---|---|
-| **Beendete Sessions** | LRU nach `finishedAt`, nur wenn `state == IDLE` |
-| **Journal** | Ringbuffer pro Aggregat (max. N Events); älteste zuerst |
-| **Conversation** | bleibt vollständig bis Session-Eviction; Compaction reduziert |
-| **ToolOutputs** | LRU über `LinkedHashMap` (Zugriffsreihenfolge) |
-| **Snapshots** | LRU oder komplett deaktiviert (`engine.memory.snapshots=false`) |
-| **ToolResultCache** | LRU mit Cap |
-| **EventBus-Subscriber** | `CopyOnWriteArrayList`, keine Eviction |
+| **Finished sessions** | LRU by `finishedAt`, only when `state == IDLE` |
+| **Journal** | Ring buffer per aggregate (max N events); oldest first |
+| **Conversation** | Stays complete until session eviction; compaction reduces |
+| **Tool outputs** | LRU over `LinkedHashMap` (access order) |
+| **Snapshots** | LRU or fully disabled (`engine.memory.snapshots=false`) |
+| **ToolResultCache** | LRU with cap |
+| **EventBus subscribers** | `CopyOnWriteArrayList`, no eviction |
 
-**Eviction-Event:** `SessionEvicted { session, at, reason }` für UI/Audit.
-Laufende Sessions werden **nie** evicted.
+**Eviction event:** `SessionEvicted { session, at, reason }` for UI/audit.
+Running sessions are **never** evicted.
 
 ### 12.6 Wiring
 
-#### `StorageKind` und `Stores`
+#### `StorageKind` and `Stores`
 
 ```java
 public enum StorageKind { MEMORY, SQLITE, POSTGRES }
@@ -740,7 +739,7 @@ public final class StorageFactory {
 }
 ```
 
-#### Quarkus-Producer (optional)
+#### Quarkus producer (optional)
 
 ```java
 @ApplicationScoped
@@ -753,29 +752,29 @@ public class StorageProducers {
 }
 ```
 
-**Regel:** Der einzige `switch` über den Storage-Typ lebt in
-`StorageFactory`. `Engine`, `Coordinator`, `Step` und alle Runtime-Klassen
-bleiben unverändert.
+**Rule:** The only `switch` over the storage type lives in
+`StorageFactory`. `Engine`, `Coordinator`, `Step` and all runtime classes
+remain unchanged.
 
-### 12.7 Build-Optionen
+### 12.7 Build options
 
-#### Option A – Runtime-Switch (einfachster Weg)
+#### Option A – Runtime switch (simplest path)
 
-Ein Artefakt enthält alle Adapter; `engine.storage` entscheidet zur Laufzeit.
+One artifact contains all adapters; `engine.storage` decides at runtime.
 
 ```properties
 engine.storage=memory
 ```
 
-| Vorteil | Nachteil |
+| Advantage | Disadvantage |
 |---|---|
-| ein Build, ein Image | alle Adapter + DB-Extensions im Image |
-| schneller Wechsel per Config | größeres Native-Image |
-| ideal für Entwicklung/Tests | – |
+| one build, one image | all adapters + DB extensions in the image |
+| fast switch via config | larger native image |
+| ideal for development/tests | – |
 
-#### Option B – Maven-Profil `storage-memory`
+#### Option B – Maven profile `storage-memory`
 
-Lean Build ohne DB-Extensions. Im `quarkus/pom.xml`:
+Lean build without DB extensions. In `quarkus/pom.xml`:
 
 ```xml
 <profile>
@@ -788,10 +787,10 @@ Lean Build ohne DB-Extensions. Im `quarkus/pom.xml`:
 </profile>
 ```
 
-Zusätzlich müssen die DB-Extensions (`quarkus-jdbc-postgresql`,
-`quarkus-flyway`, ggf. `quarkus-agroal`) in diesem Profil aus den
-Dependencies entfernt oder über ein separates Modul bereitgestellt werden.
-`DatabaseMigration` bekommt einen Profil-Guard:
+Additionally the DB extensions (`quarkus-jdbc-postgresql`,
+`quarkus-flyway`, possibly `quarkus-agroal`) must be removed from the
+dependencies in this profile or provided via a separate module.
+`DatabaseMigration` gets a profile guard:
 
 ```java
 @ApplicationScoped
@@ -807,22 +806,22 @@ mvn -pl quarkus -am package -Pstorage-memory -DskipTests \
     -Dquarkus.package.type=native
 ```
 
-#### Option C – Separates Modul `qoc-memory` (lean, aber Refactor)
+#### Option C – Separate module `qoc-memory` (lean, but refactor)
 
-Ein eigenes Runnable-Modul, das nur `engine` + den HTTP-Skin (ohne
-DB-Extensions) enthält. Dafür muss der HTTP-Skin aus `quarkus/` in ein
-wiederverwendbares Modul extrahiert werden. Aufwand: mittel–groß; lohnt
-sich, wenn ein wirklich kleines Native-Image benötigt wird.
+A separate runnable module containing only `engine` + the HTTP skin (without
+DB extensions). For this the HTTP skin must be extracted from `quarkus/`
+into a reusable module. Effort: medium–large; worthwhile when a really small
+native image is needed.
 
 ```
 qoc/
 ├─ engine/
-├─ http-skin/            # extrahiert aus quarkus/ (ohne DB)
-├─ quarkus/              # Produktion: postgres/sqlite
-└─ quarkus-memory/       # Memory: http-skin + engine + memory-Adapter
+├─ http-skin/            # extracted from quarkus/ (without DB)
+├─ quarkus/              # production: postgres/sqlite
+└─ quarkus-memory/       # memory: http-skin + engine + memory adapters
 ```
 
-#### Option D – Quarkus-Build-Profile
+#### Option D – Quarkus build profile
 
 ```java
 @ApplicationScoped
@@ -834,46 +833,46 @@ public class MemoryStorageProducers { ... }
 public class JdbcStorageProducers { ... }
 ```
 
-Build mit `-Dquarkus.profile=memory`. Einfach, aber die DB-Extensions
-bleiben im Image, sofern sie nicht per Dependency ausgeschlossen werden.
+Build with `-Dquarkus.profile=memory`. Simple, but the DB extensions
+remain in the image unless excluded via dependency.
 
-#### Vergleich
+#### Comparison
 
-| Option | Aufwand | Image-Größe | Wechsel | Empfehlung |
+| Option | Effort | Image size | Switch | Recommendation |
 |---|---|---|---|---|
-| A Runtime-Switch | klein | groß | zur Laufzeit | ✅ Start |
-| B Maven-Profil | mittel | mittel | Build | ✅ für Produktion |
-| C Separates Modul | groß | klein | Build | später |
-| D Quarkus-Profil | klein–mittel | mittel | Build | ✅ Ergänzung |
+| A Runtime switch | small | large | at runtime | ✅ Start |
+| B Maven profile | medium | medium | build | ✅ for production |
+| C Separate module | large | small | build | later |
+| D Quarkus profile | small–medium | medium | build | ✅ supplement |
 
-### 12.8 Konfigurationsmatrix
+### 12.8 Configuration matrix
 
 | Property | Memory | SQLite | Postgres |
 |---|---|---|---|
 | `engine.storage` | `memory` | `sqlite` | `postgres` |
-| `engine.db.kind` | – (ignoriert) | `sqlite` | `postgresql` |
+| `engine.db.kind` | – (ignored) | `sqlite` | `postgresql` |
 | `engine.recovery.enabled` | `false` | `true` | `true` |
-| `quarkus.datasource.*` | nicht nötig | SQLite-URL | Neon/Postgres |
+| `quarkus.datasource.*` | not needed | SQLite URL | Neon/Postgres |
 | `quarkus.flyway.enabled` | `false` | `true` | `true` |
-| `engine.memory.max-bytes` | gesetzt | – | – |
-| `engine.memory.max-sessions` | gesetzt | – | – |
-| `engine.memory.max-tool-output-bytes` | gesetzt | – | – |
-| `engine.memory.snapshots` | `false` (Default) | `true` | `true` |
+| `engine.memory.max-bytes` | set | – | – |
+| `engine.memory.max-sessions` | set | – | – |
+| `engine.memory.max-tool-output-bytes` | set | – | – |
+| `engine.memory.snapshots` | `false` (default) | `true` | `true` |
 
-**Startup-Guard:**
+**Startup guard:**
 
 ```java
 if (kind == MEMORY && dataSourcePresent) {
-    LOG.warn("engine.storage=memory ignoriert die konfigurierte DataSource");
+    LOG.warn("engine.storage=memory ignores the configured DataSource");
 }
 if (kind == MEMORY && recoveryEnabled) {
-    throw new IllegalStateException("Recovery ist im Memory-Modus nicht verfügbar");
+    throw new IllegalStateException("Recovery is not available in memory mode");
 }
 ```
 
-### 12.9 Tests und Contract-Tests (TCK)
+### 12.9 Tests and contract tests (TCK)
 
-**Ziel:** Dieselbe Semantik für alle Adapter.
+**Goal:** Same semantics for all adapters.
 
 ```java
 abstract class SessionStoreContract {
@@ -893,50 +892,49 @@ class SqliteSessionStoreTest extends SessionStoreContract { ... }
 class SqlSessionStoreTest extends SessionStoreContract { ... }
 ```
 
-**Test-Matrix:**
+**Test matrix:**
 
-| Testart | Memory | SQLite | Postgres |
+| Test type | Memory | SQLite | Postgres |
 |---|---|---|---|
-| Unit/Contract | ✅ | ✅ | ✅ |
-| Quarkus-Integration | `@TestProfile(MemoryProfile)` | SQLite-Profil | Postgres/Testcontainers |
-| E2E (Prompt → Tools) | ✅ (Fake-Provider) | ✅ | ✅ |
-| Restart/Recovery | ❌ (nicht definiert) | ✅ | ✅ |
-| Last/Eviction | ✅ | – | – |
+| Unit/contract | ✅ | ✅ | ✅ |
+| Quarkus integration | `@TestProfile(MemoryProfile)` | SQLite profile | Postgres/Testcontainers |
+| E2E (prompt → tools) | ✅ (fake provider) | ✅ | ✅ |
+| Restart/recovery | ❌ (not defined) | ✅ | ✅ |
+| Load/eviction | ✅ | – | – |
 
-**CI:** Matrix-Job pro Storage-Kind; derselbe Testcode, andere Factory.
+**CI:** Matrix job per storage kind; same test code, different factory.
 
-### 12.10 Migrationsschritte (konkret)
+### 12.10 Migration steps (concrete)
 
-1. **TCK einführen** (nur Tests, keine Produktionsänderung).
-2. **`StorageKind`/`Stores`/`StorageFactory`** im `engine`-Modul anlegen.
-3. **`RuntimeState` + `MemoryBudget`** implementieren.
-4. **Memory-Adapter** portweise implementieren, TCK grün schalten.
-5. **`Engine`-Wiring** von `if (sqlite)` auf `StorageFactory` umstellen.
-6. **`DatabaseMigration`** per Profil/Config deaktivierbar machen.
-7. **`application.properties`** um `engine.storage` und Memory-Limits
-   erweitern.
-8. **Startup-Guard** und Health-Ausgabe (`storage: memory`) ergänzen.
-9. **Maven-Profil `storage-memory`** (optional, für lean Builds).
-10. **Lasttests + Eviction-Tests**.
-11. **Doku** (`InMemory.md`, `Storage-alternative.md`) aktualisieren.
+1. **Introduce TCK** (tests only, no production change).
+2. **Create `StorageKind`/`Stores`/`StorageFactory`** in the `engine` module.
+3. **Implement `RuntimeState` + `MemoryBudget`**.
+4. **Implement memory adapters** port by port, switch TCK green.
+5. **Switch `Engine` wiring** from `if (sqlite)` to `StorageFactory`.
+6. **Make `DatabaseMigration`** deactivatable via profile/config.
+7. **Extend `application.properties`** with `engine.storage` and memory limits.
+8. **Add startup guard** and health output (`storage: memory`).
+9. **Maven profile `storage-memory`** (optional, for lean builds).
+10. **Load tests + eviction tests**.
+11. **Update docs** (`InMemory.md`, `Storage-alternative.md`).
 
-### 12.11 Risiken und Gegenmaßnahmen
+### 12.11 Risks and mitigations
 
-| Risiko | Wirkung | Gegenmaßnahme |
+| Risk | Impact | Mitigation |
 |---|---|---|
-| Unbounded Growth | OOM | `MemoryBudget` + Eviction + Backpressure |
-| `ConcurrentHashMap`-Race | inkonsistente Reads | Per-Session-Lock + immutable Snapshots |
-| Blocking unter Lock | Pinning/Deadlock | I/O außerhalb des Locks (X-4) |
-| Quarkus-Datasource startet trotzdem | Startup-Fehler | Profil ohne DB-Extensions / Config-Guard |
-| Native-Image-Größe | groß | Maven-Profil oder separates Modul |
-| Recovery versehentlich aktiv | Inkonsistenz | Startup-Guard, `engine.recovery.enabled=false` |
-| Externe Side-Effects doppelt | Datenfehler | `ToolResultCache` + Idempotency-Key |
-| Eviction laufender Sessions | Datenverlust | Eviction nur bei `IDLE`/`FINISHED` |
+| Unbounded growth | OOM | `MemoryBudget` + eviction + backpressure |
+| `ConcurrentHashMap` race | inconsistent reads | Per-session lock + immutable snapshots |
+| Blocking under lock | pinning/deadlock | I/O outside the lock (X-4) |
+| Quarkus datasource starts anyway | startup failure | profile without DB extensions / config guard |
+| Native image size | large | Maven profile or separate module |
+| Recovery accidentally enabled | inconsistency | startup guard, `engine.recovery.enabled=false` |
+| Duplicate external side effects | data errors | `ToolResultCache` + idempotency key |
+| Eviction of running sessions | data loss | eviction only for `IDLE`/`FINISHED` |
 
-## 13. Beispiel: eine Session im Speicher
+## 13. Example: a session in memory
 
 ```java
-// Pseudocode
+// pseudocode
 var state = new RuntimeState(new MemoryBudget(1L << 30));
 var sessions = new InMemorySessionStore(state);
 var journal  = new InMemoryJournal(state);
@@ -953,45 +951,45 @@ journal.append(new EventDraft(session.value(), 1,
         new SessionEvent.InboxEnqueued(/* ... */)));
 coordinator.wake(session, ExecutionScope.INPUT);
 
-// Alles bleibt im Heap. Kein Restart. Kein DB.
+// Everything stays on the heap. No restart. No DB.
 ```
 
-## 14. Vergleich mit den bestehenden Modi
+## 14. Comparison with existing modes
 
-| Aspekt | Memory | SQLite | PostgreSQL |
+| Aspect | Memory | SQLite | PostgreSQL |
 |---|---|---|---|
-| Latenz | minimal | niedrig | Netzwerk |
-| Persistenz | ❌ | ✅ (Datei) | ✅ |
-| Multi-Node | ❌ | ❌ | ✅ |
-| Backup | ❌ | Datei/WAL | DB-Backup |
-| Betriebsaufwand | minimal | niedrig | mittel |
-| Geeignet für | Tests, lokal, ephemer | single-node | multi-node |
+| Latency | minimal | low | network |
+| Persistence | ❌ | ✅ (file) | ✅ |
+| Multi-node | ❌ | ❌ | ✅ |
+| Backup | ❌ | file/WAL | DB backup |
+| Operational effort | minimal | low | medium |
+| Suitable for | tests, local, ephemeral | single-node | multi-node |
 
-## 15. Offene Fragen
+## 15. Open questions
 
-1. Soll die Memory-Runtime ein eigenes **Profil** (`engine.storage=memory`)
-   oder nur ein Test-Setup sein?
-2. Wie aggressiv soll die **Eviction** beendeter Sessions sein?
-3. Sollen **Snapshots** in-memory überhaupt angeboten oder standardmäßig
-   abgelehnt werden?
-4. Braucht es einen **Debug-Dump** bei Shutdown?
-5. Soll ein **Hybrid** (Memory + optionaler FS-Spill für große Blobs)
-   vorgesehen werden?
+1. Should the memory runtime be its own **profile** (`engine.storage=memory`)
+   or just a test setup?
+2. How aggressive should **eviction** of finished sessions be?
+3. Should **snapshots** be offered in-memory at all or rejected by
+   default?
+4. Is a **debug dump** on shutdown needed?
+5. Should a **hybrid** (memory + optional FS spill for large blobs) be
+   provided?
 
-## 16. Referenzen (Code)
+## 16. References (code)
 
-| Thema | Pfad |
+| Topic | Path |
 |---|---|
-| Storage-Ports | `qoc/engine/src/main/java/de/augmentia/oc/engine/core/port/store/` |
-| Runtime-Ports | `qoc/engine/src/main/java/de/augmentia/oc/engine/core/port/runtime/` |
-| Human-Ports | `qoc/engine/src/main/java/de/augmentia/oc/engine/core/port/human/` |
-| Welt-Ports | `qoc/engine/src/main/java/de/augmentia/oc/engine/core/port/world/` |
+| Storage ports | `qoc/engine/src/main/java/de/augmentia/oc/engine/core/port/store/` |
+| Runtime ports | `qoc/engine/src/main/java/de/augmentia/oc/engine/core/port/runtime/` |
+| Human ports | `qoc/engine/src/main/java/de/augmentia/oc/engine/core/port/human/` |
+| World ports | `qoc/engine/src/main/java/de/augmentia/oc/engine/core/port/world/` |
 | Coordinator | `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/execution/Coordinator.java` |
 | ExecutionRunner | `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/execution/ExecutionRunner.java` |
 | Step | `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/step/Step.java` |
 | BackgroundTasks | `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/tool/subagent/BackgroundTasks.java` |
-| SQLite-Adapter (Vorbild) | `qoc/engine/src/main/java/de/augmentia/oc/engine/adapter/sqlite/` |
-| Engine-Wiring | `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java` |
-| Storage-Analyse | [`Storage-alternative.md`](./Storage-alternative.md) |
-| Core-Beschreibung | [`Core.md`](./Core.md) |
-| Async/Heartbeat | [`Async-use.md`](./Async-use.md) |
+| SQLite adapter (model) | `qoc/engine/src/main/java/de/augmentia/oc/engine/adapter/sqlite/` |
+| Engine wiring | `qoc/quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java` |
+| Storage analysis | [`Storage-alternative.md`](./Storage-alternative.md) |
+| Core description | [`Core.md`](./Core.md) |
+| Async/heartbeat | [`Async-use.md`](./Async-use.md) |

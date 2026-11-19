@@ -1,6 +1,6 @@
-# Workflow Stack – Startanleitung
+# Workflow Stack – Startup Guide
 
-## Schnellstart (Docker)
+## Quick Start (Docker)
 
 ```bash
 cd deploy
@@ -12,7 +12,7 @@ URLs:
 - workflow-runner: http://localhost:8097
 - workflow-ui:     http://localhost:5173
 
-## Manuell starten (ohne Docker)
+## Manual Start (without Docker)
 
 ### 1. Temporal (Docker)
 ```bash
@@ -36,7 +36,7 @@ npm run dev
 ```
 → http://localhost:5173
 
-### 4. QOC Engine (optional, für LLM-Ausführung)
+### 4. QOC Engine (optional, for LLM execution)
 ```bash
 cd qoc
 export $(grep -v '^#' .env | xargs)
@@ -45,34 +45,34 @@ java -jar quarkus/target/quarkus-app/quarkus-run.jar
 ```
 → http://localhost:8080
 
-## Temporal nutzen
+## Using Temporal
 
-### Durable Workflow starten
+### Start a durable workflow
 ```bash
 curl -X POST http://localhost:8097/workflows/run-durable \
   -H "Content-Type: application/json" \
   -d '{"workflow":{...},"input":"Hello"}'
 ```
 
-### Run-Status prüfen
+### Check run status
 ```bash
 curl http://localhost:8097/runs
 curl http://localhost:8097/runs/{workflowId}
 curl http://localhost:8097/runs/{workflowId}/events
 ```
 
-### Run beenden
+### Terminate a run
 ```bash
 curl -X POST http://localhost:8097/runs/{workflowId}/terminate
 ```
 
-### SSE-Stream (Live-Events)
+### SSE stream (live events)
 ```bash
 curl -N http://localhost:8097/runs/{workflowId}/stream
 ```
 
 ### Temporal Web UI
-http://localhost:8233 – zeigt alle Workflows, History, Status
+http://localhost:8233 – shows all workflows, history, and status
 
 ## Tests
 ```bash

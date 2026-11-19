@@ -1,23 +1,23 @@
-# Workflow – QOC Workflow-Orchestrierung & ReactFlow-Integration
+# Workflow – QOC Workflow Orchestration & ReactFlow Integration
 
-> **Zweck:** Dokumentation, wie AgentFlow die QOC Session Engine als eingebettete
-> Java-Bibliothek nutzt (In-Memory-Variante), analog zu `quad-core`. Enthält
-> die Umsetzung der [`Multi-Memory.md`](./Multi-Memory.md)-Phasen 0, 1 und B.
+> **Purpose:** Documentation of how AgentFlow uses the QOC Session Engine as an embedded
+> Java library (in-memory variant), analogous to `quad-core`. Contains
+> the implementation of the [`Multi-Memory.md`](./Multi-Memory.md) phases 0, 1, and B.
 >
-> **Status:** 2026-11-10 (implementiert in QOC, Integration in AgentFlow ausstehend)
+> **Status:** 2026-11-10 (implemented in QOC, integration into AgentFlow pending)
 >
-> **Referenzen:** [`Multi-Memory.md`](./Multi-Memory.md), [`InMemory.md`](./InMemory.md),
+> **References:** [`Multi-Memory.md`](./Multi-Memory.md), [`InMemory.md`](./InMemory.md),
 > [`Layering.md`](./Layering.md), [`Storage-alternative.md`](./Storage-alternative.md),
 > [`Core.md`](./Core.md).
 
 ---
 
-## 1. Architektur-Entscheidung
+## 1. Architecture Decision
 
-AgentFlow (Spring Boot + Temporal + LangGraph4j + Spring AI) nutzt QOC nicht als
-Service, sondern als **eingebettete Library** (`de.augmentia.qoc:engine`), analog
-zu `quad-core`. Die In-Memory-Variante vermeidet DB-Overhead in AgentFlow;
-Temporal übernimmt die Durability.
+AgentFlow (Spring Boot + Temporal + LangGraph4j + Spring AI) uses QOC not as a
+service but as an **embedded library** (`de.augmentia.qoc:engine`), analogous
+to `quad-core`. The in-memory variant avoids DB overhead in AgentFlow;
+Temporal handles durability.
 
 ```
 AgentFlow (Spring Boot)                          QOC Engine (Library)
@@ -30,54 +30,54 @@ AgentFlow (Spring Boot)                          QOC Engine (Library)
 │ QocEngine Bean (Spring @Configuration) │      │   ├─ Coordinator             │
 │                                     │          │   ├─ SessionService         │
 └─────────────────────────────────────┘          │   ├─ PermissionEngine       │
-                                                │   └─ ContextBuilder          │
-                                                └──────────────────────────────┘
+                                                 │   └─ ContextBuilder          │
+                                                 └──────────────────────────────┘
 ```
 
-## 2. Multi-Memory-Implementierung (Phasen 0, 1, B)
+## 2. Multi-Memory Implementation (Phases 0, 1, B)
 
-Die Umsetzung folgt [`Multi-Memory.md`](./Multi-Memory.md) und umfasst drei Phasen.
+The implementation follows [`Multi-Memory.md`](./Multi-Memory.md) and comprises three phases.
 
-### 2.1 Phase 0: Refactoring (keine Semantik-Änderung)
+### 2.1 Phase 0: Refactoring (no semantic change)
 
-**Dateien:**
+**Files:**
 
-| Datei | Package | Inhalt |
+| File | Package | Contents |
 |---|---|---|
 | `core/wiring/StorageKind.java` | `core.wiring` | Enum: `MEMORY`, `SQLITE`, `POSTGRES` |
-| `core/wiring/Stores.java` | `core.wiring` | Record aller 11 Storage-Ports |
-| `core/wiring/StorageConfig.java` | `core.wiring` | Per-Port-Konfiguration (`defaultKind` + Overrides) |
-| `adapter/StorageFactory.java` | `adapter` | Einziger Switch: `StorageKind` → Adapter-Instanz |
-| `adapter/sql/SqlStores.java` | `adapter.sql` | PostgreSQL-Factory (bündelt `Sql*`-Adapter) |
-| `adapter/sqlite/SqliteStores.java` | `adapter.sqlite` | SQLite-Factory (bündelt `Sqlite*`-Adapter) |
-| `quarkus/.../Engine.java` | `quarkus.http` | `Engine.wire()` von `boolean sqlite` auf `StorageFactory.create()` umgestellt |
+| `core/wiring/Stores.java` | `core.wiring` | Record of all 11 storage ports |
+| `core/wiring/StorageConfig.java` | `core.wiring` | Per-port configuration (`defaultKind` + overrides) |
+| `adapter/StorageFactory.java` | `adapter` | Single switch: `StorageKind` → adapter instance |
+| `adapter/sql/SqlStores.java` | `adapter.sql` | PostgreSQL factory (bundles `Sql*` adapters) |
+| `adapter/sqlite/SqliteStores.java` | `adapter.sqlite` | SQLite factory (bundles `Sqlite*` adapters) |
+| `quarkus/.../Engine.java` | `quarkus.http` | `Engine.wire()` switched from `boolean sqlite` to `StorageFactory.create()` |
 
-**Kernänderung:** `Engine.wire()` nutzt jetzt `StorageFactory.create(config, ...)` statt
-direkter `sqlite ? new SqliteX() : new SqlX()`-Aufrufe. Die `sqlite`-Boolean-Kette
-verschwindet.
+**Core change:** `Engine.wire()` now uses `StorageFactory.create(config, ...)` instead of
+direct `sqlite ? new SqliteX() : new SqlX()` calls. The `sqlite` boolean chain
+disappears.
 
-### 2.2 Phase 1: In-Memory-Adapter
+### 2.2 Phase 1: In-Memory Adapter
 
 **Package:** `engine/adapter/memory/`
 
-| Datei | Port | Beschreibung |
+| File | Port | Description |
 |---|---|---|
-| `RuntimeState.java` | – | Container für alle Maps/Logs, Per-Session-Locks |
-| `MemoryBudget.java` | – | Bytes-Accounting, Throws `MemoryLimitExceeded` |
-| `MemoryLimitExceeded.java` | – | Typisierter Fehler |
-| `MemoryStores.java` | – | Factory: erzeugt alle InMemory-Adapter über `RuntimeState` |
-| `InMemorySessionStore.java` | `SessionStore` + `SessionWorkspaceStore` | ConcurrentHashMap, Per-Session-Lock |
-| `InMemoryJournal.java` | `Journal` | Append-only Log per Aggregat, gapless Seq |
-| `InMemoryConversationStore.java` | `ConversationStore` | ArrayList + AtomicLong Seq |
-| `InMemoryClaimStore.java` | `ClaimStore` | `putIfAbsent` für atomares Acquire |
-| `InMemoryApprovalStore.java` | `ApprovalStore` | CopyOnWriteArraySet per Projekt |
-| `InMemoryInstructionStore.java` | `InstructionStore` | State/Entries/Blobs per Session |
+| `RuntimeState.java` | – | Container for all maps/logs, per-session locks |
+| `MemoryBudget.java` | – | Byte accounting, throws `MemoryLimitExceeded` |
+| `MemoryLimitExceeded.java` | – | Typed error |
+| `MemoryStores.java` | – | Factory: creates all in-memory adapters via `RuntimeState` |
+| `InMemorySessionStore.java` | `SessionStore` + `SessionWorkspaceStore` | ConcurrentHashMap, per-session lock |
+| `InMemoryJournal.java` | `Journal` | Append-only log per aggregate, gapless seq |
+| `InMemoryConversationStore.java` | `ConversationStore` | ArrayList + AtomicLong seq |
+| `InMemoryClaimStore.java` | `ClaimStore` | `putIfAbsent` for atomic acquire |
+| `InMemoryApprovalStore.java` | `ApprovalStore` | CopyOnWriteArraySet per project |
+| `InMemoryInstructionStore.java` | `InstructionStore` | State/entries/blobs per session |
 | `InMemoryCredentialStore.java` | `CredentialStore` | ConcurrentHashMap |
-| `InMemorySnapshotStore.java` | `SnapshotStore` | Map per Snapshot |
-| `InMemoryToolOutputStore.java` | `ToolOutputStore` | Content-addressed Blobs |
-| `InMemoryToolResultCache.java` | `ToolResultCache` | LRU-ähnlicher Cache |
+| `InMemorySnapshotStore.java` | `SnapshotStore` | Map per snapshot |
+| `InMemoryToolOutputStore.java` | `ToolOutputStore` | Content-addressed blobs |
+| `InMemoryToolResultCache.java` | `ToolResultCache` | LRU-like cache |
 
-**Konfiguration:**
+**Configuration:**
 
 ```properties
 engine.storage.default=memory
@@ -90,14 +90,14 @@ engine.memory.max-messages-per-session=10000
 engine.memory.journal-ring-events=50000
 ```
 
-**Startup-Guard:** Memory-Modus deaktiviert `DatabaseMigration` und `Recovery`.
+**Startup guard:** Memory mode disables `DatabaseMigration` and `Recovery`.
 
 ### 2.3 Phase B: QocEngine Facade
 
-**Datei:** `engine/runtime/QocEngine.java`
+**File:** `engine/runtime/QocEngine.java`
 
-Framework-neutrale Facade, die `StorageFactory` + `Stores` nutzt und ohne
-Quarkus/Spring/CDI instanziierbar ist:
+Framework-neutral facade that uses `StorageFactory` + `Stores` and is instantiable
+without Quarkus/Spring/CDI:
 
 ```java
 // AgentFlow Spring Boot @Configuration
@@ -112,64 +112,64 @@ public QocEngine qocEngine() {
 
 **Public API:**
 
-| Methode | Beschreibung |
+| Method | Description |
 |---|---|
 | `create(Stores, StorageConfig, Clock, boolean)` | Factory (recoveryEnabled) |
-| `stores()` | Zugriff auf alle Ports |
-| `storageConfig()` | Per-Port-Konfiguration |
-| `clock()` | Zeitquelle |
-| `createSession(agent, user, mode)` | Session erstellen |
-| `session(id)` | Session lesen |
-| `listSessions(user, isAdmin)` | Sessions auflisten |
-| `deleteSession(id)` | Session löschen |
-| `recover()` | Crash-Recovery (nur durable Backends) |
+| `stores()` | Access to all ports |
+| `storageConfig()` | Per-port configuration |
+| `clock()` | Time source |
+| `createSession(agent, user, mode)` | Create session |
+| `session(id)` | Read session |
+| `listSessions(user, isAdmin)` | List sessions |
+| `deleteSession(id)` | Delete session |
+| `recover()` | Crash recovery (durable backends only) |
 
-## 3. Per-Port Storage-Auswahl (Zwischenstufen)
+## 3. Per-Port Storage Selection (intermediate tiers)
 
-Die Zwischenstufen sind **Konfigurationsprofile**, keine Code-Pfade:
+The intermediate tiers are **configuration profiles**, not code paths:
 
 ```properties
-# Stufe 1: DB + Memory-Cache
+# Tier 1: DB + memory cache
 engine.storage.default=postgres
 engine.storage.tool-cache=memory
 engine.storage.tool-outputs=memory
 engine.storage.snapshots=memory
 
-# Stufe 2: Redis Hot Tier (später)
+# Tier 2: Redis hot tier (later)
 engine.storage.default=postgres
 engine.storage.journal=redis
 engine.storage.sessions=redis
 engine.storage.claims=redis
 engine.storage.tool-cache=memory
 
-# Stufe 4: Full Memory
+# Tier 4: Full memory
 engine.storage.default=memory
 ```
 
 ## 4. QOC Engine vs. quad-core in AgentFlow
 
-| Fähigkeit | QOC Engine | quad-core |
+| Capability | QOC Engine | quad-core |
 |---|---|---|
-| Durable Sessions | ✅ | ❌ (In-Memory) |
-| Crash-Recovery | ✅ | ❌ |
-| Permission-System | ✅ Deny-by-Default | ⚠️ RBAC |
-| Tool-Runtime | ✅ Shell/Files/Web/MCP/Subagents | ✅ Built-in Tools |
-| Compaction | ✅ Auto-Compaction | ❌ |
+| Durable sessions | ✅ | ❌ (in-memory) |
+| Crash recovery | ✅ | ❌ |
+| Permission system | ✅ Deny-by-default | ⚠️ RBAC |
+| Tool runtime | ✅ Shell/Files/Web/MCP/Subagents | ✅ Built-in tools |
+| Compaction | ✅ Auto-compaction | ❌ |
 | Skills (JIT) | ✅ | ✅ |
 | Guardrails | ✅ PermissionEngine | ✅ GuardrailPlugin |
 | PII/GDPR | ❌ | ✅ |
-| Audit | ✅ Journal (Event-Sourcing) | ✅ AuditTrailHook |
-| Saga/Compensation | ✅ Revert/Snapshot | ✅ SagaAgentInterceptor |
-| Structured Output | ⚠️ | ✅ |
-| Memory (langfristig) | ❌ | ✅ PersistentMemoryStore |
+| Audit | ✅ Journal (event sourcing) | ✅ AuditTrailHook |
+| Saga/compensation | ✅ Revert/snapshot | ✅ SagaAgentInterceptor |
+| Structured output | ⚠️ | ✅ |
+| Memory (long-term) | ❌ | ✅ PersistentMemoryStore |
 | Provenance | ❌ | ✅ ProvenanceTracker |
-| Capability Search/RAG | ❌ | ✅ HNSW/PgVector |
-| Orchestrierung | ✅ Coordinator/ExecutionRunner | ❌ (Temporal in AgentFlow) |
+| Capability search/RAG | ❌ | ✅ HNSW/PgVector |
+| Orchestration | ✅ Coordinator/ExecutionRunner | ❌ (Temporal in AgentFlow) |
 
-**Fazit:** Komplementär, nicht austauschbar. QOC für Sessions/Permissions/Compaction,
-quad-core für Capabilities/Skills/PII/Audit/Memory/RAG.
+**Conclusion:** Complementary, not interchangeable. QOC for sessions/permissions/compaction,
+quad-core for capabilities/skills/PII/audit/memory/RAG.
 
-## 5. Abhängigkeit in AgentFlow
+## 5. Dependency in AgentFlow
 
 ```xml
 <!-- agentflow-app/pom.xml -->
@@ -180,7 +180,7 @@ quad-core für Capabilities/Skills/PII/Audit/Memory/RAG.
 </dependency>
 ```
 
-AgentFlow nutzt `QocEngine` als Spring-Bean:
+AgentFlow uses `QocEngine` as a Spring bean:
 
 ```java
 @Configuration
@@ -195,40 +195,40 @@ public class QocEngineConfig {
 }
 ```
 
-## 6. Trennung: Library vs. Service
+## 6. Separation: Library vs. Service
 
-| Aspekt | Library (embedded) | Service (HTTP) |
+| Aspect | Library (embedded) | Service (HTTP) |
 |---|---|---|
-| Latenz | 0 (in-process) | 10–50 ms |
-| Deployment | Ein Prozess | Zwei Prozesse |
-| State | Im selben JVM | Separater Prozess |
-| Versioning | Maven-Dependency | API-Versionierung |
-| Crash-Isolation | Keine (shared JVM) | Vollständig |
-| Empfohlen für | Single-Node, ephemere Sessions | Multi-Node, durable Sessions, HA |
+| Latency | 0 (in-process) | 10–50 ms |
+| Deployment | One process | Two processes |
+| State | Same JVM | Separate process |
+| Versioning | Maven dependency | API versioning |
+| Crash isolation | None (shared JVM) | Full |
+| Recommended for | Single-node, ephemeral sessions | Multi-node, durable sessions, HA |
 
-Beide Modi werden unterstützt: `MEMORY` für embedded, `POSTGRES`/`SQLITE` für service.
+Both modes are supported: `MEMORY` for embedded, `POSTGRES`/`SQLITE` for service.
 
-## 7. Nächste Schritte
+## 7. Next Steps
 
-1. **Phase 2 (Redis):** `engine/adapter/redis/` — nur bei Multi-Node-Bedarf.
+1. **Phase 2 (Redis):** `engine/adapter/redis/` — only if multi-node demand.
 2. **Phase 3 (Tiered):** `engine/adapter/tiered/` — optional.
-3. **AgentFlow-Integration:** `QocEngine` als Spring-Bean, Session-Lifecycle in Temporal-Activities.
-4. **TCK (Contract-Tests):** Dieselbe Semantik für alle Adapter (Memory, SQLite, Postgres).
-5. **Maven-Profil `storage-memory`:** Lean Build ohne DB-Extensions.
+3. **AgentFlow integration:** `QocEngine` as Spring bean, session lifecycle in Temporal activities.
+4. **TCK (contract tests):** Same semantics across all adapters (Memory, SQLite, Postgres).
+5. **Maven profile `storage-memory`:** Lean build without DB extensions.
 
-## 8. Referenzen
+## 8. References
 
-| Thema | Pfad |
+| Topic | Path |
 |---|---|
-| Multi-Memory-Plan | [`Multi-Memory.md`](./Multi-Memory.md) |
-| In-Memory-Beschreibung | [`InMemory.md`](./InMemory.md) |
-| Storage-Analyse | [`Storage-alternative.md`](./Storage-alternative.md) |
-| Layering-Entscheidung | [`Layering.md`](./Layering.md) |
-| Core-Beschreibung | [`Core.md`](./Core.md) |
-| Async/Heartbeat | [`Async-use.md`](./Async-use.md) |
-| Task-Orchestrierung | [`Task-Orchestration.md`](./Task-Orchestration.md) |
-| Test-Matrix | [`Test.md`](./Test.md) |
-| Storage-Ports | `engine/core/port/store/` |
+| Multi-memory plan | [`Multi-Memory.md`](./Multi-Memory.md) |
+| In-memory description | [`InMemory.md`](./InMemory.md) |
+| Storage analysis | [`Storage-alternative.md`](./Storage-alternative.md) |
+| Layering decision | [`Layering.md`](./Layering.md) |
+| Core description | [`Core.md`](./Core.md) |
+| Async/heartbeat | [`Async-use.md`](./Async-use.md) |
+| Task orchestration | [`Task-Orchestration.md`](./Task-Orchestration.md) |
+| Test matrix | [`Test.md`](./Test.md) |
+| Storage ports | `engine/core/port/store/` |
 | Adapter (sql) | `engine/adapter/sql/` |
 | Adapter (sqlite) | `engine/adapter/sqlite/` |
 | Adapter (memory) | `engine/adapter/memory/` |
@@ -236,78 +236,78 @@ Beide Modi werden unterstützt: `MEMORY` für embedded, `POSTGRES`/`SQLITE` für
 | Stores | `engine/core/wiring/Stores.java` |
 | StorageConfig | `engine/core/wiring/StorageConfig.java` |
 | StorageKind | `engine/core/wiring/StorageKind.java` |
-| QocEngine Facade | `engine/runtime/QocEngine.java` |
-| Engine-Wiring (Quarkus) | `quarkus/http/Engine.java` (Zeile 498–560) |
+| QocEngine facade | `engine/runtime/QocEngine.java` |
+| Engine wiring (Quarkus) | `quarkus/http/Engine.java` (lines 498–560) |
 
 ---
 
-## 9. Workflow-Runner & Workflow-UI (ReactFlow, Option A)
+## 9. Workflow Runner & Workflow UI (ReactFlow, Option A)
 
-**Status:** 2026-11-10 (implementiert)
+**Status:** 2026-11-10 (implemented)
 
-### 9.1 Architektur-Entscheidung
+### 9.1 Architecture Decision
 
-Option A: ReactFlow-Format direkt nutzen, kein v2-Format (dependsOn).
+Option A: Use the ReactFlow format directly, no v2 format (dependsOn).
 
-- **workflow-runner** (Java, plain Java): HTTP-Server auf Port 8097, ReactFlow-Format (Nodes + Edges)
-- **workflow-ui** (React + ReactFlow): Graph-Editor mit Property Panel für Agent-Config
-- **QocEngine**: Vollständige LLM-Ausführung (analog zu Quarkus Engine.runPrompt, ohne Security)
+- **workflow-runner** (Java, plain Java): HTTP server on port 8097, ReactFlow format (Nodes + Edges)
+- **workflow-ui** (React + ReactFlow): graph editor with property panel for agent config
+- **QocEngine**: Full LLM execution (analogous to Quarkus Engine.runPrompt, without security)
 
-### 9.2 workflow-runner Modul
+### 9.2 workflow-runner Module
 
-| Komponente | Pfad | Beschreibung |
+| Component | Path | Description |
 |---|---|---|
-| Datenmodell | `workflow-runner/model/WorkflowDefinition.java` | ReactFlow-Format: Node (id, type, position, data), Edge (id, source, target), Agent |
-| Topologische Sortierung | `workflow-runner/runner/TopologicalSort.java` | Kahn-Algorithmus auf Edges, Cycle-Detection |
-| HTTP-Server | `workflow-runner/WorkflowRunnerServer.java` | Port 8097: GET /health, POST /workflows/run |
-| Execution | WorkflowRunnerServer.run() | Topologie → Node-Execution (agent→QocEngine.runPrompt, end→done) |
+| Data model | `workflow-runner/model/WorkflowDefinition.java` | ReactFlow format: Node (id, type, position, data), Edge (id, source, target), Agent |
+| Topological sort | `workflow-runner/runner/TopologicalSort.java` | Kahn's algorithm on edges, cycle detection |
+| HTTP server | `workflow-runner/WorkflowRunnerServer.java` | Port 8097: GET /health, POST /workflows/run |
+| Execution | WorkflowRunnerServer.run() | Topology → node execution (agent→QocEngine.runPrompt, end→done) |
 
-**Verifiziert:** Topologische Sortierung a→b→end, Agent-Nodes erstellen Sessions.
+**Verified:** Topological sort a→b→end, agent nodes create sessions.
 
-### 9.3 workflow-ui Modul (React + ReactFlow)
+### 9.3 workflow-ui Module (React + ReactFlow)
 
-| Komponente | Pfad | Beschreibung |
+| Component | Path | Description |
 |---|---|---|
-| Graph-Editor | `workflow-ui/src/pages/GraphEditor.tsx` | ReactFlow Canvas, Custom Node Types (agent, end), Drag & Drop, Click-to-Connect |
-| Property Panel | `workflow-ui/src/components/PropertyPanel.tsx` | Agent-Config: Model, Temperature, System Prompt, HITL-Checkbox |
-| Types | `workflow-ui/src/types/workflow.ts` | WorkflowNode, WorkflowEdge, Agent, WorkflowDefinition (ReactFlow-Format) |
-| Build | Vite + React 19 + TypeScript + Tailwind | `npm run build` erfolgreich, `npm run dev` auf Port 5173 |
+| Graph editor | `workflow-ui/src/pages/GraphEditor.tsx` | ReactFlow canvas, custom node types (agent, end), drag & drop, click-to-connect |
+| Property panel | `workflow-ui/src/components/PropertyPanel.tsx` | Agent config: model, temperature, system prompt, HITL checkbox |
+| Types | `workflow-ui/src/types/workflow.ts` | WorkflowNode, WorkflowEdge, Agent, WorkflowDefinition (ReactFlow format) |
+| Build | Vite + React 19 + TypeScript + Tailwind | `npm run build` succeeds, `npm run dev` on port 5173 |
 
-### 9.4 QocEngine.runPrompt (vollständige LLM-Ausführung)
+### 9.4 QocEngine.runPrompt (full LLM execution)
 
-- **Wired:** ContextBuilder, Step, ToolRuntime (no-op PermissionGate), ToolSnapshot (leer), ModelInfo, ProviderAdapter (optional)
-- **Flow:** Session erstellen → Prompt speichern → Context bauen → Step aufrufen → LLM-Antwort extrahieren
-- **Ohne Security:** no-op PermissionGate, leere Tools, keine Permission-Checks
-- **Provider:** Optional (HttpProviderAdapter aus OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL)
-- **Verifiziert:** LLM-Call end-to-end funktioniert (deepseek-v4.1-flash)
+- **Wired:** ContextBuilder, Step, ToolRuntime (no-op PermissionGate), ToolSnapshot (empty), ModelInfo, ProviderAdapter (optional)
+- **Flow:** Create session → save prompt → build context → invoke Step → extract LLM response
+- **Without security:** no-op PermissionGate, empty tools, no permission checks
+- **Provider:** Optional (HttpProviderAdapter from OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL)
+- **Verified:** End-to-end LLM call works (deepseek-v4.1-flash)
 
 ### 9.5 QocEngineMain
 
-- Main-Klasse in `temporal/QocEngineMain.java`
-- Wired Provider aus .env-Variablen
-- Führt Prompt aus und gibt LLM-Antwort zurück
+- Main class in `temporal/QocEngineMain.java`
+- Wired provider from .env variables
+- Runs a prompt and returns the LLM response
 - Script: `scripts/run-qoc-engine-main.sh`
 
 ### 9.6 Scripts
 
-| Script | Beschreibung |
+| Script | Description |
 |---|---|
-| `scripts/run-qoc-engine-main.sh` | Lädt .env, führt QocEngineMain aus |
-| `scripts/run-workflow-runner.sh` | Lädt .env, startet WorkflowRunnerServer (Port 8097) |
+| `scripts/run-qoc-engine-main.sh` | Loads .env, runs QocEngineMain |
+| `scripts/run-workflow-runner.sh` | Loads .env, starts WorkflowRunnerServer (port 8097) |
 
-### 9.7 Agent-Naming: `wf:AgentName:Version`
+### 9.7 Agent Naming: `wf:AgentName:Version`
 
-Workflow-Agenten erhalten den Prefix `wf:` + Name + `:` + Version, um Namenskonflikte
-mit QOC-internen Agenten (z.B. "build", "plan") zu vermeiden.
+Workflow agents receive the prefix `wf:` + name + `:` + version to avoid name
+conflicts with QOC-internal agents (e.g. "build", "plan").
 
-**Regeln:**
-1. **Prefix:** `wf:` für alle Workflow-Agenten
-2. **Version:** Im Namen enthalten (`wf:Name:Version`), damit verschiedene Versionen koexistieren
-3. **Lookup:** Wenn ein Agent mit diesem Namen bereits existiert (Registry/DB), wird die gespeicherte Config genutzt (nicht überschrieben)
-4. **Concurrency:** Jede Session hat eine eigene AgentId (UUID) — gleichzeitige Ausführung desselben Agents ist möglich
-5. **Fallback:** Wenn kein gespeicherter Agent existiert, wird die übergebene Config verwendet und gespeichert
+**Rules:**
+1. **Prefix:** `wf:` for all workflow agents
+2. **Version:** Included in the name (`wf:Name:Version`), so different versions can coexist
+3. **Lookup:** If an agent with this name already exists (registry/DB), the stored config is used (not overwritten)
+4. **Concurrency:** Each session has its own AgentId (UUID) — concurrent execution of the same agent is possible
+5. **Fallback:** If no stored agent exists, the supplied config is used and stored
 
-**Datenfluss:**
+**Data flow:**
 ```
 Workflow Definition → agents: [{ id, name, version, model, systemPrompt, ... }]
   → WorkflowExecutor: prefixedName = "wf:Name:Version"
@@ -315,59 +315,59 @@ Workflow Definition → agents: [{ id, name, version, model, systemPrompt, ... }
     → lookupAgent(prefixedName)  // Registry/DB
     → createSession(prefixedName, ...)
     → buildAgentProfile(config) + buildModelInfo(config)
-    → Step.run(...)  // LLM-Call mit gespeicherter Config
+    → Step.run(...)  // LLM call with stored config
 ```
 
-**Warum das bei gleichzeitiger Ausführung funktioniert:**
-- Agent-Config ist immutable — wird beim ersten Aufruf gespeichert, nie überschrieben
-- Session hat eigene AgentId (UUID) — jede Ausführung ist unabhängig
-- Config wird über Namen aufgelöst — nicht über ID
-- Kein Locking nötig — Config wird nur gelesen, nie geschrieben nach dem ersten Speichern
+**Why this works under concurrent execution:**
+- Agent config is immutable — stored on first call, never overwritten
+- Session has its own AgentId (UUID) — each execution is independent
+- Config is resolved by name — not by ID
+- No locking needed — config is only read, never written after first store
 
-### 9.8 Temporal-Integration im Workflow-Runner
+### 9.8 Temporal Integration in the Workflow Runner
 
-**Entscheidung:** Temporal wird direkt in den workflow-runner integriert (Option A).
-Der workflow-runner ist die primäre Execution-Engine (ReactFlow-Format) und wird durch
-Temporal durable (HITL, Saga, Recovery, Run-Visibility).
+**Decision:** Temporal is integrated directly into the workflow-runner (Option A).
+The workflow-runner is the primary execution engine (ReactFlow format) and becomes
+durable through Temporal (HITL, saga, recovery, run visibility).
 
-#### Architektur
+#### Architecture
 
 ```
-workflow-runner (mit Temporal SDK)
+workflow-runner (with Temporal SDK)
 ├── Temporal Worker (task queue: workflow-runner-queue)
 ├── ReactFlowWorkflow (@WorkflowInterface)
-│   └── Nimmt WorkflowDefinition (ReactFlow) als Input
-│   └── Führt topologisch aus (Activities pro Node)
+│   └── Takes a WorkflowDefinition (ReactFlow) as input
+│   └── Executes topologically (activities per node)
 ├── Activities: RunAgentActivity, EvaluateConditionActivity, ...
-├── QocEngine (in-memory, für Agent-Execution)
-├── HTTP-Server (Port 8097): startet Temporal Workflows, Run-Visibility
-└── Temporal Signals: decide(boolean) für HITL
+├── QocEngine (in-memory, for agent execution)
+├── HTTP server (port 8097): starts Temporal workflows, run visibility
+└── Temporal signals: decide(boolean) for HITL
 ```
 
-#### Warum Temporal im Workflow-Runner
+#### Why Temporal in the Workflow Runner
 
-1. **Dauerhaftigkeit:** Workflows überleben Crash/Neustart (Temporal Replay)
-2. **HITL:** Pause + Resume via Temporal Signals
-3. **Saga/Compensation:** Kompensierende Aktionen bei Fehlern
-4. **Run-Visibility:** Temporal bietet List/Detail/Events/Terminate out-of-the-box
-5. **Streaming:** SSE-Events für Live-Updates
+1. **Durability:** Workflows survive crash/restart (Temporal replay)
+2. **HITL:** Pause + resume via Temporal signals
+3. **Saga/compensation:** Compensating actions on errors
+4. **Run visibility:** Temporal provides list/detail/events/terminate out of the box
+5. **Streaming:** SSE events for live updates
 
-#### Konsolidierung mit temporal-Modul
+#### Consolidation with the temporal module
 
-Langfristig sollten `temporal` und `workflow-runner` zu einem Modul verschmelzen,
-da beide QocEngine + Temporal nutzen. Kurzfristig nutzt workflow-runner Temporal
-eigenständig. Das `temporal`-Modul wird als "legacy" markiert.
+Long-term, `temporal` and `workflow-runner` should merge into one module,
+since both use QocEngine + Temporal. Short-term, workflow-runner uses Temporal
+independently. The `temporal` module is marked as "legacy".
 
-#### Implementierungs-Plan
+#### Implementation Plan
 
-| Phase | Aufgabe | Aufwand |
-|-------|---------|---------|
-| 1 | Temporal SDK in workflow-runner, Worker + HTTP-Server | 1 Tag |
-| 2 | ReactFlowWorkflow + Activities (RunAgent, Condition, ...) | 3-5 Tage |
-| 3 | Durable Execution, Recovery, Run-Visibility | 2-3 Tage |
-| 4 | HITL via Signals, Saga/Compensation | 2-3 Tage |
-| 5 | Konsolidierung (temporal → workflow-runner) | 2-3 Tage |
-| **Gesamt** | | **~10-15 Tage** |
+| Phase | Task | Effort |
+|-------|------|--------|
+| 1 | Temporal SDK in workflow-runner, worker + HTTP server | 1 day |
+| 2 | ReactFlowWorkflow + activities (RunAgent, Condition, ...) | 3-5 days |
+| 3 | Durable execution, recovery, run visibility | 2-3 days |
+| 4 | HITL via signals, saga/compensation | 2-3 days |
+| 5 | Consolidation (temporal → workflow-runner) | 2-3 days |
+| **Total** | | **~10-15 days** |
 
 #### Dependencies (workflow-runner pom.xml)
 
@@ -380,7 +380,7 @@ eigenständig. Das `temporal`-Modul wird als "legacy" markiert.
 </dependency>
 ```
 
-#### ReactFlowWorkflow (Entwurf)
+#### ReactFlowWorkflow (draft)
 
 ```java
 @WorkflowInterface
@@ -425,12 +425,12 @@ public class ReactFlowWorkflowImpl implements ReactFlowWorkflow {
 }
 ```
 
-### 9.9 Nächste Schritte
+### 9.9 Next Steps
 
-1. **workflow-runner:** ConditionEvaluator, DeclarativePlanner, DeclarativeAgentWorkflow portieren
-2. **workflow-runner:** WorkflowStore (Persistenz, Versionen), GraphCompiler (Validierung)
-3. **workflow-runner:** REST-Endpoints (CRUD, Validate, Save, Versions)
-4. **workflow-ui:** Alle Seiten (Dashboard, Runs, Workflows, Agents, etc.)
-5. **workflow-ui:** SSE-Streaming, Settings, Observability, Testbench
-6. **workflow-ui:** elkjs Auto-Layout, Undo/Redo, Multi-Select
-7. **workflow-ui:** Backend-Integration (API-Client auf workflow-runner)
+1. **workflow-runner:** Port ConditionEvaluator, DeclarativePlanner, DeclarativeAgentWorkflow
+2. **workflow-runner:** WorkflowStore (persistence, versions), GraphCompiler (validation)
+3. **workflow-runner:** REST endpoints (CRUD, validate, save, versions)
+4. **workflow-ui:** All pages (dashboard, runs, workflows, agents, etc.)
+5. **workflow-ui:** SSE streaming, settings, observability, testbench
+6. **workflow-ui:** elkjs auto-layout, undo/redo, multi-select
+7. **workflow-ui:** Backend integration (API client on workflow-runner)

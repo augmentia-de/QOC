@@ -1,30 +1,30 @@
-# Implementierungsplan: Workflow-Generierung aus Prompt (MVP)
+# Implementation Plan: Workflow Generation from Prompt (MVP)
 
 Status: Plan (2026-11-14)
-Bezug: `workflow-runner/`, `workflow-ui/src/pages/Generate.tsx`, `quad/.../generate/WorkflowPlanParser.java`
-Ziel: Aus einem Freitext-Prompt einen validen `WorkflowDefinition` (Nodes/Edges/Agents) generieren, statt nur einen leeren Workflow anzulegen.
+Reference: `workflow-runner/`, `workflow-ui/src/pages/Generate.tsx`, `quad/.../generate/WorkflowPlanParser.java`
+Goal: Generate a valid `WorkflowDefinition` (Nodes/Edges/Agents) from a free-text prompt, instead of just creating an empty workflow.
 
-## 1. Ist-Zustand
+## 1. Current State
 
-- `Generate.tsx` ruft `WorkflowApi.create(prompt.substring(0,40))` → `POST /workflows` mit `{name}`.
-- Backend erstellt leeren `WorkflowDefinition` mit dem Namen. Prompt wird nicht ausgewertet.
-- Keine LLM-Integration, keine Generierung, keine Validierung des generierten Outputs.
+- `Generate.tsx` calls `WorkflowApi.create(prompt.substring(0,40))` → `POST /workflows` with `{name}`.
+- Backend creates an empty `WorkflowDefinition` with that name. The prompt is not evaluated.
+- No LLM integration, no generation, no validation of the generated output.
 
-## 2. Zielbild (MVP)
+## 2. Target State (MVP)
 
 ```
-User-Prompt → LLM (structured output) → stripFences → parseSteps → validateSteps → WorkflowBuilder → WorkflowDefinition → store.save → UI zeigt Editor
+User-Prompt → LLM (structured output) → stripFences → parseSteps → validateSteps → WorkflowBuilder → WorkflowDefinition → store.save → UI shows Editor
 ```
 
-## 3. Neues Package (separiert, keine Rückwärts-Abhängigkeit)
+## 3. New Package (separated, no reverse dependency)
 
 ```
 workflow-runner/src/main/java/de/augmentia/qoc/workflowrunner/generate/
-├── StripFences.java              # Utility: Markdown-Fences aus LLM-Reply entfernen
-├── WorkflowPlanParser.java        # portiert aus quad: parseSteps + validateSteps + GeneratedStep
+├── StripFences.java              # Utility: remove Markdown fences from LLM reply
+├── WorkflowPlanParser.java        # ported from quad: parseSteps + validateSteps + GeneratedStep
 ├── WorkflowBuilder.java          # GeneratedStep → WorkflowDefinition (Nodes/Edges/Agents)
 ├── WorkflowGenerator.java        # Orchestrator: Prompt → LLM → parse → build → save
-└── GenerateConfig.java           # Opt-in Flag + LLM-Settings
+└── GenerateConfig.java           # Opt-in flag + LLM settings
 
 workflow-runner/src/test/java/de/augmentia/qoc/workflowrunner/generate/
 ├── StripFencesTest.java
@@ -32,11 +32,11 @@ workflow-runner/src/test/java/de/augmentia/qoc/workflowrunner/generate/
 └── WorkflowBuilderTest.java
 ```
 
-Abhängigkeiten: `generate` → `model`, `store`, `validation` (GraphCompiler). Keine Rückwärts-Abhängigkeit.
+Dependencies: `generate` → `model`, `store`, `validation` (GraphCompiler). No reverse dependency.
 
-## 4. Komponenten im Detail
+## 4. Components in Detail
 
-### 4.1 `StripFences` (portiert aus quad, ~15 Zeilen)
+### 4.1 `StripFences` (ported from quad, ~15 lines)
 
 ```java
 public final class StripFences {
@@ -56,37 +56,37 @@ public final class StripFences {
 }
 ```
 
-### 4.2 `WorkflowPlanParser` (portiert aus quad, ~120 Zeilen)
+### 4.2 `WorkflowPlanParser` (ported from quad, ~120 lines)
 
 - `GeneratedStep` record: `agentRole, instruction, tools, dependsOn, timeoutSeconds, systemPrompt, data`.
 - `WorkbookResult` record: `steps, workflowName, description, raw`.
-- `parseSteps(mapper, json)`: JSON → Steps + Validierung (Deps existieren, keine Zyklen, keine Duplikate).
-- `validateSteps(steps, byRole)`: Zyklenprüfung (DFS).
-- `stripFences` wird davor aufgerufen (oder separat).
+- `parseSteps(mapper, json)`: JSON → Steps + validation (deps exist, no cycles, no duplicates).
+- `validateSteps(steps, byRole)`: cycle check (DFS).
+- `stripFences` is called beforehand (or separately).
 
-### 4.3 `WorkflowBuilder` (QOC-spezifisch, ~100 Zeilen)
+### 4.3 `WorkflowBuilder` (QOC-specific, ~100 lines)
 
 ```java
 public final class WorkflowBuilder {
     public static WorkflowDefinition build(WorkbookResult result) {
-        // 1. Agents aus GeneratedSteps ableiten (agentRole → Agent)
-        // 2. Nodes aus Steps bauen (jeder Step → Node mit NodeData)
-        // 3. Edges aus dependsOn bauen
-        // 4. WorkflowDefinition mit id, name, version, status, nodes, edges, agents
+        // 1. Derive agents from GeneratedSteps (agentRole → Agent)
+        // 2. Build nodes from steps (each step → Node with NodeData)
+        // 3. Build edges from dependsOn
+        // 4. WorkflowDefinition with id, name, version, status, nodes, edges, agents
     }
 }
 ```
 
 Mapping:
-- `GeneratedStep.agentRole` → `WorkflowDefinition.Agent` (mit id = agentRole, name = agentRole).
-- `GeneratedStep` → `WorkflowDefinition.Node` (type "agent", data mit agent = agentRole, instruction, tools, timeout).
+- `GeneratedStep.agentRole` → `WorkflowDefinition.Agent` (with id = agentRole, name = agentRole).
+- `GeneratedStep` → `WorkflowDefinition.Node` (type "agent", data with agent = agentRole, instruction, tools, timeout).
 - `GeneratedStep.dependsOn` → `WorkflowDefinition.Edge` (source = dep, target = agentRole).
 
-### 4.4 `WorkflowGenerator` (Orchestrator, ~80 Zeilen)
+### 4.4 `WorkflowGenerator` (Orchestrator, ~80 lines)
 
 ```java
 public class WorkflowGenerator {
-    private final LlmClient llm;       // LangChain4j oder HTTP
+    private final LlmClient llm;       // LangChain4j or HTTP
     private final WorkflowStore store;
     private final ObjectMapper mapper;
 
@@ -95,14 +95,14 @@ public class WorkflowGenerator {
         String json = StripFences.strip(raw);
         WorkbookResult result = WorkflowPlanParser.parseSteps(mapper, json);
         WorkflowDefinition def = WorkflowBuilder.build(result);
-        // Validierung
-        GraphCompiler.validate(def); // oder validateTemplatesOnly
+        // Validation
+        GraphCompiler.validate(def); // or validateTemplatesOnly
         return store.save(def.id() == null ? generateId() : def.id(), def);
     }
 }
 ```
 
-System-Prompt (Template):
+System prompt (template):
 ```
 Du bist ein Workflow-Architekt. Erstelle einen Workflow als JSON mit folgendem Schema:
 {
@@ -125,10 +125,10 @@ Antworte NUR mit JSON.
 ### 4.5 `GenerateConfig` (Opt-in)
 
 - `ENGINE_WORKFLOW_GENERATE_ENABLED` (Default: `false`).
-- `ENGINE_WORKFLOW_GENERATE_MODEL` (Default: aus EngineConfig.model()).
+- `ENGINE_WORKFLOW_GENERATE_MODEL` (Default: from EngineConfig.model()).
 - `ENGINE_WORKFLOW_GENERATE_MAX_STEPS` (Default: 10).
 
-### 4.6 Endpunkt
+### 4.6 Endpoint
 
 `POST /workflows/generate` in `WorkflowRunnerMain.java`:
 ```java
@@ -146,7 +146,7 @@ Antworte NUR mit JSON.
 }
 ```
 
-### 4.7 UI-Anpassung (`Generate.tsx`)
+### 4.7 UI Adjustment (`Generate.tsx`)
 
 ```tsx
 const generate = async () => {
@@ -172,33 +172,33 @@ const generate = async () => {
 };
 ```
 
-## 5. Reihenfolge der Umsetzung
+## 5. Implementation Order
 
-1. **Schritt 1 (Tag 1):** `StripFences` + `WorkflowPlanParser` portieren + Tests.
-2. **Schritt 2 (Tag 1-2):** `WorkflowBuilder` implementieren + Tests (Mapping GeneratedStep → WorkflowDefinition).
-3. **Schritt 3 (Tag 2):** `GenerateConfig` + Opt-in Flag.
-4. **Schritt 4 (Tag 2-3):** `WorkflowGenerator` (LLM-Integration) + `POST /workflows/generate` Endpunkt.
-5. **Schritt 5 (Tag 3):** `Generate.tsx` anpassen + UI-Tests (manuell).
-6. **Schritt 6 (Tag 3):** Integration-Test (Prompt → generate → store → load → validate).
+1. **Step 1 (Day 1):** Port `StripFences` + `WorkflowPlanParser` + tests.
+2. **Step 2 (Day 1-2):** Implement `WorkflowBuilder` + tests (mapping GeneratedStep → WorkflowDefinition).
+3. **Step 3 (Day 2):** `GenerateConfig` + opt-in flag.
+4. **Step 4 (Day 2-3):** `WorkflowGenerator` (LLM integration) + `POST /workflows/generate` endpoint.
+5. **Step 5 (Day 3):** Adjust `Generate.tsx` + UI tests (manual).
+6. **Step 6 (Day 3):** Integration test (Prompt → generate → store → load → validate).
 
-## 6. Risiken / zu klären
+## 6. Risks / Open Questions
 
-- **LLM-Qualität:** Generierte Workflows können ungültig sein. GraphCompiler-Validierung + Fehler zurückspielen (Teil A des Deterministic-Loop-Plans) als Retry.
-- **Agenten-Auflösung:** Generierte `agentRole`-Werte müssen existierenden Agenten entsprechen oder werden als neue Agenten angelegt (Default: nur referenzieren, nicht anlegen).
-- **Token-Kosten:** LLM-Call pro Generierung; bei komplexen Prompts großer Output.
-- **Konflikt mit bestehendem `POST /workflows`:** Der neue Endpunkt `/workflows/generate` ist separat; kein Breaking Change.
+- **LLM quality:** Generated workflows may be invalid. GraphCompiler validation + playing back errors (Part A of the Deterministic-Loop plan) as a retry.
+- **Agent resolution:** Generated `agentRole` values must correspond to existing agents or are created as new agents (Default: only reference, do not create).
+- **Token costs:** LLM call per generation; large output for complex prompts.
+- **Conflict with existing `POST /workflows`:** The new endpoint `/workflows/generate` is separate; no breaking change.
 
-## 7. Abhängigkeiten
+## 7. Dependencies
 
-- `workflow-runner` hat bereits: Jackson (WorkflowJson), WorkflowStore, GraphCompiler, WorkflowDefinition.
-- LLM-Zugriff: workflow-runner nutzt keinen LLM direkt. Optionen:
-  - (a) HTTP-Call an Engine-API (`POST /api/run` mit Generate-Agent).
-  - (b) LangChain4j als Dependency in workflow-runner hinzufügen.
-  - Empfehlung: (a) – nutzt bestehende Engine-Infrastruktur, kein neues Dependency.
+- `workflow-runner` already has: Jackson (WorkflowJson), WorkflowStore, GraphCompiler, WorkflowDefinition.
+- LLM access: workflow-runner uses no LLM directly. Options:
+  - (a) HTTP call to Engine API (`POST /api/run` with Generate-Agent).
+  - (b) Add LangChain4j as a dependency in workflow-runner.
+  - Recommendation: (a) – uses existing Engine infrastructure, no new dependency.
 
 ## 8. Tests
 
-- `StripFencesTest`: Fences, bare json, Prosa, null.
-- `WorkflowPlanParserTest`: gültiges JSON, fehlende steps, Duplikate, Zyklen, unbekannte Deps.
-- `WorkflowBuilderTest`: Mapping, leere Steps, mehrere Agents.
-- Integration: `POST /workflows/generate` mit Mock-LLM → 201 + valides WorkflowDefinition.
+- `StripFencesTest`: fences, bare json, prose, null.
+- `WorkflowPlanParserTest`: valid JSON, missing steps, duplicates, cycles, unknown deps.
+- `WorkflowBuilderTest`: mapping, empty steps, multiple agents.
+- Integration: `POST /workflows/generate` with mock LLM → 201 + valid WorkflowDefinition.

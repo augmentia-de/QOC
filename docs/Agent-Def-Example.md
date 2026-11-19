@@ -1,10 +1,10 @@
-# Agent-Def-Example.md — vollständige Agent-Definition
+# Agent-Def-Example.md — complete agent definition
 
-Diese Datei ist eine Referenz **und** ein lauffähiges Beispiel. Sie zeigt alle
-Felder, die der Markdown-Agent-Loader heute auswertet, alle internen Tools und
-die wichtigsten Kombinationen.
+This file is both a reference **and** a runnable example. It shows all fields
+that the Markdown agent loader currently evaluates, all internal tools, and the
+most important combinations.
 
-Quellen im Code:
+Sources in code:
 
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/AgentMarkdownLoader.java`
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/EngineConfig.java` (`AgentConfig`, `AgentSkillsConfig`)
@@ -12,32 +12,31 @@ Quellen im Code:
 - `quarkus/src/main/java/de/augmentia/oc/engine/core/eval/PermissionRules.java`
 - `quarkus/src/main/java/de/augmentia/oc/engine/runtime/context/AgentProfile.java`
 
-> **Wichtig — Parser-Einschränkungen.** Der Frontmatter-Parser ist bewusst
-> minimal und **kein YAML-Parser**:
+> **Important — parser limitations.** The frontmatter parser is deliberately
+> minimal and **not a YAML parser**:
 >
-> - Kommentare (`# …`) nur auf **eigenen Zeilen**; **kein Inline-Kommentar**
->   hinter einem Wert (`mode: all  # x` würde den Wert verfälschen).
-> - Listen nur als Block (`- wert`) oder als Inline-JSON (`["a", "b"]`).
-> - Keine verschachtelten YAML-Objekte. Das `skills`-Objekt wird deshalb
->   **nicht** aus dem Frontmatter gelesen (siehe §5).
-> - Kommentare innerhalb einer Blockliste oder eines `permissions`-Blocks
->   können die Liste ungültig machen. Kommentare daher nur zwischen
->   vollständigen Schlüssel-Blöcken platzieren.
+> - Comments (`# …`) only on **their own lines**; **no inline comment**
+>   after a value (`mode: all  # x` would corrupt the value).
+> - Lists only as blocks (`- value`) or as inline JSON (`["a", "b"]`).
+> - No nested YAML objects. The `skills` object is therefore **not**
+>   read from the frontmatter (see §5).
+> - Comments inside a block list or a `permissions` block can invalidate the
+>   list. Place comments only between complete key blocks.
 
 ---
 
-## 1. Vollständiges Beispiel (Markdown-Frontmatter)
+## 1. Complete example (Markdown frontmatter)
 
-Ablage z. B. unter `.opencode/agents/example-full.md`. Der Body nach dem
-schließenden `---` ist der System-Prompt.
+Stored e.g. under `.opencode/agents/example-full.md`. The body after the
+closing `---` is the system prompt.
 
 ```markdown
 ---
 # ===========================================================================
-# 1. IDENTITAET
+# 1. IDENTITY
 # ===========================================================================
 name: example-full
-description: Vollstaendiges Beispiel mit allen unterstuetzten Feldern.
+description: Complete example with all supported fields.
 color: "#16a085"
 hidden: false
 disabled: false
@@ -48,34 +47,34 @@ maxSteps: 0
 
 # ===========================================================================
 # 2. TOOLS
-# toolAllow: Tool-Namen oder "*"; leer bedeutet keine Tools.
-# toolDeny:  wird nach allow entfernt; deny gewinnt immer.
-# Alle internen Tools sind in Abschnitt 2 dieser Datei aufgelistet.
+# toolAllow: tool names or "*"; empty means no tools.
+# toolDeny:  removed after allow; deny always wins.
+# All internal tools are listed in section 2 of this file.
 # ===========================================================================
 toolAllow:
   - "*"
 toolDeny: []
 
 # ===========================================================================
-# 3. MCP-SERVER
-# "*" = alle konfigurierten Server; leere Liste = keine MCP-Tools.
+# 3. MCP SERVERS
+# "*" = all configured servers; empty list = no MCP tools.
 # ===========================================================================
 mcpServers:
   - "*"
 
 # ===========================================================================
-# 4. ROLLEN (Autorisierung)
-# "*" = alle Rollen. Ohne Angabe: build/plan = "*", sonst "admin".
+# 4. ROLES (authorization)
+# "*" = all roles. Without a setting: build/plan = "*", otherwise "admin".
 # ===========================================================================
 roles:
   - "*"
 
 # ===========================================================================
 # 5. PERMISSIONS
-# Reihenfolge: agent rules -> session rules -> stored approvals.
-# Innerhalb der Regeln gewinnt die LETZTE passende Regel.
-# Ein DENY irgendeiner Ressource blockiert die ganze Operation.
-# Kein Treffer = ASK. ASK schlaegt ALLOW.
+# Order: agent rules -> session rules -> stored approvals.
+# Within the rules, the LAST matching rule wins.
+# A DENY of any resource blocks the whole operation.
+# No match = ASK. ASK beats ALLOW.
 # effect: allow | deny | ask
 # ===========================================================================
 permissions:
@@ -112,28 +111,28 @@ system prompt.
 - Report what you did and why.
 ```
 
-### Hinweise zu einzelnen Feldern
+### Notes on individual fields
 
-| Feld | Typ | Wirkung |
+| Field | Type | Effect |
 |---|---|---|
-| `name` | String | Eindeutiger Name. Fehlt er, gilt der relative Dateiname ohne `.md`. |
-| `description` | String | **Nur Metadaten.** Wird vom Loader gelesen, aber nicht in `AgentConfig` übernommen. |
-| `color` | String | **Nur Metadaten.** Wird nicht ausgewertet. |
-| `hidden` | boolean | Blendet den Agenten im UI-Selektor aus. |
-| `disabled` | boolean | `true` überspringt die Datei beim Laden. |
-| `mode` | String | `all` (Default), `primary`, `subagent`. Siehe §4. |
-| `model` | String | Überschreibt das Session-Modell. **Weglassen** = Default. `model: null` wäre der Literal-String `"null"`. |
-| `steps` | int | Max. Modell-Runden pro Prompt. `0` = kein Limit. |
-| `maxSteps` | int | Veralteter Alias; `steps` gewinnt, wenn gesetzt. |
-| `toolAllow` / `allow` | String[] | Erlaubte Tools oder `*`. Leer = keine Tools. |
-| `toolDeny` / `deny` | String[] | Entfernt Tools nach `allow`; deny gewinnt. |
-| `tools` | JSON-Objekt | Inline-Alternative: `{"allow": ["read"], "deny": ["shell"]}`. |
-| `mcpServers` | String[] | MCP-Servernamen oder `*`. Leer = keine MCP-Tools. |
-| `roles` / `rolesAllowed` / `roles-allowed` | String[] | Rollen, die den Agenten nutzen dürfen. |
-| `permissions` | Rule[] | Inline-JSON-Array oder Block mit `action`/`resource`/`effect`. |
-| Body | Markdown | System-Prompt des Agenten. |
+| `name` | String | Unique name. If missing, the relative filename without `.md` is used. |
+| `description` | String | **Metadata only.** Read by the loader but not carried into `AgentConfig`. |
+| `color` | String | **Metadata only.** Not evaluated. |
+| `hidden` | boolean | Hides the agent in the UI selector. |
+| `disabled` | boolean | `true` skips the file when loading. |
+| `mode` | String | `all` (default), `primary`, `subagent`. See §4. |
+| `model` | String | Overrides the session model. **Omit** = default. `model: null` would be the literal string `"null"`. |
+| `steps` | int | Max. model rounds per prompt. `0` = no limit. |
+| `maxSteps` | int | Deprecated alias; `steps` wins if set. |
+| `toolAllow` / `allow` | String[] | Allowed tools or `*`. Empty = no tools. |
+| `toolDeny` / `deny` | String[] | Removes tools after `allow`; deny wins. |
+| `tools` | JSON object | Inline alternative: `{"allow": ["read"], "deny": ["shell"]}`. |
+| `mcpServers` | String[] | MCP server names or `*`. Empty = no MCP tools. |
+| `roles` / `rolesAllowed` / `roles-allowed` | String[] | Roles permitted to use the agent. |
+| `permissions` | Rule[] | Inline JSON array or block with `action`/`resource`/`effect`. |
+| Body | Markdown | System prompt of the agent. |
 
-**Default-Regeln**, wenn `permissions` fehlt
+**Default rules** when `permissions` is missing
 (`AgentMarkdownLoader.defaultRules()`):
 
 1. `*` / `*` → `allow`
@@ -147,97 +146,97 @@ system prompt.
 
 ---
 
-## 2. Alle internen Tools
+## 2. All internal tools
 
-Die Liste entspricht den aktuell registrierten `ToolName`-Werten. Ob ein Tool
-tatsächlich im Katalog landet, hängt zusätzlich von der Laufzeit-Konfiguration
-ab (z. B. Git, E-Mail, MCP).
+The list corresponds to the currently registered `ToolName` values. Whether a
+tool actually ends up in the catalog additionally depends on runtime
+configuration (e.g. Git, E-Mail, MCP).
 
-### Dateisystem und Suche
+### Filesystem and search
 
-| Tool | Zweck |
+| Tool | Purpose |
 |---|---|
-| `read` | Datei lesen |
-| `write` | Datei schreiben |
-| `edit` | Gezielte Textänderung |
-| `patch` | Mehrteiliger Patch |
-| `glob` | Dateien per Muster finden |
-| `grep` | Inhalt per Muster suchen |
+| `read` | Read file |
+| `write` | Write file |
+| `edit` | Targeted text change |
+| `patch` | Multi-part patch |
+| `glob` | Find files by pattern |
+| `grep` | Search content by pattern |
 
-### Ausführung und Interaktion
+### Execution and interaction
 
-| Tool | Zweck |
+| Tool | Purpose |
 |---|---|
-| `shell` | Shell-Befehl ausführen |
-| `process` | Prozess-Registry verwalten (nur wenn registriert) |
-| `question` | Nutzer interaktiv fragen |
-| `todowrite` | Todo-Liste schreiben |
+| `shell` | Execute shell command |
+| `process` | Manage process registry (only if registered) |
+| `question` | Ask user interactively |
+| `todowrite` | Write todo list |
 
 ### Web
 
-| Tool | Zweck |
+| Tool | Purpose |
 |---|---|
-| `webfetch` | HTTP-Inhalt abrufen |
-| `websearch` | Websuche (Firecrawl, nur mit Key) |
+| `webfetch` | Fetch HTTP content |
+| `websearch` | Web search (Firecrawl, only with key) |
 
-### Skills und Subagents
+### Skills and subagents
 
-| Tool | Zweck |
+| Tool | Purpose |
 |---|---|
-| `skill` | Skill-Body laden |
-| `skill_list` | Verfügbare Skills auflisten |
-| `subagent` | Task an Subagent delegieren (sync oder `background=true`) |
-| `task` | Background-Task steuern (`status`/`wait`/`cancel`/`list`) |
+| `skill` | Load skill body |
+| `skill_list` | List available skills |
+| `subagent` | Delegate task to subagent (sync or `background=true`) |
+| `task` | Control background task (`status`/`wait`/`cancel`/`list`) |
 
-### Sessions, Worktrees, Modelle
+### Sessions, worktrees, models
 
-| Tool | Zweck |
+| Tool | Purpose |
 |---|---|
-| `session_move` | Session in anderes Verzeichnis verschieben |
-| `session_rename` | Session umbenennen |
-| `worktree_create` | Git-Worktree anlegen (nur bei Git-Workspace) |
-| `worktree_list` | Worktrees auflisten |
-| `worktree_remove` | Worktree entfernen |
-| `models` | Verfügbare Modelle auflisten |
+| `session_move` | Move session to another directory |
+| `session_rename` | Rename session |
+| `worktree_create` | Create git worktree (only with Git workspace) |
+| `worktree_list` | List worktrees |
+| `worktree_remove` | Remove worktree |
+| `models` | List available models |
 
 ### MCP
 
-| Tool | Zweck |
+| Tool | Purpose |
 |---|---|
-| `list_mcp_resources` | MCP-Ressourcen auflisten |
-| `read_mcp_resource` | MCP-Ressource lesen |
-| `<server>_<tool>` | Dynamisch pro konfiguriertem MCP-Server |
+| `list_mcp_resources` | List MCP resources |
+| `read_mcp_resource` | Read MCP resource |
+| `<server>_<tool>` | Dynamically per configured MCP server |
 
-### Agenten
+### Agents
 
-| Tool | Zweck |
+| Tool | Purpose |
 |---|---|
-| `agent_create` | Agent zur Laufzeit definieren |
-| `agent_list` | Agenten auflisten |
+| `agent_create` | Define agent at runtime |
+| `agent_list` | List agents |
 
-### E-Mail (nur bei IMAP/SMTP-Konfiguration)
+### E-mail (only with IMAP/SMTP configuration)
 
-| Tool | Zweck |
+| Tool | Purpose |
 |---|---|
-| `email_fetch` | E-Mail abrufen |
-| `email_read` | E-Mail lesen |
-| `email_send` | E-Mail senden |
+| `email_fetch` | Fetch e-mail |
+| `email_read` | Read e-mail |
+| `email_send` | Send e-mail |
 
-### Bedingt / spezifiziert
+### Conditional / specified
 
-| Tool | Zweck |
+| Tool | Purpose |
 |---|---|
-| `submit_result` | Strukturiertes Ergebnis bei `responseSchema` |
-| `remote.exec`, `remote.read`, `remote.write`, `remote.list`, `remote.stat`, `remote.download`, `remote.upload` | Nur Spezifikation, derzeit nicht implementiert |
+| `submit_result` | Structured result with `responseSchema` |
+| `remote.exec`, `remote.read`, `remote.write`, `remote.list`, `remote.stat`, `remote.download`, `remote.upload` | Specification only, not currently implemented |
 
 ---
 
-## 3. Permission-Actions und Effects
+## 3. Permission actions and effects
 
-`action` ist ein Tool-Name oder `*`. Zusätzlich kennt die Engine die
-Pseudo-Action `external_directory` für Pfade außerhalb des Workspace.
+`action` is a tool name or `*`. Additionally, the engine knows the
+pseudo-action `external_directory` for paths outside the workspace.
 
-Vollständige Action-Liste (entspricht den Tool-Namen plus Pseudo-Action):
+Complete action list (matches tool names plus pseudo-action):
 
 ```text
 *  external_directory
@@ -255,98 +254,98 @@ submit_result
 
 Effects:
 
-| Effect | Bedeutung |
+| Effect | Meaning |
 |---|---|
-| `allow` | Erlaubt |
-| `deny` | Verweigert; blockiert die Operation |
-| `ask` | Fragt den Nutzer (bzw. `AskMode`) |
+| `allow` | Allowed |
+| `deny` | Denied; blocks the operation |
+| `ask` | Asks the user (or `AskMode`) |
 
-`resource` ist ein Glob-Muster (`*`, `**`, `*.env`, `pfad/*`).
+`resource` is a glob pattern (`*`, `**`, `*.env`, `path/*`).
 
 ---
 
-## 4. Kombinationen
+## 4. Combinations
 
 ### Mode
 
-| `mode` | Haupt-Agent | Subagent | Besonderheit |
+| `mode` | Primary agent | Subagent | Special note |
 |---|---|---|---|
-| `all` | ja | ja | Default; erbt globalen `AskMode` |
-| `primary` | ja | nein | `AgentCatalogue.isSubagent()` = `false` |
-| `subagent` | nein | ja | erzwingt `AskMode.DENY` (keine Fragen) |
+| `all` | yes | yes | Default; inherits global `AskMode` |
+| `primary` | yes | no | `AgentCatalogue.isSubagent()` = `false` |
+| `subagent` | no | yes | forces `AskMode.DENY` (no questions) |
 
-Fehlt eine Config, gelten `build` und `plan` als primär
-(`isSubagent()`-Fallback). **Plan-Modus** wird automatisch erkannt, wenn
-`name: plan` gesetzt ist **oder** alle `edit`-Regeln global `deny` sind und
-kein `edit`-`allow` existiert (`AgentProfile.forAgent`).
+If a config is missing, `build` and `plan` are treated as primary
+(`isSubagent()` fallback). **Plan mode** is detected automatically when
+`name: plan` is set **or** all `edit` rules are globally `deny` and no
+`edit`-`allow` exists (`AgentProfile.forAgent`).
 
 ### Tools
 
-| Kombination | Wirkung |
+| Combination | Effect |
 |---|---|
-| `toolAllow: ["*"]`, `toolDeny: []` | alle Tools |
-| `toolAllow: []` | keine Tools |
-| `toolAllow: ["read","glob","grep"]` | nur Lesen/Suchen |
-| `toolAllow: ["*"]`, `toolDeny: ["shell","write","edit"]` | alles außer Schreiben/Shell |
-| `tools: {"allow":["*"],"deny":["shell"]}` | Inline-JSON-Variante |
+| `toolAllow: ["*"]`, `toolDeny: []` | all tools |
+| `toolAllow: []` | no tools |
+| `toolAllow: ["read","glob","grep"]` | read/search only |
+| `toolAllow: ["*"]`, `toolDeny: ["shell","write","edit"]` | everything except write/shell |
+| `tools: {"allow":["*"],"deny":["shell"]}` | inline JSON variant |
 
 ### Permissions
 
-| Muster | Regeln |
+| Pattern | Rules |
 |---|---|
 | Allow-all | `*`/`*` → `allow` |
 | Deny-all | `*`/`*` → `deny` |
 | Ask-all | `*`/`*` → `ask` |
-| Least-Privilege | `*`/`*` → `deny`, dann `read`/`*` → `allow` |
-| Plan | `edit`/`*` → `deny`, optional `edit`/`<plan-dir>/*` → `allow` |
-| Shell nur lesend | `shell`/`*` → `deny`, dann `shell`/`git *` → `allow` |
-| Env schützen | `read`/`*.env` → `ask`, `edit`/`*.env` → `deny` |
-| Extern sperren | `external_directory`/`*` → `deny` |
+| Least-privilege | `*`/`*` → `deny`, then `read`/`*` → `allow` |
+| Plan | `edit`/`*` → `deny`, optionally `edit`/`<plan-dir>/*` → `allow` |
+| Shell read-only | `shell`/`*` → `deny`, then `shell`/`git *` → `allow` |
+| Protect env | `read`/`*.env` → `ask`, `edit`/`*.env` → `deny` |
+| Lock external | `external_directory`/`*` → `deny` |
 
-Merksatz: **letzte passende Regel gewinnt**, aber ein `DENY` blockiert die
-Operation vorher. Kein Treffer = `ASK`.
+Remember: **last matching rule wins**, but a `DENY` blocks the operation
+beforehand. No match = `ASK`.
 
 ### MCP
 
-| Kombination | Wirkung |
+| Combination | Effect |
 |---|---|
-| `mcpServers: ["*"]` | alle Server |
-| `mcpServers: []` | keine MCP-Tools |
-| `mcpServers: ["playwright","firecrawl"]` | nur diese Server |
+| `mcpServers: ["*"]` | all servers |
+| `mcpServers: []` | no MCP tools |
+| `mcpServers: ["playwright","firecrawl"]` | only these servers |
 
-### Rollen
+### Roles
 
-| Kombination | Wirkung |
+| Combination | Effect |
 |---|---|
-| `roles: ["*"]` | alle |
-| `roles: ["admin"]` | nur Admin |
-| `roles: ["qoc-user","qoc-admin"]` | mehrere Rollen |
-| Feld weglassen | `build`/`plan` → `*`, sonst `admin` |
+| `roles: ["*"]` | all |
+| `roles: ["admin"]` | admin only |
+| `roles: ["qoc-user","qoc-admin"]` | several roles |
+| Omit field | `build`/`plan` → `*`, otherwise `admin` |
 
 ### Steps
 
-| Wert | Wirkung |
+| Value | Effect |
 |---|---|
-| `steps: 0` oder weglassen | kein Limit |
-| `steps: 5` | max. 5 Modell-Runden |
-| `steps: 20` | längerer Lauf |
-| `maxSteps: 5` | Alias, falls `steps` fehlt |
+| `steps: 0` or omitted | no limit |
+| `steps: 5` | max. 5 model rounds |
+| `steps: 20` | longer run |
+| `maxSteps: 5` | alias if `steps` missing |
 
 ### Hidden / Disabled
 
-| Feld | Kombination | Wirkung |
+| Field | Combination | Effect |
 |---|---|---|
-| `hidden` | `true` | nicht im UI-Selektor |
-| `hidden` | `false` | sichtbar |
-| `disabled` | `true` | Datei wird übersprungen |
-| `disabled` | `false` | normal geladen |
+| `hidden` | `true` | not in UI selector |
+| `hidden` | `false` | visible |
+| `disabled` | `true` | file is skipped |
+| `disabled` | `false` | loaded normally |
 
 ---
 
-## 5. Skills (nur in `settings.json`)
+## 5. Skills (only in `settings.json`)
 
-Der Markdown-Loader liest **kein** `skills`-Objekt. Skills werden pro Agent in
-`settings.json`/`settings.jsonc` konfiguriert (`EngineConfig.parseAgentSkills`):
+The Markdown loader reads **no** `skills` object. Skills are configured per
+agent in `settings.json`/`settings.jsonc` (`EngineConfig.parseAgentSkills`):
 
 ```json
 {
@@ -374,29 +373,29 @@ Der Markdown-Loader liest **kein** `skills`-Objekt. Skills werden pro Agent in
 }
 ```
 
-| Feld | Werte | Bedeutung |
+| Field | Values | Meaning |
 |---|---|---|
-| `enabled` | boolean | Skills für diesen Agenten aktiv |
-| `allow` | String[] | sichtbare/ladbare Skill-IDs oder Muster |
-| `deny` | String[] | versteckt und blockiert; deny gewinnt |
-| `max` | int | Cap für den Skill-Block; `0` = unbegrenzt |
-| `prompt` | `none`, `core`, `top-k`, `all` | Umfang des Skill-Blocks |
-| `core` | String[] | Muster für `prompt: core` |
-| `filter.enabled` | boolean | Relevanzfilter an/aus |
+| `enabled` | boolean | Skills active for this agent |
+| `allow` | String[] | visible/loadable skill IDs or patterns |
+| `deny` | String[] | hidden and blocked; deny wins |
+| `max` | int | Cap for the skill block; `0` = unlimited |
+| `prompt` | `none`, `core`, `top-k`, `all` | Scope of the skill block |
+| `core` | String[] | Patterns for `prompt: core` |
+| `filter.enabled` | boolean | Relevance filter on/off |
 | `filter.strategy` | String | Default `bm25` |
-| `filter.topK` | int | Anzahl der Top-Treffer (≥ 1) |
-| `filter.minScore` | double | Mindestscore (≥ 0) |
-| `filter.thresholdCount` | int | Ab dieser Kataloggröße filtern |
-| `filter.alwaysInclude` | String[] | immer einbeziehen |
+| `filter.topK` | int | Number of top hits (≥ 1) |
+| `filter.minScore` | double | Minimum score (≥ 0) |
+| `filter.thresholdCount` | int | Filter from this catalog size |
+| `filter.alwaysInclude` | String[] | always include |
 
-Ein **globales** `skills`-Objekt (ohne `agents[]`) ist ebenfalls möglich; es
-setzt die Defaults für alle Agenten.
+A **global** `skills` object (without `agents[]`) is also possible; it sets
+defaults for all agents.
 
 ---
 
-## 6. Äquivalentes `settings.json`-Agent-Objekt
+## 6. Equivalent `settings.json` agent object
 
-Derselbe Agent als JSON (praktisch für serverless/inline, siehe
+The same agent as JSON (practical for serverless/inline, see
 `EngineConfig.agentFromJson`):
 
 ```json
@@ -426,21 +425,21 @@ Derselbe Agent als JSON (praktisch für serverless/inline, siehe
 
 ---
 
-## 7. Fundort und Ladereihenfolge
+## 7. Location and load order
 
-Der Loader durchsucht:
+The loader searches:
 
 1. `~/.config/opencode/agents` (global)
-2. Projektverzeichnisse `.opencode/agents` – vom Workspace aufwärts bis `/`
+2. Project directories `.opencode/agents` — from the workspace upward to `/`
 
-Alle `.md`-Dateien werden rekursiv geladen. Der Agent-Name ist der relative
-Pfad ohne `.md`, sofern kein `name` gesetzt ist (z. B. `stack/reviewer.md` →
-`stack/reviewer`). Projekt-Agenten überschreiben gleichnamige globale Agenten;
-`build` und `plan` werden als Baseline ergänzt, falls sie fehlen.
+All `.md` files are loaded recursively. The agent name is the relative path
+without `.md`, unless `name` is set (e.g. `stack/reviewer.md` →
+`stack/reviewer`). Project agents override global agents of the same name;
+`build` and `plan` are added as a baseline if missing.
 
 ---
 
-## 8. Kurzreferenz
+## 8. Quick reference
 
 ```text
 mode:        all | primary | subagent
@@ -450,8 +449,8 @@ permissions: allow-all | deny-all | ask-all | granular
 effects:     allow | deny | ask
 mcp:         ["*"] | ["playwright","firecrawl"] | []
 roles:       ["*"] | ["admin"] | ["qoc-user","qoc-admin"]
-steps:       0 (unbegrenzt) | 5 | 10 | 20 | 50
-skills:      nur settings.json (enabled, allow, deny, max, prompt, core, filter)
+steps:       0 (unlimited) | 5 | 10 | 20 | 50
+skills:      only settings.json (enabled, allow, deny, max, prompt, core, filter)
 hidden:      true | false
 disabled:    true | false
 ```

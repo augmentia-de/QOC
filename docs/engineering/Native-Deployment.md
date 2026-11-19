@@ -1,34 +1,34 @@
-# Native Deployment (Docker, lokal)
+# Native Deployment (Docker, local)
 
-Status: umgesetzt und verifiziert (Engine-Binary + Docker-Image + UI).
-Datum: 2026-11-11
+Status: implemented and verified (Engine binary + Docker image + UI).
+Date: 2026-11-11
 
-## Ziel
+## Goal
 
-QOC lokal als **native** Container deployen:
+Deploy QOC locally as a **native** container:
 
 ```bash
 cd qoc/deploy
 docker compose --profile native up -d --build
 ```
 
-| Container | URL | Rolle |
+| Container | URL | Role |
 |---|---|---|
-| `qoc-native` | http://localhost:8077 | Engine (GraalVM-Native-Binary) |
-| `qoc-native-ui` | http://localhost:5174 | Workflow-UI (nginx), `/api` → `qoc-native:8080` |
+| `qoc-native` | http://localhost:8077 | Engine (GraalVM native binary) |
+| `qoc-native-ui` | http://localhost:5174 | Workflow UI (nginx), `/api` → `qoc-native:8080` |
 
-## Ausgangsproblem
+## Initial Problem
 
-`deploy/Dockerfile.native` war nicht mehr benutzbar:
+`deploy/Dockerfile.native` was no longer usable:
 
-1. **Falsche Builder-Version.** Die Basis
-   `quay.io/quarkus/ubi9-quarkus-mandrel-builder-image:jdk-21` enthält GraalVM
-   23.1, Quarkus 3.40 verlangt 25.0.
-2. **Kein Maven im Builder.** Das Mandrel-Image hat keinen `mvn` im `PATH`
-   (`ENTRYPOINT` ist `native-image`), der Build scheiterte mit
-   `mvn: command not found`; der Fehler wurde durch `| tail -5` verschluckt.
-3. **`FileDescriptor` im Image-Heap.** Nach Korrektur von (1) und (2) brach
-   `native-image` ab:
+1. **Wrong builder version.** The base image
+   `quay.io/quarkus/ubi9-quarkus-mandrel-builder-image:jdk-21` contains GraalVM
+   23.1, while Quarkus 3.40 requires 25.0.
+2. **No Maven in the builder.** The Mandrel image has no `mvn` in `PATH`
+   (`ENTRYPOINT` is `native-image`), so the build failed with
+   `mvn: command not found`; the error was swallowed by `| tail -5`.
+3. **`FileDescriptor` in the image heap.** After fixing (1) and (2),
+   `native-image` failed:
 
    ```
    Detected a FileDescriptor in the image heap.
@@ -42,114 +42,115 @@ docker compose --profile native up -d --build
    at io.netty.buffer.PooledByteBufAllocator.<clinit>(...)
    ```
 
-## Ursache
+## Root Cause
 
-`workflow-runner` wurde historisch als eigenständiger Server gebaut und
-deshalb mit `maven-shade-plugin` als **Uber-JAR** gepackt. Das Artefakt
-enthielt:
+Historically, `workflow-runner` was built as a standalone server and therefore
+packaged as an **Uber-JAR** using `maven-shade-plugin`. That artifact
+contained:
 
-- `de/augmentia/oc/engine/**` (751 Klassen, doppelt zum `engine`-JAR),
-- `org/slf4j/simple/**` (eigenes SLF4J-Binding) und
-- weitere Bibliotheken (Jackson, swagger-parser, …).
+- `de/augmentia/oc/engine/**` (751 classes, duplicated relative to the
+  `engine` JAR),
+- `org/slf4j/simple/**` (its own SLF4J binding), and
+- further libraries (Jackson, swagger-parser, …).
 
-Seit der Quarkus-Integration ist `workflow-runner` eine **Library** und wird
-als solches vom `quarkus`-Modul konsumiert. Dadurch landeten die eingebetteten
-Klassen im Native-Image. `org.slf4j.simple.SimpleLoggerConfiguration`
-initialisiert sich beim Auswerten von `SystemPropertyUtil` und hält dabei
-`System.err` (`PrintStream` → `FileOutputStream` → `FileDescriptor`) in einem
-statischen Feld. GraalVM verbietet das im Image-Heap.
+Since the Quarkus integration, `workflow-runner` is a **library** and is
+consumed as such by the `quarkus` module. As a result, the embedded classes
+ended up in the native image. `org.slf4j.simple.SimpleLoggerConfiguration`
+initializes itself while evaluating `SystemPropertyUtil` and holds
+`System.err` (`PrintStream` → `FileOutputStream` → `FileDescriptor`) in a
+static field. GraalVM forbids this in the image heap.
 
-Nebenbei erklärt das auch CSC-/Indexierungsfehler wie
+Incidentally, this also explains CSC/indexing errors such as
 `Producer method return type not found in index:
-de.augmentia.oc.engine.core.contract.provider.ProviderAdapter`, weil
-`engine`-Klassen doppelt (JAR + Uber-JAR) im Klassenpfad lagen.
+de.augmentia.oc.engine.core.contract.provider.ProviderAdapter`, because
+`engine` classes were present twice (JAR + Uber-JAR) on the classpath.
 
-## Änderungen
+## Changes
 
 ### `workflow-runner/pom.xml`
 
-- `maven-shade-plugin` **entfernt** → das Modul liefert wieder ein normales
-  Library-JAR (keine `engine`-Klassen, keine Fremd-JARs).
-- `slf4j-simple` → **`slf4j-api`**. Das Binding kommt vom Host
-  (Quarkus/JBoss LogManager). Ein gebündeltes Binding ist in einer Library
-  falsch und bricht Native-Images.
-- Die Quellen nutzen weiterhin nur `org.slf4j.Logger`/`LoggerFactory`.
+- `maven-shade-plugin` **removed** → the module again delivers a normal
+  library JAR (no `engine` classes, no third-party JARs).
+- `slf4j-simple` → **`slf4j-api`**. The binding comes from the host
+  (Quarkus/JBoss LogManager). A bundled binding is wrong in a library and
+  breaks native images.
+- The sources continue to use only `org.slf4j.Logger`/`LoggerFactory`.
 
 ### `deploy/Dockerfile.native`
 
 - Builder: `quay.io/quarkus/ubi-quarkus-mandrel-builder-image:jdk-25`
-  (Mandrel 25, passend zu Quarkus 3.40).
-- Maven 3.9 wird per Multi-Stage-Copy aus `maven:3.9-eclipse-temurin-21`
-  übernommen (die UBI-Module liefern nur Maven 3.5).
-- Build läuft im Builder-Image (`-Dquarkus.native.container-build=false`).
-- Keine Fehler mehr hinter `| tail -5` verstecken.
-- Runtime-Stage unverändert schlank (Debian + git/util-linux/bubblewrap),
+  (Mandrel 25, matching Quarkus 3.40).
+- Maven 3.9 is taken over via a multi-stage copy from
+  `maven:3.9-eclipse-temurin-21` (the UBI modules only provide Maven 3.5).
+- The build runs in the builder image (`-Dquarkus.native.container-build=false`).
+- No more hiding errors behind `| tail -5`.
+- Runtime stage remains slim (Debian + git/util-linux/bubblewrap),
   `USER qoc`, `VOLUME /data`, `HOME=/data/home`.
-- `deploy/Dockerfile.native.dockerignore` hält Build-Outputs, `data/` und
-  `node_modules` aus dem Build-Context (BuildKit nutzt
+- `deploy/Dockerfile.native.dockerignore` keeps build outputs, `data/` and
+  `node_modules` out of the build context (BuildKit uses
   `<Dockerfile>.dockerignore`).
 
-### UI-Anbindung
+### UI integration
 
-- `workflow-ui/vite.config.ts`: `/api` wird **unverändert** an
-  `VITE_API_TARGET` (Default `http://localhost:8080`) weitergeleitet. Der
-  bisherige `rewrite` entfernte `/api`, die Engine erwartet aber `/api/...`.
-- `deploy/Dockerfile.workflow-ui`: nginx-Template mit `API_UPSTREAM`,
-  `proxy_pass` ohne Trailing-Slash (Pfad bleibt erhalten), SSE-freundlich
-  (`proxy_buffering off`, langer `proxy_read_timeout`).
-- `deploy/docker-compose.yml`: neuer Service `qoc-native-ui` (Profil
-  `native`, Port 5174), `API_UPSTREAM=http://qoc-native:8080`.
-- `workflow-ui/.dockerignore` verhindert, dass Host-`node_modules` das
-  Container-`npm install` überschreiben.
+- `workflow-ui/vite.config.ts`: `/api` is forwarded **unchanged** to
+  `VITE_API_TARGET` (default `http://localhost:8080`). The previous `rewrite`
+  stripped `/api`, but the engine expects `/api/...`.
+- `deploy/Dockerfile.workflow-ui`: nginx template with `API_UPSTREAM`,
+  `proxy_pass` without a trailing slash (path is preserved), SSE-friendly
+  (`proxy_buffering off`, long `proxy_read_timeout`).
+- `deploy/docker-compose.yml`: new service `qoc-native-ui` (profile
+  `native`, port 5174), `API_UPSTREAM=http://qoc-native:8080`.
+- `workflow-ui/.dockerignore` prevents host `node_modules` from overwriting
+  the container's `npm install`.
 
-### Dev-Skripte
+### Dev scripts
 
-- `scripts/start-all.sh` startet die Engine über `start.sh`
-  (Quarkus Dev Mode, `/api/health`) und die UI mit passendem
+- `scripts/start-all.sh` starts the engine via `start.sh`
+  (Quarkus Dev Mode, `/api/health`) and the UI with a matching
   `VITE_API_TARGET`.
-- `scripts/stop-all.sh` beendet `quarkus:dev` und Vite.
+- `scripts/stop-all.sh` stops `quarkus:dev` and Vite.
 
-## Zwei Build-Wege
+## Two Build Paths
 
-| Weg | Kommando | Wann |
+| Path | Command | When |
 |---|---|---|
-| Reproduzierbar, self-contained | `docker compose --profile native build qoc-native` | CI/frische Maschine, genug Bandbreite |
-| Lokal, schnell | `./deploy/build-native-image.sh` | Entwicklung; nutzt den Host-`~/.m2` |
+| Reproducible, self-contained | `docker compose --profile native build qoc-native` | CI/fresh machine, sufficient bandwidth |
+| Local, fast | `./deploy/build-native-image.sh` | Development; uses the host's `~/.m2` |
 
-`build-native-image.sh` kompiliert den Runner im Mandrel-25-Dev-Image
-(`deploy/docker-dev-native`, Host-`~/.m2` gemountet) und packt ihn über
-`deploy/Dockerfile.native-runtime` in ein schlankes Runtime-Image. Der
-self-contained Build lädt die Abhängigkeiten dagegen in der Builder-Stage
-neu (auf langsamen Leitungen mehrere Stunden).
+`build-native-image.sh` compiles the runner in the Mandrel-25 dev image
+(`deploy/docker-dev-native`, host `~/.m2` mounted) and packages it into a slim
+runtime image via `deploy/Dockerfile.native-runtime`. The self-contained build,
+by contrast, re-downloads dependencies in the builder stage (several hours on
+slow links).
 
-## Verifikation
+## Verification
 
-1. Native Binary gebaut (Mandrel 25 im Container):
+1. Native binary built (Mandrel 25 in the container):
    `quarkus/target/quarkus-1.0.0-SNAPSHOT-runner` (124 MB).
-2. Binary auf dem Host gegen PostgreSQL (`localhost:20000`) gestartet:
+2. Binary started on the host against PostgreSQL (`localhost:20000`):
    - `GET /api/health` → `{"status":"ok",...}`
-   - `GET /api/workflows` → vorhandene Workflows
+   - `GET /api/workflows` → existing workflows
    - `GET /api/mcp-client/servers` → `{"servers":[]}`
-   - `GET /api/mcp-client/tools` → Built-in-Tools inkl. MCP
-3. `docker compose --profile native up -d` startet `qoc-native` (8077) und
+   - `GET /api/mcp-client/tools` → Built-in tools incl. MCP
+3. `docker compose --profile native up -d` starts `qoc-native` (8077) and
    `qoc-native-ui` (5174).
-4. Über die UI (nginx → Engine) geprüft:
+4. Verified via the UI (nginx → Engine):
    - `GET :5174/api/health` → `ok`
-   - `GET :5174/api/workflows` → `["test-wf2","test-wf"]` (aus dem
-     gemounteten `../wf-data`)
-   - Browser: `/workflows` listet beide Workflows, `/mcp-servers` rendert
-     „No MCP servers configured“ (API erreichbar).
-5. Tests: `mvn -o -pl engine,workflow-runner test` → 919 + 3 Tests grün.
+   - `GET :5174/api/workflows` → `["test-wf2","test-wf"]` (from the
+     mounted `../wf-data`)
+   - Browser: `/workflows` lists both workflows, `/mcp-servers` renders
+     "No MCP servers configured" (API reachable).
+5. Tests: `mvn -o -pl engine,workflow-runner test` → 919 + 3 tests green.
 
-## Offene Punkte
+## Open Items
 
-- Der self-contained Docker-Build lädt Maven-Abhängigkeiten in der
-  Builder-Stage erneut. Eine BuildKit-Cache-Mount
-  (`--mount=type=cache,target=/root/.m2`) oder ein Named Context auf
-  `~/.m2/repository` würde Rebuilds deutlich beschleunigen.
-- `deploy/Dockerfile.workflow-runner` und `deploy/docker-compose.workflow.yml`
-  beschreiben noch den alten Standalone-Runner und sind nicht mehr Teil des
-  Betriebs. Sie können entfernt werden, sobald niemand mehr den Standalone-
-  Modus braucht.
-- `workflow-runner/src/main/java/.../WorkflowRunnerMain.java` ist damit toter
-  Code; er kann zusammen mit den beiden Dateien oben entfernt werden.
+- The self-contained Docker build re-downloads Maven dependencies in the
+  builder stage. A BuildKit cache mount
+  (`--mount=type=cache,target=/root/.m2`) or a named context on
+  `~/.m2/repository` would speed up rebuilds considerably.
+- `deploy/Dockerfile.workflow-runner` and `deploy/docker-compose.workflow.yml`
+  still describe the old standalone runner and are no longer part of
+  operations. They can be removed once nobody needs the standalone mode
+  anymore.
+- `workflow-runner/src/main/java/.../WorkflowRunnerMain.java` is dead code as
+  a result; it can be removed together with the two files above.

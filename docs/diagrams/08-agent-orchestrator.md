@@ -21,10 +21,10 @@ is the view that the `ContextBuilder` needs for a prompt.
 
 ```mermaid
 flowchart LR
-  Parent["Parent-Session<br/>Engine"]:::mixed
+  Parent["Parent Session<br/>Engine"]:::mixed
   Tool["SubagentTool"]:::det
   Guard{"Permission?<br/>Depth < 2?<br/>Semaphore?"}:::det
-  Child["Child-Session<br/>AgentProfile"]:::det
+  Child["Child Session<br/>AgentProfile"]:::det
   Run["runPrompt(child)"]:::mixed
   Llm["LLM + Tools"]:::llm
   Result["Text result"]:::llm
@@ -51,7 +51,7 @@ flowchart LR
 | Subagent agents | `build` and `plan` are not allowed as subagents |
 | Depth | maximum 2 |
 | Concurrency | at most 4 simultaneous subagents (semaphore) |
-| Child-Session | own `SessionId`, own agent, own prompt |
+| Child session | own `SessionId`, own agent, own prompt |
 | Token accounting | usage is added to the parent session |
 | Result | final text of the child run as tool output |
 | Background | `background=true` starts a daemon thread |
@@ -66,9 +66,9 @@ flowchart LR
 
 ## Serverless Agent Sync (planned)
 
-In Serverless-Modus (AWS Lambda / GCP Cloud Run) werden Agenten dynamisch
-vom Server (GCP VM) geladen. Der MCP-Tool `qoc_run_agent_with_config`
-erlaubt einen stateless Subagent-Run mit inline Agent-Konfiguration.
+In serverless mode (AWS Lambda / GCP Cloud Run), agents are loaded dynamically
+from the server (GCP VM). The MCP tool `qoc_run_agent_with_config`
+allows a stateless subagent run with inline agent configuration.
 
 ```mermaid
 sequenceDiagram
@@ -107,13 +107,13 @@ sequenceDiagram
   Lambda->>Lambda: removeTransientAgent("reviewer")
 ```
 
-### Regeln
+### Rules
 
-- Transiente Agenten werden nach der Ausführung gelöscht.
-- `retain=true` behält die Session, aber nicht den Agenten.
-- Serverless-Modus deaktiviert Agent-Authoring (`ENGINE_AGENT_AUTHORING_ENABLED=false`).
-- Agent-Cache ist flüchtig (ohne EFS/Volume).
-- Sync-Intervall konfigurierbar (`ENGINE_AGENT_SYNC_INTERVAL_SECONDS`).
+- Transient agents are deleted after execution.
+- `retain=true` keeps the session, but not the agent.
+- Serverless mode disables agent authoring (`ENGINE_AGENT_AUTHORING_ENABLED=false`).
+- The agent cache is ephemeral (without EFS/volume).
+- Sync interval is configurable (`ENGINE_AGENT_SYNC_INTERVAL_SECONDS`).
 
 ---
 
@@ -132,7 +132,7 @@ flowchart TD
   Db --> Orch["Deterministic Orchestrator"]:::det
   Orch --> Next{"next step?"}:::det
   Next -->|"done"| Done["COMPLETED"]:::det
-  Next -->|"step"| Worker["Worker-Subagent<br/>exactly one step"]:::mixed
+  Next -->|"step"| Worker["Worker Subagent<br/>exactly one step"]:::mixed
   Worker --> Result["structured result"]:::llm
   Result --> Validate{"Schema valid?"}:::det
   Validate -->|"yes"| Tx["write state transactionally"]:::det
@@ -140,7 +140,7 @@ flowchart TD
   Validate -->|"no"| Classify["classify error"]:::det
   Classify -->|"transient"| Retry["Retry with backoff"]:::det
   Retry --> Orch
-  Classify -->|"semantic"| Fallback["LLM-Fallback<br/>enrich data / alternative"]:::llm
+  Classify -->|"semantic"| Fallback["LLM Fallback<br/>enrich data / alternative"]:::llm
   Fallback --> FValidate{"Schema + Confidence?"}:::det
   FValidate -->|"yes"| Tx
   FValidate -->|"no"| Approval["WAITING_APPROVAL"]:::det
@@ -165,7 +165,7 @@ stateDiagram-v2
   RUNNING --> FAILED_SEMANTIC: missing data / ambiguous
   RUNNING --> WAITING_APPROVAL: side effect
   FAILED_TRANSIENT --> RUNNING: retry + backoff
-  FAILED_SEMANTIC --> ENRICHING: LLM-Fallback
+  FAILED_SEMANTIC --> ENRICHING: LLM Fallback
   ENRICHING --> RUNNING: validated input
   ENRICHING --> WAITING_APPROVAL: low confidence
   WAITING_APPROVAL --> RUNNING: approved
@@ -176,7 +176,7 @@ stateDiagram-v2
   note right of ENRICHING
     Only normal LLM use
     outside the worker:
-    extend the data basis or
+    extend the data foundation or
     choose a predefined alternative.
   end note
 ```

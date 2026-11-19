@@ -30,8 +30,8 @@
 | Operations | [`spec/betrieb/`](../spec/betrieb/README.md) | `implemented` | HTTP/SSE, skills, credentials |
 | Quality | [`spec/qualitaet/`](../spec/qualitaet/README.md) | `partial` | ArchUnit/JaCoCo gates to verify before commit |
 | Agents | [`spec/agents/`](../spec/agents/README.md) | `implemented` | Catalog, tool restrictions, MCP scoping |
-| Agents – SDLC workflow | [`spec/agents/05-aisdlc-workflow.md`](../spec/agents/05-aisdlc-workflow.md) | `partial` | SDLC-Prozess als deterministischer Workflow-Graph (SDW-01…08); ConditionEvaluator umgesetzt (Phase 1), Graph-Compiler-Checks offen |
-| OIDC/Auth0 | [`spec/betrieb/04-oidc-auth0.md`](../spec/betrieb/04-oidc-auth0.md) | `spec-only` | Auth0 als OIDC-Provider (geplant) |
+| Agents – SDLC workflow | [`spec/agents/05-aisdlc-workflow.md`](../spec/agents/05-aisdlc-workflow.md) | `partial` | SDLC process as a deterministic workflow graph (SDW-01…08); ConditionEvaluator implemented (Phase 1), graph compiler checks outstanding |
+| OIDC/Auth0 | [`spec/betrieb/04-oidc-auth0.md`](../spec/betrieb/04-oidc-auth0.md) | `spec-only` | Auth0 as OIDC provider (planned) |
 | Optimization | [`optimization.md`](../optimization.md) | `working` | Working catalog, no obligation |
 | Diagrams | [`diagrams/`](../diagrams/README.md) | `reference` | Architecture and data flow diagrams |
 
@@ -39,16 +39,16 @@
 
 | Feature | Document | Status | Note |
 |---|---|---|---|
-| OC-plus overview | [`enterprise.md`](../enterprise.md) | `reference` | Erweiterungen gegenüber OpenCode |
-| Enterprise readiness | [`enterprise.md`](../enterprise.md) | `working` | Vier Säulen + Umsetzungsplan |
-| Async approvals | [`plans/async-approval.md`](../plans/async-approval.md) | `partial` | Phase 1+2+3 umgesetzt; suspend/resume + Tool-Result-Cache live |
+| OC-plus overview | [`enterprise.md`](../enterprise.md) | `reference` | Extensions over OpenCode |
+| Enterprise readiness | [`enterprise.md`](../enterprise.md) | `working` | Four pillars + implementation plan |
+| Async approvals | [`plans/async-approval.md`](../plans/async-approval.md) | `partial` | Phases 1+2+3 implemented; suspend/resume + tool result cache live |
 | Skills | [`skill-loading.md`](../skill-loading.md) | `implemented` | BM25, per-agent allow/deny/prompt |
 | A2A | [`guides/a2a.md`](../guides/a2a.md) | `implemented` | Client + opt-in Server |
-| Server/Serverless-Modi | [`guides/deployment-modes.md`](../guides/deployment-modes.md) | `spec-only` | Zwei Modi + MCP-Tool (geplant) |
+| Server/Serverless-Modi | [`guides/deployment-modes.md`](../guides/deployment-modes.md) | `spec-only` | Two modes + MCP tool (planned) |
 | AWS ECS minimal | [`deployment/04-aws-ecs-minimal.md`](../deployment/04-aws-ecs-minimal.md) | `implemented` | Test-Stack (ECS/Fargate/EFS/Neon) |
-| AWS Lambda Serverless | [`deployment/05-aws-lambda-serverless.md`](../deployment/05-aws-lambda-serverless.md) | `spec-only` | Lambda-spezifisch (geplant) |
-| Webhook Guardrail | [`webhook.md`](../webhook.md) | `partial` | Spezifikation + Service |
-| SDLC-Workflow-Graph | [`engineering/Workflow-SDLC.md`](../engineering/Workflow-SDLC.md) | `working` | Vollständige Definition (Nodes/Edges/Agents); Migrationsplan Phase 1 (ConditionEvaluator) done 2026-11-14 |
+| AWS Lambda Serverless | [`deployment/05-aws-lambda-serverless.md`](../deployment/05-aws-lambda-serverless.md) | `spec-only` | Lambda-specific (planned) |
+| Webhook Guardrail | [`webhook.md`](../webhook.md) | `partial` | Specification + service |
+| SDLC-Workflow-Graph | [`engineering/Workflow-SDLC.md`](../engineering/Workflow-SDLC.md) | `working` | Complete definition (Nodes/Edges/Agents); migration plan Phase 1 (ConditionEvaluator) done 2026-11-14 |
 
 ## Cross-cutting
 
@@ -59,8 +59,8 @@
 | [`spec/INVARIANTS.md`](../spec/INVARIANTS.md) | Register of invariant prefixes and sources |
 | [`open-questions.md`](./open-questions.md) | Decision register (mostly decided) |
 | [`ROADMAP.md`](./ROADMAP.md) | Implementation order M0–M14 |
-| [`FUTURE-WORK.md`](./FUTURE-WORK.md) | Geplante und nicht implementierte Teile |
-| [`deployment/`](../deployment/README.md) | Deployment-Dokumentation (GCP, AWS, Docker) |
+| [`FUTURE-WORK.md`](./FUTURE-WORK.md) | Planned and not-yet-implemented parts |
+| [`deployment/`](../deployment/README.md) | Deployment documentation (GCP, AWS, Docker) |
 
 ## Maintenance rule
 

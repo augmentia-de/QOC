@@ -1,66 +1,66 @@
-# Runtime Plan Adaptation — Konzept (Supervisor / Orchestrator)
+# Runtime Plan Adaptation — Concept (Supervisor / Orchestrator)
 
-> **Status:** Konzept (2026-11-17), nicht implementiert.  
-> **Scope:** `workflow-runner` (Plan, Dispatch, Context) und `engine` (Run-Loop, Journal, Claims, Resilience).  
-> **Ausgangspunkt:** eine Node anpassen, wenn ein Eingabe-Requirement nicht vorhanden ist.
+> **Status:** Concept (2026-11-17), not implemented.  
+> **Scope:** `workflow-runner` (Plan, Dispatch, Context) and `engine` (Run-Loop, Journal, Claims, Resilience).  
+> **Starting point:** adapt a node when an input requirement is missing.
 
 ---
 
-## 1. Analyse der Ist-Architektur
+## 1. Analysis of the Current Architecture
 
-### 1.1 Rollen
+### 1.1 Roles
 
-| Komponente | Verantwortung | Datei |
+| Component | Responsibility | File |
 |---|---|---|
-| `WorkflowExecutor` | startet/resumed einen Run, snapshot-tet die expandierte Definition | `workflow-runner/.../WorkflowExecutor.java` |
-| `WorkflowStepProviderImpl` | deterministische Navigation (`getNextNodeId`), Dispatch, Circuit-Breaker, Events | `.../WorkflowStepProviderImpl.java` |
-| `DefaultNodeDispatcher` | ausführende Node-Typen, Output-Contracts, Template-Resolution | `.../DefaultNodeDispatcher.java` |
-| `WorkflowContext` | `nodeOutputs`, `workflowState`, `currentNodeId`, `nextNode`-Override | `.../WorkflowContext.java` |
-| `WorkflowDefinition` | immutable Plan (Nodes, Edges, Agents, Schemas) | `.../model/WorkflowDefinition.java` |
-| `QocEngine.runPrompt` | Step-Loop, Paused/Failed/WorkflowDone, Retry-Policy | `engine/.../QocEngine.java` |
-| `WorkflowRunJournal` | Replay aus Journal, Snapshot, Resume | `.../WorkflowRunJournal.java` |
+| `WorkflowExecutor` | starts/resumes a run, snapshots the expanded definition | `workflow-runner/.../WorkflowExecutor.java` |
+| `WorkflowStepProviderImpl` | deterministic navigation (`getNextNodeId`), dispatch, circuit breaker, events | `.../WorkflowStepProviderImpl.java` |
+| `DefaultNodeDispatcher` | executing node types, output contracts, template resolution | `.../DefaultNodeDispatcher.java` |
+| `WorkflowContext` | `nodeOutputs`, `workflowState`, `currentNodeId`, `nextNode` override | `.../WorkflowContext.java` |
+| `WorkflowDefinition` | immutable plan (nodes, edges, agents, schemas) | `.../model/WorkflowDefinition.java` |
+| `QocEngine.runPrompt` | step loop, Paused/Failed/WorkflowDone, retry policy | `engine/.../QocEngine.java` |
+| `WorkflowRunJournal` | replay from journal, snapshot, resume | `.../WorkflowRunJournal.java` |
 
-### 1.2 Was bereits vorhanden ist
+### 1.2 What already exists
 
-1. **Dynamischer Override:** `WorkflowContext.state("nextNode")` erlaubt `WorkflowStepProviderImpl`, die nächste Node zu überschreiben (State-Machine). Genutzt von `loop`, `guard`, `applyPostGuard`.
-2. **Circuit-Breaker:** `recordNodeExecution` + `maxNodeRepetitions` verhindert Endlos-Loops.
-3. **Output-Contracts:** `NodeContractValidator` + `validateOutputContract` (strict → Exception, non-strict → Warnung).
-4. **Resume:** Journal replay → `WorkflowContext.restore`, `loadDefinition` via version/hash.
+1. **Dynamic override:** `WorkflowContext.state("nextNode")` lets `WorkflowStepProviderImpl` override the next node (state machine). Used by `loop`, `guard`, `applyPostGuard`.
+2. **Circuit breaker:** `recordNodeExecution` + `maxNodeRepetitions` prevents infinite loops.
+3. **Output contracts:** `NodeContractValidator` + `validateOutputContract` (strict → exception, non-strict → warning).
+4. **Resume:** journal replay → `WorkflowContext.restore`, `loadDefinition` via version/hash.
 5. **Resilience:** `ErrorClassifier`, `RetryPolicy`, `TriageService` (LLM), `LoopDetector`, `WebhookAlerter`.
-6. **SubWorkflowExpander:** statische Expansion von Sub-Workflows vor dem Run.
-7. **Input-Schema:** `WorkflowDefinition.inputSchema()` wird beim Start validiert.
-8. **Child-Sessions:** Jede Agent-Node persistiert ihre Child-Session-ID im Journal (`WorkflowNodeCompleted.childSessionId`, `WorkflowRunSnapshot.nodeSessions`). Das ermöglicht Session-Requery als Reparaturstrategie.
+6. **SubWorkflowExpander:** static expansion of sub-workflows before the run.
+7. **Input schema:** `WorkflowDefinition.inputSchema()` is validated at start.
+8. **Child sessions:** every agent node persists its child session ID in the journal (`WorkflowNodeCompleted.childSessionId`, `WorkflowRunSnapshot.nodeSessions`). This enables session requery as a repair strategy.
 
-### 1.3 Lücke
+### 1.3 Gap
 
-- Ein Run arbeitet auf **einem** immutable Snapshot. Es gibt keinen Mechanismus, während des Runs einen abgeleiteten Plan zu erzeugen, zu validieren und darauf umzuschalten.
-- Bei Node-Failure propagiert `WorkflowStepProviderImpl` `StepResult.Failed` → `QocEngine` retry-t dieselbe Node bis `maxAttempts`, dann Run-Abbruch. Es gibt kein plan-level Recovery.
-- "Input-Requirement fehlt" wird erst beim Dispatch erkannt (strict Template-Resolution wirft `UnresolvedPlaceholderException` → Failed). Keine Preflight-Prüfung, keine alternative Route.
-- Der `nextNode`-Override ist ein flaches Signal, kein stack- bzw. graph-basiertes Konstrukt; Wiedereintritt in den Originalplan ist nur manuell möglich.
-- Resume lädt die ursprüngliche Definition; ein zur Laufzeit angepasster Plan wäre nach Neustart verloren.
-
----
-
-## 2. Ziel & Invarianten
-
-**Ziel:** Ein Workflow hat einen Originalplan (immutable, versioniert). Im Fehlerfall übernimmt ein Supervisor, erzeugt einen **abgeleiteten Plan** für die nächsten Schritte und führt den Run zurück auf den Originalplan (Rejoin). Der Originalplan wird nie mutiert.
-
-**Invarianten (hard):**
-
-1. `I-RPA-1` Originalplan-Immutabilität: `basePlanVersion` ändert sich nie; abgeleitete Pläne sind neue Versionen mit Lineage.
-2. `I-RPA-2` Determinismus: Navigation bleibt deterministisch; Supervisor-Entscheidungen werden als Events journaled und sind replaybar.
-3. `I-RPA-3` Boundedness: jede Adaptation hat ein Budget (max. Nodes, Steps, Tokens, Zeit); Überschreitung → Abbruch/Eskalation.
-4. `I-RPA-4` No silent skip: ein erforderliches Input-Requirement darf nicht stillschweigend zu `null` werden (strict).
-5. `I-RPA-5` Completed-node protection: bereits abgeschlossene Nodes dürfen nicht neu definiert oder übersprungen werden.
-6. `I-RPA-6` Rejoin-Pflicht: jeder Adaptationsplan muss einen definierten Rejoin-Anker enthalten; ohne Rejoin wird nicht ausgeführt.
-7. `I-RPA-7` Idempotenz: Resume nach Crash führt den zuletzt akzeptierten Plan fort (kein Zurückfallen auf ältere Version).
-8. `I-RPA-8` Validierung vor Ausführung: abgeleitete Pläne durchlaufen denselben `GraphCompiler` wie Originalpläne.
-9. `I-RPA-9` Blast-Radius vor Reparatur: vor jeder Reparatur wird der betroffene Downstream-Bereich (statische Abhängigkeitsanalyse) berechnet und journaled; eine Reparatur ohne Blast-Radius-Berechnung wird abgelehnt.
-10. `I-RPA-10` Kein stilles Auto-Replay side-effecting Nodes: Nodes mit Seiteneffekten (mcp_call, rest_call, agent mit Tools) werden nur dann automatisch re-ausgeführt, wenn Idempotenz oder Kompensation deklariert ist; sonst HITL.
+- A run operates on **one** immutable snapshot. There is no mechanism to derive a plan during the run, validate it, and switch to it.
+- On node failure, `WorkflowStepProviderImpl` propagates `StepResult.Failed` → `QocEngine` retries the same node up to `maxAttempts`, then aborts the run. There is no plan-level recovery.
+- "Input requirement missing" is detected only at dispatch (strict template resolution throws `UnresolvedPlaceholderException` → Failed). No preflight check, no alternative route.
+- The `nextNode` override is a flat signal, not a stack- or graph-based construct; re-entering the original plan is only possible manually.
+- Resume loads the original definition; a plan adapted at runtime would be lost after a restart.
 
 ---
 
-## 3. Kernabstraktionen
+## 2. Goal & Invariants
+
+**Goal:** A workflow has an original plan (immutable, versioned). On failure, a supervisor takes over, produces a **derived plan** for the next steps, and runs the run back to the original plan (rejoin). The original plan is never mutated.
+
+**Invariants (hard):**
+
+1. `I-RPA-1` Original-plan immutability: `basePlanVersion` never changes; derived plans are new versions with lineage.
+2. `I-RPA-2` Determinism: navigation remains deterministic; supervisor decisions are journaled as events and are replayable.
+3. `I-RPA-3` Boundedness: every adaptation has a budget (max. nodes, steps, tokens, time); exceeding it → abort/escalation.
+4. `I-RPA-4` No silent skip: a required input requirement must not silently become `null` (strict).
+5. `I-RPA-5` Completed-node protection: already completed nodes must not be redefined or skipped.
+6. `I-RPA-6` Rejoin obligation: every adaptation plan must contain a defined rejoin anchor; without a rejoin it is not executed.
+7. `I-RPA-7` Idempotency: resume after a crash continues the last accepted plan (no fallback to an older version).
+8. `I-RPA-8` Validation before execution: derived plans pass through the same `GraphCompiler` as original plans.
+9. `I-RPA-9` Blast radius before repair: before every repair, the affected downstream area (static dependency analysis) is computed and journaled; a repair without blast-radius computation is rejected.
+10. `I-RPA-10` No silent auto-replay of side-effecting nodes: nodes with side effects (mcp_call, rest_call, agent with tools) are only re-executed automatically when idempotency or compensation is declared; otherwise HITL.
+
+---
+
+## 3. Core Abstractions
 
 ### 3.1 Plan & Lineage
 
@@ -68,30 +68,30 @@
 public record PlanRef(
     String planId,          // = workflowId
     String version,         // "1.0.0", "1.0.0+adapt-3"
-    String parentVersion,   // null für Base
+    String parentVersion,   // null for Base
     PlanKind kind,          // BASE | ADAPTED
-    String rejoinAnchor,    // Node-ID, an der zurückgekehrt wird (null bei BASE)
+    String rejoinAnchor,    // Node ID to return to (null for BASE)
     Instant createdAt
 ) {}
 
 public enum PlanKind { BASE, ADAPTED }
 ```
 
-- `WorkflowDefinition` bleibt unverändert; die Versionierung liegt im `PlanRef` + Journal.
-- Ein Adapted Plan ist eine **Kopie** der Base-Definition plus Insertions/Patches, validiert durch `GraphCompiler`. Die Base bleibt referenzierbar.
-- Lineage wird im Journal als `PlanVersionChanged`-Event festgehalten.
+- `WorkflowDefinition` remains unchanged; versioning lives in `PlanRef` + journal.
+- An adapted plan is a **copy** of the base definition plus insertions/patches, validated by `GraphCompiler`. The base remains referenceable.
+- Lineage is recorded in the journal as a `PlanVersionChanged` event.
 
-### 3.2 Requirement-Modell
+### 3.2 Requirement Model
 
 ```java
 public record InputRequirement(
-    String id,              // z.B. "req:nodeX:customer.id"
+    String id,              // e.g. "req:nodeX:customer.id"
     String consumerNodeId,
     String ref,             // "${state.customer.id}", "initial.id", "upstream.output.id"
     RequirementKind kind,    // NODE_OUTPUT | STATE | INITIAL | LAST_RESULT | ARTIFACT
     boolean required,
-    String expectedType,    // optional JSON-Schema-Typ
-    String producerNodeId   // optional: Node, die das liefern sollte
+    String expectedType,    // optional JSON-Schema type
+    String producerNodeId   // optional: node that should provide it
 ) {}
 
 public enum RequirementKind { NODE_OUTPUT, STATE, INITIAL, LAST_RESULT, ARTIFACT }
@@ -99,23 +99,23 @@ public enum RequirementKind { NODE_OUTPUT, STATE, INITIAL, LAST_RESULT, ARTIFACT
 public record RequirementGap(
     InputRequirement requirement,
     GapReason reason,
-    GapSeverity severity,    // ERROR (required) | INFO (optional, nicht an Supervisor)
-    String evidence          // z.B. "node 'fetch-customer' not executed in this branch"
+    GapSeverity severity,    // ERROR (required) | INFO (optional, not sent to supervisor)
+    String evidence          // e.g. "node 'fetch-customer' not executed in this branch"
 ) {}
 
 public enum GapSeverity { ERROR, INFO }
 
 public enum GapReason {
-    PRODUCER_NOT_EXECUTED,   // Producer existiert, aber nicht im Pfad
-    OUTPUT_MISSING,          // Producer lief, aber kein Output
-    FIELD_MISSING,           // Output vorhanden, Feld fehlt
-    TYPE_MISMATCH,           // Feld vorhanden, Typ falsch
-    CONTRACT_VIOLATION,      // Output-Contract verletzt
-    UNKNOWN_REFERENCE        // Ref zeigt auf nicht existierende Node
+    PRODUCER_NOT_EXECUTED,   // producer exists but not on the path
+    OUTPUT_MISSING,          // producer ran but produced no output
+    FIELD_MISSING,           // output present but field missing
+    TYPE_MISMATCH,           // field present but wrong type
+    CONTRACT_VIOLATION,      // output contract violated
+    UNKNOWN_REFERENCE        // ref points to a non-existent node
 }
 ```
 
-### 3.3 Adaptationsplan
+### 3.3 Adaptation Plan
 
 ```java
 public sealed interface PlanChange permits
@@ -129,16 +129,16 @@ public record RemoveEdge(String edgeId) implements PlanChange {}
 public record SkipNode(String nodeId, String reason) implements PlanChange {}
 public record Rejoin(String anchorNodeId) implements PlanChange {}
 public record RequerySession(
-    String producerNodeId,       // Node, deren Session nachgefragt wird
-    String childSessionId,      // persistierte Child-Session-ID
-    String followupPrompt,      // Nachfrage-Prompt
-    String targetRequirementId, // welches Requirement damit befriedigt wird
-    String resultKey            // unter welchem Key das Folge-Ergebnis gespeichert wird
+    String producerNodeId,       // node whose session is re-queried
+    String childSessionId,      // persisted child session ID
+    String followupPrompt,      // follow-up prompt
+    String targetRequirementId, // which requirement this satisfies
+    String resultKey            // under which key the follow-up result is stored
 ) implements PlanChange {}
 public record ReplayFrom(
-    String originNodeId,        // erste Node, die den fehlenden Wert transitiv konsumiert hat
-    List<String> nodeIds,       // zu invalidierende/re-auszuführende Nodes (topologisch sortiert)
-    String reason               // z.B. "stale downstream output after filling X"
+    String originNodeId,        // first node that transitively consumed the missing value
+    List<String> nodeIds,       // nodes to invalidate/re-execute (topologically sorted)
+    String reason               // e.g. "stale downstream output after filling X"
 ) implements PlanChange {}
 
 public record AdaptationPlan(
@@ -146,7 +146,7 @@ public record AdaptationPlan(
     String triggerEvent,     // NodeFailed | RequirementGap | ContractViolation | ...
     String baseVersion,
     List<PlanChange> changes,
-    String rejoinAnchor,     // Pflicht (I-RPA-6)
+    String rejoinAnchor,     // required (I-RPA-6)
     AdaptationBudget budget,
     String rationale,
     AdaptationSource source  // RULE | LLM_TRIAGE | HUMAN
@@ -165,9 +165,9 @@ public record AdaptationBudget(
 ```java
 public interface WorkflowSupervisor {
     /**
-     * Liefert einen Adaptationsplan oder "no adaptation" (Optional.empty()).
-     * Muss deterministisch/validierbar sein; LLM-Vorschläge werden als
-     * AdaptationPlan normalisiert und dann validiert.
+     * Returns an adaptation plan or "no adaptation" (Optional.empty()).
+     * Must be deterministic/validatable; LLM suggestions are normalized
+     * into an AdaptationPlan and then validated.
      */
     Optional<AdaptationPlan> propose(AdaptationContext ctx);
 }
@@ -188,16 +188,16 @@ public record AdaptationContext(
 ) {}
 ```
 
-Implementierungen:
-- `RuleBasedSupervisor`: deterministische Regeln (z. B. "Requirement fehlt → Producer-Node nachholen, falls vorhanden").
-- `LlmSupervisor`: nutzt `TriageService`-ähnlichen Aufruf, liefert JSON-`AdaptationPlan`.
-- `HumanSupervisor`: pausiert den Run (HITL) und wartet auf manuellen Plan.
+Implementations:
+- `RuleBasedSupervisor`: deterministic rules (e.g. "requirement missing → re-run the producer node if it exists").
+- `LlmSupervisor`: uses a `TriageService`-style call, returns a JSON `AdaptationPlan`.
+- `HumanSupervisor`: pauses the run (HITL) and waits for a manual plan.
 
 ### 3.5 Runtime Plan Container
 
 ```java
 public final class RuntimePlan {
-    private final WorkflowDefinition definition;   // aktuell aktiver Plan
+    private final WorkflowDefinition definition;   // currently active plan
     private final PlanRef ref;
     private final Set<String> injectedNodeIds;
     private final Set<String> patchedNodeIds;
@@ -208,103 +208,103 @@ public final class RuntimePlan {
 }
 ```
 
-`WorkflowStepProviderImpl` hält statt nur `def` ein `RuntimePlan` (initial Base). Navigation nutzt `runtimePlan.definition()`. Adaptation tauscht den `RuntimePlan` atomar (volatile + Claim-Schutz).
+`WorkflowStepProviderImpl` holds a `RuntimePlan` instead of just `def` (initially Base). Navigation uses `runtimePlan.definition()`. Adaptation swaps the `RuntimePlan` atomically (volatile + claim protection).
 
 ---
 
-## 4. Runtime-Flow
+## 4. Runtime Flow
 
-### 4.1 Normalpfad (unverändert)
+### 4.1 Normal path (unchanged)
 
 ```
 getNextNodeId(basePlan, ctx) → dispatch node → success → setCurrentNodeId → ...
 ```
 
-### 4.2 Preflight vor Dispatch (neu)
+### 4.2 Preflight before dispatch (new)
 
-Vor `dispatcher.dispatch(node, ...)` prüft `WorkflowStepProviderImpl`:
+Before `dispatcher.dispatch(node, ...)`, `WorkflowStepProviderImpl` checks:
 
 1. `RequirementChecker.check(node, def, ctx)` → `List<RequirementGap>`.
-2. Wenn keine Gaps → dispatch wie bisher.
-3. Wenn Gaps und Node ist `required`:
-   - `AdaptationContext` bauen.
-   - `supervisor.propose(ctx)` aufrufen.
-   - Falls Plan vorhanden und valid → Adaptation anwenden → `nextNode` auf ersten eingefügten Node setzen (oder Rejoin, falls nichts einzufügen) → journaln → weiter.
-   - Falls kein Plan / invalid → `StepResult.Failed` (mit Gap-Details) → Engine-Retry/Eskalation.
-4. Wenn Gaps und Node ist `optional` (non-required): markiere `state("degraded:<node>") = gaps`, dispatch trotzdem (legacy-Passthrough, aber geloggt).
+2. If no gaps → dispatch as before.
+3. If gaps and the node is `required`:
+   - Build `AdaptationContext`.
+   - Call `supervisor.propose(ctx)`.
+   - If a plan exists and is valid → apply the adaptation → set `nextNode` to the first inserted node (or rejoin if nothing to insert) → journal → continue.
+   - If no plan / invalid → `StepResult.Failed` (with gap details) → engine retry/escalation.
+4. If gaps and the node is `optional` (non-required): mark `state("degraded:<node>") = gaps`, dispatch anyway (legacy passthrough, but logged).
 
-### 4.3 Anwendung einer Adaptation
+### 4.3 Applying an adaptation
 
 ```
 apply(plan):
-  1. Validierung (GraphCompiler + Invarianten I-RPA-3/5/6/8)
-  2. Neuen RuntimePlan bauen (derived version)
+  1. Validation (GraphCompiler + invariants I-RPA-3/5/6/8)
+  2. Build new RuntimePlan (derived version)
   3. Journal: PlanVersionChanged(base→derived), AdaptationApplied(adaptationId, changes)
-  4. ctx.state("nextNode") = firstInsertedNode (oder rejoinAnchor)
+  4. ctx.state("nextNode") = firstInsertedNode (or rejoinAnchor)
   5. ctx.state("_activeAdaptation") = adaptationId
   6. ctx.state("_adaptationBudget") = remaining
 ```
 
-Navigation in der Adaptation nutzt die derived Definition. Nach Erreichen des `rejoinAnchor`:
-- `ctx.state("nextNode")` wird auf `null` gesetzt (normaler Pfad).
+Navigation within the adaptation uses the derived definition. After reaching the `rejoinAnchor`:
+- `ctx.state("nextNode")` is set to `null` (normal path).
 - Journal: `AdaptationRejoined(adaptationId, anchorNodeId)`.
-- `_activeAdaptation` wird entfernt.
-- Weiter auf Originalplan ab Anker.
+- `_activeAdaptation` is removed.
+- Continue on the original plan from the anchor.
 
-### 4.4 Rückkehr zum Originalplan
+### 4.4 Return to the original plan
 
-Der Rejoin-Anker ist eine Node-ID, die in **beiden** Plänen existiert (Completed-node protection). Beim Erreichen:
-- `currentPlanVersion` wird im Journal als "rejoined" markiert.
-- `RuntimePlan` wird auf die Base-Version zurückgesetzt (oder bleibt derived, aber ohne aktive Adaptation; derived Definition behält die Base-Nodes, daher ist der Pfad identisch). Empfehlung: RuntimePlan bleibt derived (für Audit), aber `_activeAdaptation=null`; Navigation nutzt weiter die derived Definition, die Base als Subgraph enthält. Das vereinfacht Resume.
+The rejoin anchor is a node ID that exists in **both** plans (completed-node protection). On reaching it:
+- `currentPlanVersion` is marked "rejoined" in the journal.
+- `RuntimePlan` is reset to the base version (or stays derived but without an active adaptation; since the derived definition contains the base nodes, the path is identical). Recommendation: keep `RuntimePlan` derived (for audit), but `_activeAdaptation=null`; navigation continues to use the derived definition, which contains the base as a subgraph. This simplifies resume.
 
-### 4.5 Budget & Abbruch
+### 4.5 Budget & abort
 
-- Jede Adaptation zählt gegen `adaptationCountSoFar`. Max. `MAX_ADAPTATIONS_PER_RUN` (z. B. 5).
-- Budget-Überschreitung → `StepResult.Failed` mit `FailureKind` + Webhook/HITL.
-- Circuit-Breaker (`maxNodeRepetitions`) bleibt aktiv; Adaptationen dürfen ihn nicht umgehen.
+- Every adaptation counts against `adaptationCountSoFar`. Max. `MAX_ADAPTATIONS_PER_RUN` (e.g. 5).
+- Budget exceeded → `StepResult.Failed` with `FailureKind` + webhook/HITL.
+- Circuit breaker (`maxNodeRepetitions`) stays active; adaptations must not bypass it.
 
 ---
 
-## 5. Erster Slice: "Input-Requirement fehlt"
+## 5. First Slice: "Input Requirement Missing"
 
-### 5.0 Requiredness: wann ist ein fehlender Wert ein Gap?
+### 5.0 Requiredness: when is a missing value a gap?
 
-**Grundsatz:** Nicht jeder `null`-Wert ist ein Fehler. Viele Inputs sind optional, und `null` ist ein legitimes Ergebnis. Der Supervisor darf nur bei **explizit erforderlichen** Inputs eingreifen, sonst erzeugt er Rauschen und unnötige Reparaturen.
+**Principle:** Not every `null` value is an error. Many inputs are optional, and `null` is a legitimate result. The supervisor may only intervene for **explicitly required** inputs, otherwise it creates noise and unnecessary repairs.
 
-**Regeln:**
+**Rules:**
 
-1. **Default = optional.** `InputRequirement.required` ist standardmäßig `false`. Ein fehlender optionaler Wert erzeugt **keinen** Gap, sondern wird als `null` durchgereicht (mit `debug`-Log).
-2. **Explizite Deklaration hat Vorrang.** `NodeData.inputRequirements` kann `required: true/false` pro Ref setzen. Nur `required=true` wird zum Gap.
-3. **Suffix-Konvention in Templates:** `${node.output.field!}` (mit `!`) markiert ein Feld als required; ohne `!` ist es optional. Analog für `contextRefs`: `"node.field!"`.
-4. **Schema-basierte Ableitung (optional):** Wenn ein Upstream-Node einen `outputContract` mit `required: [...]` deklariert und der Downstream genau dieses Feld konsumiert, wird es als required behandelt. Ohne Output-Contract → optional.
-5. **Node-Level-Strictness:** `NodeData.strict == true` macht **alle** referenzierten Inputs des Nodes required (analog zum bestehenden strict-Verhalten bei Output-Contracts). Non-strict (Default) → optional.
-6. **Severity:** Ein required Gap ist `ERROR` (blockiert Dispatch); ein optional fehlender Wert ist `INFO` (Dispatch läuft, Wert ist `null`).
+1. **Default = optional.** `InputRequirement.required` is `false` by default. A missing optional value produces **no** gap; it is passed through as `null` (with a `debug` log).
+2. **Explicit declaration takes precedence.** `NodeData.inputRequirements` can set `required: true/false` per ref. Only `required=true` becomes a gap.
+3. **Suffix convention in templates:** `${node.output.field!}` (with `!`) marks a field as required; without `!` it is optional. Analogously for `contextRefs`: `"node.field!"`.
+4. **Schema-based derivation (optional):** if an upstream node declares an `outputContract` with `required: [...]` and the downstream consumes exactly that field, it is treated as required. Without an output contract → optional.
+5. **Node-level strictness:** `NodeData.strict == true` makes **all** referenced inputs of the node required (analogous to the existing strict behavior for output contracts). Non-strict (default) → optional.
+6. **Severity:** a required gap is `ERROR` (blocks dispatch); an optionally missing value is `INFO` (dispatch proceeds, value is `null`).
 
-**Konsequenz für RequirementChecker:**
+**Consequence for RequirementChecker:**
 
 ```java
 for (InputRequirement r : requirements) {
     if (!r.required()) {
         if (!isSatisfied(r, ctx)) log.debug("optional input missing: {}", r.ref());
-        continue; // kein Gap
+        continue; // no gap
     }
     if (!isSatisfied(r, ctx)) gaps.add(new RequirementGap(r, ..., GapSeverity.ERROR));
 }
 ```
 
-Optional fehlende Werte werden **nicht** an den Supervisor übergeben.
+Optionally missing values are **not** passed to the supervisor.
 
-### 5.1 Ausgangssituation
+### 5.1 Starting situation
 
-Node `analyze-order` hat Prompt:
+Node `analyze-order` has prompt:
 ```
 Analysiere Bestellung ${order-fetch.output.orderId} ...
 ```
-oder `contextRefs: ["order-fetch.orderId"]`.
+or `contextRefs: ["order-fetch.orderId"]`.
 
-`order-fetch` wurde in einem anderen Branch nicht ausgeführt (z. B. Bedingung `status=='VIP'` war false) → Output fehlt → strict Template-Resolution wirft `UnresolvedPlaceholderException` → Node failed.
+`order-fetch` was not executed in another branch (e.g. condition `status=='VIP'` was false) → output missing → strict template resolution throws `UnresolvedPlaceholderException` → node failed.
 
-### 5.2 Erkennung (RequirementChecker)
+### 5.2 Detection (RequirementChecker)
 
 ```java
 public final class RequirementChecker {
@@ -312,13 +312,13 @@ public final class RequirementChecker {
                                             WorkflowDefinition def,
                                             WorkflowContext ctx) {
         List<RequirementGap> gaps = new ArrayList<>();
-        // 1. Explizite Requirements (neues Feld NodeData.inputRequirements)
+        // 1. Explicit requirements (new field NodeData.inputRequirements)
         for (InputRequirement r : node.data().inputRequirements()) {
             if (!isSatisfied(r, ctx)) gaps.add(new RequirementGap(r, reason(r, ctx), evidence(r, ctx)));
         }
-        // 2. Implizite: Template-Placeholders in title/defaultTarget/mcpArgs
+        // 2. Implicit: template placeholders in title/defaultTarget/mcpArgs
         for (String ref : extractRefs(node)) {
-            // ... wie oben, mit required=true
+            // ... as above, with required=true
         }
         // 3. contextRefs
         for (String cr : node.data().contextRefs()) {
@@ -329,32 +329,32 @@ public final class RequirementChecker {
 }
 ```
 
-### 5.3 Supervisor-Strategien (regelbasiert, in dieser Reihenfolge)
+### 5.3 Supervisor strategies (rule-based, in this order)
 
-0. **Session-Requery (neu, bevorzugt):** Wenn ein Producer-Node existiert **und** eine persistierte Child-Session-ID für ihn vorliegt (`WorkflowRunSnapshot.nodeSessions` / Metadaten im Kontext), und der Gap `FIELD_MISSING`, `OUTPUT_MISSING`, `CONTRACT_VIOLATION` oder `TYPE_MISMATCH` ist:
-   - Der Supervisor erzeugt einen `RequerySession`-Change: die bestehende Child-Session wird mit einem Nachfrage-Prompt wiederaufgenommen (z. B. *"Deine vorherige Ausgabe war: … . Es fehlt Feld X. Bitte liefere X als JSON."*).
-   - Das Folge-Ergebnis wird unter `resultKey` (z. B. `producerNodeId + ".followup"`) abgelegt; die blockierte Node wird darauf umverdrahtet (`contextRefs`/Template auf `resultKey`).
-   - **Vorteile:** kein Neustart des Producers, Kontext (Reasoning) bleibt erhalten, minimaler Token-Verbrauch, keine Graph-Mutation.
-   - **Einschränkung:** nur sinnvoll, wenn die Child-Session noch resumable ist und der Producer-Agent den Wert liefern kann; bei `PRODUCER_NOT_EXECUTED` (Producer nie gelaufen) nicht anwendbar → Fallback auf Strategie 1.
-   - **Journal:** `SessionFollowupRequested`, `SessionFollowupCompleted` (mit Child-Session-ID und Tokens).
+0. **Session requery (new, preferred):** if a producer node exists **and** a persisted child session ID for it is available (`WorkflowRunSnapshot.nodeSessions` / metadata in context), and the gap is `FIELD_MISSING`, `OUTPUT_MISSING`, `CONTRACT_VIOLATION`, or `TYPE_MISMATCH`:
+   - The supervisor produces a `RequerySession` change: the existing child session is resumed with a follow-up prompt (e.g. *"Your previous output was: … . Field X is missing. Please provide X as JSON."*).
+   - The follow-up result is stored under `resultKey` (e.g. `producerNodeId + ".followup"`); the blocked node is rewired to it (`contextRefs`/template on `resultKey`).
+   - **Advantages:** no restart of the producer, context (reasoning) is preserved, minimal token consumption, no graph mutation.
+   - **Limitation:** only sensible when the child session is still resumable and the producer agent can deliver the value; for `PRODUCER_NOT_EXECUTED` (producer never ran) not applicable → fallback to strategy 1.
+   - **Journal:** `SessionFollowupRequested`, `SessionFollowupCompleted` (with child session ID and tokens).
 
-1. **Producer nachholen (Reroute):** Wenn `producerNodeId` bekannt und in der Definition vorhanden, aber nicht in `completedNodeIds`:
-   - Adaptationsplan: `InsertEdge`? Nein — stattdessen `ctx.state("nextNode") = producerNodeId`, und nach dessen Erfolg zurück zur blockierten Node. Implementiert als Mini-Plan mit zwei virtuellen "Guard"-Nodes? Einfacher: Supervisor setzt `nextNode = producerNodeId` und merkt `state("_pendingNode") = blockedNodeId`. `WorkflowStepProviderImpl` prüft `_pendingNode` nach Abschluss einer Node: wenn gesetzt und Node == producer → `nextNode = _pendingNode`, `_pendingNode = null`. Das nutzt den vorhandenen Override-Mechanismus, keine Graph-Mutation.
-   - Vorteil: minimaler Eingriff, kein neuer Plan nötig.
-   - Nachteil: nur linear; keine komplexen Reparaturen.
+1. **Re-run producer (reroute):** if `producerNodeId` is known and present in the definition, but not in `completedNodeIds`:
+   - Adaptation plan: `InsertEdge`? No — instead `ctx.state("nextNode") = producerNodeId`, and after its success back to the blocked node. Implemented as a mini-plan with two virtual "guard" nodes? Simpler: the supervisor sets `nextNode = producerNodeId` and records `state("_pendingNode") = blockedNodeId`. `WorkflowStepProviderImpl` checks `_pendingNode` after a node completes: if set and node == producer → `nextNode = _pendingNode`, `_pendingNode = null`. This uses the existing override mechanism, no graph mutation.
+   - Advantage: minimal intervention, no new plan needed.
+   - Disadvantage: only linear; no complex repairs.
 
-2. **Adapted Plan (InsertNode):** Wenn kein Producer existiert, aber ein MCP-Tool/Agent den Wert liefern kann:
-   - Supervisor erzeugt einen `fetch-*`-Node (z. B. `mcp_call` oder `agent`) und fügt ihn vor der blockierten Node ein. Rejoin-Anker = blockierte Node.
-   - Validierung durch GraphCompiler.
+2. **Adapted plan (InsertNode):** if no producer exists but an MCP tool/agent can deliver the value:
+   - The supervisor produces a `fetch-*` node (e.g. `mcp_call` or `agent`) and inserts it before the blocked node. Rejoin anchor = blocked node.
+   - Validation by `GraphCompiler`.
 
-3. **Node anpassen (PatchNode):** Wenn das Requirement optional gemacht werden kann:
-   - Prompt so ändern, dass die fehlende Information explizit als "nicht verfügbar" behandelt wird (z. B. `"... (falls orderId fehlt, frage nach)"`).
-   - Oder `contextRefs` auf verfügbare Quellen umstellen.
-   - Nur erlaubt, wenn `required=false` oder Supervisor klassifiziert als `DEGRADABLE`.
+3. **Adjust node (PatchNode):** if the requirement can be made optional:
+   - Change the prompt so the missing information is explicitly treated as "not available" (e.g. `"... (if orderId is missing, ask)"`).
+   - Or rewire `contextRefs` to available sources.
+   - Only allowed when `required=false` or the supervisor classifies as `DEGRADABLE`.
 
-4. **HITL (HumanSupervisor):** Wenn keine automatische Reparatur möglich oder Budget erschöpft → `NodeResult.paused(approvalId, ...)` mit Diagnose; Resume nach menschlicher Eingabe.
+4. **HITL (HumanSupervisor):** if no automatic repair is possible or the budget is exhausted → `NodeResult.paused(approvalId, ...)` with diagnostics; resume after human input.
 
-### 5.4 Beispiel-Adaptationsplan (Reroute + InsertNode)
+### 5.4 Example adaptation plan (reroute + InsertNode)
 
 ```json
 {
@@ -367,47 +367,47 @@ public final class RequirementChecker {
   ],
   "rejoinAnchor": "analyze-order",
   "budget": { "maxInsertedNodes": 1, "maxAdditionalSteps": 3, "maxAdditionalTokens": 4000, "maxAdditionalTime": "PT2M" },
-  "rationale": "order-fetch wurde im VIP-Branch übersprungen; nachträglich ausführen",
+  "rationale": "order-fetch was skipped in the VIP branch; run it afterwards",
   "source": "RULE"
 }
 ```
 
 ---
 
-### 5.5 Divergenz, Blast Radius und deterministische Reparatur
+### 5.5 Divergence, Blast Radius, and Deterministic Repair
 
-**Problem:** Fehlende Daten müssen nicht an der Stelle auftreten, an der sie erzeugt werden. Ein Feld, das 5 Schritte früher fehlte, kann in den Zwischenschritten zu divergierenden Ergebnissen geführt haben. Ein bloßes "Feld nachfüllen" an der Quelle lässt diese Divergenz bestehen.
+**Problem:** Missing data need not occur where it is produced. A field that was missing 5 steps earlier may have led to diverging results in the intermediate steps. Simply "filling in the field" at the source leaves that divergence in place.
 
-**Deterministische Vorarbeit (kein LLM):**
+**Deterministic preparatory work (no LLM):**
 
-1. **Statische Abhängigkeitsanalyse (Compile-Zeit):** Für jede Node wird berechnet, welche Upstream-Felder sie konsumiert (aus Templates `${...}`, `contextRefs`, `mcpArgs`). Ergebnis: `DependencyGraph` (consumer → set of (producer, field)).
-   - Implementierung: statische Auswertung analog `TemplateResolver.findProblems` / `ContextRefResolver.findProblems`, persistiert im Plan-Snapshot.
-2. **Blast-Radius-Berechnung (Laufzeit):** Wenn an Node `F` ein Gap für `(producer P, field X)` erkannt wird, ist der Blast Radius = alle Nodes, die transitiv von `(P, X)` abhängen und bereits ausgeführt wurden (topologisch sortiert, P eingeschlossen). Dies ist deterministisch.
-3. **Reparatur-Modus (Policy, deterministisch aus Metadaten):**
-   - `PATCH_ONLY`: Wenn keine Downstream-Node das fehlende Feld tatsächlich konsumiert hat (Blast Radius = {P}), reicht das Nachfüllen an P. Downstream bleibt unverändert.
-   - `REPLAY_FROM(origin)`: Wenn Downstream-Nodes das Feld konsumiert haben, werden alle Nodes im Blast Radius (außer P, dessen Output gepatcht wird) invalidiert und in topologischer Reihenfolge neu ausgeführt (`ReplayFrom`-Change). Origin = erste Downstream-Node, die das Feld konsumiert.
-   - `COMPENSATE_AND_REPLAY`: Wenn Nodes im Blast Radius Seiteneffekte haben und nicht idempotent sind, werden zuerst ihre Kompensationen ausgeführt (SAGA, `docs/engineering/SAGA.md`), dann Replay.
-   - `ESCALATE`: Wenn Kompensation nicht deklariert oder Budget erschöpft → HITL.
+1. **Static dependency analysis (compile time):** for each node, compute which upstream fields it consumes (from templates `${...}`, `contextRefs`, `mcpArgs`). Result: `DependencyGraph` (consumer → set of (producer, field)).
+   - Implementation: static evaluation analogous to `TemplateResolver.findProblems` / `ContextRefResolver.findProblems`, persisted in the plan snapshot.
+2. **Blast-radius computation (runtime):** when a gap for `(producer P, field X)` is detected at node `F`, the blast radius = all nodes that transitively depend on `(P, X)` and have already executed (topologically sorted, including P). This is deterministic.
+3. **Repair mode (policy, deterministic from metadata):**
+   - `PATCH_ONLY`: if no downstream node actually consumed the missing field (blast radius = {P}), filling it in at P suffices. Downstream remains unchanged.
+   - `REPLAY_FROM(origin)`: if downstream nodes consumed the field, all nodes in the blast radius (except P, whose output is patched) are invalidated and re-executed in topological order (`ReplayFrom` change). Origin = first downstream node that consumed the field.
+   - `COMPENSATE_AND_REPLAY`: if nodes in the blast radius have side effects and are not idempotent, their compensations are executed first (SAGA, `docs/engineering/SAGA.md`), then replay.
+   - `ESCALATE`: if compensation is not declared or the budget is exhausted → HITL.
 
-**Determinismus der Reparatur:**
+**Determinism of the repair:**
 
-- Gap-Erkennung, Blast-Radius und Moduswahl sind deterministisch (kein LLM).
-- Die *Inhalte* eines Session-Requery oder InsertNode sind LLM-generiert, aber der *Schritt* (welche Node, welcher Prompt-Template, welcher Output-Contract) ist durch den Adaptationsplan festgelegt und validiert.
-- Re-Execution-Reihenfolge ist topologisch deterministisch.
-- Journaling macht jeden Schritt replaybar: Original-Completion-Events bleiben; Re-Execution erzeugt `NodeInvalidated` + `NodeReexecuted`-Events mit neuem Output. Resume nutzt den letzten Output pro Node.
+- Gap detection, blast radius, and mode selection are deterministic (no LLM).
+- The *contents* of a session requery or InsertNode are LLM-generated, but the *step* (which node, which prompt template, which output contract) is fixed by the adaptation plan and validated.
+- Re-execution order is topologically deterministic.
+- Journaling makes every step replayable: original completion events remain; re-execution produces `NodeInvalidated` + `NodeReexecuted` events with the new output. Resume uses the latest output per node.
 
-**Idempotenz/Side-Effects:**
+**Idempotency / side effects:**
 
-- `NodeData` erhält optional `idempotencyKey` (Template, z. B. `${node.output.id}`) und `compensation` (Agent/Prompt oder MCP-Tool).
-- Der Supervisor prüft vor Auto-Replay: `idempotent || compensation != null`; sonst `ESCALATE`.
-- Reine Nodes (`llm_eval`, `llm_summarize`, `decision`, `compact`) sind standardmäßig idempotent.
+- `NodeData` optionally gains `idempotencyKey` (template, e.g. `${node.output.id}`) and `compensation` (agent/prompt or MCP tool).
+- The supervisor checks before auto-replay: `idempotent || compensation != null`; otherwise `ESCALATE`.
+- Pure nodes (`llm_eval`, `llm_summarize`, `decision`, `compact`) are idempotent by default.
 
-**Konsistenz nach Reparatur:**
+**Consistency after repair:**
 
-- Nach `REPLAY_FROM` wird der Rejoin-Anker auf die letzte Node des Blast Radius gesetzt, nicht auf die ursprünglich blockierte Node, damit keine stale Downstream-Outputs stehen bleiben.
-- Der Originalplan bleibt unverändert; die derived Version enthält die invalidierten/re-ausgeführten Nodes als neue Execution-Generation (markiert via `executionGeneration` in `WorkflowContext`).
+- After `REPLAY_FROM`, the rejoin anchor is set to the last node of the blast radius, not the originally blocked node, so that no stale downstream outputs remain.
+- The original plan remains unchanged; the derived version contains the invalidated/re-executed nodes as a new execution generation (marked via `executionGeneration` in `WorkflowContext`).
 
-## 6. Journal-Events (neu)
+## 6. Journal Events (new)
 
 ```java
 sealed interface SessionEvent permits ...,
@@ -438,100 +438,100 @@ record NodeReexecuted(SessionId session, String runId, String adaptationId,
                      String nodeId, Object newOutput, int executionGeneration, Instant time) {}
 ```
 
-Resume nutzt die letzte `PlanVersionChanged`-Version; ohne solche Events → Base-Version (kompatibel).
+Resume uses the last `PlanVersionChanged` version; without such events → base version (compatible).
 
 ---
 
-## 7. Validierung & Safety-Gates
+## 7. Validation & Safety Gates
 
-Vor Anwendung eines `AdaptationPlan`:
+Before applying an `AdaptationPlan`:
 
-1. `GraphCompiler.validate(derivedDefinition)` (Syntax, DAG, Invarianten).
-2. `PlanValidator` (neu) prüft:
-   - `rejoinAnchor` existiert in Base und Derived.
-   - Keine completed Node mutiert/entfernt.
-   - `maxInsertedNodes`/`budget` eingehalten.
-   - Keine Zyklen durch Insertions.
-   - Keine neuen Agent-Refs ohne RBAC-Prüfung (`agentAllowed`).
-   - Keine neuen MCP-Server/Tools ohne Allowlist.
-3. Bei Fehler → `AdaptationAbandoned` + `StepResult.Failed` (kein teilweiser Apply).
+1. `GraphCompiler.validate(derivedDefinition)` (syntax, DAG, invariants).
+2. `PlanValidator` (new) checks:
+   - `rejoinAnchor` exists in both base and derived.
+   - No completed node mutated/removed.
+   - `maxInsertedNodes`/budget respected.
+   - No cycles introduced by insertions.
+   - No new agent refs without RBAC check (`agentAllowed`).
+   - No new MCP servers/tools without allowlist.
+3. On failure → `AdaptationAbandoned` + `StepResult.Failed` (no partial apply).
 
 ---
 
 ## 8. Resume & Replay
 
-- `WorkflowRunJournal.load` liest zusätzlich die letzte aktive Plan-Version und `_activeAdaptation`.
-- `WorkflowExecutor.resume` lädt die derived Definition (`store.version`/`findByHash` wie heute) — funktioniert, weil Adaptationen als neue Versionen gesnapshot-tet werden.
-- `WorkflowContext.restore` wird um `_activeAdaptation`, `_pendingNode`, `_adaptationBudget` erweitert (analog `_nodeExecutionCounts`).
+- `WorkflowRunJournal.load` additionally reads the last active plan version and `_activeAdaptation`.
+- `WorkflowExecutor.resume` loads the derived definition (`store.version`/`findByHash` as today) — works because adaptations are snapshotted as new versions.
+- `WorkflowContext.restore` is extended with `_activeAdaptation`, `_pendingNode`, `_adaptationBudget` (analogous to `_nodeExecutionCounts`).
 
 ---
 
-## 9. Verhältnis zu Engine-Resilience
+## 9. Relation to Engine Resilience
 
-| Ebene | Zuständig für | Mechanismus |
+| Level | Responsible for | Mechanism |
 |---|---|---|
-| Engine (`QocEngine`) | transiente Provider-Fehler, Timeouts, Loops | RetryPolicy, ErrorClassifier |
-| Workflow-Supervisor | plan-level Fehler, fehlende Inputs, Vertragsverletzungen | AdaptationPlan, Rejoin |
+| Engine (`QocEngine`) | transient provider errors, timeouts, loops | RetryPolicy, ErrorClassifier |
+| Workflow supervisor | plan-level errors, missing inputs, contract violations | AdaptationPlan, Rejoin |
 
-Integration: `WorkflowStepProviderImpl` fängt Node-Failure ab. Wenn `ErrorClassifier` den Fehler als `CORRECTABLE` einstuft und der Supervisor einen Plan liefert → Adaptation statt Engine-Retry. Sonst → `StepResult.Failed` → Engine-Retry wie bisher. Nach Erschöpfung der Engine-Retries → Supervisor-Eskalation (HITL/Webhook).
+Integration: `WorkflowStepProviderImpl` catches node failures. If `ErrorClassifier` classifies the error as `CORRECTABLE` and the supervisor returns a plan → adaptation instead of engine retry. Otherwise → `StepResult.Failed` → engine retry as before. After engine retries are exhausted → supervisor escalation (HITL/webhook).
 
 ---
 
 ## 10. API & UI
 
-- `WorkflowExecution` erhält `planVersion`, `adaptationCount`, `lastAdaptationId`.
-- HTTP: `GET /run/{id}/plan` (aktuelle + Base-Version + Lineage), `POST /run/{id}/adapt` (manueller Adaptationsplan, nur mit Approval).
-- UI: Badge "Adapted (n)" am Run; Diff-View Base vs. Derived; Rejoin-Marker.
+- `WorkflowExecution` gains `planVersion`, `adaptationCount`, `lastAdaptationId`.
+- HTTP: `GET /run/{id}/plan` (current + base version + lineage), `POST /run/{id}/adapt` (manual adaptation plan, approval required).
+- UI: "Adapted (n)" badge on the run; diff view base vs. derived; rejoin marker.
 
 ---
 
-## 11. Testplan (erster Slice)
+## 11. Test Plan (first slice)
 
-1. `RequirementCheckerTest`: fehlender Producer, fehlendes Feld, Typ-Mismatch, Contract-Violation.
-2. `DependencyGraphTest`: statische Extraktion von konsumierten Feldern; transitive Blast-Radius-Berechnung.
-3. `SessionRequerySupervisorTest`: vorhandene Child-Session → Requery-Plan; kein Producer → Fallback.
-4. `RuleBasedSupervisorTest`: Reroute bei fehlendem Producer; InsertNode bei fehlendem MCP-Wert; HITL bei unbekanntem Ref.
-5. `PlanValidatorTest`: completed-node mutation abgelehnt; Zyklus abgelehnt; fehlender Rejoin abgelehnt.
-6. `WorkflowStepProviderImplAdaptationTest`: Preflight → Adaptation → Ausführung eingefügter Node → Rejoin → Fortsetzung Originalplan; Resume nach simuliertem Crash.
-7. `WorkflowRunJournalTest`: PlanVersionChanged/Adaptation*-Events replay → korrekter State.
-
----
-
-## 12. Phasen (Implementierung)
-
-- **Phase A (minimal, 2-3 Tage):** RequirementChecker + **Session-Requery** (bevorzugt, wenn Child-Session vorhanden) + Reroute-Fallback. Journal-Events für Gap, Requery, Reroute. Tests.
-- **Phase B:** `AdaptationPlan` + `RuntimePlan` + `PlanValidator` + InsertNode/PatchNode. Journal-Versionierung. Resume.
-- **Phase C:** LlmSupervisor via TriageService; HITL-Integration; UI/API.
-- **Phase D:** Budgets, Metriken, Hardening.
+1. `RequirementCheckerTest`: missing producer, missing field, type mismatch, contract violation.
+2. `DependencyGraphTest`: static extraction of consumed fields; transitive blast-radius computation.
+3. `SessionRequerySupervisorTest`: existing child session → requery plan; no producer → fallback.
+4. `RuleBasedSupervisorTest`: reroute on missing producer; InsertNode on missing MCP value; HITL on unknown ref.
+5. `PlanValidatorTest`: completed-node mutation rejected; cycle rejected; missing rejoin rejected.
+6. `WorkflowStepProviderImplAdaptationTest`: preflight → adaptation → execution of inserted node → rejoin → continuation of original plan; resume after simulated crash.
+7. `WorkflowRunJournalTest`: PlanVersionChanged/Adaptation* events replay → correct state.
 
 ---
 
-## 13. Nicht-Ziele (vorerst)
+## 12. Phases (implementation)
 
-- Keine Änderung des Originalplans zur Laufzeit (nur derived Versions).
-- Kein automatisches Löschen von Nodes.
-- Keine parallelen Adaptationen (seriell, claim-geschützt).
-- Keine UI-Editor-Mutation während des Runs (nur Read-View).
-
----
-
-## 14. Offene Entscheidungen
-
-1. Soll `inputRequirements` explizit in `NodeData` (neues Feld) oder rein implizit aus Templates abgeleitet werden? Empfehlung: beides, explizit hat Vorrang.
-2. Reroute vs. InsertNode als Default bei fehlendem Producer: Empfehlung Reroute (minimaler Eingriff).
-3. Wie viele Adaptationen pro Run? Empfehlung 5, konfigurierbar.
-4. Soll der LlmSupervisor denselben Provider wie der Run nutzen oder einen schnelleren? Empfehlung: schnellerer Triage-Provider (`ENGINE_TRIAGE_MODEL`).
+- **Phase A (minimal, 2-3 days):** RequirementChecker + **session requery** (preferred when a child session exists) + reroute fallback. Journal events for gap, requery, reroute. Tests.
+- **Phase B:** `AdaptationPlan` + `RuntimePlan` + `PlanValidator` + InsertNode/PatchNode. Journal versioning. Resume.
+- **Phase C:** LlmSupervisor via TriageService; HITL integration; UI/API.
+- **Phase D:** Budgets, metrics, hardening.
 
 ---
 
-## 15. Referenzen
+## 13. Non-Goals (for now)
 
-- `docs/engineering/ReAct-Workflow.md` (statische Navigation, Nachteil "starr")
-- `docs/resilience.md` (Phasen 0-4, Triage)
-- `docs/engineering/Task-Orchestration.md` (DAG, Tiers)
-- `docs/engineering/SAGA.md` (Kompensationen, Journal)
-- `docs/engineering/Workflow-SDLC.md` (Orchestrator als WorkflowDefinition)
+- No mutation of the original plan at runtime (only derived versions).
+- No automatic deletion of nodes.
+- No parallel adaptations (serial, claim-protected).
+- No UI editor mutation during a run (read-only view).
+
+---
+
+## 14. Open Decisions
+
+1. Should `inputRequirements` be explicit in `NodeData` (new field) or purely implicit, derived from templates? Recommendation: both, explicit takes precedence.
+2. Reroute vs. InsertNode as default when a producer is missing: recommendation reroute (minimal intervention).
+3. How many adaptations per run? Recommendation 5, configurable.
+4. Should the LlmSupervisor use the same provider as the run or a faster one? Recommendation: faster triage provider (`ENGINE_TRIAGE_MODEL`).
+
+---
+
+## 15. References
+
+- `docs/engineering/ReAct-Workflow.md` (static navigation, drawback "rigid")
+- `docs/resilience.md` (phases 0-4, triage)
+- `docs/engineering/Task-Orchestration.md` (DAG, tiers)
+- `docs/engineering/SAGA.md` (compensations, journal)
+- `docs/engineering/Workflow-SDLC.md` (orchestrator as WorkflowDefinition)
 - `engine/runtime/resilience/*` (ErrorClassifier, TriageService, RetryPolicy)
-- `workflow-runner/runner/WorkflowStepProviderImpl.java` (`nextNode`-Override, Circuit-Breaker)
+- `workflow-runner/runner/WorkflowStepProviderImpl.java` (`nextNode` override, circuit breaker)
 - `workflow-runner/runner/DefaultNodeDispatcher.java` (`validateOutputContract`, strict)
-- `workflow-runner/runner/TemplateResolver.java` (strict Resolution)
+- `workflow-runner/runner/TemplateResolver.java` (strict resolution)

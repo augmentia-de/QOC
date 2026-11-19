@@ -16,7 +16,7 @@ flowchart TB
     Nginx["nginx :80<br/>Reverse Proxy"]:::ext
     Auth["TLS only at nginx<br/>OAuth 2.1 + PKCE + Bearer for MCP"]:::ext
     Systemd["systemd<br/>qoc.service"]:::det
-    Binary["/opt/qoc/qoc-runner<br/>Native-Binary"]:::ext
+    Binary["/opt/qoc/qoc-runner<br/>Native binary"]:::ext
     Env["/etc/qoc/env<br/>OPENCODE_SERVER_PASSWORD"]:::ext
     Db[("Neon PostgreSQL<br/>(JDBC)")]:::store
     Workspace[("/data/workspace")]:::store
@@ -72,12 +72,12 @@ flowchart TB
 
 ### Serverless Rules
 
-- Scale-to-Zero: keine Kosten bei Inaktivität.
-- Agent-Cache flüchtig (ohne persistenten Speicher).
-- Shell-Sandbox deaktiviert (keine User Namespaces).
-- Concurrency = 1 (Sessions/Event-Feed prozesslokal).
-- Agent-Authoring deaktiviert (`ENGINE_AGENT_AUTHORING_ENABLED=false`).
-- Agenten werden vom Server (GCP VM) geladen (OIDC-geschützt).
+- Scale-to-Zero: no cost during inactivity.
+- Agent cache is ephemeral (without persistent storage).
+- Shell sandbox disabled (no user namespaces).
+- Concurrency = 1 (sessions/event feed are process-local).
+- Agent authoring disabled (`ENGINE_AGENT_AUTHORING_ENABLED=false`).
+- Agents are loaded from the server (GCP VM) (OIDC-protected).
 
 ## Native rules
 
@@ -116,8 +116,8 @@ updated and the services reloaded.
 
 - `qoc/deploy/Dockerfile`
 - `qoc/deploy/Dockerfile.native`
-- `qoc/deploy/docker-compose.yml` (alle Varianten als Profil-Services)
-- `qoc/deploy/seccomp-qoc-shell.json` (Shell-Isolation)
+- `qoc/deploy/docker-compose.yml` (all variants as profile services)
+- `qoc/deploy/seccomp-qoc-shell.json` (Shell isolation)
 - `qoc/deploy/AGENTS.jvm.md`
 - `qoc/deploy/AGENTS.native.md`
 - `qoc/deploy/gcp-vm/vm.md` (gitignored, local operations doc)

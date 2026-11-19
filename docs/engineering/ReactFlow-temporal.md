@@ -1,45 +1,45 @@
-# ReactFlow + QOC Engine — Plan & Analyse
+# ReactFlow + QOC Engine — Plan & Analysis
 
-**Status:** Draft (2026-11-10) · Ziel: React-UI mit ReactFlow-Graph-Editor + QOC Engine als Backend
+**Status:** Draft (2026-11-10) · Goal: React UI with ReactFlow graph editor + QOC Engine as backend
 
 ---
 
-## 1. Ziel
+## 1. Goal
 
-Eine neue React-basierte UI mit ReactFlow als Graph-Editor, die QOC Engine (nicht agentflow-app/quad-core) als Backend nutzt. Workflows werden im ReactFlow-Format (Nodes + Edges) definiert und ausgeführt. Agent-Konfiguration erfolgt über ein integriertes Property Window im Graph-Editor.
+A new React-based UI with ReactFlow as the graph editor, using the QOC Engine (not agentflow-app/quad-core) as the backend. Workflows are defined and executed in the ReactFlow format (Nodes + Edges). Agent configuration is performed via an integrated property window inside the graph editor.
 
 ---
 
 ## 2. Motivation
 
-| Aspekt | Aktuell (Angular + agentflow-app) | Ziel (React + QOC Engine) |
+| Aspect | Current (Angular + agentflow-app) | Target (React + QOC Engine) |
 |--------|-----------------------------------|---------------------------|
-| UI-Framework | Angular 20 | React 19 |
-| Graph-Editor | Custom SVG (~700 Zeilen) | ReactFlow (@xyflow/react) |
-| Backend | agentflow-app (Spring Boot + quad-core) | Temporal-Modul (plain Java + QOC Engine) |
-| Agent-Runtime | quad-core (reif, 289 Tests) | QOC Engine (früh, runPrompt = Platzhalter) |
-| Storage | In-Memory (quad-core) | Memory/SQLite/Postgres per Port (QOC) |
-| Workflow-Format | v2 (dependsOn-Arrays) | ReactFlow (Nodes + Edges) |
+| UI framework | Angular 20 | React 19 |
+| Graph editor | Custom SVG (~700 lines) | ReactFlow (@xyflow/react) |
+| Backend | agentflow-app (Spring Boot + quad-core) | Temporal module (plain Java + QOC Engine) |
+| Agent runtime | quad-core (mature, 289 tests) | QOC Engine (early stage, runPrompt = placeholder) |
+| Storage | In-memory (quad-core) | Memory/SQLite/Postgres per port (QOC) |
+| Workflow format | v2 (dependsOn arrays) | ReactFlow (Nodes + Edges) |
 
 ---
 
-## 3. Ist ein "Property Window für Agent-Config" in agentflow enthalten?
+## 3. Is a "property window for agent config" included in agentflow?
 
-**Teilweise.** agentflow hat zwei getrennte Ansichten:
+**Partially.** agentflow has two separate views:
 
-| Aspekt | agentflow (Angular) | Gewünscht (React) |
+| Aspect | agentflow (Angular) | Desired (React) |
 |--------|---------------------|-------------------|
-| Node-Properties im Graph-Editor | ✅ Side-Panel (ID, Title, Type, Dependencies, Agent-Ref, HITL-Assignee, Loop-Body, Branches, Join-Type) | ✅ Gleich, als ReactFlow-Side-Panel |
-| Agent-Config (Model, Temperature, SystemPrompt, Tools, Guardrails) | ❌ **Nicht** im Graph-Editor. Separate Seite `/agents` mit Formular | ✅ **Property Window** im Graph-Editor: Agent-Node auswählen → Agent-Config direkt bearbeiten |
-| Agent-Ref Dropdown | ✅ Im Graph-Editor | ✅ Gleich, plus Inline-Edit |
+| Node properties in the graph editor | ✅ Side panel (ID, Title, Type, Dependencies, Agent-Ref, HITL-Assignee, Loop-Body, Branches, Join-Type) | ✅ Same, as a ReactFlow side panel |
+| Agent config (Model, Temperature, SystemPrompt, Tools, Guardrails) | ❌ **Not** in the graph editor. Separate page `/agents` with a form | ✅ **Property window** in the graph editor: select an agent node → edit agent config directly |
+| Agent-Ref dropdown | ✅ In the graph editor | ✅ Same, plus inline editing |
 
-**Fazit:** agentflow hat Node-Properties im Graph-Editor, aber Agent-Config ist auf einer separaten Seite. Ein **integriertes Property Window** (Agent-Config direkt im Graph-Editor-Side-Panel) ist **neu** und nicht in agentflow enthalten.
+**Conclusion:** agentflow has node properties in the graph editor, but agent config lives on a separate page. An **integrated property window** (agent config directly in the graph editor side panel) is **new** and is not part of agentflow.
 
 ---
 
-## 4. ReactFlow-Format vs. agentflow v2-Format
+## 4. ReactFlow format vs. agentflow v2 format
 
-### 4.1 agentflow v2-Format (dependsOn-Arrays)
+### 4.1 agentflow v2 format (dependsOn arrays)
 
 ```json
 {
@@ -61,9 +61,9 @@ Eine neue React-basierte UI mit ReactFlow als Graph-Editor, die QOC Engine (nich
 }
 ```
 
-**Struktur:** Nodes haben `dependsOn: string[]` — implizite Edges. Keine expliziten Edge-Objekte.
+**Structure:** Nodes have `dependsOn: string[]` — implicit edges. No explicit edge objects.
 
-### 4.2 ReactFlow-Format (Nodes + Edges)
+### 4.2 ReactFlow format (Nodes + Edges)
 
 ```json
 {
@@ -84,9 +84,9 @@ Eine neue React-basierte UI mit ReactFlow als Graph-Editor, die QOC Engine (nich
 }
 ```
 
-**Struktur:** Explizite Nodes mit Position + Edges. ReactFlow-native.
+**Structure:** Explicit nodes with position + edges. ReactFlow-native.
 
-### 4.3 Konvertierung (ReactFlow ↔ v2)
+### 4.3 Conversion (ReactFlow ↔ v2)
 
 | ReactFlow | v2 (agentflow) |
 |-----------|----------------|
@@ -96,113 +96,113 @@ Eine neue React-basierte UI mit ReactFlow als Graph-Editor, die QOC Engine (nich
 | `node.data.agentRef` | `node.agent.ref` |
 | `node.data.requiresHumanApproval` | `node.requiresHumanApproval` |
 | `edges.filter(e => e.target === node.id).map(e => e.source)` | `node.dependsOn` |
-| `node.position` | (nicht in v2, aber in localStorage/DB) |
+| `node.position` | (not in v2, but in localStorage/DB) |
 
-**Empfehlung:** Intern ReactFlow-Format nutzen (für den Editor), für die Ausführung in v2-Format konvertieren (für den Backend). Oder: Backend direkt ReactFlow-Format akzeptieren.
+**Recommendation:** Use the ReactFlow format internally (for the editor), convert to v2 for execution (for the backend). Or: accept the ReactFlow format directly in the backend.
 
 ---
 
-## 5. Workflow-Ausführung basierend auf ReactFlow-Format
+## 5. Workflow execution based on the ReactFlow format
 
-### 5.1 Wie agentflow die Ausführung macht
+### 5.1 How agentflow executes
 
-agentflow nutzt **LangGraph4j** (Java) für die Ausführung. Der `DeclarativePlanner` flattet die v2-Definition in einen Graphen, und `DeclarativeAgentWorkflow` interpretiert ihn.
+agentflow uses **LangGraph4j** (Java) for execution. The `DeclarativePlanner` flattens the v2 definition into a graph, and `DeclarativeAgentWorkflow` interprets it.
 
-**Schritte:**
-1. `DeclarativePlanner.flatten()` — Sub-Workflows inline auflösen
-2. `DeclarativeAgentWorkflow.run()` — Node für Node ausführen
-3. Pro Node: Agent ausführen (LLM-Call), Branches auswerten, Loops handhaben, HITL warten
-4. Dependencies: `dependsOn` bestimmt die Reihenfolge
+**Steps:**
+1. `DeclarativePlanner.flatten()` — resolve sub-workflows inline
+2. `DeclarativeAgentWorkflow.run()` — execute node by node
+3. Per node: run the agent (LLM call), evaluate branches, handle loops, wait for HITL
+4. Dependencies: `dependsOn` determines the order
 
-### 5.2 Wie QOC Engine die Ausführung machen soll
+### 5.2 How the QOC Engine should execute
 
-QOC Engine hat einen `Coordinator` und `ExecutionRunner`, aber `runPrompt()` ist ein Platzhalter. Die Ausführung muss neu implementiert werden.
+The QOC Engine has a `Coordinator` and `ExecutionRunner`, but `runPrompt()` is a placeholder. The execution must be implemented from scratch.
 
-**Ansatz: ReactFlow-Graph → QOC Session Engine**
+**Approach: ReactFlow graph → QOC Session Engine**
 
 ```
 ReactFlow JSON (Nodes + Edges)
     ↓
-Konvertierung zu v2 (dependsOn aus Edges)
+Conversion to v2 (dependsOn from Edges)
     ↓
-DeclarativePlanner (aus agentflow lernen)
+DeclarativePlanner (learn from agentflow)
     ↓
 ExecutionRunner (QOC Coordinator)
     ↓
-Pro Node: QocEngine.runPrompt() (LLM-Call, wenn implementiert)
+Per node: QocEngine.runPrompt() (LLM call, once implemented)
 ```
 
-### 5.3 Was von agentflow gelernt werden kann
+### 5.3 What can be learned from agentflow
 
-| Komponente | agentflow | QOC (neu) | Aktion |
-|------------|-----------|-----------|--------|
-| DeclarativePlanner | `DeclarativePlanner.java` (flatten, alias) | Übernehmen | Portieren (pure Java) |
-| ConditionEvaluator | `ConditionEvaluator.java` (contains, equals, regex) | Übernehmen | Portieren (pure Java) |
-| Node-Runner | `DeclarativeAgentWorkflow.java` (LangGraph4j) | Neu | QOC Coordinator nutzen |
-| Agent-Execution | `AgentBuilder` + `Agent.execute()` | QOC `runPrompt()` | LLM in QOC wiren |
-| HITL | Temporal Signal `decide` | Bereits in HitlWorkflow | Wiederverwenden |
-| Sub-Workflows | Inline flatten | Übernehmen | Portieren |
+| Component | agentflow | QOC (new) | Action |
+|-----------|-----------|-----------|--------|
+| DeclarativePlanner | `DeclarativePlanner.java` (flatten, alias) | Adopt | Port (pure Java) |
+| ConditionEvaluator | `ConditionEvaluator.java` (contains, equals, regex) | Adopt | Port (pure Java) |
+| Node runner | `DeclarativeAgentWorkflow.java` (LangGraph4j) | New | Use QOC Coordinator |
+| Agent execution | `AgentBuilder` + `Agent.execute()` | QOC `runPrompt()` | Wire LLM into QOC |
+| HITL | Temporal Signal `decide` | Already in HitlWorkflow | Reuse |
+| Sub-workflows | Inline flatten | Adopt | Port |
 
-### 5.4 Was verschieden ist (QOC vs. quad-core)
+### 5.4 What differs (QOC vs. quad-core)
 
-| Aspekt | quad-core (agentflow) | QOC Engine | Konsequenz |
-|--------|----------------------|------------|------------|
-| Agent-Builder | `AgentBuilder` mit ModelFactory, Tools, Guardrails, Hooks | `AgentId` + Session (kein Builder) | Agent-Config muss in QOC als Session-Metadaten gespeichert werden |
-| LLM-Call | `Agent.execute()` / `executeStructured()` | `QocEngine.runPrompt()` (Platzhalter) | **Muss implementiert werden**: ContextBuilder + ProviderAdapter in QOC |
-| Tools | ToolRegistry + SseMcpProxy | ToolRuntime (separat) | ToolRuntime in QOC wiren |
-| Memory | PersistentMemoryStore + MemoryCategory | SessionStore + JournalStore | Memory-Adapter nutzen |
-| Provenance | ProvenanceTracker | (nicht vorhanden) | Optional: ProvenanceStore in QOC hinzufügen |
-| Guardrails | GuardrailPlugin + PiiAnonymizerHook + AuditTrailHook | PermissionEngine | PermissionEngine in QOC nutzen |
-| Storage | In-Memory (quad-core) | Memory/SQLite/Postgres per Port | QOC Storage-Backends nutzen |
+| Aspect | quad-core (agentflow) | QOC Engine | Consequence |
+|--------|----------------------|------------|-------------|
+| Agent builder | `AgentBuilder` with ModelFactory, Tools, Guardrails, Hooks | `AgentId` + Session (no builder) | Agent config must be stored as session metadata in QOC |
+| LLM call | `Agent.execute()` / `executeStructured()` | `QocEngine.runPrompt()` (placeholder) | **Must be implemented**: ContextBuilder + ProviderAdapter in QOC |
+| Tools | ToolRegistry + SseMcpProxy | ToolRuntime (separate) | Wire ToolRuntime into QOC |
+| Memory | PersistentMemoryStore + MemoryCategory | SessionStore + JournalStore | Use memory adapter |
+| Provenance | ProvenanceTracker | (not available) | Optional: add ProvenanceStore to QOC |
+| Guardrails | GuardrailPlugin + PiiAnonymizerHook + AuditTrailHook | PermissionEngine | Use PermissionEngine in QOC |
+| Storage | In-memory (quad-core) | Memory/SQLite/Postgres per port | Use QOC storage backends |
 
 ---
 
-## 6. Storage in Agentflow vs. QOC (In-Memory Mode)
+## 6. Storage in agentflow vs. QOC (in-memory mode)
 
-### 6.1 agentflow (quad-core) Storage
+### 6.1 agentflow (quad-core) storage
 
-agentflow nutzt quad-core, welches **In-Memory** speichert:
-- `PersistentMemoryStore` — In-Memory mit optionaler Persistenz (Datei/DB)
-- `CheckpointService` — In-Memory oder SQLite (via `CheckpointStore`)
-- Session-State — In-Memory
+agentflow uses quad-core, which stores **in-memory**:
+- `PersistentMemoryStore` — in-memory with optional persistence (file/DB)
+- `CheckpointService` — in-memory or SQLite (via `CheckpointStore`)
+- Session state — in-memory
 
-**Keine** konfigurierbaren Storage-Backends pro Port. Global In-Memory oder SQLite.
+**No** configurable storage backends per port. Global in-memory or SQLite.
 
-### 6.2 QOC Storage (per Port)
+### 6.2 QOC storage (per port)
 
-QOC hat **StorageFactory** + **Stores** + **StorageConfig**:
+QOC has **StorageFactory** + **Stores** + **StorageConfig**:
 
 ```java
-// Per-Port konfigurierbar
+// Per-port configurable
 StorageConfig config = new StorageConfig(StorageKind.MEMORY);
-// Oder: engine.storage.session-store=sqlite
-// Oder: engine.storage.journal-store=postgres
+// Or: engine.storage.session-store=sqlite
+// Or: engine.storage.journal-store=postgres
 ```
 
 **Ports:**
-- `SessionStore` — Session-Metadaten
-- `JournalStore` — Event-Journal
-- `ClaimStore` — Distributed Claims
-- `MemoryStore` — Agent-Memory
-- `CheckpointStore` — Graph-Checkpoints
-- `ProviderStore` — LLM-Provider-Config
-- `IntegrationStore` — Integrationen
+- `SessionStore` — session metadata
+- `JournalStore` — event journal
+- `ClaimStore` — distributed claims
+- `MemoryStore` — agent memory
+- `CheckpointStore` — graph checkpoints
+- `ProviderStore` — LLM provider config
+- `IntegrationStore` — integrations
 
-**Backends:** MEMORY, SQLITE, POSTGRES (per Port konfigurierbar)
+**Backends:** MEMORY, SQLITE, POSTGRES (configurable per port)
 
-### 6.3 Unterschiede
+### 6.3 Differences
 
-| Aspekt | agentflow (quad-core) | QOC Engine |
+| Aspect | agentflow (quad-core) | QOC Engine |
 |--------|----------------------|------------|
-| Storage-Granularität | Global (In-Memory oder SQLite) | Per-Port (Memory/SQLite/Postgres) |
-| Konfiguration | `agentflow.checkpoint.path` | `engine.storage.<port>=memory\|sqlite\|postgres` |
-| Adapter-Pattern | Keine (direkt In-Memory) | StorageFactory + Stores Record |
-| Skalierung | Single-Node | Multi-Node (Postgres) |
-| Persistenz | Optional (Datei) | Immer (wenn SQLite/Postgres) |
+| Storage granularity | Global (in-memory or SQLite) | Per port (Memory/SQLite/Postgres) |
+| Configuration | `agentflow.checkpoint.path` | `engine.storage.<port>=memory\|sqlite\|postgres` |
+| Adapter pattern | None (directly in-memory) | StorageFactory + Stores record |
+| Scaling | Single node | Multi-node (Postgres) |
+| Persistence | Optional (file) | Always (when SQLite/Postgres) |
 
-### 6.4 In-Memory Mode in QOC
+### 6.4 In-memory mode in QOC
 
-Für den Temporal-Modul (In-Memory) wird `StorageKind.MEMORY` genutzt:
+For the Temporal module (in-memory), `StorageKind.MEMORY` is used:
 
 ```java
 Stores stores = StorageFactory.create(StorageKind.MEMORY, memoryBudget);
@@ -210,15 +210,15 @@ StorageConfig config = new StorageConfig(StorageKind.MEMORY);
 QocEngine engine = QocEngine.create(stores, config, clock, false);
 ```
 
-**Konsequenz:** Daten sind nicht persistent. Temporal sorgt für Dauerhaftigkeit via Workflow-Replay. Storage-Backends sind für Session-State, nicht für Workflow-State.
+**Consequence:** Data is not persistent. Temporal provides durability via workflow replay. Storage backends are for session state, not workflow state.
 
 ---
 
-## 7. Agent-Config: Global vs. in AgentConfig definiert
+## 7. Agent config: global vs. defined in AgentConfig
 
-### 7.1 Wie agentflow Agent-Config handhabt
+### 7.1 How agentflow handles agent config
 
-In agentflow sind Agents in der Workflow-Definition als `agents[]` Array definiert:
+In agentflow, agents are defined in the workflow definition as an `agents[]` array:
 
 ```json
 {
@@ -242,28 +242,28 @@ In agentflow sind Agents in der Workflow-Definition als `agents[]` Array definie
 }
 ```
 
-**Agent-Config ist Teil der Workflow-Definition.** Jeder Workflow hat seine eigenen Agents. Keine globale Agent-Registry.
+**Agent config is part of the workflow definition.** Each workflow has its own agents. No global agent registry.
 
-### 7.2 Wie QOC Agent-Config handhaben soll
+### 7.2 How QOC should handle agent config
 
-In QOC gibt es **keine** Agent-Definitionen. QOC nutzt `AgentId` (UUID) und `SessionInfo`. Agent-Properties (Model, Temperature, etc.) sind nicht Teil der Session.
+In QOC there are **no** agent definitions. QOC uses `AgentId` (UUID) and `SessionInfo`. Agent properties (Model, Temperature, etc.) are not part of the session.
 
-**Optionen:**
+**Options:**
 
-| Option | Beschreibung | Empfehlung |
-|--------|-------------|------------|
-| **A: Agent-Config in Workflow-Definition** (wie agentflow) | Agents als Teil der Workflow-JSON, referenziert via `agent.ref` | ✅ Empfohlen (kompatibel mit agentflow) |
-| **B: Globale Agent-Registry** | Separate `/agents` Endpoint, Workflows referenzieren Agent-IDs | 🟡 Für wiederverwendbare Agents |
-| **C: Agent-Config in QOC Session** | Agent-Properties als Session-Metadaten | ❌ Session ist für Runtime-State, nicht Config |
+| Option | Description | Recommendation |
+|--------|-------------|----------------|
+| **A: Agent config in the workflow definition** (like agentflow) | Agents as part of the workflow JSON, referenced via `agent.ref` | ✅ Recommended (compatible with agentflow) |
+| **B: Global agent registry** | Separate `/agents` endpoint, workflows reference agent IDs | 🟡 For reusable agents |
+| **C: Agent config in QOC session** | Agent properties as session metadata | ❌ Session is for runtime state, not config |
 
-**Empfehlung: Option A** — Agent-Config in der Workflow-Definition (wie agentflow). Das ist kompatibel und bewährt. Optional zusätzlich Option B für eine globale Agent-Registry.
+**Recommendation: Option A** — agent config in the workflow definition (like agentflow). That is compatible and proven. Optionally add Option B for a global agent registry.
 
-### 7.3 Property Window für Agent-Config
+### 7.3 Property window for agent config
 
-Im ReactFlow-Graph-Editor, wenn ein Agent-Node ausgewählt ist:
+In the ReactFlow graph editor, when an agent node is selected:
 
 ```
-Property Panel (Side-Panel):
+Property Panel (side panel):
 ├── Node Properties
 │   ├── ID: classify
 │   ├── Type: agent
@@ -272,7 +272,7 @@ Property Panel (Side-Panel):
 │   ├── requiresHumanApproval: [checkbox]
 │   └── Dependencies: [checkboxes]
 │
-└── Agent Config (wenn Agent-Ref gewählt)
+└── Agent Config (when Agent-Ref is chosen)
     ├── Name: Support Classifier
     ├── Model: [dropdown: deepseek-v4.1-flash, gpt-4o, ...]
     ├── Temperature: [slider: 0.0 - 2.0]
@@ -286,20 +286,20 @@ Property Panel (Side-Panel):
     └── JSON Output: [checkbox]
 ```
 
-**Verhalten:**
-- Agent-Node auswählen → Property Panel zeigt Node-Properties + Agent-Config
-- Agent-Ref ändern → Agent-Config wird aus `agents[]` geladen
-- Agent-Config ändern → `agents[]` wird aktualisiert
-- "Save" → Workflow-Definition (mit Agents) wird gespeichert
+**Behavior:**
+- Select an agent node → property panel shows node properties + agent config
+- Change Agent-Ref → agent config is loaded from `agents[]`
+- Change agent config → `agents[]` is updated
+- "Save" → workflow definition (with agents) is saved
 
 ---
 
-## 8. React-Projekt-Plan
+## 8. React project plan
 
-### 8.1 Projekt-Struktur
+### 8.1 Project structure
 
 ```
-qoc/react-ui/                    # Neues React-Projekt
+qoc/react-ui/                    # New React project
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json
@@ -307,9 +307,9 @@ qoc/react-ui/                    # Neues React-Projekt
 │   ├── main.tsx
 │   ├── App.tsx
 │   ├── components/
-│   │   ├── GraphEditor.tsx      # ReactFlow-basiert
-│   │   ├── PropertyPanel.tsx    # Agent-Config Property Window
-│   │   ├── NodeTypes/           # Custom ReactFlow Node Components
+│   │   ├── GraphEditor.tsx      # ReactFlow-based
+│   │   ├── PropertyPanel.tsx    # Agent-config property window
+│   │   ├── NodeTypes/           # Custom ReactFlow node components
 │   │   │   ├── AgentNode.tsx
 │   │   │   ├── DecisionNode.tsx
 │   │   │   ├── LoopNode.tsx
@@ -335,16 +335,16 @@ qoc/react-ui/                    # Neues React-Projekt
 │   │   ├── Examples.tsx
 │   │   └── Settings.tsx
 │   ├── services/
-│   │   ├── api.ts               # REST-Client (fetch/axios)
-│   │   └── runStream.ts         # SSE-Streaming
+│   │   ├── api.ts               # REST client (fetch/axios)
+│   │   └── runStream.ts         # SSE streaming
 │   ├── store/
-│   │   └── useWorkflowStore.ts  # Zustand oder Jotai
+│   │   └── useWorkflowStore.ts  # Zustand or Jotai
 │   ├── types/
-│   │   ├── workflow.ts          # v2 + ReactFlow Types
-│   │   └── agent.ts             # Agent-Config Type
+│   │   ├── workflow.ts          # v2 + ReactFlow types
+│   │   └── agent.ts             # Agent-config type
 │   └── utils/
-│       ├── convert.ts           # ReactFlow ↔ v2 Konvertierung
-│       └── autoLayout.ts        # elkjs Integration
+│       ├── convert.ts           # ReactFlow ↔ v2 conversion
+│       └── autoLayout.ts        # elkjs integration
 ```
 
 ### 8.2 Dependencies
@@ -369,7 +369,7 @@ qoc/react-ui/                    # Neues React-Projekt
 }
 ```
 
-### 8.3 Property Window Design
+### 8.3 Property window design
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -397,77 +397,77 @@ qoc/react-ui/                    # Neues React-Projekt
 
 ---
 
-## 9. Implementierungs-Reihenfolge
+## 9. Implementation order
 
-### Phase 1: React-Projekt aufsetzen
+### Phase 1: Set up the React project
 1. Vite + React 19 + TypeScript
-2. ReactFlow (@xyflow/react) installieren
-3. Tailwind CSS konfigurieren
-4. Basis-Routing (react-router-dom)
-5. API-Client (axios) mit Proxy auf Temporal-Modul
+2. Install ReactFlow (@xyflow/react)
+3. Configure Tailwind CSS
+4. Basic routing (react-router-dom)
+5. API client (axios) with proxy to the Temporal module
 
-### Phase 2: Graph-Editor mit ReactFlow
-1. ReactFlow Canvas mit Custom Node Types
-2. Auto-Layout (elkjs)
-3. Drag & Drop, Click-to-Connect
-4. Node-CRUD (Add, Delete, Rename)
-5. Property Panel (Side-Panel) für Node-Properties
-6. **Property Window für Agent-Config** (Model, Temperature, SystemPrompt, Tools, Guardrails)
+### Phase 2: Graph editor with ReactFlow
+1. ReactFlow canvas with custom node types
+2. Auto-layout (elkjs)
+3. Drag & drop, click-to-connect
+4. Node CRUD (add, delete, rename)
+5. Property panel (side panel) for node properties
+6. **Property window for agent config** (Model, Temperature, SystemPrompt, Tools, Guardrails)
 
-### Phase 3: Konvertierung ReactFlow ↔ v2
-1. `convert.ts`: ReactFlow → v2 (Edges → dependsOn)
-2. `convert.ts`: v2 → ReactFlow (dependsOn → Edges)
-3. Position-Persistenz (localStorage + Backend)
+### Phase 3: Conversion ReactFlow ↔ v2
+1. `convert.ts`: ReactFlow → v2 (edges → dependsOn)
+2. `convert.ts`: v2 → ReactFlow (dependsOn → edges)
+3. Position persistence (localStorage + backend)
 
-### Phase 4: Backend-Erweiterung (Temporal-Modul)
-1. `POST /workflows/run` — ReactFlow-JSON akzeptieren
-2. `DeclarativePlanner` portieren (pure Java)
-3. `ConditionEvaluator` portieren (pure Java)
-4. `QocEngine.runPrompt()` implementieren (LLM-Call)
-5. Node-Runner mit QOC Coordinator
+### Phase 4: Backend extension (Temporal module)
+1. `POST /workflows/run` — accept ReactFlow JSON
+2. Port `DeclarativePlanner` (pure Java)
+3. Port `ConditionEvaluator` (pure Java)
+4. Implement `QocEngine.runPrompt()` (LLM call)
+5. Node runner with QOC Coordinator
 
-### Phase 5: Vollständige UI
-1. Alle 13 Seiten (Dashboard, Runs, Workflows, etc.)
-2. SSE-Streaming (RunStreamService)
-3. Settings, Observability, Testbench
-4. Examples (5 Business-Cases)
-
----
-
-## 10. Was von agentflow gelernt werden kann (konkret)
-
-| agentflow-Datei | Was lernen | Portieren nach |
-|-----------------|-----------|----------------|
-| `DeclarativePlanner.java` | Flatten von Sub-Workflows, Alias zu `end` | `temporal/.../planner/DeclarativePlanner.java` |
-| `ConditionEvaluator.java` | Condition-Auswertung (contains, equals, regex) | `temporal/.../evaluator/ConditionEvaluator.java` |
-| `DeclarativeAgentWorkflow.java` | Node-Interpretation (agent/decision/loop/fork/join/hitl/end) | `temporal/.../workflow/DeclarativeWorkflow.java` |
-| `graph-model.ts` (Angular) | Node-VM-Mapping, Auto-Layout | `react-ui/src/utils/convert.ts` |
-| `workflow-detail.ts` (Angular) | Graph-Editor-Integration, Save/Validate/Version | `react-ui/src/pages/WorkflowDetail.tsx` |
-| `agents.ts` (Angular) | Agent-Editor-Formular | `react-ui/src/components/PropertyPanel.tsx` |
-| `models.ts` (Angular) | Type-Definitionen | `react-ui/src/types/workflow.ts` |
+### Phase 5: Full UI
+1. All 13 pages (Dashboard, Runs, Workflows, etc.)
+2. SSE streaming (RunStreamService)
+3. Settings, observability, testbench
+4. Examples (5 business cases)
 
 ---
 
-## 11. Offene Fragen (muss noch geprüft werden)
+## 10. What can be learned concretely from agentflow
 
-1. **QOC Engine LLM-Wiring:** Wann wird `runPrompt()` implementiert? (ContextBuilder + ProviderAdapter in QOC Engine)
-2. **Agent-Config in QOC:** Wo werden Agent-Properties (Model, Temperature, SystemPrompt) gespeichert? In der Workflow-Definition (wie agentflow) oder in einem separaten Store?
-3. **Tool-Integration:** Wie werden Tools (MCP, built-in) in QOC Engine eingebunden? ToolRuntime existiert, aber ist nicht mit LLM-Call verkoppelt.
-4. **Guardrails:** Wie werden Guardrails (PII, SQL-Injection, etc.) in QOC Engine implementiert? PermissionEngine existiert, aber ist nicht mit Agent-Execution verkoppelt.
-5. **Provenance:** Braucht QOC Engine einen ProvenanceTracker? (Optional für v1, aber für Observability wichtig)
-6. **Storage in In-Memory Mode:** Temporal sorgt für Dauerhaftigkeit via Workflow-Replay. Aber Session-State (Memory, Checkpoints) ist in QOC in-memory und geht bei Neustart verloren. Ist das akzeptabel für v1?
-7. **ReactFlow ↔ v2 Konvertierung:** Soll das Backend ReactFlow-Format direkt akzeptieren, oder intern zu v2 konvertieren? (Empfehlung: Backend akzeptiert ReactFlow-Format, konvertiert intern)
-8. **Property Window Scope:** Soll das Property Window nur Agent-Config zeigen, oder auch Node-Properties (Dependencies, Branches, etc.)? (Empfehlung: Beides, getrennt in Tabs/Accordion)
+| agentflow file | What to learn | Port to |
+|-----------------|---------------|---------|
+| `DeclarativePlanner.java` | Flattening of sub-workflows, alias to `end` | `temporal/.../planner/DeclarativePlanner.java` |
+| `ConditionEvaluator.java` | Condition evaluation (contains, equals, regex) | `temporal/.../evaluator/ConditionEvaluator.java` |
+| `DeclarativeAgentWorkflow.java` | Node interpretation (agent/decision/loop/fork/join/hitl/end) | `temporal/.../workflow/DeclarativeWorkflow.java` |
+| `graph-model.ts` (Angular) | Node-VM mapping, auto-layout | `react-ui/src/utils/convert.ts` |
+| `workflow-detail.ts` (Angular) | Graph editor integration, save/validate/version | `react-ui/src/pages/WorkflowDetail.tsx` |
+| `agents.ts` (Angular) | Agent editor form | `react-ui/src/components/PropertyPanel.tsx` |
+| `models.ts` (Angular) | Type definitions | `react-ui/src/types/workflow.ts` |
 
 ---
 
-## 12. Referenzen
+## 11. Open questions (still to be checked)
 
-- agentflow UI-Design: `/home/torsten/dev/my-projects/agentflow-standalone/UI.md`
+1. **QOC Engine LLM wiring:** When will `runPrompt()` be implemented? (ContextBuilder + ProviderAdapter in the QOC Engine)
+2. **Agent config in QOC:** Where are agent properties (Model, Temperature, SystemPrompt) stored? In the workflow definition (like agentflow) or in a separate store?
+3. **Tool integration:** How are tools (MCP, built-in) integrated into the QOC Engine? ToolRuntime exists but is not coupled to the LLM call.
+4. **Guardrails:** How are guardrails (PII, SQL injection, etc.) implemented in the QOC Engine? PermissionEngine exists but is not coupled to agent execution.
+5. **Provenance:** Does the QOC Engine need a ProvenanceTracker? (Optional for v1, but important for observability)
+6. **Storage in in-memory mode:** Temporal provides durability via workflow replay. But session state (memory, checkpoints) is in-memory in QOC and is lost on restart. Is that acceptable for v1?
+7. **ReactFlow ↔ v2 conversion:** Should the backend accept the ReactFlow format directly, or convert internally to v2? (Recommendation: backend accepts the ReactFlow format and converts internally)
+8. **Property window scope:** Should the property window show only agent config, or also node properties (dependencies, branches, etc.)? (Recommendation: both, separated into tabs/accordion)
+
+---
+
+## 12. References
+
+- agentflow UI design: `/home/torsten/dev/my-projects/agentflow-standalone/UI.md`
 - agentflow Workflow-v2: `/home/torsten/dev/my-projects/agentflow-standalone/agentflow-app/src/main/resources/workflows/support-triage.json`
 - QOC Engine: `qoc/engine/src/main/java/de/augmentia/oc/engine/runtime/QocEngine.java`
-- Temporal-Modul: `qoc/temporal/src/main/java/de/augmentia/qoc/temporal/TemporalServer.java`
-- Temporal-Engine.md: `qoc/docs/engineering/Temporal-Engine.md` (§9: AgentFlow-Analyse, Ports)
+- Temporal module: `qoc/temporal/src/main/java/de/augmentia/qoc/temporal/TemporalServer.java`
+- Temporal-Engine.md: `qoc/docs/engineering/Temporal-Engine.md` (§9: AgentFlow analysis, ports)
 - Multi-Memory.md: `qoc/docs/engineering/Multi-Memory.md`
 - ReactFlow: https://reactflow.dev/
 - elkjs: https://github.com/kieler/elkjs

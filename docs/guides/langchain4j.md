@@ -1,9 +1,9 @@
 # LangChain4j in QOC
 
 > **Status:** 2026-10-31 · LangChain4j 1.19.3 (via Quarkus LangChain4j 1.13.3)
-> **Zusammengeführt aus:** `l4j-use.md` (Integration Guide) + `guides/langchain4j.md` (Ersatzpotenzial)
+> **Merged from:** `l4j-use.md` (Integration Guide) + `guides/langchain4j.md` (replacement potential)
 
-## Teil 1: Integration Guide
+## Part 1: Integration Guide
 
 # LangChain4j integration guide
 
@@ -154,7 +154,7 @@ Both implement `core.contract.provider.ProviderAdapter`:
 | Package | `engine.runtime` (pure Java) | `quarkus` (Quarkus) |
 | Transport | JDK `HttpClient` + manual SSE | `ChatModel` / `StreamingChatModel` |
 | Tool specs | manual JSON Schema | `ToolSpecification` (LC serializes) |
-| Tests | `ScriptedHttp` (rein Java) | mocked `ChatModel` |
+| Tests | `ScriptedHttp` (pure Java) | mocked `ChatModel` |
 | Use case | reference / fallback / pure-Java environments | production (less HTTP boilerplate) |
 
 Selection happens at wiring time (`EngineConfig`), by provider ID or config.
@@ -218,22 +218,23 @@ Mapping details:
   `dev.langchain4j.data.message.ToolExecutionResultMessage`
 - Quarkus: `io.quarkiverse.langchain4j:quarkus-langchain4j-openai` 1.13.3
   (LangChain4j 1.19.3)
-## Teil 2: Ersatzpotenzial und Abgrenzung
 
-# LangChain4j in QOC – Einsatz, Ersatzpotenzial und Abgrenzung
+## Part 2: Replacement potential and boundaries
+
+# LangChain4j in QOC – usage, replacement potential and boundaries
 
 > **Status:** 2026-10-31  
-> **Version:** LangChain4j 1.19.3 (via Quarkus LangChain4j), `decision-gate` nutzt 1.22.0  
-> **Zweck:** Wo LangChain4j die bestehende Implementierung ersetzen kann – von den
-> LLM-HTTP-Calls rückwärts – und was bewusst custom bleibt.
+> **Version:** LangChain4j 1.19.3 (via Quarkus LangChain4j), `decision-gate` uses 1.22.0  
+> **Purpose:** Where LangChain4j can replace the existing implementation – working
+> backwards from the LLM HTTP calls – and what deliberately stays custom.
 
 ---
 
-## 1. Ausgangslage
+## 1. Starting point
 
-QOC hat **LangChain4j 1.19.3 bereits auf dem Classpath**
-(`quarkus-langchain4j-openai`), nutzt es aber **nicht** für den Provider. Der
-produktive Pfad ist der eigene JDK-Adapter:
+QOC already has **LangChain4j 1.19.3 on the classpath**
+(`quarkus-langchain4j-openai`), but **does not** use it for the provider. The
+production path is the custom JDK adapter:
 
 ```
 Engine/Step → ProviderAdapter → HttpProviderAdapter
@@ -243,353 +244,340 @@ Engine/Step → ProviderAdapter → HttpProviderAdapter
   → ProviderErrorClassifier                  (HTTP → FailureKind)
 ```
 
-`langchain4j.md` beschreibt einen geplanten LC-Adapter; implementiert
-ist er nicht. Der `decision-gate`-Prototyp nutzt LC 1.22.0, QOC pinnt 1.19.3.
+`langchain4j.md` describes a planned LC adapter; it is not implemented. The
+`decision-gate` prototype uses LC 1.22.0, QOC pins 1.19.3.
 
 ---
 
-## 2. Schicht für Schicht – von den HTTP-Calls rückwärts
+## 2. Layer by layer – working backwards from the HTTP calls
 
-### 2.1 HTTP-Transport & SSE (unterste Schicht)
+### 2.1 HTTP transport & SSE (lowest layer)
 
-| Heute | Datei | LangChain4j |
+| Today | File | LangChain4j |
 |---|---|---|
-| JDK `HttpClient`, Header, Timeout | `engine/.../adapter/net/JdkHttpTransport.java` | `OpenAiStreamingChatModel` (eingebauter HTTP-Client) |
-| SSE-Frame-Parsing | `SseReader.java` (67 Z.) | intern |
-| Retry/Fehler-Stream | `HttpProviderAdapter.java` (155 Z.) | `httpClientBuilder`, `timeout`, `maxRetries` |
+| JDK `HttpClient`, Header, Timeout | `engine/.../adapter/net/JdkHttpTransport.java` | `OpenAiStreamingChatModel` (built-in HTTP client) |
+| SSE frame parsing | `SseReader.java` (67 lines) | internal |
+| Retry/error stream | `HttpProviderAdapter.java` (155 lines) | `httpClientBuilder`, `timeout`, `maxRetries` |
 
-**Ersetzbar:** ja, fast vollständig. `HttpProviderAdapter`, `SseReader` und der
-Großteil von `JdkHttpTransport` (~250–300 Zeilen) entfallen.
+**Replaceable:** yes, almost entirely. `HttpProviderAdapter`, `SseReader` and
+most of `JdkHttpTransport` (~250–300 lines) go away.
 
-**Was bleibt:** `StreamValidator` (Protokoll-Invarianten) und
-`ProviderErrorClassifier` (geschlossene `FailureKind`-Taxonomie).
+**What stays:** `StreamValidator` (protocol invariants) and
+`ProviderErrorClassifier` (closed `FailureKind` taxonomy).
 
-**Caveat:** LC bringt einen eigenen HTTP-Client mit; der bestehende
-`HttpTransport`-Port und `LlmTrace` werden umgangen. Über
-`ChatModelListener`/Custom-HTTP-Client lösen oder den Port als dünnen Wrapper
-behalten.
+**Caveat:** LC ships its own HTTP client; the existing `HttpTransport` port and
+`LlmTrace` are bypassed. Resolve via `ChatModelListener`/custom HTTP client, or
+keep the port as a thin wrapper.
 
-### 2.2 Request-Encoding
+### 2.2 Request encoding
 
-| Heute | Datei | LangChain4j |
+| Today | File | LangChain4j |
 |---|---|---|
-| OpenAI-JSON (messages, tools, tool_choice, response_format, max_tokens, temperature, stop) | `OpenAiRequestEncoder.java` (200 Z.) | `ChatRequest.builder()`, `ChatRequestParameters` |
-| JSON-Schema für Tools | `OpenAiSchema.java` (86 Z.) | `ToolSpecification` / `JsonObjectSchema` |
-| Strukturierte Ausgabe | `OpenAiRequestEncoder` + `SubmitResult` | `ResponseFormat` / `JsonSchema` |
-| Provider-Optionen/Header | `providerOptions`, `headers` | `customParameters`, `customHeaders` |
+| OpenAI JSON (messages, tools, tool_choice, response_format, max_tokens, temperature, stop) | `OpenAiRequestEncoder.java` (200 lines) | `ChatRequest.builder()`, `ChatRequestParameters` |
+| JSON schema for tools | `OpenAiSchema.java` (86 lines) | `ToolSpecification` / `JsonObjectSchema` |
+| Structured output | `OpenAiRequestEncoder` + `SubmitResult` | `ResponseFormat` / `JsonSchema` |
+| Provider options/headers | `providerOptions`, `headers` | `customParameters`, `customHeaders` |
 
-**Ersetzbar:** ja, hoher Gewinn (~286 Zeilen). **Was bleibt:** `cacheKey`/
-Cache-Affinität, `SubmitResult`-Validierung, Modellkatalog.
+**Replaceable:** yes, high gain (~286 lines). **What stays:** `cacheKey`/
+cache affinity, `SubmitResult` validation, model catalog.
 
-### 2.3 Response-/Event-Übersetzung
+### 2.3 Response/event translation
 
-| Heute | Datei | LangChain4j |
+| Today | File | LangChain4j |
 |---|---|---|
-| SSE-Chunks → `TextDelta`, `ReasoningDelta`, `ToolCallRequested`, `Finished` | `OpenAiEventTranslator.java` (205 Z.) | `StreamingChatResponseHandler` |
-| Tool-Input-Deltas | `ToolInputStarted/Delta/Ended` | `onPartialToolCall`, `onCompleteToolCall` |
+| SSE chunks → `TextDelta`, `ReasoningDelta`, `ToolCallRequested`, `Finished` | `OpenAiEventTranslator.java` (205 lines) | `StreamingChatResponseHandler` |
+| Tool input deltas | `ToolInputStarted/Delta/Ended` | `onPartialToolCall`, `onCompleteToolCall` |
 | Reasoning | `ReasoningDelta` | `onPartialThinking` |
-| Finish/Tokens | `Finished` | `ChatResponse.finishReason()`, `tokenUsage()` |
-| Protokoll-Validierung | `StreamValidator.java` (165 Z.) | keine Entsprechung |
+| Finish/tokens | `Finished` | `ChatResponse.finishReason()`, `tokenUsage()` |
+| Protocol validation | `StreamValidator.java` (165 lines) | no equivalent |
 
-**Ersetzbar:** teilweise. Die **Mapping-Schicht** (`ModelEvent`) bleibt, aber
-der SSE-Parser und die OpenAI-spezifische Chunk-Interpretation entfallen.
-`StreamValidator` bleibt (defensive Invarianten). `JsonEventTranslator`
-(204 Z.) bleibt für Tests/Scripted Provider.
+**Replaceable:** partially. The **mapping layer** (`ModelEvent`) stays, but the
+SSE parser and OpenAI-specific chunk interpretation go away. `StreamValidator`
+stays (defensive invariants). `JsonEventTranslator` (204 lines) stays for
+tests/scripted providers.
 
-### 2.4 Fehlerklassifikation & Retry
+### 2.4 Error classification & retry
 
-| Heute | Datei | LangChain4j |
+| Today | File | LangChain4j |
 |---|---|---|
-| HTTP-Status/Code → `FailureKind` | `ProviderErrorClassifier.java` (44 Z.) | `OpenAiException`-Hierarchie (`RateLimitException`, `AuthenticationException`, …) |
-| Retry | nicht implementiert | `maxRetries`, HTTP-Client-Retry |
+| HTTP status/code → `FailureKind` | `ProviderErrorClassifier.java` (44 lines) | `OpenAiException` hierarchy (`RateLimitException`, `AuthenticationException`, …) |
+| Retry | not implemented | `maxRetries`, HTTP client retry |
 
-**Ersetzbar:** teilweise. Die **geschlossene `FailureKind`-Taxonomie ist Spec**
-und sollte bleiben; LC-Exceptions werden darauf gemappt. Retry kann LC
-übernehmen, muss aber `Retry-After`-Cap/Spec berücksichtigen – sonst eigener
-Retry.
+**Replaceable:** partially. The **closed `FailureKind` taxonomy is spec** and
+should stay; LC exceptions are mapped onto it. Retry can be delegated to LC,
+but must respect the `Retry-After` cap/spec – otherwise keep a custom retry.
 
-### 2.5 Tool-Calling
+### 2.5 Tool calling
 
-| Heute | LangChain4j |
+| Today | LangChain4j |
 |---|---|
-| `ToolDefinition` → JSON-Schema | `ToolSpecification` |
-| `ToolCall` aus Response | `AiMessage.toolExecutionRequests()` |
-| Tool-Ergebnis | `ToolExecutionResultMessage` |
-| Tool-Ausführung | **`AiServices`/`@Tool` (verboten)** |
+| `ToolDefinition` → JSON schema | `ToolSpecification` |
+| `ToolCall` from response | `AiMessage.toolExecutionRequests()` |
+| Tool result | `ToolExecutionResultMessage` |
+| Tool execution | **`AiServices`/`@Tool` (forbidden)** |
 
-**Ersetzbar:** nur die **Serialisierung/Parsing**. Die Ausführung bleibt bei
-QOC: Permission-Gate, HITL/ASK, durable Event-Log vor Side-Effect,
-Snapshot-Freeze, Bounding.
+**Replaceable:** only **serialization/parsing**. Execution stays with QOC:
+permission gate, HITL/ASK, durable event log before side effect, snapshot
+freeze, bounding.
 
-### 2.6 Multi-Provider
+### 2.6 Multi-provider
 
-| Heute | LangChain4j |
+| Today | LangChain4j |
 |---|---|
-| Nur OpenAI-kompatibel (`engine.provider.url`) | OpenAI, Azure OpenAI, Anthropic, Gemini, Mistral, Ollama, Bedrock, … |
+| Only OpenAI-compatible (`engine.provider.url`) | OpenAI, Azure OpenAI, Anthropic, Gemini, Mistral, Ollama, Bedrock, … |
 
-**Neu, nicht Ersatz:** Das ist der größte funktionale Gewinn. Der
-`ProviderAdapter`-Port bleibt; pro Provider ein LC-`ChatModel`/
-`StreamingChatModel` im `quarkus`-Adapter. Konfiguration kann bei
-`engine.model.provider` bleiben und intern auf die passende LC-Modellklasse
-zeigen.
+**New, not a replacement:** This is the biggest functional gain. The
+`ProviderAdapter` port stays; one LC `ChatModel`/`StreamingChatModel` per
+provider in the `quarkus` adapter. Configuration can stay at
+`engine.model.provider` and internally point to the matching LC model class.
 
 ### 2.7 Observability
 
-| Heute | LangChain4j |
+| Today | LangChain4j |
 |---|---|
 | `RotatingLlmTrace`, `LlmTrace` | `ChatModelListener` (`onRequest`, `onResponse`, `onError`) |
-| OpenTelemetry manuell | Quarkus/LC-Metering |
+| OpenTelemetry manual | Quarkus/LC metering |
 
-**Ersetzbar:** ergänzend. Der rotierende Trace ist Betriebs-Spec; ein
-LC-Listener kann zusätzlich Metriken/OTel liefern. Kein harter Ersatz nötig.
+**Replaceable:** complementary. The rotating trace is an ops spec; an LC
+listener can additionally provide metrics/OTel. No hard replacement needed.
 
-### 2.8 Token-Schätzung / Kontextgröße
+### 2.8 Token estimation / context size
 
-| Heute | LangChain4j |
+| Today | LangChain4j |
 |---|---|
-| `ContextSize` (eigene Schätzung) | `TokenCountEstimator`, `OpenAiTokenCountEstimator` |
+| `ContextSize` (own estimation) | `TokenCountEstimator`, `OpenAiTokenCountEstimator` |
 
-**Optional:** genauere Schätzung, aber provider-spezifisch und zusätzliche
-Abhängigkeit. Kein Muss.
+**Optional:** more accurate estimation, but provider-specific and an extra
+dependency. Not required.
 
-### 2.9 Chat-Memory
+### 2.9 Chat memory
 
-| Heute | LangChain4j |
+| Today | LangChain4j |
 |---|---|
-| Durable Event-Log + `ConversationFolding` | `ChatMemory`, `MessageWindowChatMemory` |
+| Durable event log + `ConversationFolding` | `ChatMemory`, `MessageWindowChatMemory` |
 
-**Nicht ersetzen.** LC-Memory ist prozesslokal und nicht durable; es wäre eine
-zweite Wahrheit neben dem Event-Log.
+**Do not replace.** LC memory is process-local and not durable; it would be a
+second truth next to the event log.
 
-### 2.10 RAG / Embeddings / Vector Stores
+### 2.10 RAG / embeddings / vector stores
 
-LangChain4j bietet `EmbeddingModel`, `EmbeddingStore`, `ContentRetriever`,
-`RetrievalAugmentor` und viele Vector-Store-Adapter.
+LangChain4j offers `EmbeddingModel`, `EmbeddingStore`, `ContentRetriever`,
+`RetrievalAugmentor` and many vector-store adapters.
 
-**Neu, nicht Ersatz:** Könnte als zusätzliche Kontextquelle (Retrieval-Tool)
-eingebaut werden. Nicht Teil des Provider-Ersatzes.
+**New, not a replacement:** Could be added as an additional context source
+(retrieval tool). Not part of the provider replacement.
 
-### 2.11 Guardrails / Moderation
+### 2.11 Guardrails / moderation
 
-LangChain4j hat `InputGuardrail`/`OutputGuardrail` und `ModerationModel`.
+LangChain4j has `InputGuardrail`/`OutputGuardrail` and `ModerationModel`.
 
-**Ergänzend, nicht Ersatz:** QOC hat Permission-Gate und den externen
-Webhook-Guardrail. LC-Guardrails sind in-process und könnten PII/Moderation
-lokal ergänzen, aber nicht die externe Policy ersetzen.
+**Complementary, not a replacement:** QOC has the permission gate and the
+external webhook guardrail. LC guardrails are in-process and could complement
+PII/moderation locally, but cannot replace the external policy.
 
 ### 2.12 Agentic / AiServices
 
-LangChain4j bietet `AiServices`, `@Tool`, `@MemoryId` sowie
+LangChain4j offers `AiServices`, `@Tool`, `@MemoryId` as well as
 `langchain4j-agentic`, `-agentic-a2a`, `-agentic-mcp`.
 
-**Nicht für den Kern-Loop.** `AiServices` würde den Tool-Call sofort ausführen
-und Permission-Gate, HITL, durable Log und Snapshot umgehen. Für isolierte
-Hilfsagenten (Titel, Klassifikation) denkbar, nicht für `Step`/`ToolRuntime`.
+**Not for the core loop.** `AiServices` would execute the tool call immediately
+and bypass the permission gate, HITL, durable log and snapshot. Conceivable for
+isolated helper agents (title, classification), not for `Step`/`ToolRuntime`.
 
-### 2.13 Prompt-Templates
+### 2.13 Prompt templates
 
-`PromptTemplate`/Mustache – QOC hat spec-definierte Prompt-Komposition.
-**Nicht ersetzen.**
+`PromptTemplate`/Mustache – QOC has spec-defined prompt composition. **Do not
+replace.**
 
-### 2.14 Compaction / Summarization
+### 2.14 Compaction / summarization
 
-LC hat keinen direkten Compaction-Service. **Bleibt custom.**
+LC has no direct compaction service. **Stays custom.**
 
-### 2.15 Provider-Katalog / ModelInfo
+### 2.15 Provider catalog / ModelInfo
 
-LC hat keinen Modellkatalog (Kosten, Limits, Varianten). **Bleibt custom.**
+LC has no model catalog (cost, limits, variants). **Stays custom.**
 
 ---
 
-## 3. Was LangChain4j kann (Capability-Matrix)
+## 3. What LangChain4j can do (capability matrix)
 
-| Fähigkeit | LC 1.19.3 | Für QOC relevant |
+| Capability | LC 1.19.3 | Relevant for QOC |
 |---|---|---|
-| Chat + Streaming | ✅ | Ersatz HTTP/SSE |
-| Tool-Calling (Specs, Requests, Results) | ✅ | Ersatz Serialisierung |
-| Partial Tool Calls / Reasoning | ✅ | Live-Streaming |
-| Structured Output (JSON Schema) | ✅ | Request-Seite |
-| Multimodal (Text/Bild/Audio) | ✅ | Erweiterung |
-| Multi-Provider | ✅ | Großer Gewinn |
-| Retry/Timeout/Headers | ✅ | teilweise |
-| Chat Memory | ✅ | **nicht** verwenden |
-| RAG/Embeddings/Vector Stores | ✅ | neu |
-| Guardrails/Moderation | ✅ | ergänzend |
-| Observability Listener | ✅ | ergänzend |
-| Token-Estimator | ✅ | optional |
-| AiServices/Agentic | ✅ | **nicht** für Kern |
-| Quarkus CDI + Native | ✅ | bereits vorhanden |
+| Chat + streaming | ✅ | Replacement for HTTP/SSE |
+| Tool calling (specs, requests, results) | ✅ | Replacement for serialization |
+| Partial tool calls / reasoning | ✅ | Live streaming |
+| Structured output (JSON schema) | ✅ | Request side |
+| Multimodal (text/image/audio) | ✅ | Extension |
+| Multi-provider | ✅ | Big gain |
+| Retry/timeout/headers | ✅ | partial |
+| Chat memory | ✅ | **do not** use |
+| RAG/embeddings/vector stores | ✅ | new |
+| Guardrails/moderation | ✅ | complementary |
+| Observability listener | ✅ | complementary |
+| Token estimator | ✅ | optional |
+| AiServices/agentic | ✅ | **not** for core |
+| Quarkus CDI + native | ✅ | already present |
 
 ---
 
-## 4. Empfohlene Reihenfolge
+## 4. Recommended order
 
-1. **LC-ProviderAdapter hinter dem bestehenden Port** (OpenAI zuerst)
-   - `ProviderProducer` baut `OpenAiStreamingChatModel` mit `baseUrl`,
+1. **LC provider adapter behind the existing port** (OpenAI first)
+   - `ProviderProducer` builds `OpenAiStreamingChatModel` with `baseUrl`,
      `apiKey`, `timeout`, `customHeaders`.
    - `ModelRequest` → `ChatRequest`; `StreamingChatResponseHandler` →
      `ModelEvent`.
-   - `StreamValidator` und `ProviderErrorClassifier` bleiben.
-   - **Aufwand:** mittel, **Risiko:** niedrig–mittel, **Lesbarkeit:** gut,
-     **Architektur:** sauber (Adapter im `quarkus`-Modul, Port im `engine`).
-
-2. **Tool-Spec-Mapping** auf `ToolSpecification` (nur Serialisierung).
-
-3. **Structured Output** auf `ResponseFormat`.
-
-4. **Fehler-Mapping** LC-Exception → `FailureKind`.
-
-5. **Multi-Provider** (Anthropic, Ollama, Azure, …) über weitere LC-Modelle.
-
-6. **Optional:** `ChatModelListener` für OTel, `TokenCountEstimator`,
-   RAG/Embeddings.
+   - `StreamValidator` and `ProviderErrorClassifier` stay.
+   - **Effort:** medium, **Risk:** low–medium, **Readability:** good,
+     **Architecture:** clean (adapter in the `quarkus` module, port in `engine`).
+2. **Tool spec mapping** onto `ToolSpecification` (serialization only).
+3. **Structured output** onto `ResponseFormat`.
+4. **Error mapping** LC exception → `FailureKind`.
+5. **Multi-provider** (Anthropic, Ollama, Azure, …) via additional LC models.
+6. **Optional:** `ChatModelListener` for OTel, `TokenCountEstimator`,
+   RAG/embeddings.
 
 ---
 
-## 5. Was ausdrücklich custom bleibt
+## 5. What explicitly stays custom
 
-| Concern | Grund |
+| Concern | Reason |
 |---|---|
-| Permission-Gate / HITL | LC `AiServices` führt Tools sofort aus |
-| Durable Event-Log / Inbox | LC `ChatMemory` ist nicht durable |
-| Snapshot / Revert / Compaction | LC hat keine Entsprechung |
-| Provider-Katalog / Budget / Cache-Affinität | Spec-definiert |
-| `FailureKind`-Taxonomie | Spec-definiert, LC ist exception-basiert |
-| A2A/MCP-Integration | tiefer integriert als LC-Agentic-Module |
-| Tool-Execution-Loop | Permission, Audit, Idempotenz |
+| Permission gate / HITL | LC `AiServices` executes tools immediately |
+| Durable event log / inbox | LC `ChatMemory` is not durable |
+| Snapshot / revert / compaction | LC has no equivalent |
+| Provider catalog / budget / cache affinity | Spec-defined |
+| `FailureKind` taxonomy | Spec-defined, LC is exception-based |
+| A2A/MCP integration | more deeply integrated than LC agentic modules |
+| Tool execution loop | Permission, audit, idempotency |
 
 ---
 
-## 6. Einschätzung: realer Gewinn und Native-Auswirkung
+## 6. Assessment: real gain and native impact
 
-### Kurzfassung
+### Summary
 
-**Der reale Gewinn hängt fast vollständig davon ab, ob QOC multi-provider
-werden soll.**
+**The real gain depends almost entirely on whether QOC should become
+multi-provider.**
 
-- **Bleibt QOC OpenAI-only:** geringer Gewinn. Der bestehende Adapter ist
-  getestet, native-verifiziert und transparent. LC würde funktionierenden Code
-  durch eine Abhängigkeit ersetzen – mehr Risiko als Nutzen.
-- **Soll QOC Anthropic, Gemini, Ollama, Azure, Mistral, Bedrock … können:**
-  hoher Gewinn. Genau dafür ist LC gebaut; das spart Wochen
-  provider-spezifischer HTTP/SSE-/Tool-Call-Arbeit.
-- **Soll QOC das LC-Ökosystem nutzen (RAG, Embeddings, Guardrails,
-  Observability):** mittlerer bis hoher Zusatznutzen – aber **additiv**, kein
-  Ersatz.
+- **If QOC stays OpenAI-only:** low gain. The existing adapter is tested,
+  native-verified and transparent. LC would replace working code with a
+  dependency – more risk than benefit.
+- **If QOC should support Anthropic, Gemini, Ollama, Azure, Mistral,
+  Bedrock …:** high gain. LC is built exactly for this; it saves weeks of
+  provider-specific HTTP/SSE/tool-call work.
+- **If QOC should use the LC ecosystem (RAG, embeddings, guardrails,
+  observability):** medium to high additional benefit – but **additive**, not a
+  replacement.
 
-### Realer Ersatzumfang
+### Real replacement scope
 
-| Bereich | Heute | Mit LC | Realer Gewinn |
+| Area | Today | With LC | Real gain |
 |---|---|---|---|
-| HTTP/SSE | `JdkHttpTransport` + `SseReader` + `HttpProviderAdapter` | LC-interner Client | **Wartung**, weniger Boilerplate |
-| Request-JSON | `OpenAiRequestEncoder` + `OpenAiSchema` | `ChatRequest` + `ToolSpecification` | **Wartung**, Schema-Handling |
-| Response/Events | `OpenAiEventTranslator` | `StreamingChatResponseHandler` | **teilweise**, Mapping bleibt |
-| Multi-Provider | nur OpenAI-kompatibel | 10+ Provider | **echter Funktionsgewinn** |
-| Tool-Calling | eigene Serialisierung | LC-Typen | **Wartung** |
-| Structured Output | eigener Encoder | `ResponseFormat` | **kleiner Gewinn** |
-| Observability | eigener Trace | `ChatModelListener` | **ergänzend** |
-| RAG/Embeddings | nicht vorhanden | LC-Module | **neue Fähigkeit** |
-| Memory | durable Event-Log | `ChatMemory` | **kein Ersatz** (verboten) |
-| Agentic | eigener Loop | `AiServices` | **kein Ersatz** (Permissions/HITL) |
+| HTTP/SSE | `JdkHttpTransport` + `SseReader` + `HttpProviderAdapter` | LC-internal client | **maintenance**, less boilerplate |
+| Request JSON | `OpenAiRequestEncoder` + `OpenAiSchema` | `ChatRequest` + `ToolSpecification` | **maintenance**, schema handling |
+| Response/events | `OpenAiEventTranslator` | `StreamingChatResponseHandler` | **partial**, mapping stays |
+| Multi-provider | only OpenAI-compatible | 10+ providers | **real functional gain** |
+| Tool calling | own serialization | LC types | **maintenance** |
+| Structured output | own encoder | `ResponseFormat` | **small gain** |
+| Observability | own trace | `ChatModelListener` | **complementary** |
+| RAG/embeddings | not present | LC modules | **new capability** |
+| Memory | durable event log | `ChatMemory` | **no replacement** (forbidden) |
+| Agentic | own loop | `AiServices` | **no replacement** (permissions/HITL) |
 
-Unterm Strich: **~700–1.000 Zeilen Provider-Client-Code** könnten durch
-**~200–300 Zeilen Mapping** ersetzt werden. Das ist ein Wartungsgewinn, kein
-Produktgewinn.
+Bottom line: **~700–1,000 lines of provider-client code** could be replaced by
+**~200–300 lines of mapping**. That is a maintenance gain, not a product gain.
 
-### Auswirkung auf Native Deployment
+### Impact on native deployment
 
-| Aspekt | Einschätzung |
+| Aspect | Assessment |
 |---|---|
-| **Binary-Größe** | LC ist heute schon Compile-Dependency, aber der Provider-Pfad ist ungenutzt → GraalVM pruned viel. Mit Nutzung steigt die erreichbare Code-Menge: **realistisch +10–40 MB** (muss gemessen werden). |
-| **Build-Zeit** | aktuell ~3–4,5 min; mit LC eher **+30–90 s**. |
-| **Reflection** | Quarkus-LC-Extension registriert viel, aber **Records, JSON-Codecs, ServiceLoader** sind Kandidaten für Laufzeitfehler – exakt die Klasse von Problemen, die wir bei A2A hatten (Build grün, Runtime 500). |
-| **Startup** | vernachlässigbar. |
-| **Memory** | geringfügig höher; kein Show-Stopper auf e2-micro. |
-| **Native-Verifikation** | **zwingend**: Agent-Card, Streaming, Tool-Calls, Structured Output, OIDC, E-Mail nach dem Umbau erneut testen. |
+| **Binary size** | LC is already a compile dependency today, but the provider path is unused → GraalVM prunes a lot. With usage, the reachable code increases: **realistically +10–40 MB** (must be measured). |
+| **Build time** | currently ~3–4.5 min; with LC rather **+30–90 s**. |
+| **Reflection** | The Quarkus LC extension registers a lot, but **records, JSON codecs, ServiceLoader** are candidates for runtime errors – exactly the class of problems we had with A2A (build green, runtime 500). |
+| **Startup** | negligible. |
+| **Memory** | slightly higher; not a show-stopper on e2-micro. |
+| **Native verification** | **mandatory**: re-test agent card, streaming, tool calls, structured output, OIDC, email after the rebuild. |
 
-**Das Muster von A2A wiederholt sich:** Der Native-Build war erfolgreich, aber
-der Agent-Card-Endpoint gab zur Laufzeit `500`, weil `ServiceLoader`-Metadaten,
-`Record components` und `a2a-defaults.properties` fehlten. Bei LC wird es
-ähnlich sein: **Build-Erfolg ≠ Runtime-Erfolg**. Man braucht einen expliziten
-Native-E2E-Test für den LC-Adapter, nicht nur `mvn package -Dnative`.
+**The A2A pattern repeats:** The native build succeeded, but the agent-card
+endpoint returned `500` at runtime because `ServiceLoader` metadata, `Record
+components` and `a2a-defaults.properties` were missing. With LC it will be
+similar: **build success ≠ runtime success**. You need an explicit native E2E
+test for the LC adapter, not just `mvn package -Dnative`.
 
-### Technische Risiken
+### Technical risks
 
-1. **Streaming-Semantik:** LC liefert `onPartialResponse`, `onPartialThinking`,
-   `onPartialToolCall`, `onCompleteResponse`. Event-Reihenfolge,
-   Tool-Input-Deltas und Finish-Gründe können sich anders verhalten als im
-   Custom-Adapter. `StreamValidator` und UI-Streaming müssen angepasst werden.
-2. **Fehler-Taxonomie:** LC-Exceptions (`RateLimitException`,
-   `AuthenticationException`, …) müssen auf die bestehende
-   `FailureKind`-Taxonomie gemappt werden. Retry-Semantik (`Retry-After`, Cap)
-   bleibt Spec-kritisch.
-3. **Version-Drift:** QOC pinnt 1.19.3, `decision-gate` nutzt 1.22.0. LC bewegt
-   sich schnell; ein Upgrade kann APIs brechen.
-4. **Kontrollverlust:** `cacheKey`/Cache-Affinität, `parallel_tool_calls`,
-   `strict`-Tools, Provider-Optionen – vieles geht über `customParameters`,
-   aber nicht alles.
-5. **Debugging:** eine zusätzliche Abstraktionsschicht zwischen QOC und dem
-   Provider macht Provider-Bugs schwerer nachvollziehbar.
+1. **Streaming semantics:** LC delivers `onPartialResponse`, `onPartialThinking`,
+   `onPartialToolCall`, `onCompleteResponse`. Event ordering, tool-input deltas
+   and finish reasons may behave differently than in the custom adapter.
+   `StreamValidator` and UI streaming must be adapted.
+2. **Error taxonomy:** LC exceptions (`RateLimitException`,
+   `AuthenticationException`, …) must be mapped onto the existing `FailureKind`
+   taxonomy. Retry semantics (`Retry-After`, cap) remain spec-critical.
+3. **Version drift:** QOC pins 1.19.3, `decision-gate` uses 1.22.0. LC moves
+   fast; an upgrade can break APIs.
+4. **Loss of control:** `cacheKey`/cache affinity, `parallel_tool_calls`,
+   `strict` tools, provider options – much of this goes through
+   `customParameters`, but not everything.
+5. **Debugging:** an additional abstraction layer between QOC and the provider
+   makes provider bugs harder to trace.
 
-### Aufwand
+### Effort
 
-- Migration OpenAI-Adapter inkl. Tests: **1–2 Wochen**.
-- Native-Verifikation (Reflection, Binary-Größe, E2E): **1–3 Tage**.
-- Pro weiterem Provider: **1–3 Tage** (LC nimmt viel ab, Konfiguration/Tests
-  bleiben).
+- Migration of the OpenAI adapter incl. tests: **1–2 weeks**.
+- Native verification (reflection, binary size, E2E): **1–3 days**.
+- Per additional provider: **1–3 days** (LC takes a lot off, but
+  configuration/tests remain).
 
 ### Scorecard
 
-| Szenario | Gewinn | Risiko | Empfehlung |
+| Scenario | Gain | Risk | Recommendation |
 |---|---|---|---|
-| **OpenAI-only, keine Änderung** | 1/10 | – | Nicht integrieren |
-| **OpenAI-only, LC als Alternative** | 3/10 | mittel | Optional, hinter Flag |
-| **Multi-Provider (Anthropic/Ollama/…)** | **8/10** | mittel | **Integrieren** |
-| **LC-Ökosystem (RAG/Embeddings)** | 6/10 | niedrig–mittel | Additiv, später |
-| **AiServices/Agentic** | 1/10 | hoch | **Nicht** |
+| **OpenAI-only, no change** | 1/10 | – | Do not integrate |
+| **OpenAI-only, LC as alternative** | 3/10 | medium | Optional, behind a flag |
+| **Multi-provider (Anthropic/Ollama/…)** | **8/10** | medium | **Integrate** |
+| **LC ecosystem (RAG/embeddings)** | 6/10 | low–medium | Additive, later |
+| **AiServices/agentic** | 1/10 | high | **No** |
 
-### Empfehlung
+### Recommendation
 
-1. **Nicht als Ersatz, sondern als zweiter Adapter** hinter dem bestehenden
-   `ProviderAdapter`-Port einführen. Der Custom-Adapter bleibt
-   Fallback/Referenz.
-2. **Mit OpenAI starten** und hinter `engine.provider.kind=langchain4j`
-   schalten.
-3. **Native-E2E von Anfang an** mitlaufen lassen (nicht erst am Ende).
-4. **Multi-Provider als eigentlichen Treiber** nehmen – dann lohnt sich der
-   Aufwand.
-5. **Nicht anfassen:** `AiServices`, `ChatMemory`, Permission-Gate, Event-Log,
-   `FailureKind`, Compaction.
-6. **Version:** erst bei 1.19.3 bleiben; ein Upgrade auf 1.22+ separat
-   entscheiden, wenn `DecisionModel`/Agentic wirklich gebraucht wird.
+1. **Introduce not as a replacement but as a second adapter** behind the
+   existing `ProviderAdapter` port. The custom adapter stays fallback/reference.
+2. **Start with OpenAI** and switch behind `engine.provider.kind=langchain4j`.
+3. **Run native E2E from the start** (not only at the end).
+4. **Take multi-provider as the real driver** – then the effort pays off.
+5. **Do not touch:** `AiServices`, `ChatMemory`, permission gate, event log,
+   `FailureKind`, compaction.
+6. **Version:** stay at 1.19.3 first; decide on an upgrade to 1.22+ separately
+   when `DecisionModel`/agentic is really needed.
 
-### Ehrliches Fazit
+### Honest conclusion
 
-**Der reale Gewinn ist die Multi-Provider-Fähigkeit, nicht der HTTP-Client.**
-Wenn QOC ein OpenAI-kompatibler Agent-Runner bleibt, ist LC-Integration
-hauptsächlich Kosmetik mit Native-Risiko. Wenn QOC ein provider-neutraler
-Agent-Runner werden soll, ist LC der richtige Weg – dann aber mit einem klaren
-Native-Verifikationsbudget und ohne die LC-Agentic-Schicht.
+**The real gain is multi-provider capability, not the HTTP client.** If QOC
+remains an OpenAI-compatible agent runner, LC integration is mostly cosmetics
+with native risk. If QOC is to become a provider-neutral agent runner, LC is
+the right path – but then with a clear native verification budget and without
+the LC agentic layer.
 
-## 7. Offene Entscheidungen
+## 7. Open decisions
 
-1. **Version:** bei 1.19.3 bleiben (für Provider reicht es) oder auf 1.22+
-   gehen (für `DecisionModel`/Agentic)? Ein Upgrade muss mit `decision-gate`
-   abgeglichen werden.
-2. **Konfiguration:** `engine.provider.*` behalten und LC-Modelle manuell
-   bauen, oder auf `quarkus.langchain4j.openai.*` umstellen? Empfehlung:
-   manuell bauen, Config bleibt stabil.
-3. **Streaming-Detailtiefe:** LC liefert Partial Tool Calls – Live-Tool-Input-
-   Anzeige beibehalten? (Ja, `onPartialToolCall` nutzen.)
-4. **Native:** LC ist bereits im Native-Build; der neue Adapter braucht
-   Reflection-Registrierung für LC-Typen (Quarkus-Extension hilft). Nach dem
-   Umbau Native-Build + A2A/OIDC-Test wiederholen.
+1. **Version:** stay at 1.19.3 (sufficient for providers) or move to 1.22+
+   (for `DecisionModel`/agentic)? An upgrade must be reconciled with
+   `decision-gate`.
+2. **Configuration:** keep `engine.provider.*` and build LC models manually, or
+   switch to `quarkus.langchain4j.openai.*`? Recommendation: build manually,
+   config stays stable.
+3. **Streaming detail depth:** LC delivers partial tool calls – keep live
+   tool-input display? (Yes, use `onPartialToolCall`.)
+4. **Native:** LC is already in the native build; the new adapter needs
+   reflection registration for LC types (the Quarkus extension helps). After
+   the rebuild, repeat native build + A2A/OIDC test.
 
 ---
 
-## 8. Referenzen
+## 8. References
 
-- `langchain4j.md` – bestehender Integrationsguide
+- `langchain4j.md` – existing integration guide
 - `engine/src/main/java/de/augmentia/oc/engine/runtime/provider/client/`
 - `engine/src/main/java/de/augmentia/oc/engine/core/contract/provider/`
 - `quarkus/src/main/java/de/augmentia/oc/engine/http/ProviderProducer.java`

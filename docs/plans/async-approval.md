@@ -1,107 +1,107 @@
-# Plan: Asynchrone Freigaben (Option B – Suspend & Resume)
+# Plan: Asynchronous Approvals (Option B – Suspend & Resume)
 
 > **Status:** Plan · 2026-10-31  
-> **Ziel:** Freigaben (HITL) sollen asynchron über externe Kanäle (E-Mail)
-> erfolgen können, ohne den Tool-Call-Thread unbegrenzt zu blockieren.
+> **Goal:** Approvals (HITL) should be possible asynchronously via external channels (email),
+> without blocking the tool-call thread indefinitely.
 
 ---
 
 ## 1. Motivation
 
-Heute ist die Freigabe **synchron/blockierend**:
+Today approvals are **synchronous/blocking**:
 
-- `PermissionEngine.assertAllowed` ruft `ApprovalSource.request(...)` auf und
-  blockiert den Tool-Call-Thread bis zu 300 s (`WebApprovalSource`).
-- Die `CompletableFuture` ist in-memory; der Request ist aber in
-  `pending_approval` persistiert.
-- Bei E-Mail (Stunden/Tage) reicht das nicht.
+- `PermissionEngine.assertAllowed` calls `ApprovalSource.request(...)` and
+  blocks the tool-call thread for up to 300 s (`WebApprovalSource`).
+- The `CompletableFuture` is in-memory; the request is however persisted in
+  `pending_approval`.
+- For email (hours/days) this is insufficient.
 
-## 2. Architektur-Optionen
+## 2. Architecture Options
 
-### Option A – Langes blockierendes Warten (minimal)
+### Option A – Long blocking wait (minimal)
 
-`ApprovalSource.request` pollt die DB statt einer in-memory-Future, mit
-konfigurierbarem Timeout (Stunden/Tage).
+`ApprovalSource.request` polls the DB instead of an in-memory future, with
+a configurable timeout (hours/days).
 
-- Pro: wenig Code, nutzt bestehende Tabelle.
-- Con: hält Thread + Verbindung; bei sehr langen Wartezeiten problematisch.
-- Aufwand: niedrig-mittel.
+- Pro: little code, reuses existing table.
+- Con: holds thread + connection; problematic for very long wait times.
+- Effort: low-medium.
 
-### Option B – Suspend & Resume (sauber, skalierbar) ← **gewählt**
+### Option B – Suspend & Resume (clean, scalable) ← **chosen**
 
-On `ASK`: Approval persistieren, Session als `suspended` markieren, Tool-Call
-gibt ein `Paused`-Ergebnis zurück, Turn endet. Bei Freigabe (E-Mail-Link →
-Endpoint) wird die Session geweckt und der Tool-Call erneut ausgeführt.
+On `ASK`: persist approval, mark session as `suspended`, tool call returns a
+`Paused` result, turn ends. On approval (email link → endpoint) the session
+is woken and the tool call is executed again.
 
-- Pro: keine langen Verbindungen, skalierbar, passt zu `SessionWake`.
-- Con: Tool muss idempotent sein (Wiederholung), Session-State muss
-  wiederhergestellt werden.
-- Aufwand: hoch.
+- Pro: no long-lived connections, scalable, fits with `SessionWake`.
+- Con: tool must be idempotent (re-execution), session state must be
+  restored.
+- Effort: high.
 
-## 3. Umsetzungsphasen
+## 3. Implementation Phases
 
-### Phase 1 – Infrastruktur (dieses Dokument, umgesetzt)
+### Phase 1 – Infrastructure (this document, implemented)
 
-1. **Notification-Channel-Port** (`engine.core.port.human.NotificationChannel`)
+1. **Notification-channel port** (`engine.core.port.human.NotificationChannel`)
    - `send(ApprovalRequest, approvalUrl)`
-   - Implementierungen: `EmailChannel` (SMTP), `WebhookChannel`
-2. **Token-basierte Freigabe-Links**
-   - `pending_approval` um `token` (gehasht), `expires_at`, `channel` erweitern
-   - Endpoint `GET/POST /api/approval/{token}` (token-authentifiziert)
+   - Implementations: `EmailChannel` (SMTP), `WebhookChannel`
+2. **Token-based approval links**
+   - extend `pending_approval` with `token` (hashed), `expires_at`, `channel`
+   - endpoint `GET/POST /api/approval/{token}` (token-authenticated)
 3. **Durable ApprovalSource**
-   - `DurableApprovalSource`: persistiert Request, sendet Notification, pollt DB
-     mit konfigurierbarem Timeout
-   - Ersetzt/ergänzt `WebApprovalSource`
-4. **Konfiguration**
+   - `DurableApprovalSource`: persists request, sends notification, polls DB
+     with configurable timeout
+   - replaces/augments `WebApprovalSource`
+4. **Configuration**
    - `engine.approval.channel`, `engine.approval.email.*`,
      `engine.approval.timeout-hours`, `engine.approval.token-ttl-days`
 
-### Phase 2 – Suspend & Resume (folgt)
+### Phase 2 – Suspend & Resume (follows)
 
-1. **Paused-Outcome**
-   - `ToolOutcome.Paused(approvalId)` und `StepResult.Paused`
-   - `PromptResult` um `Paused`-Outcome erweitern
-2. **Session-Suspend**
-   - On ASK: Approval persistieren, Session als `suspended` markieren,
-     Tool-Call gibt `Paused` zurück, Turn endet mit `PromptResult.Paused`
-   - HTTP-Response: `{status: "paused", approvalId, approvalUrl}`
+1. **Paused outcome**
+   - `ToolOutcome.Paused(approvalId)` and `StepResult.Paused`
+   - extend `PromptResult` with `Paused` outcome
+2. **Session suspend**
+   - on ASK: persist approval, mark session as `suspended`,
+     tool call returns `Paused`, turn ends with `PromptResult.Paused`
+   - HTTP response: `{status: "paused", approvalId, approvalUrl}`
 3. **Resume**
-   - Endpoint `POST /api/session/{id}/resume` oder `SessionWake.wake(session)`
-     bei Freigabe
-   - Re-Run des Turns; Tool-Call wird erneut ausgeführt (IdempotencyKey
-     dedupliziert)
-4. **Idempotenz-Voraussetzung**
-   - Tools müssen `IdempotencyKey` nutzen (at-least-once → genau-once bei
-     Wiederholung)
+   - endpoint `POST /api/session/{id}/resume` or `SessionWake.wake(session)`
+     on approval
+   - re-run the turn; tool call is executed again (IdempotencyKey
+     deduplicates)
+4. **Idempotency prerequisite**
+   - tools must use `IdempotencyKey` (at-least-once → exactly-once on
+     re-execution)
 
-### Phase 3 – Granulare Freigabe
+### Phase 3 – Granular approval
 
-- Pre-Execution-Approval für einzelne Tool-Schritte
-- Freigabe nach Kosten/Sensitivität
-- Multi-Instanz-Approval-Koordination
+- Pre-execution approval for individual tool steps
+- Approval based on cost/sensitivity
+- Multi-instance approval coordination
 
-## 4. Multi-Instanz-Hinweis
+## 4. Multi-Instance Note
 
-Approval-Futures sind process-local. Bei Multi-Instanz (shared DB) muss die
-Entscheidung über die DB laufen (Phase 1 polling oder Phase 2 suspend/resume).
-Die `session_claim`-Tabelle existiert, wird aber in `Engine` noch nicht
-genutzt – dort wäre der Ansatzpunkt.
+Approval futures are process-local. With multi-instance (shared DB) the decision
+must run through the DB (Phase 1 polling or Phase 2 suspend/resume).
+The `session_claim` table exists, but is not yet used in `Engine` — that is
+where the approach would hook in.
 
-## 5. Was bereits da ist
+## 5. What already exists
 
-- `pending_approval`-Tabelle (persistiert, Status
+- `pending_approval` table (persisted, status
   `PENDING/ORPHANED/DECIDED/EXPIRED`)
-- `WebApprovalSource` (Template für neue Channels)
+- `WebApprovalSource` (template for new channels)
 - `PermissionEngine.reply(...)` (ONCE/ALWAYS/REJECT)
-- Web-UI-Endpoints für Approval
-- `ApprovalStore` (project-wide „always allow“)
-- `SessionWake` + `suspended`-Feld
-- `IdempotencyKey` pro Tool-Call
+- Web UI endpoints for approval
+- `ApprovalStore` (project-wide "always allow")
+- `SessionWake` + `suspended` field
+- `IdempotencyKey` per tool call
 
-## 6. Offene Entscheidungen
+## 6. Open Decisions
 
-1. Token-Transport: URL mit Token im Query-Parameter oder POST-Body?
-2. E-Mail-Template: HTML oder Plain-Text?
-3. Timeout: wie lange darf eine Freigabe offen sein (7 Tage?)?
-4. Soll der Agent bei `Paused` einen synthetischen Hinweis bekommen?
-5. Werden `ASK`-Regeln für MCP-Tools automatisch erzeugt?
+1. Token transport: URL with token in query parameter or POST body?
+2. Email template: HTML or plain text?
+3. Timeout: how long may an approval stay open (7 days?)?
+4. Should the agent receive a synthetic hint on `Paused`?
+5. Are `ASK` rules for MCP tools generated automatically?

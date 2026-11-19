@@ -1,1484 +1,1462 @@
-# learnings.md – Gemeinsame Learnings für QOC
+# learnings.md – Shared Learnings for QOC
 
-> **Status:** Synthese · 2026-10-26 · Entscheidungen D-01–D-14 dokumentiert
-> **Quellen:**
+> **Status:** Synthesis · 2026-10-26 · Decisions D-01–D-14 documented
+> **Sources:**
 > [`analysis/learnings/oc-open.md`](../analysis/learnings/oc-open.md) ·
 > [`analysis/learnings/pi.md`](../analysis/learnings/pi.md) ·
 > [`analysis/learnings/oh-my-pi.md`](../analysis/learnings/oh-my-pi.md) ·
 > [`analysis/learnings/nessy.md`](../analysis/learnings/nessy.md)
 >
-> **Ziel:** Aus den vier Analysen eine **gemeinsame, umsetzbare Backlog-Liste**
-> ableiten, die QOC besser, stabiler, schneller und production-ready macht.
+> **Goal:** Derive a **shared, actionable backlog list** from the four analyses
+> that makes QOC better, more stable, faster and production-ready.
 >
-> **Nicht das Ziel:** Feature-Parität mit OpenCode, pi, oh-my-pi oder Nessy.
-> QOC ist eine Java-Engine mit eigenen Stärken (pure `engine.core`, append-only
-> Journal, SQL-Persistenz, Rule-Chain, Spezifikation mit Invarianten). Kopieren
-> ohne Architekturprüfung würde diese Stärken eher beschädigen.
+> **Not the goal:** Feature parity with OpenCode, pi, oh-my-pi or Nessy.
+> QOC is a Java engine with its own strengths (pure `engine.core`, append-only
+> journal, SQL persistence, rule chain, specification with invariants). Copying
+> without architectural review would rather damage these strengths.
 
 ---
 
-## Inhalt
+## Contents
 
-- [0. Kurzfazit](#0-kurzfazit)
-- [1. Vergleich der vier Analysen](#1-vergleich-der-vier-analysen)
-- [2. Zielbild: besser, stabiler, schneller, production-ready](#2-zielbild-besser-stabiler-schneller-production-ready)
-- [3. Priorisierte Maßnahmen](#3-priorisierte-maßnahmen)
-  - [P0 – Production Blocker](#p0--production-blocker)
-  - [P1 – Reliability, Qualität und Ergonomie](#p1--reliability-qualität-und-ergonomie)
-  - [P2 – Performance und spätere Differenzierung](#p2--performance-und-spätere-differenzierung)
-- [4. Reihenfolge und Phasen](#4-reihenfolge-und-phasen)
-- [5. Messbare Definition of Done](#5-messbare-definition-of-done)
-- [6. Entscheidungslog (D-01–D-14)](#6-entscheidungslog-d-01d-14)
-- [7. Quellen-Mapping und Abgrenzung](#7-quellen-mapping-und-abgrenzung)
+- [0. Executive summary](#0-executive-summary)
+- [1. Comparison of the four analyses](#1-comparison-of-the-four-analyses)
+- [2. Target picture: better, more stable, faster, production-ready](#2-target-picture-better-more-stable-faster-production-ready)
+- [3. Prioritized measures](#3-prioritized-measures)
+  - [P0 – Production blockers](#p0--production-blockers)
+  - [P1 – Reliability, quality and ergonomics](#p1--reliability-quality-and-ergonomics)
+  - [P2 – Performance and later differentiation](#p2--performance-and-later-differentiation)
+- [4. Order and phases](#4-order-and-phases)
+- [5. Measurable Definition of Done](#5-measurable-definition-of-done)
+- [6. Decision log (D-01–D-14)](#6-decision-log-d-01d-14)
+- [7. Source mapping and delimitation](#7-source-mapping-and-delimitation)
 
 ---
 
-## 0. Kurzfazit
+## 0. Executive summary
 
-QOC ist architektonisch bereits weiter als viele Referenzen: klare Schichten,
-ein reines Core-Modul, ein append-only Event-Journal, SQLite/PostgreSQL,
-Claim-basierte Ausführung, eine breite Tool-Palette und eine spezifizierte
-Invariantenmenge. Die vier Analysen zeigen deshalb nicht „QOC ist unfertig“,
-sondern **wo die nächsten Hebel liegen**.
+QOC is already architecturally further along than many references: clear
+layers, a pure core module, an append-only event journal, SQLite/PostgreSQL,
+claim-based execution, a broad tool palette and a specified set of invariants.
+The four analyses therefore do not show "QOC is unfinished", but **where the
+next levers lie**.
 
-Die wichtigste Erkenntnis aus dem Vergleich:
+The most important insight from the comparison:
 
-> **Die Mehrheit der Quellen optimiert Feature-Ergonomie. Nur Nessy optimiert
-> Produktionskorrektheit. Für „production ready“ muss QOC zuerst die
-> Nessy-Achse schließen – nicht die Feature-Parität.**
+> **Most sources optimize feature ergonomics. Only Nessy optimizes production
+> correctness. For "production ready", QOC must first close the Nessy axis –
+> not feature parity.**
 
-Die größten aktuellen Lücken:
+The biggest current gaps:
 
-1. **Dauerhafte Nebenwirkungen und Freigaben.** Offene Approvals und
-   Tool-Ausführungen überleben keinen Neustart sauber (QOC-009, QOC-011).
-2. **Kein explizites Turn-Outcome.** Busy, Refused, Failed und Terminated sind
-   für Clients nicht unterscheidbar (QOC-013).
-3. **Compaction ist noch nicht token- und cache-stabil.** Turn-Grenzen sind
-   verbessert, aber Token-Budget, stabile Kapitel und Checkpoint-Platzierung
-   fehlen (QOC-010 teilweise, QOC-012).
-4. **Prompt- und Instruktions-Stabilität.** Kein `RULES.md`, keine
-   Re-Injection nach Compaction/Revert, keine stabile Blockstruktur.
-5. **Betrieb.** Health/Readiness, Metriken, Audit, Last-/Soak-Tests,
-   Backup/Restore und Graceful Shutdown sind nicht als Produktionsgate
-   definiert.
-6. **Tool-Ergonomie.** Anchored Edits, Scan-Cache und Read-Selektoren fehlen;
-   das kostet Präzision, Tokens und Zeit.
-7. **Orchestrierung.** Typisierte Subagent-Batches, Worktree-Isolation und
-   Export fehlen; die vorhandene Task-Registry ist ein guter Anfang.
+1. **Persistent side effects and approvals.** Open approvals and tool
+   executions do not survive a restart cleanly (QOC-009, QOC-011).
+2. **No explicit turn outcome.** Busy, Refused, Failed and Terminated are not
+   distinguishable for clients (QOC-013).
+3. **Compaction is not yet token- and cache-stable.** Turn boundaries have
+   improved, but token budget, stable chapters and checkpoint placement are
+   missing (QOC-010 partly, QOC-012).
+4. **Prompt and instruction stability.** No `RULES.md`, no re-injection after
+   compaction/revert, no stable block structure.
+5. **Operations.** Health/readiness, metrics, audit, load/soak tests,
+   backup/restore and graceful shutdown are not defined as a production gate.
+6. **Tool ergonomics.** Anchored edits, scan cache and read selectors are
+   missing; this costs precision, tokens and time.
+7. **Orchestration.** Typed subagent batches, worktree isolation and export are
+   missing; the existing task registry is a good start.
 
-### Top-10-Liste
+### Top-10 list
 
-| # | Maßnahme | Warum zuerst? |
+| # | Measure | Why first? |
 |---|---|---|
-| 1 | **Turn-Outcome-Algebra** (QOC-013) | Ohne sie sind Fehler, Busy und Abbruch für Clients nicht unterscheidbar. |
-| 2 | **Idempotency Key + dauerhafter Tool-Call-Lifecycle** (QOC-011) | Verhindert doppelte Side-Effects nach Crash/Retry. |
-| 3 | **Dauerhafte Approvals** (QOC-009) | Offene Freigaben dürfen einen Neustart nicht verlieren. |
-| 4 | **Crash-Recovery und Reconciliation** | Claims, Tool-Intents und Approvals müssen beim Start konsistent werden. |
-| 5 | **Token-aware Compaction + Turn-Integrität** | Stabiler Kontext, weniger Overflow, weniger Retries. |
-| 6 | **Stabile Prompt-/Checkpoint-Struktur** (QOC-012) | Cache-Treffer und reproduzierbare Prompts. |
-| 7 | **Retry-, Timeout-, Cancel- und Turn-Policy** | Keine unbegrenzten Turns, keine hängenden Prozesse. |
-| 8 | **Limits, Backpressure, Graceful Shutdown** | Überlast muss kontrolliert degradieren, nicht crashen. |
-| 9 | **Health, Metriken, Audit, Turn-Stats** | Production ohne Beobachtbarkeit ist Blindflug. |
-| 10 | **Tool-Ergonomie: Scan-Cache, Read-Selektoren, Anchored Edits** | Schneller, präziser, weniger Token-Verbrauch. |
+| 1 | **Turn-outcome algebra** (QOC-013) | Without it, errors, busy and aborts are not distinguishable for clients. |
+| 2 | **Idempotency key + durable tool-call lifecycle** (QOC-011) | Prevents duplicate side effects after crash/retry. |
+| 3 | **Durable approvals** (QOC-009) | Open approvals must not be lost on a restart. |
+| 4 | **Crash recovery and reconciliation** | Claims, tool intents and approvals must become consistent on startup. |
+| 5 | **Token-aware compaction + turn integrity** | Stable context, fewer overflows, fewer retries. |
+| 6 | **Stable prompt/checkpoint structure** (QOC-012) | Cache hits and reproducible prompts. |
+| 7 | **Retry, timeout, cancel and turn policy** | No unbounded turns, no hanging processes. |
+| 8 | **Limits, backpressure, graceful shutdown** | Overload must degrade in a controlled way, not crash. |
+| 9 | **Health, metrics, audit, turn stats** | Production without observability is flying blind. |
+| 10 | **Tool ergonomics: scan cache, read selectors, anchored edits** | Faster, more precise, less token consumption. |
 
 ---
 
-## 1. Vergleich der vier Analysen
+## 1. Comparison of the four analyses
 
-### 1.1 Kurzprofile
+### 1.1 Short profiles
 
-| Quelle | Stärke | Wichtigste Lehre für QOC | Risiko beim blinden Kopieren |
+| Source | Strength | Most important lesson for QOC | Risk of blind copying |
 |---|---|---|---|
-| **OpenCode (`analysis/learnings/oc-open.md`)** | Breite Agent-Ergonomie: Kontextdateien, Commands, Skills, Session-Tree, Queue, Settings | Instruktionen und Sessions müssen benutzbar und wiederaufnehmbar sein | Plugin-/TS-Denken passt nicht in die Java-Engine; zuerst Mechanik, nicht Oberfläche |
-| **pi (`analysis/learnings/pi.md`)** | Minimaler Kern, klare Compaction- und Prompt-Template-Mechanik | Token-Budget, Turn-Grenzen, Commands, Settings, Export | pi ist absichtlich minimal; QOC darf seine strikten Grenzen nicht aufweichen |
-| **oh-my-pi (`analysis/learnings/oh-my-pi.md`)** | Tool-Ergonomie und Kontext-Ökonomie: Hashline, Scan-Cache, LSP, Task-Batches, Approval-Tiers, Artefakte | Präzise Edits, ignorierte Trees, wiederverwendbare Tool-Ausgaben und typisierte Subagents | Sehr breite Produktoberfläche; nicht alles ist Kern der Engine |
-| **Nessy (`analysis/learnings/nessy.md`)** | Durable Effects, Outcome-Algebra, Turn-Policy, Kapitel-Compaction, dauerhafte Approvals, Idempotency | Produktionskorrektheit: Arbeit ist eine dauerhafte Verpflichtung, nicht nur ein Step-Result | Agent-zentrisches Effect-Modell darf QOCs Tool-Snapshot und Rule-Chain nicht ersetzen |
+| **OpenCode (`analysis/learnings/oc-open.md`)** | Broad agent ergonomics: context files, commands, skills, session tree, queue, settings | Instructions and sessions must be usable and resumable | Plugin/TS thinking does not fit the Java engine; mechanism first, not surface |
+| **pi (`analysis/learnings/pi.md`)** | Minimal core, clear compaction and prompt-template mechanics | Token budget, turn boundaries, commands, settings, export | pi is deliberately minimal; QOC must not weaken its strict boundaries |
+| **oh-my-pi (`analysis/learnings/oh-my-pi.md`)** | Tool ergonomics and context economy: Hashline, scan cache, LSP, task batches, approval tiers, artifacts | Precise edits, ignored trees, reusable tool output and typed subagents | Very broad product surface; not everything is core to the engine |
+| **Nessy (`analysis/learnings/nessy.md`)** | Durable effects, outcome algebra, turn policy, chapter compaction, durable approvals, idempotency | Production correctness: work is a durable obligation, not just a step result | Agent-centric effect model must not replace QOC's tool snapshot and rule chain |
 
-### 1.2 Themenmatrix
+### 1.2 Topic matrix
 
-Legende: ✅ = explizit behandelt, ◐ = teilweise/implizit, — = nicht im Fokus.
+Legend: ✅ = explicitly covered, ◐ = partial/implicit, — = not in focus.
 
-| Thema | oc | pi | oh-my-pi | Nessy | Konsens | QOC-Konsequenz |
+| Topic | oc | pi | oh-my-pi | Nessy | Consensus | QOC consequence |
 |---|---:|---:|---:|---:|---|---|
-| Kontextdateien / Prompt-Blöcke | ✅ | ✅ | ✅ | ✅ | **4/4** | Stabile Blöcke, `RULES.md`, Imports, Re-Injection |
-| Compaction an Turn-Grenzen | ✅ | ✅ | ✅ | ✅ | **4/4** | Token-Budget + vollständige Turns + stabile Kapitel |
-| Session-Tree / Fork / Export | ✅ | ✅ | ✅ | ◐ | **3/4** | Fork/Tree sind da; Export und Branch-Summary fehlen |
-| Tool-Output begrenzen und zurücklesen | ✅ | ◐ | ✅ | ◐ | **3/4** | Artefakte sind da; Streaming/Retention vervollständigen |
-| Stabile Cache-Prefixe | ✅ | ✅ | ✅ | ✅ | **4/4** | Checkpoint nicht an Index 0; statische Blöcke zuerst |
-| Subagent-Orchestrierung | ◐ | ◐ | ✅ | ◐ | **3/4** | Typisierte Batches, Wait/Cancel, Isolation |
-| Approval-Tiers / Modi | ✅ | ◐ | ✅ | ✅ | **3/4** | READ/WRITE/EXEC, target-aware Grants |
-| Durable Approvals | — | — | ◐ | ✅ | **1/4, kritisch** | P0: überlebt Neustart, Deadline, Facts |
-| Idempotency / durable Effects | — | — | — | ✅ | **1/4, kritisch** | P0: Key + Intent/Result + Reconciliation |
-| Outcome-Algebra | ◐ | ◐ | ◐ | ✅ | **1/4, kritisch** | P0: Busy/Refused/Failed/Terminated |
-| Turn-Policy | — | ◐ | ◐ | ✅ | **1/4, kritisch** | P0/P1: Continue/AnswerNow/FailTurn |
-| Observability / Trajectory | ◐ | ◐ | ✅ | ✅ | **3/4** | Turn-Stats, Metriken, Audit, später Trajectory |
-| Model-Rollen / Capabilities | — | ◐ | ✅ | ◐ | **2/4** | Erst mit zweitem Provider sinnvoll |
-| Memory / Advisor / TTSR | — | — | ✅ | — | **1/4** | Später; zuerst `RULES.md` |
-| LSP / IDE-Tiefe | — | — | ✅ | — | **1/4** | P2; hoher Aufwand, hoher Nutzen für Code-Qualität |
-| Hashline / anchored Edits | — | — | ✅ | — | **1/4** | P1; hoher Qualitätshebel |
-| Scan-Cache | — | — | ✅ | — | **1/4** | P1/P2; Performance-Hebel |
+| Context files / prompt blocks | ✅ | ✅ | ✅ | ✅ | **4/4** | Stable blocks, `RULES.md`, imports, re-injection |
+| Compaction at turn boundaries | ✅ | ✅ | ✅ | ✅ | **4/4** | Token budget + full turns + stable chapters |
+| Session tree / fork / export | ✅ | ✅ | ✅ | ◐ | **3/4** | Fork/tree are present; export and branch summary missing |
+| Limit and re-read tool output | ✅ | ◐ | ✅ | ◐ | **3/4** | Artifacts present; complete streaming/retention |
+| Stable cache prefixes | ✅ | ✅ | ✅ | ✅ | **4/4** | Checkpoint not at index 0; static blocks first |
+| Subagent orchestration | ◐ | ◐ | ✅ | ◐ | **3/4** | Typed batches, wait/cancel, isolation |
+| Approval tiers / modes | ✅ | ◐ | ✅ | ✅ | **3/4** | READ/WRITE/EXEC, target-aware grants |
+| Durable approvals | — | — | ◐ | ✅ | **1/4, critical** | P0: survives restart, deadline, facts |
+| Idempotency / durable effects | — | — | — | ✅ | **1/4, critical** | P0: key + intent/result + reconciliation |
+| Outcome algebra | ◐ | ◐ | ◐ | ✅ | **1/4, critical** | P0: Busy/Refused/Failed/Terminated |
+| Turn policy | — | ◐ | ◐ | ✅ | **1/4, critical** | P0/P1: Continue/AnswerNow/FailTurn |
+| Observability / trajectory | ◐ | ◐ | ✅ | ✅ | **3/4** | Turn stats, metrics, audit, trajectory later |
+| Model roles / capabilities | — | ◐ | ✅ | ◐ | **2/4** | Only meaningful with a second provider |
+| Memory / advisor / TTSR | — | — | ✅ | — | **1/4** | Later; `RULES.md` first |
+| LSP / IDE depth | — | — | ✅ | — | **1/4** | P2; high effort, high value for code quality |
+| Hashline / anchored edits | — | — | ✅ | — | **1/4** | P1; high quality lever |
+| Scan cache | — | — | ✅ | — | **1/4** | P1/P2; performance lever |
 
-### 1.3 Was alle vier sagen
+### 1.3 What all four say
 
-Diese Punkte haben echten Konsens und sollten als **Designprinzipien** gelten:
+These points have genuine consensus and should be treated as **design principles**:
 
-1. **Compaction darf keine Tool-Interaktion zerschneiden.**
-   Immer ganze Turns behalten; Tool-Call und Tool-Result gehören zusammen.
-2. **Der Kontext braucht eine stabile Struktur.**
-   Statische System-/Instruktionsblöcke zuerst, projektbezogene Inhalte danach,
-   aktiver Turn zuletzt. Das ist gut für Cache, Reproduzierbarkeit und Debugging.
-3. **Zusammenfassungen sind eine Sicht, keine Wahrheit.**
-   Das Rohlog bleibt append-only; die Compaction ist eine Projektion.
-4. **Sessions müssen wiederaufnehmbar und verzweigbar sein.**
-   Tree/Fork/Export sind keine Luxusfunktionen, sondern Recovery- und
-   Debug-Werkzeuge.
-5. **Tool-Ausgaben müssen begrenzt und trotzdem vollständig erreichbar sein.**
-   Sichtbarer Prefix + stabiler Artifact-Verweis statt stiller Kürzung.
-6. **Subagents brauchen klare Ergebnisse und Isolation.**
-   Kein „fire and forget“, keine verschluckten Fehler, keine kollidierenden
-   Worktrees.
-7. **Berechtigungen brauchen eine explizite Kette.**
-   `deny` vor gespeicherter Freigabe, `ask` vor `allow`, Abbruch getrennt von
-   sichtbarem Tool-Fehler.
+1. **Compaction must not split a tool interaction.**
+   Always keep full turns; tool call and tool result belong together.
+2. **Context needs a stable structure.**
+   Static system/instruction blocks first, project-specific content after,
+   active turn last. This is good for cache, reproducibility and debugging.
+3. **Summaries are a view, not the truth.**
+   The raw log stays append-only; compaction is a projection.
+4. **Sessions must be resumable and branchable.**
+   Tree/fork/export are not luxury features but recovery and
+   debugging tools.
+5. **Tool output must be limited yet fully reachable.**
+   Visible prefix + stable artifact reference instead of silent truncation.
+6. **Subagents need clear results and isolation.**
+   No "fire and forget", no swallowed errors, no colliding worktrees.
+7. **Permissions need an explicit chain.**
+   `deny` before stored approval, `ask` before `allow`, abort separate from
+   visible tool error.
 
-### 1.4 Was nur eine Quelle sagt – und trotzdem P0 ist
+### 1.4 What only one source says – and is P0 anyway
 
-Die Konsensmatrix darf nicht als Abstimmung missverstanden werden. Diese
-Punkte kommen fast nur aus Nessy, sind aber **Produktionsblocker**:
+The consensus matrix must not be misunderstood as a vote. These points come
+almost only from Nessy but are **production blockers**:
 
-| Nessy-Lehre | QOC-Problem | Warum P0 |
+| Nessy lesson | QOC problem | Why P0 |
 |---|---|---|
-| Durable Approvals mit Fakten und Deadline | QOC-009 | Ein Neustart darf keine offene Freigabe verlieren; sonst hängt der Claim. |
-| Idempotency Key für Tool-Calls | QOC-011 | At-least-once-Ausführung braucht einen stabilen Korrelationsschlüssel. |
-| Explizite Outcome-Algebra | QOC-013 | Clients können „busy“, „refused“, „failed“ und „terminated“ nicht unterscheiden. |
-| Staged Turn Policy | `maxSteps` allein | Ein Turn kann durch Tool-Schleifen, Tokens, Zeit oder Kosten unbegrenzt werden. |
-| Effect-/Outbox-Denken | Claims + Journal | Recovery muss wissen, was angekündigt, was ausgeführt und was offen ist. |
-| Usage-/Trajectory-Projektionen | OTel + Token-Zähler | Betrieb und Kostenoptimierung brauchen Turn-Statistiken, nicht nur Summen. |
+| Durable approvals with facts and deadline | QOC-009 | A restart must not lose an open approval; otherwise the claim hangs. |
+| Idempotency key for tool calls | QOC-011 | At-least-once execution needs a stable correlation key. |
+| Explicit outcome algebra | QOC-013 | Clients cannot distinguish "busy", "refused", "failed" and "terminated". |
+| Staged turn policy | `maxSteps` alone | A turn can become unbounded via tool loops, tokens, time or cost. |
+| Effect/outbox thinking | Claims + journal | Recovery must know what was announced, what was executed and what is open. |
+| Usage/trajectory projections | OTel + token counter | Operations and cost optimization need turn statistics, not just sums. |
 
-### 1.5 Was QOC bereits hat
+### 1.5 What QOC already has
 
-Laut aktuellem QOC-Findings-Register und Code-Stand (Commit `e478f19`, teilweise
-uncommittete Nacharbeiten):
+According to the current QOC findings register and code state (commit `e478f19`,
+partly uncommitted follow-up work):
 
-| ID | Thema | Status | Konsequenz für diese Liste |
+| ID | Topic | Status | Consequence for this list |
 |---|---|---|---|
-| QOC-001 | Shell-Output und Background-Prozesse | DONE | Nicht erneut priorisieren; höchstens Streaming/Prozessgruppen prüfen |
-| QOC-002 | Compaction-Summary sicher aktualisieren | DONE | SHA-256 und Predecessor-Text sind vorhanden |
-| QOC-003 | Background-Subagent-Fehler sichtbar | DONE | Task-Registry ist da; typisierte Batches fehlen weiterhin |
-| QOC-004 | Search/Glob auf realen Trees | DONE | Ignore/Hidden/Binary/Timeout/Paging sind da; Scan-Cache fehlt |
-| QOC-005 | Tool-Output als Artefakt | DONE | `ArtifactRef`, `artifact://`, Read/Grep-Auflösung vorhanden |
-| QOC-006 | Session-Fork und Tree | DONE | Fork/Tree vorhanden; Export/Branch-Summary fehlen |
-| QOC-007 | Tool-Katalog-Leak nach Compaction | DONE | Regressionstest im Auge behalten |
-| QOC-008 | PermissionDenied als HTTP 500 | DONE | Domänenfehler-Mapping weiter absichern |
-| QOC-009 | Ephemere Approvals | **OPEN** | **P0-03** |
-| QOC-010 | Compaction zerschneidet Turn | DONE (Turn-Grenze) | Token-Budget und Kapitelstruktur bleiben offen → **P0-05** |
-| QOC-011 | Kein Idempotency Key | **OPEN** | **P0-02 / P0-04** |
-| QOC-012 | Checkpoint an Index 0 | **OPEN** | **P0-06** |
-| QOC-013 | Keine Outcome-Algebra | **OPEN** | **P0-01** |
+| QOC-001 | Shell output and background processes | DONE | Do not re-prioritize; at most check streaming/process groups |
+| QOC-002 | Compaction summary safely updated | DONE | SHA-256 and predecessor text are present |
+| QOC-003 | Background subagent errors visible | DONE | Task registry is present; typed batches still missing |
+| QOC-004 | Search/glob on real trees | DONE | Ignore/hidden/binary/timeout/paging are present; scan cache missing |
+| QOC-005 | Tool output as artifact | DONE | `ArtifactRef`, `artifact://`, read/grep resolution present |
+| QOC-006 | Session fork and tree | DONE | Fork/tree present; export/branch summary missing |
+| QOC-007 | Tool catalog leak after compaction | DONE | Keep regression test in view |
+| QOC-008 | PermissionDenied as HTTP 500 | DONE | Keep hardening domain-error mapping |
+| QOC-009 | Ephemeral approvals | **OPEN** | **P0-03** |
+| QOC-010 | Compaction cuts a turn | DONE (turn boundary) | Token budget and chapter structure remain open → **P0-05** |
+| QOC-011 | No idempotency key | **OPEN** | **P0-02 / P0-04** |
+| QOC-012 | Checkpoint at index 0 | **OPEN** | **P0-06** |
+| QOC-013 | No outcome algebra | **OPEN** | **P0-01** |
 
-Zusätzlich vorhanden und zu erhalten:
+Additionally present and to be preserved:
 
-- TLS/Basic Auth und öffentliche Erreichbarkeit über Nginx (Betrieb, nicht
-  Engine-Feature).
-- Native Binary und systemd-Service.
-- Breite Tool-Palette inkl. MCP, Skills, Subagents, Worktrees, Web.
-- Contract-Tests und ArchUnit-Regeln als Basis für weitere Härtung.
-- JaCoCo-Gate von 80 % Instruction Coverage.
+- TLS/Basic Auth and public reachability via Nginx (operations, not an engine
+  feature).
+- Native binary and systemd service.
+- Broad tool palette including MCP, skills, subagents, worktrees, web.
+- Contract tests and ArchUnit rules as a basis for further hardening.
+- JaCoCo gate of 80 % instruction coverage.
 
-### 1.6 Widersprüche und Unsicherheiten
+### 1.6 Contradictions and uncertainties
 
-- **QOC-010:** Das Register sagt `DONE`, weil die Turn-Grenze repariert wurde.
-  Token-Budget, Cache-Stabilität und kumulative Dateilisten sind aber noch
-  offen. Diese Synthese behandelt QOC-010 deshalb als **teilweise erledigt**.
-- **QOC-007/QOC-008:** In den Detailabschnitten sind teilweise noch
-  Checkboxen offen, obwohl die Übersicht `DONE` sagt. Maßgeblich ist der
-  Code-Stand; die Checkboxen sollten nachgezogen werden.
-- **QOC-009/011/012/013:** Diese vier sind die klaren offenen Produktionslücken.
-- **Referenzstände:** `analysis/learnings/oh-my-pi.md` vergleicht oh-my-pi `0b5c27a` mit QOC
-  `24f0273`; `analysis/learnings/nessy.md` vergleicht Nessy `0c26499`. QOC ist seitdem
-  weitergelaufen. Aussagen sind als Muster zu lesen, nicht als exakte
-  Dateiinventur.
-- **`qoc-findings.md`:** Enthält uncommittete Änderungen. Diese Datei nicht
-  überschreiben; die Synthese verlinkt nur.
+- **QOC-010:** The register says `DONE` because the turn boundary was fixed.
+  Token budget, cache stability and cumulative file lists are still open. This
+  synthesis therefore treats QOC-010 as **partially done**.
+- **QOC-007/QOC-008:** The detail sections still have some checkboxes open
+  even though the overview says `DONE`. The code state is authoritative; the
+  checkboxes should be updated.
+- **QOC-009/011/012/013:** These four are the clear open production gaps.
+- **Reference states:** `analysis/learnings/oh-my-pi.md` compares oh-my-pi `0b5c27a`
+  with QOC `24f0273`; `analysis/learnings/nessy.md` compares Nessy `0c26499`. QOC has
+  moved on since. Statements should be read as patterns, not as an exact file
+  inventory.
+- **`qoc-findings.md`:** Contains uncommitted changes. Do not overwrite it;
+  this synthesis only links to it.
 
 ---
 
-## 2. Zielbild: besser, stabiler, schneller, production-ready
+## 2. Target picture: better, more stable, faster, production-ready
 
-### 2.1 Vier Qualitätsachsen
+### 2.1 Four quality axes
 
-| Achse | Konkretes Ziel | Messgröße |
+| Axis | Concrete goal | Measure |
 |---|---|---|
-| **Besser** | Weniger Retries, präzisere Edits, stabiler Kontext, klare Ergebnisse | Retry-Rate, Edit-Fehlerrate, Kontext-Overflows, Task-Erfolgsrate |
-| **Stabiler** | Crash-sicher, idempotent, begrenzt, explizit fehlerhaft | Stuck Claims, doppelte Side-Effects, verlorene Approvals, 24h-Soak |
-| **Schneller** | Kürzere Time-to-First-Token, weniger Tokens, weniger Scans | p95-Latenz, Token pro Turn, Scan-Zeit, Cache-Hit-Rate |
-| **Production-ready** | Sicher, beobachtbar, wiederherstellbar, überlastbar | Health/Metrics, Backup-Restore, Lasttest, Security-Review |
+| **Better** | Fewer retries, more precise edits, stable context, clear results | Retry rate, edit error rate, context overflows, task success rate |
+| **More stable** | Crash-safe, idempotent, bounded, explicitly failing | Stuck claims, duplicate side effects, lost approvals, 24h soak |
+| **Faster** | Shorter time-to-first-token, fewer tokens, fewer scans | p95 latency, tokens per turn, scan time, cache hit rate |
+| **Production-ready** | Secure, observable, recoverable, overloadable | Health/metrics, backup-restore, load test, security review |
 
-### 2.2 Nicht-Ziele (bewusst nicht jetzt)
+### 2.2 Non-goals (deliberately not now)
 
-Diese Punkte aus den Referenzen sind attraktiv, aber keine aktuellen
-Produktionsblocker. Sie gehören in P2/P3 oder bleiben dauerhaft draußen:
+These points from the references are attractive but not current production
+blockers. They belong in P2/P3 or stay out permanently:
 
-- Vollständiger Plugin-/Marketplace-Runtime (TypeScript/JS) – QOC ist Java;
-  MCP und eine kleine Java-SPI sind die besseren Grenzen.
-- 60+-Provider-Katalog und KDL-Kompatibilitätskorpus – erst mit echtem Bedarf
-  und mehreren Adaptern.
-- Snapcompact (Historie als Bilder) – providerabhängig, teuer, opak.
-- Autonome Memory-Pipelines, Advisor-Modell und TTSR – zuerst `RULES.md` und
-  manuell kuratierte Projektregeln.
-- Persistente Shells/Services – Background-Jobs und Prozess-Registry reichen
-  für den Serverbetrieb.
-- Encrypted Share Relay / Collaboration – Export genügt.
-- Exactly-once-Ausführung – die Spezifikation erlaubt at-least-once; QOC sollte
-  das nicht überversprechen.
-- Vollständiger Nessy-Effect-Umbau – zuerst minimale Reconciliation, dann
-  entscheiden, ob eine echte Effect-Tabelle nötig ist.
+- Full plugin/marketplace runtime (TypeScript/JS) – QOC is Java;
+  MCP and a small Java SPI are the better boundaries.
+- 60+ provider catalog and KDL compatibility corpus – only with real demand
+  and multiple adapters.
+- Snapcompact (history as images) – provider-dependent, expensive, opaque.
+- Autonomous memory pipelines, advisor model and TTSR – first `RULES.md` and
+  manually curated project rules.
+- Persistent shells/services – background jobs and process registry suffice for
+  server operation.
+- Encrypted share relay / collaboration – export suffices.
+- Exactly-once execution – the specification allows at-least-once; QOC should
+  not over-promise.
+- Full Nessy effect rebuild – first minimal reconciliation, then decide whether
+  a real effect table is needed.
 
 ---
 
-## 3. Priorisierte Maßnahmen
+## 3. Prioritized measures
 
-Die IDs sind bewusst unabhängig von QOC-001…013, damit die Liste als Backlog
-verwendet werden kann. Jede Maßnahme nennt Ziel, konkrete Änderungen,
-Acceptance und Tests.
+The IDs are deliberately independent of QOC-001…013 so the list can be used as
+a backlog. Each measure names goal, concrete changes, acceptance and tests.
 
-### P0 – Production Blocker
+### P0 – Production blockers
 
-#### P0-01 – Turn-Outcome-Algebra (QOC-013)
+#### P0-01 – Turn-outcome algebra (QOC-013)
 
-**Warum:** `PromptResult` transportiert heute nur `finish`, Text, Usage und
-optional Structured Output. Ein Client kann nicht unterscheiden, ob ein Turn
-gar nicht lief (busy), vom Modell abgelehnt wurde, technisch fehlschlug oder
-abgebrochen wurde. Das macht Retries und UI-Zustände unsicher.
+**Why:** `PromptResult` currently carries only `finish`, text, usage and
+optional structured output. A client cannot tell whether a turn never ran
+(busy), was rejected by the model, failed technically or was aborted. This
+makes retries and UI states unsafe.
 
-**Konkret:**
-- Versiegeltes `TurnOutcome` einführen:
+**Concrete:**
+- Introduce a sealed `TurnOutcome`:
   - `Completed(finish, usage, text, structured)`
   - `Busy(retryAfter)`
   - `Refused(reason, providerCode)`
   - `Failed(error, retryable)`
   - `Terminated(reason)`
   - `Cancelled`
-- `Engine.runPrompt` und `PromptResult` darauf umstellen; Usage nur bei
-  tatsächlich gelaufenem Turn.
-- HTTP-Mapping explizit: 200 / 409 / 422 / 502–503 / 408–499; keine
-  Domänenfehler als 500.
-- SSE-Terminalframe (`turn.completed` / `turn.failed`) mit demselben Outcome.
-- Refused darf **nicht** als modellseitiger Tool-Fehler erscheinen.
+- Switch `Engine.runPrompt` and `PromptResult` to it; usage only for a turn
+  that actually ran.
+- HTTP mapping explicit: 200 / 409 / 422 / 502–503 / 408–499; no domain
+  errors as 500.
+- SSE terminal frame (`turn.completed` / `turn.failed`) with the same outcome.
+- Refused must **not** appear as a model-side tool error.
 
 **Acceptance:**
-- Busy, Refused, Failed, Terminated und Cancelled sind im API-Response und im
-  SSE-Stream unterscheidbar.
-- Ein abgelehnter Turn erzeugt keine erfundene Assistant-Nachricht.
-- Retry-Entscheidungen sind pro Outcome dokumentiert.
+- Busy, Refused, Failed, Terminated and Cancelled are distinguishable in the
+  API response and in the SSE stream.
+- A refused turn creates no fabricated assistant message.
+- Retry decisions are documented per outcome.
 
 **Tests:** busy session, terminated session, model refusal, provider error,
-timeout, cancel, SSE-Terminalframe, HTTP-Status-Mapping.
+timeout, cancel, SSE terminal frame, HTTP status mapping.
 
-**Abhängigkeiten:** keine; sollte zuerst kommen, weil alle anderen Fehlerpfade
-davon profitieren.
+**Dependencies:** none; should come first because all other error paths
+benefit from it.
 
-**Aufwand/Risiko:** M / niedrig.
+**Effort/risk:** M / low.
 
 ---
 
-#### P0-02 – Idempotency Key und dauerhafter Tool-Call-Lifecycle (QOC-011)
+#### P0-02 – Idempotency key and durable tool-call lifecycle (QOC-011)
 
-**Warum:** QOC garantiert at-least-once. Nach einem Crash kann ein Tool erneut
-ausgeführt werden. Ohne stabilen Schlüssel kann ein side-effecting Tool das
-nicht erkennen. `ToolContext` hat heute nur Session-, Agent-, Message- und
-Call-ID.
+**Why:** QOC guarantees at-least-once. After a crash a tool can be executed
+again. Without a stable key a side-effecting tool cannot detect that. `ToolContext`
+currently has only session, agent, message and call ID.
 
-**Konkret:**
-- `IdempotencyKey` als eigenes Value Object; erzeugt **bei der Ankündigung**
-  des Tool-Calls, nicht erst bei der Ausführung.
-- Key in `ToolContext`, `ToolCall`, Tool-Events, Approval-Request und
-  Subagent-Auftrag transportieren.
-- Vor dem Side-Effect ein Intent-Event persistieren; nach Abschluss ein
-  Result-Event. Der Key verbindet beide.
-- Tool-Vertrag ergänzen: `readOnly` / `sideEffecting` und optional
+**Concrete:**
+- `IdempotencyKey` as its own value object; generated **at announcement** of
+  the tool call, not only at execution.
+- Carry the key in `ToolContext`, `ToolCall`, tool events, approval request
+  and subagent assignment.
+- Persist an intent event before the side effect; a result event after
+  completion. The key connects both.
+- Extend the tool contract: `readOnly` / `sideEffecting` and optionally
   `supportsIdempotency`.
-- Recovery: Intent ohne Result erkennen; read-only sicher wiederholen;
-  side-effecting nur mit Dedupe oder explizit `Unknown`/`NeedsReview` melden.
-- Keine Exactly-once-Versprechung; die Semantik bleibt at-least-once.
+- Recovery: detect intent without result; safely repeat read-only calls;
+  side-effecting only with dedupe or explicitly report `Unknown`/`NeedsReview`.
+- No exactly-once promise; semantics stay at-least-once.
 
 **Acceptance:**
-- Ein wiederhergestellter Tool-Call ist über den Key eindeutig identifizierbar.
-- Ein side-effecting Tool kann anhand des Keys deduplizieren.
-- Ein Crash zwischen Intent und Result erzeugt einen expliziten Zustand, keinen
-  stillen Verlust.
+- A recovered tool call is uniquely identifiable via the key.
+- A side-effecting tool can dedupe using the key.
+- A crash between intent and result produces an explicit state, not a silent
+  loss.
 
-**Tests:** Crash zwischen Intent/Result, doppelte Delivery, Retry, Key-Stabilität
-über Resume, Approval und Tool-Call teilen denselben Key, read-only vs.
-side-effecting.
+**Tests:** crash between intent/result, duplicate delivery, retry, key
+stability across resume, approval and tool call sharing the same key, read-only
+vs. side-effecting.
 
-**Abhängigkeiten:** P0-03 (Approvals) und P0-04 (Recovery) teilen den Key.
+**Dependencies:** P0-03 (approvals) and P0-04 (recovery) share the key.
 
-**Aufwand/Risiko:** M / mittel (Event-/Persistenzänderung).
+**Effort/risk:** M / medium (event/persistence change).
 
 ---
 
-#### P0-03 – Dauerhafte Approvals (QOC-009)
+#### P0-03 – Durable approvals (QOC-009)
 
-**Warum:** `PendingApprovals` ist ein In-Memory-Map. Ein Neustart bei offener
-Freigabe verliert den Request, während der Execution-Claim weiterlebt. Das ist
-ein echter Produktionsfehler.
+**Why:** `PendingApprovals` is an in-memory map. A restart with an open
+approval loses the request while the execution claim keeps living. That is a
+real production bug.
 
-**Konkret:**
-- Tabelle `approval_request` (Flyway-Migration):
+**Concrete:**
+- Table `approval_request` (Flyway migration):
   `id`, `session_id`, `project_id`, `action`, `resource`, `tier`,
   `facts_json`, `status`, `created_at`, `deadline_at`, `decided_at`,
   `decided_by`, `decision`, `reason`, `idempotency_key`.
-- Port `ApprovalRequestStore` mit `create`, `pending(session)`, `decide`,
+- Port `ApprovalRequestStore` with `create`, `pending(session)`, `decide`,
   `expire`, `find`, `recover`.
-- `PermissionEngine` schreibt den Request **vor** dem Warten; die
-  `ApprovalSource` wartet auf Store/Doorbell statt auf eine rein lokale
-  Future.
-- Deadline: abgelaufene Requests werden deterministisch denied/aborted; kein
-  Thread bleibt unbegrenzt blockiert.
+- `PermissionEngine` writes the request **before** waiting; `ApprovalSource`
+  waits on store/doorbell instead of a purely local future.
+- Deadline: expired requests are deterministically denied/aborted; no thread
+  stays blocked indefinitely.
 - HTTP/SSE: `GET /api/session/{id}/approvals`,
-  `POST /api/session/{id}/approvals/{id}`, Event bei Entscheidung.
-- Recovery: offene Requests nach Neustart sichtbar machen; verwaiste Requests
-  ablaufen lassen oder erneut veröffentlichen.
+  `POST /api/session/{id}/approvals/{id}`, event on decision.
+- Recovery: make open requests visible after restart; let orphaned requests
+  expire or republish.
 
 **Acceptance:**
-- Eine offene Freigabe ist nach einem Neustart sichtbar.
-- Deadline, Fakten und Entscheidung überleben den Neustart.
-- Doppelte Entscheidungen sind idempotent; Entscheidung nach Ablauf ist
-  explizit.
-- Kein Claim bleibt wegen einer verlorenen Freigabe hängen.
+- An open approval is visible after a restart.
+- Deadline, facts and decision survive the restart.
+- Duplicate decisions are idempotent; a decision after expiry is explicit.
+- No claim hangs because of a lost approval.
 
-**Tests:** Restart mit offener Freigabe, Deadline, doppelte Antwort,
-Antwort nach Ablauf, Cross-Session-Isolation, Approval mit Idempotency Key.
+**Tests:** restart with open approval, deadline, duplicate reply, reply after
+expiry, cross-session isolation, approval with idempotency key.
 
-**Abhängigkeiten:** P0-02 (Key), Migration, evtl. P0-08 (Parking statt Blocking).
+**Dependencies:** P0-02 (key), migration, possibly P0-08 (parking instead of
+blocking).
 
-**Aufwand/Risiko:** M–L / mittel.
+**Effort/risk:** M–L / medium.
 
 ---
 
-#### P0-04 – Crash-Recovery und Reconciliation
+#### P0-04 – Crash recovery and reconciliation
 
-**Warum:** QOC hat Claims und ein Journal, aber der Startpfad muss systematisch
-klären: Welche Claims sind offen? Welche Tool-Calls wurden angekündigt, aber
-nicht beendet? Welche Approvals sind offen? Welche Background-Tasks sind mit
-dem Prozess verloren? Nessys Effect-Denken liefert die richtige Frage, auch
-wenn QOC nicht sofort eine vollständige Effect-Tabelle braucht.
+**Why:** QOC has claims and a journal, but the startup path must systematically
+clarify: which claims are open? Which tool calls were announced but not
+finished? Which approvals are open? Which background tasks were lost with the
+process? Nessy's effect thinking supplies the right question, even though QOC
+does not immediately need a full effect table.
 
-**Konkret:**
-- Startup-Reihenfolge definieren und testen:
-  1. Migrationen/DB-Verfügbarkeit prüfen.
-  2. Offene Claims laden.
-  3. Tool-Intents ohne Result reconcilen.
-  4. Offene Approvals laden/ablaufen lassen.
-  5. In-Memory-Background-Tasks als `LOST` markieren (sie überleben den
-     Prozess nicht; das muss sichtbar sein).
-  6. Prozess-Registry bereinigen.
-  7. Warteschlangen/Doorbell neu aufbauen.
-- Jeder Recovery-Fall endet in einem expliziten Zustand: `Resumed`,
-  `Failed(reason)`, `NeedsReview`, `Expired`.
-- Kein stilles Verschlucken; Recovery-Events im Journal.
-- Vollständige Effect-/Outbox-Tabelle erst danach entscheiden (P1-08).
+**Concrete:**
+- Define and test the startup order:
+  1. Check migrations/DB availability.
+  2. Load open claims.
+  3. Reconcile tool intents without result.
+  4. Load/expire open approvals.
+  5. Mark in-memory background tasks as `LOST` (they do not survive the
+     process; this must be visible).
+  6. Clean the process registry.
+  7. Rebuild queues/doorbell.
+- Every recovery case ends in an explicit state: `Resumed`, `Failed(reason)`,
+  `NeedsReview`, `Expired`.
+- No silent swallowing; recovery events in the journal.
+- Full effect/outbox table only decided afterwards (P1-08).
 
 **Acceptance:**
-- Crash an jedem definierten Punkt führt zu einem expliziten Ergebnis.
-- Kein Claim bleibt dauerhaft `RUNNING`.
-- Verlorene Background-Tasks sind sichtbar, nicht „ewig laufend“.
-- Recovery ist idempotent (mehrfacher Start schadet nicht).
+- A crash at any defined point leads to an explicit result.
+- No claim stays `RUNNING` permanently.
+- Lost background tasks are visible, not "running forever".
+- Recovery is idempotent (repeated startup does no harm).
 
-**Tests:** Fault-Injection an Intent/Result/Approval/Claim/Shutdown; doppelter
-Start; DB weg während Start; verwaiste Prozesse.
+**Tests:** fault injection at intent/result/approval/claim/shutdown; double
+start; DB down during start; orphaned processes.
 
-**Abhängigkeiten:** P0-02, P0-03.
+**Dependencies:** P0-02, P0-03.
 
-**Aufwand/Risiko:** M–L / hoch (Kernstabilität).
+**Effort/risk:** M–L / high (core stability).
 
 ---
 
-#### P0-05 – Token-aware Compaction und Turn-Integrität
+#### P0-05 – Token-aware compaction and turn integrity
 
-**Warum:** QOC schneidet heute nach `keepMessages`, nicht nach Token-Budget.
-QOC-010 hat die Turn-Grenze verbessert, aber ein einzelner großer Turn oder ein
-riesiges Tool-Result kann weiterhin das Kontextfenster sprengen. Alle vier
-Analysen sehen Compaction als zentrales Stabilitätsproblem.
+**Why:** QOC currently cuts after `keepMessages`, not by token budget. QOC-010
+improved the turn boundary, but a single large turn or a huge tool result can
+still blow the context window. All four analyses see compaction as a central
+stability problem.
 
-**Konkret:**
-- `CompactionPolicy` mit `reserveTokens`, `keepRecentTokens`,
+**Concrete:**
+- `CompactionPolicy` with `reserveTokens`, `keepRecentTokens`,
   `triggerRatio`, `enabled`.
-- Trigger **vor** dem Provider-Overflow: `contextTokens >
+- Trigger **before** provider overflow: `contextTokens >
   contextWindow - reserveTokens`.
-- Token-Schätzer pro Message/Tool-Result mit Sicherheitsmarge; exakte
-  Tokenizer später.
-- Cut nur zwischen vollständigen Turns; Tool-Call und Tool-Result bleiben
-  zusammen; der letzte User-Turn bleibt vollständig.
-- `firstKeptSeq`, `tokensBefore`, `summary`, kumulative Read-/Modified-Files
-  speichern.
-- Manuelle Compaction mit optionalen Instruktionen.
-- Bei einem einzelnen überlangen Turn: Turn-Prefix-Summary + History-Summary
-  (pi-Muster), nicht mitten im Tool-Exchange schneiden.
+- Token estimator per message/tool result with safety margin; exact tokenizers
+  later.
+- Cut only between complete turns; tool call and tool result stay together;
+  the last user turn stays complete.
+- Store `firstKeptSeq`, `tokensBefore`, `summary`, cumulative read/modified
+  files.
+- Manual compaction with optional instructions.
+- For a single overlong turn: turn-prefix summary + history summary
+  (pi pattern), not cutting mid tool exchange.
 
 **Acceptance:**
-- Kein Context-Overflow durch normale lange Sessions.
-- Keine Compaction trennt Tool-Call und Result.
-- Der letzte Turn bleibt vollständig.
-- Die zweite Compaction sieht die erste Summary.
-- Token-Budget und tatsächliche Usage sind nachvollziehbar.
+- No context overflow through normal long sessions.
+- No compaction splits tool call and result.
+- The last turn stays complete.
+- The second compaction sees the first summary.
+- Token budget and actual usage are traceable.
 
-**Tests:** langes Tool-Result, ein Turn größer als das Budget, wiederholte
-Compaction, exakte Grenze, kumulative Dateilisten, manuelle Instruktionen.
+**Tests:** long tool result, one turn larger than the budget, repeated
+compaction, exact boundary, cumulative file lists, manual instructions.
 
-**Abhängigkeiten:** P0-06 (Layout), QOC-002 (Summary-Update, bereits DONE).
+**Dependencies:** P0-06 (layout), QOC-002 (summary update, already DONE).
 
-**Aufwand/Risiko:** M / mittel.
+**Effort/risk:** M / medium.
 
 ---
 
-#### P0-06 – Stabile Prompt-/Checkpoint-Struktur (QOC-012)
+#### P0-06 – Stable prompt/checkpoint structure (QOC-012)
 
-**Warum:** `ContextBuilder` fügt den Compaction-Checkpoint an Index 0 der
-Message-Liste ein. Jede Compaction verändert damit den Anfang des
-Modell-Prompts und kann den Cache-Prefix invalidieren. Nessy und oh-my-pi
-zeigen die stabilere Struktur: statische Blöcke zuerst, Kapitel/Summary
-append-only, aktiver Turn zuletzt.
+**Why:** `ContextBuilder` inserts the compaction checkpoint at index 0 of the
+message list. Every compaction thus changes the start of the model prompt and
+can invalidate the cache prefix. Nessy and oh-my-pi show the more stable
+structure: static blocks first, chapters/summary append-only, active turn last.
 
-**Konkret:**
-- Prompt-Struktur explizit:
-  1. statischer Base-Prompt,
-  2. Skills-/Tool-Guidance,
-  3. globale/sticky Regeln,
-  4. Projektkontext,
-  5. abgeschlossene Compaction-Kapitel (append-only),
-  6. recent Tail,
-  7. aktiver Turn.
-- Checkpoint nicht mehr an Message-Index 0; als eigenes Kapitel bzw. eigener
-  System-/Context-Block vor dem Tail.
-- Alte Kapitel nicht bei jeder Compaction neu schreiben; neue Summary
-  anhängen. Gelegentliches Merge ist ein bewusster Cache-Bruch.
-- Datum/Zeit/cwd **am Ende** des Prompts, nicht am Anfang.
-- Cache-Affinity-Header und Prompt-Cache-Key beibehalten; Prefix-Stabilität
-  messbar machen.
+**Concrete:**
+- Explicit prompt structure:
+  1. static base prompt,
+  2. skills/tool guidance,
+  3. global/sticky rules,
+  4. project context,
+  5. completed compaction chapters (append-only),
+  6. recent tail,
+  7. active turn.
+- Checkpoint no longer at message index 0; as its own chapter or its own
+  system/context block before the tail.
+- Do not rewrite old chapters on every compaction; append the new summary.
+  Occasional merge is a conscious cache break.
+- Date/time/cwd **at the end** of the prompt, not at the start.
+- Keep cache-affinity headers and prompt cache key; make prefix stability
+  measurable.
 
 **Acceptance:**
-- Eine Compaction ändert den statischen Prefix nicht.
-- Der Checkpoint liegt nicht an Index 0.
-- Ein Request-Capture zeigt die erwartete Blockreihenfolge.
-- Cache-Hit-Rate wird vor/nach Compaction gemessen.
+- A compaction does not change the static prefix.
+- The checkpoint is not at index 0.
+- A request capture shows the expected block order.
+- Cache hit rate is measured before/after compaction.
 
-**Tests:** Request-Capture vor/nach Compaction, zwei Compactions, leerer
-Kontext, Fork, verschiedene Workspaces.
+**Tests:** request capture before/after compaction, two compactions, empty
+context, fork, different workspaces.
 
-**Abhängigkeiten:** P0-05.
+**Dependencies:** P0-05.
 
-**Aufwand/Risiko:** M / mittel (Prompt-Layout ist semantisch heikel).
+**Effort/risk:** M / medium (prompt layout is semantically delicate).
 
 ---
 
-#### P0-07 – Retry-, Timeout-, Cancel- und Turn-Policy
+#### P0-07 – Retry, timeout, cancel and turn policy
 
-**Warum:** `maxSteps` ist die einzige Begrenzung. Ein Turn kann durch
-Tool-Schleifen, langsame Provider, hängende Prozesse oder hohe Kosten
-unbegrenzt werden. pi liefert konkrete Retry-Defaults; Nessy liefert die
-Turn-Policy.
+**Why:** `maxSteps` is the only limit. A turn can become unbounded through tool
+loops, slow providers, hanging processes or high cost. pi provides concrete
+retry defaults; Nessy provides the turn policy.
 
-**Konkret:**
-- `RetryPolicy`: klassifizierte Fehler, exponentielle Backoff mit Jitter,
-  Max-Retries, Max-Delay, `Retry-After` respektieren. Nicht retryen, wenn
-  bereits sichtbarer Output committed wurde oder der Fehler nicht retrybar ist.
-- `TurnPolicy`: `Continue`, `AnswerNow`, `FailTurn` anhand von
-  `maxSteps`, `maxTokens`, `maxWallTime`, `maxCost`.
-- Timeouts pro Tool, Shell, HTTP, MCP und Subagent; harte Obergrenzen.
-- Cancellation-Propagation: Session-Interrupt → Provider-Stream abbrechen →
-  Prozessgruppe killen → Subagent canceln → Ressourcen freigeben.
-- Kein Thread-Leak, kein hängender Prozess, kein „ewig laufender“ Turn.
+**Concrete:**
+- `RetryPolicy`: classified errors, exponential backoff with jitter, max
+  retries, max delay, respect `Retry-After`. No retry if visible output was
+  already committed or the error is not retryable.
+- `TurnPolicy`: `Continue`, `AnswerNow`, `FailTurn` based on `maxSteps`,
+  `maxTokens`, `maxWallTime`, `maxCost`.
+- Timeouts per tool, shell, HTTP, MCP and subagent; hard upper bounds.
+- Cancellation propagation: session interrupt → abort provider stream →
+  kill process group → cancel subagent → release resources.
+- No thread leak, no hanging process, no "running forever" turn.
 
 **Acceptance:**
-- Ein Turn endet deterministisch mit Continue/AnswerNow/FailTurn.
-- Ein Abbruch beendet Provider-Stream, Tool-Prozess und Subagent.
-- Retry-After über dem Cap führt zu schnellem Fehlschlag statt langem Warten.
-- Keine Retries nach bereits sichtbarem Output.
+- A turn ends deterministically with Continue/AnswerNow/FailTurn.
+- An abort terminates provider stream, tool process and subagent.
+- Retry-After above the cap leads to fast failure instead of long waiting.
+- No retries after already visible output.
 
-**Tests:** Provider-Timeout, Retry-After, partieller Stream, Cancel während
-Tool, Cancel während Shell, Subagent-Cancel, Kostenlimit.
+**Tests:** provider timeout, retry-after, partial stream, cancel during tool,
+cancel during shell, subagent cancel, cost limit.
 
-**Abhängigkeiten:** P0-01 (Outcome), P0-08 (Limits).
+**Dependencies:** P0-01 (outcome), P0-08 (limits).
 
-**Aufwand/Risiko:** M / mittel.
+**Effort/risk:** M / medium.
 
 ---
 
-#### P0-08 – Limits, Backpressure und Graceful Shutdown
+#### P0-08 – Limits, backpressure and graceful shutdown
 
-**Warum:** Ohne harte Limits kann ein einzelner Client oder eine Schleife den
-Prozess, die DB oder den Provider erschöpfen. Production-ready heißt:
-Überlast degradiert kontrolliert.
+**Why:** Without hard limits a single client or loop can exhaust the process,
+the DB or the provider. Production-ready means: overload degrades in a
+controlled way.
 
-**Konkret:**
-- Konfigurierbare Limits: max. Sessions, max. Steps, max. Tool-Calls/Turn,
-  max. Subagents, max. Request-Bytes, max. Output, max. Context, max. Kosten,
-  max. Wall-Time.
-- Admission Control: 429 mit `Retry-After` bei Sättigung; bounded Queues;
-  faire Reihenfolge.
-- DB-Pool, HTTP-Connection-Pool und Virtual-Thread-Nutzung begrenzen.
-- Graceful Shutdown: keine neuen Requests, laufende Turns drainen oder
-  abbrechen, Prozesse killen, Events flushen, Claims gemäß Spezifikation
-  behandeln, Registry schließen.
-- Kein `OutOfMemoryError` durch unbegrenzte Artefakte/Queues.
+**Concrete:**
+- Configurable limits: max sessions, max steps, max tool calls/turn, max
+  subagents, max request bytes, max output, max context, max cost, max
+  wall time.
+- Admission control: 429 with `Retry-After` at saturation; bounded queues;
+  fair ordering.
+- Limit DB pool, HTTP connection pool and virtual-thread usage.
+- Graceful shutdown: no new requests, drain or abort running turns, kill
+  processes, flush events, handle claims per specification, close registry.
+- No `OutOfMemoryError` from unbounded artifacts/queues.
 
 **Acceptance:**
-- Überlast erzeugt 429/Backpressure, keinen Crash.
-- Shutdown hinterlässt keinen hängenden Prozess und keinen unklaren Claim.
-- Speicher wächst im 24h-Soak nicht unbegrenzt.
-- Queue-Tiefe und Pool-Auslastung sind sichtbar.
+- Overload produces 429/backpressure, not a crash.
+- Shutdown leaves no hanging process and no unclear claim.
+- Memory does not grow unbounded in a 24h soak.
+- Queue depth and pool utilization are visible.
 
-**Tests:** Lasttest, Sättigung, Shutdown während Turn/Tool, Prozess-Cleanup,
-Queue-Limits, Speicher-Soak.
+**Tests:** load test, saturation, shutdown during turn/tool, process cleanup,
+queue limits, memory soak.
 
-**Abhängigkeiten:** P0-07.
+**Dependencies:** P0-07.
 
-**Aufwand/Risiko:** M / mittel.
+**Effort/risk:** M / medium.
 
 ---
 
-#### P0-09 – Health, Metriken, Audit und Turn-Stats
+#### P0-09 – Health, metrics, audit and turn stats
 
-**Warum:** Production-ready ohne Beobachtbarkeit ist Blindflug. QOC hat
-OpenTelemetry-Spans und Token-Zähler, aber keine klaren Health-/Readiness-
-Verträge und keine Turn-Projektion.
+**Why:** Production-ready without observability is flying blind. QOC has
+OpenTelemetry spans and token counters, but no clear health/readiness contracts
+and no turn projection.
 
-**Konkret:**
-- `GET /health/live` (Prozess) und `GET /health/ready` (DB, Migrationen,
-  Workspace, Provider-Key, Disk, Queue).
-- Metriken: Requests, Sessions, Turn-Dauer, Tokens, Kosten, Tool-Calls,
-  Fehler nach Outcome, Retries, Queue-Tiefe, offene Approvals, Compaction-
-  Dauer, DB-Pool.
-- Strukturierte Logs mit `sessionId`, `turnId`, `toolCallId`,
-  `idempotencyKey`; Secret-Redaction.
-- Audit-Events für Permission-Entscheidungen, Tool-Ausführung und
-  Approval-Änderungen.
-- `TurnStats`-Projektion (Nessy): Steps, Tool-Calls, Tokens, Kosten, Dauer,
-  Retries, Outcome. Trajectory später.
+**Concrete:**
+- `GET /health/live` (process) and `GET /health/ready` (DB, migrations,
+  workspace, provider key, disk, queue).
+- Metrics: requests, sessions, turn duration, tokens, cost, tool calls,
+  errors by outcome, retries, queue depth, open approvals, compaction duration,
+  DB pool.
+- Structured logs with `sessionId`, `turnId`, `toolCallId`,
+  `idempotencyKey`; secret redaction.
+- Audit events for permission decisions, tool execution and approval changes.
+- `TurnStats` projection (Nessy): steps, tool calls, tokens, cost, duration,
+  retries, outcome. Trajectory later.
 
 **Acceptance:**
-- Readiness schlägt fehl, wenn DB/Migration/Workspace nicht bereit sind.
-- Jeder Turn ist über IDs in Logs und Metriken auffindbar.
-- Keine Secrets in Logs.
-- Offene Approvals und Queue-Tiefe sind alarmierbar.
+- Readiness fails when DB/migration/workspace are not ready.
+- Every turn is findable via IDs in logs and metrics.
+- No secrets in logs.
+- Open approvals and queue depth are alertable.
 
-**Tests:** Health bei DB-Ausfall, Migration fehlt, Workspace fehlt; Log-
-Redaction; Metrik-Endpunkt; Trace-Korrelation.
+**Tests:** health on DB failure, missing migration, missing workspace; log
+redaction; metrics endpoint; trace correlation.
 
-**Abhängigkeiten:** P0-01 (Outcome), P0-08 (Limits).
+**Dependencies:** P0-01 (outcome), P0-08 (limits).
 
-**Aufwand/Risiko:** M / niedrig–mittel.
+**Effort/risk:** M / low–medium.
 
 ---
 
-### P1 – Reliability, Qualität und Ergonomie
+### P1 – Reliability, quality and ergonomics
 
-#### P1-01 – Prompt- und Instruktions-Stabilität
+#### P1-01 – Prompt and instruction stability
 
-**Warum:** Alle vier Analysen behandeln Kontextdateien. QOC lädt `AGENTS.md`,
-`SYSTEM.md` und `APPEND_SYSTEM.md`, aber es gibt keinen Ledger für
-Re-Injection nach Compaction/Revert, kein `RULES.md`, keine `@path`-Imports
-und keine stabile Blockstruktur.
+**Why:** All four analyses deal with context files. QOC loads `AGENTS.md`,
+`SYSTEM.md` and `APPEND_SYSTEM.md`, but there is no ledger for re-injection
+after compaction/revert, no `RULES.md`, no `@path` imports and no stable
+block structure.
 
-**Konkret:**
-- `RULES.md` als sticky Regel, die bei **jedem** Request mitgeht.
-- `@path`-Imports: relativ zum importierenden File, `~/` und absolut,
-  max. 5 Hops, Zyklen überspringen, Code-Fences nicht expandieren.
-- Re-Injection nach Compaction/Revert über synthetische Messages mit
-  Metadaten-Ledger (oc) oder äquivalente persistente Instruction-Entries.
-- Projektkontext in einen trailing Block; statische Blöcke davor.
-- Datum/Zeit/cwd am Ende.
-- Deterministische Reihenfolge und Dedupe.
+**Concrete:**
+- `RULES.md` as a sticky rule that accompanies **every** request.
+- `@path` imports: relative to the importing file, `~/` and absolute, max
+  5 hops, skip cycles, do not expand code fences.
+- Re-injection after compaction/revert via synthetic messages with a
+  metadata ledger (oc) or equivalent persistent instruction entries.
+- Project context in a trailing block; static blocks before it.
+- Date/time/cwd at the end.
+- Deterministic order and deduplication.
 
 **Acceptance:**
-- Instruktionen sind nach Compaction/Revert wieder sichtbar.
-- Import-Zyklen und Code-Fences sind getestet.
-- `RULES.md` überlebt lange Sessions.
-- Blockreihenfolge ist deterministisch.
+- Instructions are visible again after compaction/revert.
+- Import cycles and code fences are tested.
+- `RULES.md` survives long sessions.
+- Block order is deterministic.
 
-**Tests:** Re-Injection, Import-Zyklus, Code-Fence, `RULES.md` über
-Compaction, Reihenfolge, Dedupe.
+**Tests:** re-injection, import cycle, code fence, `RULES.md` across
+compaction, order, deduplication.
 
-**Abhängigkeiten:** P0-06.
+**Dependencies:** P0-06.
 
-**Aufwand/Risiko:** M / mittel.
+**Effort/risk:** M / medium.
 
 ---
 
-#### P1-02 – Session-Export und Branch-Summary
+#### P1-02 – Session export and branch summary
 
-**Status (D-11):** Der Export ist **zurückgestellt**. Es gibt aktuell keinen
-Export; die Redaction-Policy ist dokumentiert, die Implementierung folgt erst
-bei konkretem Bedarf. Die Branch-Summary kann unabhängig davon umgesetzt
-werden.
+**Status (D-11):** Export is **deferred**. There is currently no export; the
+redaction policy is documented, the implementation follows only on concrete
+demand. The branch summary can be implemented independently of that.
 
-**Warum:** Fork/Tree sind vorhanden, aber es gibt keinen Export. Ohne Export
-sind Debugging, Übergabe und Audit schwach. Branch-Summaries fehlen, wenn ein
-Tree-Pfad verlassen wird.
+**Why:** Fork/tree are present, but there is no export. Without export,
+debugging, handover and audit are weak. Branch summaries are missing when a
+tree path is left.
 
-**Konkret:**
-- `GET /api/session/{id}/export?format=markdown|json` mit:
-  System-Prompt, Tool-Definitionen, Transcript, Tool-Cards, Usage, Artefakt-
-  Referenzen, Redaction von Secrets.
-- Branch-Summary beim Fork/Tree-Wechsel (Ziel, Entscheidungen, Dateien,
-  offene Fragen).
-- Export-Tests für große Sessions und redigierte Felder.
+**Concrete:**
+- `GET /api/session/{id}/export?format=markdown|json` with:
+  system prompt, tool definitions, transcript, tool cards, usage, artifact
+  references, secret redaction.
+- Branch summary on fork/tree switch (goal, decisions, files, open
+  questions).
+- Export tests for large sessions and redacted fields.
 
 **Acceptance:**
-- Markdown/JSON-Export ist vollständig und redigiert.
-- Ein Fork kann eine Branch-Summary erzeugen.
-- Artefakte bleiben referenzierbar.
+- Markdown/JSON export is complete and redacted.
+- A fork can produce a branch summary.
+- Artifacts remain referenceable.
 
-**Tests:** Export mit Secrets, großen Tool-Ausgaben, Fork, Branch-Summary.
+**Tests:** export with secrets, large tool outputs, fork, branch summary.
 
-**Abhängigkeiten:** QOC-006 (DONE), P1-01.
+**Dependencies:** QOC-006 (DONE), P1-01.
 
-**Aufwand/Risiko:** S–M / niedrig.
+**Effort/risk:** S–M / low.
 
 ---
 
-#### P1-03 – Typisierte Subagent-Batches und Worktree-Isolation
+#### P1-03 – Typed subagent batches and worktree isolation
 
-**Warum:** Die Background-Task-Registry ist da (QOC-003), aber `subagent`
-liefert weiterhin nur Text; es gibt keine `tasks[]`-Batches, keine
-`outputSchema`-Validierung und keine Isolation. oh-my-pi zeigt den Nutzen:
-parallele, typisierte, konfliktfreie Arbeit.
+**Why:** The background task registry exists (QOC-003), but `subagent`
+still returns only text; there are no `tasks[]` batches, no `outputSchema`
+validation and no isolation. oh-my-pi shows the value: parallel, typed,
+conflict-free work.
 
-**Konkret:**
-- `tasks[]` mit `name`, `agent`, `task`, `outputSchema`, `tools`, `cwd`,
+**Concrete:**
+- `tasks[]` with `name`, `agent`, `task`, `outputSchema`, `tools`, `cwd`,
   `isolated`.
-- `SubagentResult` mit `text`, optional `structured`, Usage, Child-Session.
-- `SubmitResult`-Mechanik für strukturierte Child-Ergebnisse wiederverwenden.
-- Worktree nur bei Git-Repo; Ergebnis mit Pfad und Diff zurückgeben; **kein**
-  Auto-Merge.
-- Depth-Limit und Semaphore beibehalten; Fehler sichtbar machen.
+- `SubagentResult` with `text`, optional `structured`, usage, child session.
+- Reuse the `SubmitResult` mechanism for structured child results.
+- Worktree only for a Git repo; return result with path and diff; **no**
+  auto-merge.
+- Keep depth limit and semaphore; make errors visible.
 
 **Acceptance:**
-- Ein Batch mit mehreren Tasks liefert typisierte Ergebnisse.
-- Ein isolierter Task arbeitet in einem eigenen Worktree.
-- Fehler/Cancel sind sichtbar; keine stillen Verluste.
-- Depth- und Concurrency-Limits greifen.
+- A batch with multiple tasks returns typed results.
+- An isolated task works in its own worktree.
+- Errors/cancels are visible; no silent losses.
+- Depth and concurrency limits apply.
 
-**Tests:** Schema-Validierung, ein Task scheitert, Cancel, Worktree-Cleanup,
-parallele Batches, Depth-Limit.
+**Tests:** schema validation, one task fails, cancel, worktree cleanup,
+parallel batches, depth limit.
 
-**Abhängigkeiten:** QOC-003 (DONE), P0-01.
+**Dependencies:** QOC-003 (DONE), P0-01.
 
-**Aufwand/Risiko:** M–L / mittel.
+**Effort/risk:** M–L / medium.
 
 ---
 
-#### P1-04 – Approval-Tiers, Modi und target-aware Grants
+#### P1-04 – Approval tiers, modes and target-aware grants
 
-**Warum:** QOC hat eine gute Rule-Chain, aber `ToolOptions.permission` ist ein
-freier String, es gibt keine READ/WRITE/EXEC-Tiers, keine Modi und keine
-target-aware Grants. oh-my-pi und Nessy zeigen, wie man Freigaben präziser und
-sicherer macht.
+**Why:** QOC has a good rule chain, but `ToolOptions.permission` is a free
+string, there are no READ/WRITE/EXEC tiers, no modes and no target-aware
+grants. oh-my-pi and Nessy show how to make approvals more precise and safer.
 
-**Konkret:**
-- `ApprovalTier { READ, WRITE, EXEC }` an Tool-Definitionen.
+**Concrete:**
+- `ApprovalTier { READ, WRITE, EXEC }` on tool definitions.
 - `ApprovalMode` (`ALWAYS_ASK`, `ALWAYS_ASK_CACHED`, `WRITE`, `YOLO`);
-  QOC-Default bleibt `ALWAYS_ASK`.
-- `SavedApproval` um Tier und Target-Scope erweitern; Migration.
-- Datei-Grants nach resolved Path und Selector; Tree-Grant für rekursive
-  Suche.
-- Shell-Pattern-Policy (allow/deny/prompt) für kritische Kommandos.
-- Approval nach Hook-Input-Änderung erneut auflösen; ohne interaktiven Kanal
-  fail-closed.
+  QOC default stays `ALWAYS_ASK`.
+- Extend `SavedApproval` with tier and target scope; migration.
+- File grants by resolved path and selector; tree grant for recursive search.
+- Shell pattern policy (allow/deny/prompt) for critical commands.
+- Re-resolve approval after hook input change; fail-closed without an
+  interactive channel.
 
 **Acceptance:**
-- Ein Read-Grant erlaubt kein Write/Exec.
-- Ein Write-Grant deckt Reads desselben Targets ab.
-- Kritisches Shell-Kommando ist ohne Freigabe blockiert.
-- Hook-Änderung löst erneute Prüfung aus.
+- A read grant does not allow write/exec.
+- A write grant covers reads of the same target.
+- A critical shell command is blocked without approval.
+- A hook change triggers re-evaluation.
 
-**Tests:** Tier-Hierarchie, Target-Scope, Shell-Pattern, Hook-Reevaluation,
+**Tests:** tier hierarchy, target scope, shell pattern, hook reevaluation,
 headless fail-closed.
 
-**Abhängigkeiten:** P0-03.
+**Dependencies:** P0-03.
 
-**Aufwand/Risiko:** M / mittel.
+**Effort/risk:** M / medium.
 
 ---
 
-#### P1-05 – Scan-Cache, Read-Selektoren und Such-Ergonomie
+#### P1-05 – Scan cache, read selectors and search ergonomics
 
-**Warum:** QOC-004 hat Ignore/Hidden/Binary/Timeout/Paging gelöst. Es fehlt
-weiterhin ein Scan-Cache, und `read` hat keine Range-/Raw-Selektoren oder
-große-Datei-Zusammenfassung. Das kostet Zeit und Tokens.
+**Why:** QOC-004 solved ignore/hidden/binary/timeout/paging. A scan cache is
+still missing, and `read` has no range/raw selectors or large-file summary.
+This costs time and tokens.
 
-**Konkret:**
-- `CachedFileSystem`-Decorator für Directory-Walks:
-  Key = Root + effektive Walk-Options; TTL ~1 s; 16 Einträge; Invalidation
-  bei Write/Delete/Rename aus der Engine.
-- `read` mit explizitem `range`/`raw`-Feld (kein Pfad-Suffix-Zwang wegen
-  Doppelpunkt in Dateinamen).
-- Einfache zeilenbasierte Zusammenfassung für große Dateien; AST-Summary
-  später.
-- Paging-Metadaten statt stillem 100-Hit-Cap (bereits verbessert).
-- Tool-Ausgaben mit klarer „partial/timed out“-Kennzeichnung.
+**Concrete:**
+- `CachedFileSystem` decorator for directory walks:
+  key = root + effective walk options; TTL ~1 s; 16 entries; invalidation on
+  write/delete/rename by the engine.
+- `read` with explicit `range`/`raw` field (no path-suffix constraint because
+  of colons in filenames).
+- Simple line-based summary for large files; AST summary later.
+- Paging metadata instead of a silent 100-hit cap (already improved).
+- Tool output with clear "partial/timed out" marking.
 
 **Acceptance:**
-- Wiederholte Glob/Grep-Läufe im selben Turn sind messbar schneller.
-- Shell-erzeugte Dateien werden spätestens nach TTL sichtbar.
-- Read-Range liefert exakt die gewünschten Zeilen.
-- Große Dateien werden nicht ungebremst in den Kontext gezogen.
+- Repeated glob/grep runs in the same turn are measurably faster.
+- Shell-created files become visible at most after the TTL.
+- Read-range delivers exactly the desired lines.
+- Large files are not pulled into context unchecked.
 
-**Tests:** Cache-Hit, TTL, Invalidation, Shell-Datei, Range, Raw, große Datei.
+**Tests:** cache hit, TTL, invalidation, shell file, range, raw, large file.
 
-**Abhängigkeiten:** QOC-004 (DONE).
+**Dependencies:** QOC-004 (DONE).
 
-**Aufwand/Risiko:** S–M / niedrig.
+**Effort/risk:** S–M / low.
 
 ---
 
-#### P1-06 – Anchored Edits / Hashline (opt-in)
+#### P1-06 – Anchored edits / Hashline (opt-in)
 
-**Warum:** `EditTool` ist exakte `old`-String-Ersetzung. Bei wiederholten
-Snippets, verschobenen Zeilen und großen Refactorings kostet das Retries.
-oh-my-pi zeigt mit Hashline den größten Qualitätshebel: Content-Tag,
-Seen-Ranges, Multi-Hunk, Stale-Erkennung.
+**Why:** `EditTool` is exact `old`-string replacement. With repeated snippets,
+moved lines and large refactorings this costs retries. oh-my-pi shows the
+biggest quality lever with Hashline: content tag, seen ranges, multi-hunk,
+stale detection.
 
-**Konkret:**
-- `EditStore` (session-scoped, zunächst in-memory): Snapshot, Content-Hash,
-  Seen-Ranges.
-- `read`/`grep` liefern `[path#tag]`-Header und zeichnen emittierte Ranges auf.
-- Parser für `PUT N.=M`, `PUT <N`, `PUT >N`, `PUT >$`, `CUT N.=M`, `REM`,
-  `MV`, benannte Register.
-- Alle Sections vor dem Schreiben validieren; überlappende Ranges ablehnen;
-  Stale-Tag mit aktuellem Kontext melden.
-- `edit.mode` mit konservativem Default `replace`; Hashline opt-in pro
-  Agent/Modell.
-- Kein Tree-sitter-Block `N*` in Version 1; klare Fehlermeldung statt Raten.
+**Concrete:**
+- `EditStore` (session-scoped, initially in-memory): snapshot, content hash,
+  seen ranges.
+- `read`/`grep` emit `[path#tag]` headers and record emitted ranges.
+- Parser for `PUT N.=M`, `PUT <N`, `PUT >N`, `PUT >$`, `CUT N.=M`, `REM`,
+  `MV`, named registers.
+- Validate all sections before writing; reject overlapping ranges; report
+  stale tag with current context.
+- `edit.mode` with conservative default `replace`; Hashline opt-in per
+  agent/model.
+- No tree-sitter block `N*` in version 1; clear error message instead of
+  guessing.
 
 **Acceptance:**
-- Ein veralteter Tag wird abgelehnt und liefert den aktuellen Tag.
-- Mehrere Hunks in einer Datei funktionieren ohne Zeilenverschiebung.
-- Multi-File-Edit ist atomar vorbereitet.
-- `replace` bleibt als Fallback verfügbar.
+- A stale tag is rejected and returns the current tag.
+- Multiple hunks in one file work without line shifting.
+- Multi-file edit is prepared atomically.
+- `replace` remains available as fallback.
 
-**Tests:** Stale-Tag, Multi-Hunk, wiederholter Anchor, Indentation, CRLF,
-Binary/Symlink, Multi-File, Überlappung.
+**Tests:** stale tag, multi-hunk, repeated anchor, indentation, CRLF,
+binary/symlink, multi-file, overlap.
 
-**Abhängigkeiten:** P1-05 (Seen-Ranges).
+**Dependencies:** P1-05 (seen ranges).
 
-**Aufwand/Risiko:** L / mittel–hoch.
+**Effort/risk:** L / medium–high.
 
 ---
 
-#### P1-07 – Security-Härtung
+#### P1-07 – Security hardening
 
-**Warum:** Production-ready heißt nicht nur TLS. Die Referenzen zeigen
-Angriffsflächen: SSRF über `webfetch`/MCP, Path Traversal, Prompt Injection
-über Tool-Ausgaben, Secret-Leaks in Logs, zu breite Shell-Rechte.
+**Why:** Production-ready means not only TLS. The references show attack
+surfaces: SSRF via `webfetch`/MCP, path traversal, prompt injection via tool
+output, secret leaks in logs, overly broad shell rights.
 
-**Konkret:**
-- SSRF-Schutz für `webfetch` und MCP: Allow-/Deny-Listen, private IPs,
-  Redirects, DNS-Rebinding, Größen-/Timeout-Limits.
-- Path-Traversal- und Symlink-Prüfung für alle FS-Tools und Artefakte.
-- Prompt-Injection-Härtung: Tool-Ausgaben klar delimitieren, keine
-  Instruktionen aus Tool-Output als Systeminhalt behandeln.
-- Secret-Redaction in Logs, Traces, Export und Fehlermeldungen.
-- Rate Limits und Request-Size-Limits.
-- Approval fail-closed ohne UI-Kanal.
-- Dependency-/Container-Scan und SBOM.
+**Concrete:**
+- SSRF protection for `webfetch` and MCP: allow/deny lists, private IPs,
+  redirects, DNS rebinding, size/time limits.
+- Path traversal and symlink checks for all FS tools and artifacts.
+- Prompt-injection hardening: clearly delimit tool output, do not treat
+  instructions from tool output as system content.
+- Secret redaction in logs, traces, export and error messages.
+- Rate limits and request-size limits.
+- Approval fail-closed without a UI channel.
+- Dependency/container scan and SBOM.
 
 **Acceptance:**
-- SSRF- und Traversal-Tests schlagen nicht durch.
-- Keine Secrets in Logs/Export.
-- Ein fehlender Approval-Kanal blockiert statt zu erlauben.
-- Rate Limits greifen.
+- SSRF and traversal tests do not pass through.
+- No secrets in logs/export.
+- A missing approval channel blocks instead of allowing.
+- Rate limits apply.
 
-**Tests:** SSRF-URLs, Redirect-Ketten, `../`, Symlink, Secret im Prompt,
-Export-Redaction, Rate-Limit.
+**Tests:** SSRF URLs, redirect chains, `../`, symlink, secret in prompt,
+export redaction, rate limit.
 
-**Abhängigkeiten:** P0-08, P1-04.
+**Dependencies:** P0-08, P1-04.
 
-**Aufwand/Risiko:** M / hoch (Sicherheit braucht Review).
+**Effort/risk:** M / high (security needs review).
 
 ---
 
-#### P1-08 – Vollständige Effect-/Outbox-Tabelle (bedingt)
+#### P1-08 – Full effect/outbox table (conditional)
 
-**Warum:** Nessys zentrales Muster ist eine dauerhafte Effect-Tabelle mit
-Deadlines, Retries und gefenced Completion. QOC braucht das **vielleicht**
-nicht sofort; P0-04 deckt die akute Recovery-Lücke. Wenn Background-Jobs,
-Approvals und Side-Effects wachsen, wird eine echte Outbox sinnvoll.
+**Why:** Nessy's central pattern is a durable effect table with deadlines,
+retries and fenced completion. QOC may **not** need it immediately; P0-04
+covers the acute recovery gap. If background jobs, approvals and side effects
+grow, a real outbox becomes sensible.
 
-**Konkret (nur bei Bedarf):**
-- Tabelle `effect`: `id`, `kind`, `session_id`, `state`, `attempt`,
+**Concrete (only if needed):**
+- Table `effect`: `id`, `kind`, `session_id`, `state`, `attempt`,
   `available_at`, `deadline_at`, `payload`, `last_error`,
   `idempotency_key`.
-- Claim mit `SKIP LOCKED` (Postgres) bzw. Single-Writer (SQLite).
-- Fenced Completion; Erfolg löscht die Row; Fehler speichert Attempt + Error.
-- Deadlines/Parking statt blockierter Threads.
-- Backlog-Coalescing für Wakeups.
+- Claim with `SKIP LOCKED` (Postgres) or single-writer (SQLite).
+- Fenced completion; success deletes the row; error stores attempt + error.
+- Deadlines/parking instead of blocked threads.
+- Backlog coalescing for wakeups.
 
 **Acceptance:**
-- Ein Effekt überlebt Neustart und wird genau einmal abgeschlossen
-  (first-wins).
-- Fehlversuche sind sichtbar; Deadlines greifen.
-- Kein doppelter Side-Effect bei gleichem Idempotency Key.
+- An effect survives a restart and is completed exactly once (first-wins).
+- Failed attempts are visible; deadlines apply.
+- No duplicate side effect for the same idempotency key.
 
-**Tests:** Crash vor/nach Claim, Deadline, Retry, fenced Completion,
-Coalescing.
+**Tests:** crash before/after claim, deadline, retry, fenced completion,
+coalescing.
 
-**Abhängigkeiten:** P0-02, P0-04.
+**Dependencies:** P0-02, P0-04.
 
-**Aufwand/Risiko:** L / hoch; erst nach P0 evaluieren.
+**Effort/risk:** L / high; evaluate only after P0.
 
 ---
 
-#### P1-09 – Model-Capabilities, Rollen und Fallback
+#### P1-09 – Model capabilities, roles and fallback
 
-**Status (D-08):** Die Rollen-Map ist **zurückgestellt** (TODO). Capability-
-Gates können unabhängig davon umgesetzt werden. Die Rollen-Frage wird erst bei
-einem zweiten Adapter oder einem messbaren Kostenhebel neu geprüft.
+**Status (D-08):** The roles map is **deferred** (TODO). Capability gates can
+be implemented independently. The roles question is revisited only with a
+second adapter or a measurable cost lever.
 
-**Warum:** QOC hat einen OpenAI-Adapter und per-Agent-Model. Für mehrere
-Provider/Modelle fehlen Capability-Gates und Rollen (Titel, Compaction,
-Summary). oh-my-pi zeigt den Nutzen, aber ein Rollensystem mit nur einem
-Provider ist Konfiguration ohne Gewinn.
+**Why:** QOC has an OpenAI adapter and per-agent model. For multiple
+providers/models, capability gates and roles (title, compaction, summary) are
+missing. oh-my-pi shows the value, but a role system with only one provider is
+configuration without benefit.
 
-**Konkret:**
-- `ModelCapabilities` explizit: Tools, strikte Tool-Schemas, Vision,
-  Reasoning, Streaming, Kontext-/Output-Limits.
-- Tool-Snapshot und Prompt an Capabilities anpassen.
-- `ModelRole`-Map erst mit zweitem Adapter: `default`, `smol`, `plan`,
+**Concrete:**
+- `ModelCapabilities` explicit: tools, strict tool schemas, vision, reasoning,
+  streaming, context/output limits.
+- Adapt tool snapshot and prompt to capabilities.
+- `ModelRole` map only with a second adapter: `default`, `smol`, `plan`,
   `summary`.
-- Fallback-Chain pro Rolle, mit klaren Retry-/Kostenregeln.
-- Kein KDL; JSON/YAML.
+- Fallback chain per role, with clear retry/cost rules.
+- No KDL; JSON/YAML.
 
 **Acceptance:**
-- Ein Modell ohne Tool-Support bekommt keine Tool-Definitionen.
-- Titel/Compaction können ein günstigeres Modell nutzen.
-- Fallback greift nur bei klassifizierten Fehlern.
+- A model without tool support gets no tool definitions.
+- Title/compaction can use a cheaper model.
+- Fallback applies only for classified errors.
 
-**Tests:** Capability-Gating, Fallback, Rollenauflösung, Kostenlimit.
+**Tests:** capability gating, fallback, role resolution, cost limit.
 
-**Abhängigkeiten:** P1-01, P0-07.
+**Dependencies:** P1-01, P0-07.
 
-**Aufwand/Risiko:** M / mittel.
+**Effort/risk:** M / medium.
 
 ---
 
-#### P1-10 – Hook-SPI und Lifecycle-Observer
+#### P1-10 – Hook SPI and lifecycle observer
 
-**Warum:** QOC hat nur `beforeToolCall`, `afterToolCall` und
-`evaluatePermission`. Für Integrationen, Audit und Tests fehlen Lifecycle-
-und Context-Hooks. Ohne SPI bleibt jede Erweiterung ein Fork.
+**Why:** QOC has only `beforeToolCall`, `afterToolCall` and
+`evaluatePermission`. For integrations, audit and tests, lifecycle and context
+hooks are missing. Without an SPI every extension is a fork.
 
-**Konkret:**
-- Java-SPI in `engine.core`:
-  - `ToolHook` (bestehend, verfeinern),
+**Concrete:**
+- Java SPI in `engine.core`:
+  - `ToolHook` (existing, refine),
   - `SessionLifecycleHook` (created/forked/archived),
-  - `ContextHook` (nur additive Blöcke, keine beliebige Mutation),
+  - `ContextHook` (additive blocks only, no arbitrary mutation),
   - `CompactionHook` (before/after),
-  - `StepObserver` (read-only Metriken).
-- Implementierungen im Quarkus-Adapter via CDI/ServiceLoader.
-- Hooks fail-closed; Approval nach Input-Änderung neu prüfen.
-- Read-only Event-Stream für Telemetrie; Journal bleibt unveränderlich.
+  - `StepObserver` (read-only metrics).
+- Implementations in the Quarkus adapter via CDI/ServiceLoader.
+- Hooks fail-closed; re-check approval after input change.
+- Read-only event stream for telemetry; journal stays immutable.
 
 **Acceptance:**
-- Ein Hook kann Kontext additiv erweitern, aber keine Sicherheitsentscheidung
-  umgehen.
-- Ein werfender Hook blockiert sicher.
-- Audit kann Tool-/Session-Events beobachten.
+- A hook can extend context additively but cannot bypass a security decision.
+- A throwing hook blocks safely.
+- Audit can observe tool/session events.
 
-**Tests:** Hook-Reihenfolge, Exception fail-closed, Approval-Reevaluation,
-Observer-Mutation verhindert.
+**Tests:** hook order, exception fail-closed, approval reevaluation, observer
+mutation prevented.
 
-**Abhängigkeiten:** P0-09.
+**Dependencies:** P0-09.
 
-**Aufwand/Risiko:** M / mittel.
+**Effort/risk:** M / medium.
 
 ---
 
-#### P1-11 – Commands, Skills, Slash-Befehle und Queue-UI
+#### P1-11 – Commands, skills, slash commands and queue UI
 
-**Warum:** oc/pi zeigen viele kleine Ergonomie-Lücken, die einzeln billig sind:
-Command-Macros, `/reload`, `/export`, `/session`, `/name`, `/tree`, `/fork`,
-`/skill:<id>`, `/copy`, Skill-Validierung, Watcher und eine sichtbare
-Message-Queue.
+**Why:** oc/pi show many small ergonomics gaps that are individually cheap:
+command macros, `/reload`, `/export`, `/session`, `/name`, `/tree`, `/fork`,
+`/skill:<id>`, `/copy`, skill validation, watcher and a visible message
+queue.
 
-**Konkret:**
-- `CommandLoader` für `command/*.md` und `.opencode/command/`, `$ARGUMENTS`.
-- `/reload` für Skills/Instructions/Settings.
-- Skill-Validierung (Name, Description) als Warnungen; Ignore-Files und
-  Git-Root-Walk.
-- Watcher oder Polling für Skills/Instructions.
-- Queue: `delivery` im Prompt-Request, UI-Anzeige, Steer/Follow-up.
-- Slash-Befehle gemäß oc/pi-Liste.
+**Concrete:**
+- `CommandLoader` for `command/*.md` and `.opencode/command/`, `$ARGUMENTS`.
+- `/reload` for skills/instructions/settings.
+- Skill validation (name, description) as warnings; ignore files and Git-root
+  walk.
+- Watcher or polling for skills/instructions.
+- Queue: `delivery` in the prompt request, UI display, steer/follow-up.
+- Slash commands per the oc/pi list.
 
 **Acceptance:**
-- Ein Command-Macro expandiert korrekt.
-- `/reload` lädt Skills/Instructions neu.
-- Queue zeigt anstehende Nachrichten; Steer unterbricht sauber.
-- Skill-Warnungen sind sichtbar, blockieren aber nicht.
+- A command macro expands correctly.
+- `/reload` reloads skills/instructions.
+- Queue shows pending messages; steer interrupts cleanly.
+- Skill warnings are visible but do not block.
 
-**Tests:** Command-Substitution, Reload, Skill-Validierung, Queue/Steer,
-Slash-Endpunkte.
+**Tests:** command substitution, reload, skill validation, queue/steer, slash
+endpoints.
 
-**Abhängigkeiten:** P1-01.
+**Dependencies:** P1-01.
 
-**Aufwand/Risiko:** M / niedrig.
+**Effort/risk:** M / low.
 
 ---
 
-#### P1-12 – Bilder und Attachments
+#### P1-12 – Images and attachments
 
-**Warum:** `ModelContent.Media` existiert, aber UI und `ReadTool` sind
-textorientiert. Für Screenshots/Design-Arbeit ist das eine Lücke; sie ist aber
-nicht production-kritisch.
+**Why:** `ModelContent.Media` exists, but UI and `ReadTool` are text-oriented.
+For screenshot/design work this is a gap, but not production-critical.
 
-**Konkret:**
-- Paste/Drag → Base64/Blob; MIME-Allow-List; Größen-/Dimensionslimit;
-  Auto-Resize.
-- `images.blockImages` als Setting.
-- Blob-Store mit SHA-256; Session-Referenz.
-- Read-Tool kann Bilder als MediaContent liefern.
+**Concrete:**
+- Paste/drag → Base64/Blob; MIME allow list; size/dimension limits;
+  auto-resize.
+- `images.blockImages` as a setting.
+- Blob store with SHA-256; session reference.
+- Read tool can return images as MediaContent.
 
 **Acceptance:**
-- Ein Bild wird validiert, verkleinert und als MediaContent gesendet.
-- Blockieren von Bildern funktioniert.
-- Kein unbegrenztes Bild im Kontext.
+- An image is validated, resized and sent as MediaContent.
+- Blocking images works.
+- No unbounded image in context.
 
-**Tests:** MIME, Größe, Resize, Block, Blob-Referenz.
+**Tests:** MIME, size, resize, block, blob reference.
 
-**Abhängigkeiten:** P1-05.
+**Dependencies:** P1-05.
 
-**Aufwand/Risiko:** M / niedrig–mittel.
+**Effort/risk:** M / low–medium.
 
 ---
 
-### P2 – Performance und spätere Differenzierung
+### P2 – Performance and later differentiation
 
-#### P2-01 – LSP-Tool
+#### P2-01 – LSP tool
 
-**Warum:** QOC kann aktuell nicht „wer ruft das auf?“, „ist das korrekt?“ oder
-„benenne das Symbol um“ beantworten. oh-my-pi zeigt den Wert, aber LSP ist ein
-großer Adapter und nur eine Quelle.
+**Why:** QOC currently cannot answer "who calls this?", "is this correct?" or
+"rename the symbol". oh-my-pi shows the value, but LSP is a large adapter
+and only one source.
 
-**Konkret:**
-- `LanguageServer`-Port in `engine.core`; LSP4J oder minimaler JSON-RPC-
-  Client im Adapter.
-- Aktionen: `diagnostics`, `definition`, `references`, `symbols`, `hover`,
+**Concrete:**
+- `LanguageServer` port in `engine.core`; LSP4J or a minimal JSON-RPC client
+  in the adapter.
+- Actions: `diagnostics`, `definition`, `references`, `symbols`, `hover`,
   `rename`, `rename_file`, `code_actions`, `status`, `reload`.
-- Diagnostics nach Edit als Warnung, kein Auto-Rollback.
-- Fake-LSP-Server für stabile Tests; echte Server nur in Integration.
-- Approval: Navigation = READ; Rename/Code-Action = WRITE.
+- Diagnostics after edit as warning, no auto-rollback.
+- Fake LSP server for stable tests; real servers only in integration.
+- Approval: navigation = READ; rename/code action = WRITE.
 
 **Acceptance:**
-- Diagnostics/Definition/References funktionieren mit Fake-Server.
-- Rename liefert WorkspaceEdit; Anwenden ist explizit.
-- Kein Test hängt von einem installierten Language Server ab.
+- Diagnostics/definition/references work with the fake server.
+- Rename returns a WorkspaceEdit; applying is explicit.
+- No test depends on an installed language server.
 
-**Tests:** Fake-LSP, Diagnose, Rename, Timeout, fehlender Server.
+**Tests:** fake LSP, diagnostics, rename, timeout, missing server.
 
-**Abhängigkeiten:** P1-06 (für Rename-Integration).
+**Dependencies:** P1-06 (for rename integration).
 
-**Aufwand/Risiko:** L / mittel–hoch.
+**Effort/risk:** L / medium–high.
 
 ---
 
-#### P2-02 – Memory, Advisor und TTSR (später)
+#### P2-02 – Memory, advisor and TTSR (later)
 
-**Warum:** oh-my-pi zeigt mächtige, aber risikoreiche Mechanismen:
-autonome Memory-Extraktion, Reviewer-Modell, Stream-Regeln. Für QOC ist zuerst
-`RULES.md` (P1-01) der bessere 80/20-Hebel.
+**Why:** oh-my-pi shows powerful but risky mechanisms: autonomous memory
+extraction, reviewer model, stream rules. For QOC, `RULES.md` (P1-01) is the
+better 80/20 lever first.
 
-**Konkret:**
-- Memory: manuell kuratierte Projekt-Memory + `RULES.md`; autonome Extraktion
-  erst nach Privacy-/Retention-Entscheidung.
-- Advisor: separater read-only Subagent mit eigenem Modell und Note-Channel;
-  keine Approval-Rechte.
-- TTSR: Provider-Abort/Retry + Regelsprache + Audit; hoher Komplexitätsgrad.
+**Concrete:**
+- Memory: manually curated project memory + `RULES.md`; autonomous extraction
+  only after a privacy/retention decision.
+- Advisor: separate read-only subagent with its own model and note channel;
+  no approval rights.
+- TTSR: provider abort/retry + rule language + audit; high complexity.
 
 **Acceptance:**
-- Memory ist löschbar, redigiert und token-begrenzt.
-- Advisor kann blockieren, aber nicht freigeben.
-- TTSR-Schleifen sind begrenzt und auditierbar.
+- Memory is deletable, redacted and token-bounded.
+- Advisor can block but not approve.
+- TTSR loops are bounded and auditable.
 
-**Tests:** Retention, Redaction, Advisor-Note, TTSR-Abort/Retry.
+**Tests:** retention, redaction, advisor note, TTSR abort/retry.
 
-**Abhängigkeiten:** P1-10, P1-09.
+**Dependencies:** P1-10, P1-09.
 
-**Aufwand/Risiko:** L / hoch; bewusst später.
-
----
-
-#### P2-03 – Snapcompact / Vision-Compaction
-
-**Warum:** Nur sinnvoll mit Vision-Modell und klarem Kostenmodell. Für QOC
-derzeit kein Produktionshebel.
-
-**Konkret:** Historie als Bitmap archivieren, nur wenn ein Vision-Provider
-konfiguriert ist; sonst nicht.
-
-**Acceptance:** Opt-in, kostenbegrenzt, nicht Standard.
-
-**Aufwand/Risiko:** L / hoch.
+**Effort/risk:** L / high; deliberately later.
 
 ---
 
-#### P2-04 – Multi-Provider-Katalog und Capability-Policy
+#### P2-03 – Snapcompact / vision compaction
 
-**Warum:** QOC hat einen OpenAI-Adapter. Ein großer Katalog ist ein Produkt
-für sich; erst mit konkretem Bedarf.
+**Why:** Only useful with a vision model and a clear cost model. Not a
+production lever for QOC at present.
 
-**Konkret:** Provider-Adapter inkrementell, Capabilities (P1-09), JSON/YAML-
-Policy, keine KDL-Abhängigkeit.
+**Concrete:** Archive history as a bitmap only when a vision provider is
+configured; otherwise not.
 
-**Acceptance:** Ein zweiter Adapter besteht dieselben Contract-Tests.
+**Acceptance:** Opt-in, cost-bounded, not default.
 
-**Aufwand/Risiko:** L / mittel.
-
----
-
-#### P2-05 – Persistente Shells / Managed Services
-
-**Warum:** Nur nötig, wenn QOC interaktive Terminals oder langlebige Dienste
-wirklich anbieten will. Für den Serverbetrieb reichen Background-Jobs,
-Prozess-Registry und Artefakte.
-
-**Konkret:** Prozess-Registry erweitern, Output-Sink, Readiness-Probe,
-Session-Logs; PTY nur mit UI.
-
-**Acceptance:** Jobs sind beobachtbar, killbar und überleben keine Session
-ohne explizite Policy.
-
-**Aufwand/Risiko:** M–L / mittel.
+**Effort/risk:** L / high.
 
 ---
 
-#### P2-06 – Pure sealed AgentState (inkrementell)
+#### P2-04 – Multi-provider catalog and capability policy
 
-**Warum:** Nessys reiner Zustandskern ist attraktiv, aber ein großer Umbau.
-QOC ist bereits event-sourced; ein Rewrite wäre riskant.
+**Why:** QOC has an OpenAI adapter. A large catalog is a product in itself;
+only with concrete demand.
 
-**Konkret:** Schrittweise Invarianten in einem reinen Evaluator kapseln;
-Replay-Tests; keine Big-Bang-Migration.
+**Concrete:** Provider adapters incrementally, capabilities (P1-09),
+JSON/YAML policy, no KDL dependency.
 
-**Acceptance:** Replay ist deterministisch; Event-Reihenfolge wird zentral
-geprüft.
+**Acceptance:** A second adapter passes the same contract tests.
 
-**Aufwand/Risiko:** L / hoch; nur nach P0/P1.
+**Effort/risk:** L / medium.
 
 ---
 
-## 4. Reihenfolge und Phasen
+#### P2-05 – Persistent shells / managed services
 
-Die Reihenfolge folgt nicht der Feature-Parität, sondern der
-Produktionskorrektheit. P0-01/02/03/04 sind die Basis; P0-05/06 und P0-07/08/09
-können nach P0-02 parallel laufen.
+**Why:** Only needed if QOC really wants to offer interactive terminals or
+long-lived services. For server operation, background jobs, process registry
+and artifacts suffice.
 
-### Phase 0a – Korrektheit der API und Ausführung
+**Concrete:** Extend process registry, output sink, readiness probe,
+session logs; PTY only with UI.
 
-1. **P0-01** Turn-Outcome-Algebra.
-2. **P0-02** Idempotency Key + Tool-Call-Lifecycle.
-3. **P0-03** Durable Approvals.
-4. **P0-04** Crash-Recovery/Reconciliation.
+**Acceptance:** Jobs are observable, killable and do not survive a session
+without explicit policy.
 
-**Gate:** Crash-Matrix grün; keine verlorenen Approvals; keine doppelten
-Side-Effects; Busy/Refused/Failed/Terminated unterscheidbar; keine 500 für
-Domänenfehler.
+**Effort/risk:** M–L / medium.
 
-### Phase 0b – Kontext und Laufzeit
+---
 
-5. **P0-05** Token-aware Compaction.
-6. **P0-06** Stabile Prompt-/Checkpoint-Struktur.
-7. **P0-07** Retry/Timeout/Cancel/Turn-Policy.
-8. **P0-08** Limits/Backpressure/Graceful Shutdown.
-9. **P0-09** Health/Metriken/Audit.
+#### P2-06 – Pure sealed AgentState (incremental)
 
-**Gate:** Kein Context-Overflow in Langtests; keine zerschnittenen Turns;
-Cache-Prefix stabil; 24h-Soak; Lasttest; Health/Metriken; Restore getestet.
+**Why:** Nessy's pure state core is attractive, but a big rebuild. QOC is
+already event-sourced; a rewrite would be risky.
 
-### Phase 1 – Kontext, Sessions, Subagents
+**Concrete:** Encapsulate invariants step by step in a pure evaluator;
+replay tests; no big-bang migration.
 
-10. **P1-01** Prompt-/Instruktions-Stabilität.
-11. **P1-02** Export + Branch-Summary.
-12. **P1-03** Typisierte Subagent-Batches + Isolation.
-13. **P1-04** Approval-Tiers/Modi.
-14. **P1-05** Scan-Cache/Read-Selektoren.
+**Acceptance:** Replay is deterministic; event order is checked centrally.
 
-**Gate:** Instruktionen überleben Compaction/Revert; Export redigiert; Batches
-typisiert; Tier-Grants korrekt; Scan-Cache messbar.
+**Effort/risk:** L / high; only after P0/P1.
 
-### Phase 2 – Tool-Qualität und Sicherheit
+---
 
-15. **P1-06** Anchored Edits.
-16. **P1-07** Security-Härtung.
-17. **P1-08** Effect/Outbox (nur falls nötig).
-18. **P1-09** Model-Capabilities/Rollen.
-19. **P1-10** Hook-SPI.
-20. **P1-11** Commands/Skills/Queue.
-21. **P1-12** Bilder.
+## 4. Order and phases
 
-**Gate:** Edit-Fehlerrate sinkt; Security-Review; Hooks fail-closed;
-Commands/Queue funktionieren.
+The order follows not feature parity but production correctness.
+P0-01/02/03/04 are the base; P0-05/06 and P0-07/08/09 can run after P0-02 in
+parallel.
 
-### Phase 3 – Differenzierung
+### Phase 0a – API and execution correctness
+
+1. **P0-01** Turn-outcome algebra.
+2. **P0-02** Idempotency key + tool-call lifecycle.
+3. **P0-03** Durable approvals.
+4. **P0-04** Crash recovery/reconciliation.
+
+**Gate:** Crash matrix green; no lost approvals; no duplicate side effects;
+Busy/Refused/Failed/Terminated distinguishable; no 500 for domain errors.
+
+### Phase 0b – Context and runtime
+
+5. **P0-05** Token-aware compaction.
+6. **P0-06** Stable prompt/checkpoint structure.
+7. **P0-07** Retry/timeout/cancel/turn policy.
+8. **P0-08** Limits/backpressure/graceful shutdown.
+9. **P0-09** Health/metrics/audit.
+
+**Gate:** No context overflow in long tests; no split turns; cache prefix
+stable; 24h soak; load test; health/metrics; restore tested.
+
+### Phase 1 – Context, sessions, subagents
+
+10. **P1-01** Prompt/instruction stability.
+11. **P1-02** Export + branch summary.
+12. **P1-03** Typed subagent batches + isolation.
+13. **P1-04** Approval tiers/modes.
+14. **P1-05** Scan cache/read selectors.
+
+**Gate:** Instructions survive compaction/revert; export redacts; batches
+typed; tier grants correct; scan cache measurable.
+
+### Phase 2 – Tool quality and security
+
+15. **P1-06** Anchored edits.
+16. **P1-07** Security hardening.
+17. **P1-08** Effect/outbox (only if needed).
+18. **P1-09** Model capabilities/roles.
+19. **P1-10** Hook SPI.
+20. **P1-11** Commands/skills/queue.
+21. **P1-12** Images.
+
+**Gate:** Edit error rate drops; security review; hooks fail-closed;
+commands/queue work.
+
+### Phase 3 – Differentiation
 
 22. **P2-01** LSP.
-23. **P2-02** Memory/Advisor/TTSR.
+23. **P2-02** Memory/advisor/TTSR.
 24. **P2-03** Snapcompact.
-25. **P2-04** Multi-Provider.
-26. **P2-05** Persistente Shells.
-27. **P2-06** Reiner Zustandskern.
+25. **P2-04** Multi-provider.
+26. **P2-05** Persistent shells.
+27. **P2-06** Pure state core.
 
-**Gate:** Nur starten, wenn ein konkreter Produktbedarf und ein
-Kosten-/Sicherheitsmodell existieren.
+**Gate:** Start only when a concrete product need and a cost/security model
+exist.
 
 ---
 
-## 5. Messbare Definition of Done
+## 5. Measurable Definition of Done
 
 ### 5.1 Reliability
 
-| Metrik | Ziel | Nachweis |
+| Metric | Target | Evidence |
 |---|---|---|
-| Stuck Claims nach Crash | 0 | Fault-Injection-Matrix |
-| Verlorene offene Approvals | 0 | Restart-Test |
-| Doppelte Side-Effects mit gleichem Key | 0 | Dedupe-Test |
-| Domänenfehler als HTTP 500 | 0 | HTTP-Contract-Tests |
-| Nicht unterscheidbare Turn-Outcomes | 0 | API-/SSE-Tests |
-| Recovery ohne expliziten Zustand | 0 | Recovery-Events |
+| Stuck claims after crash | 0 | Fault-injection matrix |
+| Lost open approvals | 0 | Restart test |
+| Duplicate side effects with same key | 0 | Dedupe test |
+| Domain errors as HTTP 500 | 0 | HTTP contract tests |
+| Indistinguishable turn outcomes | 0 | API/SSE tests |
+| Recovery without explicit state | 0 | Recovery events |
 
-### 5.2 Stabilität
+### 5.2 Stability
 
-| Metrik | Ziel | Nachweis |
+| Metric | Target | Evidence |
 |---|---|---|
-| 24h-Soak | stabil, kein OOM, kein Thread-Leak | Last-/Soak-Test |
-| Queue-Tiefe | bounded | Metrik/Alarm |
-| Speicherwachstum | < definierte Schwelle | Soak |
-| Context-Overflow-Rate | < 0,1 % | Provider-Fehler + Compaction |
-| Compaction zerschneidet Turn | 0 | Property-/Regressionstests |
-| Graceful Shutdown | keine hängenden Prozesse | Shutdown-Test |
+| 24h soak | stable, no OOM, no thread leak | Load/soak test |
+| Queue depth | bounded | Metric/alarm |
+| Memory growth | < defined threshold | Soak |
+| Context overflow rate | < 0.1 % | Provider errors + compaction |
+| Compaction splits turn | 0 | Property/regression tests |
+| Graceful shutdown | no hanging processes | Shutdown test |
 
 ### 5.3 Speed
 
-| Metrik | Ziel | Nachweis |
+| Metric | Target | Evidence |
 |---|---|---|
-| p95 Time-to-First-Token | definierter SLO | Metrik |
-| p95 Turn-Dauer | definierter SLO | Metrik |
-| Token pro Turn | sinkend durch Compaction/Pruning | Usage-Projektion |
-| Scan-Zeit bei großen Trees | sinkend durch Cache | Benchmark |
-| Cache-Hit-Rate | steigend, messbar | Provider-Header/Usage |
-| Edit-Retry-Rate | sinkend durch Anchored Edits | Tool-Statistik |
+| p95 time-to-first-token | defined SLO | Metric |
+| p95 turn duration | defined SLO | Metric |
+| Tokens per turn | decreasing via compaction/pruning | Usage projection |
+| Scan time on large trees | decreasing via cache | Benchmark |
+| Cache hit rate | increasing, measurable | Provider headers/usage |
+| Edit retry rate | decreasing via anchored edits | Tool statistics |
 
-### 5.4 Production-Readiness
+### 5.4 Production-readiness
 
-| Kriterium | Nachweis |
+| Criterion | Evidence |
 |---|---|
-| Health/Readiness | `/health/live`, `/health/ready` |
-| Metriken/Alarme | Prometheus/Micrometer, Dashboards |
-| Audit | Permission-/Tool-/Approval-Events |
-| Backup/Restore | dokumentiert und getestet |
-| Migration/Rollback | Flyway-Test, Restore-Test |
-| Security | SSRF/Traversal/Secret-Review |
-| Last/Soak | dokumentierte Ergebnisse |
-| Deployment/Rollback | idempotent, versioniert, Health-Check |
-| Doku | Runbook, SLOs, Incident-Pfad |
+| Health/readiness | `/health/live`, `/health/ready` |
+| Metrics/alarms | Prometheus/Micrometer, dashboards |
+| Audit | Permission/tool/approval events |
+| Backup/restore | documented and tested |
+| Migration/rollback | Flyway test, restore test |
+| Security | SSRF/traversal/secret review |
+| Load/soak | documented results |
+| Deployment/rollback | idempotent, versioned, health check |
+| Docs | Runbook, SLOs, incident path |
 
-Bestehende Gates bleiben:
+Existing gates remain:
 
-- `mvn test` grün.
-- JaCoCo ≥ 80 % Instructions.
-- Contract-Tests auf PostgreSQL/Testcontainers.
-- ArchUnit-Regeln grün.
-- Keine Tests aus dem Workspace-Root.
+- `mvn test` green.
+- JaCoCo ≥ 80 % instructions.
+- Contract tests on PostgreSQL/Testcontainers.
+- ArchUnit rules green.
+- No tests from the workspace root.
 
 ---
 
-## 6. Entscheidungslog (D-01–D-14)
+## 6. Decision log (D-01–D-14)
 
-> **Stand:** 2026-10-26. Die Entscheidungen sind als Defaults für die
-> Umsetzung dokumentiert. D-08 und D-11 sind bewusst zurückgestellt und als
-> TODO markiert.
+> **Status:** 2026-10-26. The decisions are documented as defaults for
+> implementation. D-08 and D-11 are deliberately deferred and marked TODO.
 
-| ID | Thema | Entscheidung | Konsequenz |
+| ID | Topic | Decision | Consequence |
 |---|---|---|---|
-| **D-01** | Dauerhafte Arbeit | **Reconciliation zuerst**, keine vollständige Outbox jetzt | P0-04 wird zuerst gebaut; P1-08 nur bei Trigger |
-| **D-02** | Approval-Waiting | **Parken mit Doorbell**; Zustand `WaitingApproval` | P0-03/P0-04; kein blockierter Thread; Deadline + Recovery |
-| **D-03** | Checkpoint-Modell | **Append-only Kapitel**; Merge bei 8 Kapiteln oder 20 % Kontext | P0-06; QOC-012; Cache-Prefix bleibt stabil |
-| **D-04** | Token-Schätzer | **Heuristik + 10–15 % Marge**, mit Usage kalibriert | P0-05; Tokenizer später nur bei Bedarf |
-| **D-05** | Hashline | **Opt-in**; `replace` bleibt Default | P1-06; Default erst nach Metriken |
-| **D-06** | Tag-Breite | **8 Hex + SHA-256 im EditStore**; Tag ist Index | P1-06; 12 Hex später bei sehr großen Workspaces |
-| **D-07** | LSP | **LSP4J im Adapter**; Core bleibt frei von LSP-Details | P2-01; Fake-Server-Tests |
-| **D-08** | Model-Rollen | **Zurückgestellt / TODO**; keine Rollen-Map jetzt | P1-09 bleibt Backlog; Trigger siehe unten |
-| **D-09** | Multi-Tenancy | **Single-Tenant explizit**; `tenant_id`-fähig designen | Authz/Isolation; vor Mehrbenutzerbetrieb neu bewerten |
-| **D-10** | Retention/RPO/RTO | **Production-Defaults**, pro Projekt konfigurierbar | P0-09/P1-07; Testumgebung 24h RPO / 2h RTO |
-| **D-11** | Export | **Kein Export aktuell**; Redaction-Pflicht dokumentieren | P1-02 bleibt Backlog; künftiger Export default-on redigiert |
-| **D-12** | Worktree-Isolation | **Diff/Review**, kein Auto-Merge | P1-03; Parent prüft und wendet an |
-| **D-13** | Exactly-once | **At-least-once + Idempotency Key** | P0-02; Tools dokumentieren Idempotenz |
-| **D-14** | Persistente Shells | **Nein**, Background-Jobs reichen | P2-05 optional; nur mit UI und Freigabe |
+| **D-01** | Durable work | **Reconciliation first**, no full outbox now | P0-04 built first; P1-08 only on trigger |
+| **D-02** | Approval waiting | **Park with doorbell**; state `WaitingApproval` | P0-03/P0-04; no blocked thread; deadline + recovery |
+| **D-03** | Checkpoint model | **Append-only chapters**; merge at 8 chapters or 20 % context | P0-06; QOC-012; cache prefix stays stable |
+| **D-04** | Token estimator | **Heuristic + 10–15 % margin**, calibrated with usage | P0-05; tokenizer only when needed |
+| **D-05** | Hashline | **Opt-in**; `replace` stays default | P1-06; default switch only after metrics |
+| **D-06** | Tag width | **8 hex + SHA-256 in EditStore**; tag is index | P1-06; 12 hex later for very large workspaces |
+| **D-07** | LSP | **LSP4J in adapter**; core stays free of LSP details | P2-01; fake-server tests |
+| **D-08** | Model roles | **Deferred / TODO**; no roles map now | P1-09 stays backlog; trigger see below |
+| **D-09** | Multi-tenancy | **Single-tenant explicitly**; design `tenant_id`-capable | Authz/isolation; re-evaluate before multi-user operation |
+| **D-10** | Retention/RPO/RTO | **Production defaults**, configurable per project | P0-09/P1-07; test env 24h RPO / 2h RTO |
+| **D-11** | Export | **No export currently**; document redaction duty | P1-02 stays backlog; future export redacts by default |
+| **D-12** | Worktree isolation | **Diff/review**, no auto-merge | P1-03; parent checks and applies |
+| **D-13** | Exactly-once | **At-least-once + idempotency key** | P0-02; tools document idempotency |
+| **D-14** | Persistent shells | **No**, background jobs suffice | P2-05 optional; only with UI and approval |
 
-### D-01 – Reconciliation zuerst, Outbox später
+### D-01 – Reconciliation first, outbox later
 
-**Entscheidung:** P0-04 baut eine Startup-Reconciliation über Journal,
-Claims, Tool-Intents, Approvals und Background-Tasks. Eine vollständige
-Nessy-Outbox wird **nicht** jetzt eingeführt.
+**Decision:** P0-04 builds a startup reconciliation over journal, claims, tool
+intents, approvals and background tasks. A full Nessy outbox is **not**
+introduced now.
 
-**Begründung:** QOC hat bereits Journal und Claim-Store. Eine zusätzliche
-Effect-Tabelle wäre zunächst eine zweite Quelle der Wahrheit und ein großer
-Umbau. Die akute Lücke ist nicht „keine Outbox“, sondern „offene Arbeit wird
-beim Start nicht systematisch abgeglichen“.
+**Rationale:** QOC already has a journal and claim store. An additional effect
+table would initially be a second source of truth and a large rebuild. The
+acute gap is not "no outbox" but "open work is not systematically reconciled
+on startup".
 
-**Trigger für Neubewertung:** mehrere Hintergrund-Arbeitstypen, echte
-Cross-Process-Worker, geplante Retries mit Deadlines oder Approval-Parking in
-größerem Umfang. Dann P1-08 (Hybrid/Outbox) evaluieren.
+**Trigger for re-evaluation:** multiple background work types, real
+cross-process workers, scheduled retries with deadlines or approval parking at
+larger scale. Then evaluate P1-08 (hybrid/outbox).
 
-### D-02 – Approvals parken mit Doorbell
+### D-02 – Park approvals with doorbell
 
-**Entscheidung:** Ein Turn, der auf eine Freigabe wartet, wechselt in einen
-expliziten Zustand `WaitingApproval`. Die Approval-Anfrage wird persistiert;
-die Ausführung wird per Doorbell geweckt. Kein Thread blockiert unbegrenzt.
+**Decision:** A turn waiting for an approval moves into an explicit state
+`WaitingApproval`. The approval request is persisted; execution is woken via
+doorbell. No thread blocks indefinitely.
 
-**Begründung:** QOC-009 verlangt Neustartfestigkeit. Ein blockierter Virtual
-Thread ist billig, aber nicht durable und schlecht zu drainen. Parken passt zu
-Graceful Shutdown, Deadline und Recovery.
+**Rationale:** QOC-009 requires restart safety. A blocked virtual thread is
+cheap but not durable and hard to drain. Parking fits graceful shutdown,
+deadline and recovery.
 
-**Konsequenz:** P0-03 und P0-04 müssen gemeinsam gedacht werden; der Claim
-bleibt erhalten, aber der Zustand ist sichtbar und wiederaufnehmbar.
+**Consequence:** P0-03 and P0-04 must be considered together; the claim is
+preserved but the state is visible and resumable.
 
-### D-03 – Compaction als append-only Kapitel
+### D-03 – Compaction as append-only chapters
 
-**Entscheidung:** Compaction-Summaries werden als Kapitel angehängt; der
-statische Prompt-Prefix bleibt stabil. Ein Merge erfolgt nur bei einer
-Schwelle (Start: 8 Kapitel oder 20 % des Kontextbudgets).
+**Decision:** Compaction summaries are appended as chapters; the static prompt
+prefix stays stable. A merge happens only at a threshold (start: 8 chapters or
+20 % of context budget).
 
-**Begründung:** Ein Checkpoint an Index 0 invalidiert den Cache-Prefix bei
-jeder Compaction. Kapitel sind auditierbar, cache-freundlicher und passen zu
-„Compaction ist eine Sicht, keine Wahrheit“.
+**Rationale:** A checkpoint at index 0 invalidates the cache prefix on every
+compaction. Chapters are auditable, more cache-friendly and fit
+"compaction is a view, not the truth".
 
-**Konsequenz:** P0-06 ersetzt QOC-012; QOC-012 kann nach Umsetzung geschlossen
-werden.
+**Consequence:** P0-06 replaces QOC-012; QOC-012 can be closed after
+implementation.
 
-### D-04 – Token-Schätzung per Heuristik
+### D-04 – Token estimation by heuristic
 
-**Entscheidung:** Preflight-Schätzung mit UTF-8-Zeichen / 3,5–4 plus 10–15 %
-Sicherheitsmarge. Die tatsächliche Provider-Usage kalibriert die Schätzung.
-Ein exakter Tokenizer wird erst bei nachgewiesener Fehlschätzung ergänzt.
+**Decision:** Preflight estimation with UTF-8 characters / 3.5–4 plus 10–15 %
+safety margin. Actual provider usage calibrates the estimate. An exact
+tokenizer is added only when misestimation is proven.
 
-**Begründung:** Die Entscheidung „Compaction nötig?“ braucht keine
-zeichengenaue Tokenizer-Genauigkeit. Eine konservative Heuristik ist
-dependency-frei und ausreichend; der Tokenizer bleibt ein Adapter.
+**Rationale:** The decision "is compaction needed?" does not require
+character-level tokenizer accuracy. A conservative heuristic is
+dependency-free and sufficient; the tokenizer stays an adapter.
 
-**Konsequenz:** P0-05 dokumentiert die Formel und die Kalibrierung.
+**Consequence:** P0-05 documents the formula and calibration.
 
 ### D-05 – Hashline opt-in
 
-**Entscheidung:** `edit.mode=replace` bleibt Default. Hashline wird pro Agent
-oder Modell aktiviert. Ein Default-Wechsel erfolgt erst, wenn Metriken
-(Edit-Retry-Rate, Fehlerrate) den Nutzen belegen.
+**Decision:** `edit.mode=replace` stays the default. Hashline is activated per
+agent or model. A default switch happens only once metrics (edit retry rate,
+error rate) prove the benefit.
 
-**Begründung:** Hashline ist ein neues Prompt- und Tool-Vertragsformat. Es kann
-die Qualität stark verbessern, erhöht aber die Prompt-Fläche und kann kleinere
-Modelle überfordern.
+**Rationale:** Hashline is a new prompt and tool contract format. It can
+greatly improve quality but increases prompt surface and can overwhelm smaller
+models.
 
-**Konsequenz:** P1-06 implementiert den Modus, ohne den Default zu destabilisieren.
+**Consequence:** P1-06 implements the mode without destabilizing the default.
 
-### D-06 – 8-Hex-Tags mit Store-Identität
+### D-06 – 8-hex tags with store identity
 
-**Entscheidung:** Der sichtbare Tag hat 8 Hex-Zeichen. Die Identität liegt im
-`EditStore` mit vollständigem SHA-256; der Tag allein ist **kein**
-Inhaltsbeweis. Bei sehr großen Workspaces kann später auf 12 Hex erhöht werden.
+**Decision:** The visible tag has 8 hex characters. Identity lives in the
+`EditStore` with full SHA-256; the tag alone is **not** proof of content. For
+very large workspaces it can later be raised to 12 hex.
 
-**Begründung:** 4 Hex hat nur 65.536 Werte und ist als Content-Address zu
-schwach. 8 Hex ist ein guter Kompromiss; die Auflösung erfolgt immer über den
-Store.
+**Rationale:** 4 hex has only 65,536 values and is too weak as a content
+address. 8 hex is a good compromise; resolution always goes through the store.
 
-**Konsequenz:** P1-06 testet Kollisionen und stale Tags explizit.
+**Consequence:** P1-06 explicitly tests collisions and stale tags.
 
-### D-07 – LSP4J im Adapter
+### D-07 – LSP4J in the adapter
 
-**Entscheidung:** Der LSP-Adapter nutzt LSP4J; `engine.core` sieht nur einen
-neutralen `LanguageServer`-Port. LSP bleibt P2 und wird mit einem Fake-Server
-getestet.
+**Decision:** The LSP adapter uses LSP4J; `engine.core` sees only a neutral
+`LanguageServer` port. LSP stays P2 and is tested with a fake server.
 
-**Begründung:** LSP umfasst Capability-Negotiation, Document Sync, Diagnostics,
-WorkspaceEdits und Lifecycle. LSP4J ist etabliert und hält die Kernschicht
-sauber. Ein minimaler Client nur, wenn Dependency-Größe oder Audit-Anforderungen
-dagegen sprechen.
+**Rationale:** LSP includes capability negotiation, document sync, diagnostics,
+workspace edits and lifecycle. LSP4J is established and keeps the core layer
+clean. A minimal client only if dependency size or audit requirements argue
+against it.
 
-**Konsequenz:** P2-01; echte Language Server nur in Integrationstests.
+**Consequence:** P2-01; real language servers only in integration tests.
 
-### D-08 – Model-Rollen: zurückgestellt (TODO)
+### D-08 – Model roles: deferred (TODO)
 
-**Entscheidung:** Es wird **jetzt keine** vollständige Model-Rollen-Map
-eingeführt. Der Punkt bleibt als TODO dokumentiert.
+**Decision:** No full model-roles map is introduced **now**. The point stays
+documented as TODO.
 
-**Begründung:** Mit nur einem Provider ist eine große Rollen-Map Konfiguration
-ohne echten Hebel. Capability-Gates sind davon unabhängig nützlich, aber die
-Rollen-Frage wird erst mit einem zweiten Adapter oder einem messbaren
-Kostenhebel (Summary/Titel) entschieden.
+**Rationale:** With only one provider a large roles map is configuration
+without a real lever. Capability gates are useful independently, but the
+roles question is decided only with a second adapter or a measurable cost
+lever (summary/title).
 
-**Trigger für erneute Prüfung:**
-- ein zweiter Provider-Adapter existiert,
-- eine Summary-/Titel-Rolle spart nachweislich Kosten,
-- per-Agent-Modellwahl reicht nicht mehr aus.
+**Trigger for re-evaluation:**
+- a second provider adapter exists,
+- a summary/title role saves measurable cost,
+- per-agent model selection is no longer sufficient.
 
-**Konsequenz:** P1-09 bleibt im Backlog; keine vorzeitige Rollen-Konfiguration.
+**Consequence:** P1-09 stays in the backlog; no premature roles configuration.
 
-### D-09 – Single-Tenant explizit
+### D-09 – Single-tenant explicitly
 
-**Entscheidung:** QOC ist zunächst **single-tenant**. Die Datenmodelle werden
-so gestaltet, dass `tenant_id` später ergänzt werden kann; die aktuelle
-Isolation bleibt ein Workspace/Owner.
+**Decision:** QOC is initially **single-tenant**. Data models are designed so
+`tenant_id` can be added later; current isolation is one workspace/owner.
 
-**Begründung:** Die vier Analysen decken Multi-Tenancy nicht ab. Für den
-aktuellen Basic-Auth-Betrieb ist Single-Tenant wahrscheinlich korrekt. Ein
-implizites „vielleicht später“ wäre riskant, weil Sessions, Artefakte,
-Approvals und Backups alle Tenant-Grenzen brauchen.
+**Rationale:** The four analyses do not cover multi-tenancy. For the current
+Basic-Auth operation single-tenant is probably correct. An implicit "maybe
+later" would be risky because sessions, artifacts, approvals and backups all
+need tenant boundaries.
 
-**Trigger für Neubewertung:** Mehrbenutzerbetrieb, mehrere Kunden, getrennte
-Datenhaltung oder Quotas pro Nutzer.
+**Trigger for re-evaluation:** multi-user operation, multiple customers,
+separate data storage or per-user quotas.
 
-**Konsequenz:** Authz/Isolation wird dokumentiert und getestet; Multi-Tenant
-ist kein stilles Feature, sondern eine eigene Migration.
+**Consequence:** Authz/isolation is documented and tested; multi-tenancy is
+not a silent feature but its own migration.
 
-### D-10 – Production-Retention und Recovery-Defaults
+### D-10 – Production retention and recovery defaults
 
-**Entscheidung:** Konfigurierbare Defaults:
+**Decision:** Configurable defaults:
 
-| Daten | Default |
+| Data | Default |
 |---|---|
-| Sessions/Events | Bis explizite Löschung |
-| DB-Backups | Täglich voll, 14 Tage; zusätzlich WAL/stündlich |
-| Artefakte | 30 Tage nach Session-Ende oder explizit |
-| Logs | 14 Tage |
-| LLM-Traces | 7 Tage |
-| Exporte | On-demand, nicht dauerhaft gespeichert |
-| **RPO** | Produktion 1 h; Test 24 h |
-| **RTO** | Produktion 1 h; Test 2 h |
+| Sessions/events | Until explicit deletion |
+| DB backups | Daily full, 14 days; plus WAL/hourly |
+| Artifacts | 30 days after session end or explicit |
+| Logs | 14 days |
+| LLM traces | 7 days |
+| Exports | On-demand, not stored permanently |
+| **RPO** | Production 1 h; test 24 h |
+| **RTO** | Production 1 h; test 2 h |
 
-**Begründung:** QOC speichert Prompts, Tool-Ausgaben, Logs und Credentials.
-Retention ist eine Sicherheits- und Kostenentscheidung, kein Storage-Detail.
+**Rationale:** QOC stores prompts, tool output, logs and credentials. Retention
+is a security and cost decision, not a storage detail.
 
-**Konsequenz:** P0-09/P1-07 dokumentieren die Defaults und machen sie pro
-Projekt konfigurierbar.
+**Consequence:** P0-09/P1-07 document the defaults and make them configurable
+per project.
 
-### D-11 – Export: aktuell nicht implementiert, Redaction-Pflicht dokumentiert
+### D-11 – Export: not currently implemented, redaction duty documented
 
-**Entscheidung:** Es wird **kein Export** als Teil der aktuellen P0-Arbeit
-gebaut. Die Anforderung wird dokumentiert: Ein künftiger Export (P1-02)
-redigiert standardmäßig Secrets; Roh-Export nur als Admin-Aktion mit Audit.
+**Decision:** **No export** is built as part of the current P0 work. The
+requirement is documented: a future export (P1-02) redacts secrets by default;
+raw export only as an admin action with audit.
 
-**Begründung:** Aktuell existiert kein Export. Eine Redaction-Implementierung
-ohne Export wäre spekulativ; die Policy muss aber vor der ersten
-Export-Implementierung feststehen.
+**Rationale:** There is currently no export. A redaction implementation
+without an export would be speculative, but the policy must be set before the
+first export implementation.
 
-**Konsequenz:** P1-02 bleibt Backlog. Die erste Export-Implementierung muss
-die Redaction-Tests aus P1-07 mitbringen.
+**Consequence:** P1-02 stays in the backlog. The first export implementation
+must bring the redaction tests from P1-07.
 
-### D-12 – Worktree-Isolation mit Diff/Review
+### D-12 – Worktree isolation with diff/review
 
-**Entscheidung:** Ein isolierter Subagent gibt Worktree-Pfad, Diff und
-Testergebnis zurück. Der Parent prüft und wendet an. **Kein Auto-Merge.**
+**Decision:** An isolated subagent returns worktree path, diff and test
+result. The parent checks and applies. **No auto-merge.**
 
-**Begründung:** Parallele Agenten erzeugen schnell Konflikte; ein Auto-Merge
-kann kaputten Code ungeprüft übernehmen. Review passt zu QOCs Approval-Modell.
+**Rationale:** Parallel agents quickly create conflicts; an auto-merge can
+take broken code without review. Review fits QOC's approval model.
 
-**Konsequenz:** P1-03; Auto-Merge nur später mit expliziter Freigabe und
-sauberen Tests.
+**Consequence:** P1-03; auto-merge only later with explicit approval and clean
+tests.
 
-### D-13 – At-least-once plus Idempotency Key
+### D-13 – At-least-once plus idempotency key
 
-**Entscheidung:** QOC verspricht **at-least-once**, nicht exactly-once. Jeder
-Tool-Call erhält einen stabilen Idempotency Key; Tools dokumentieren, ob sie
-idempotent sind und den Key zur Dedupe nutzen.
+**Decision:** QOC promises **at-least-once**, not exactly-once. Every tool call
+gets a stable idempotency key; tools document whether they are idempotent and
+use the key for dedupe.
 
-**Begründung:** Exactly-once ist über Crash-Grenzen und externe Side-Effects
-ohne transaktionale Fremdsysteme nicht ehrlich versprechbar. Die Spezifikation
-lehnt es bereits ab.
+**Rationale:** Exactly-once is not honestly promiseable across crash boundaries
+and external side effects without transactional foreign systems. The
+specification already rejects it.
 
-**Konsequenz:** P0-02; Tool-Vertrag und Recovery müssen den Key tragen.
+**Consequence:** P0-02; tool contract and recovery must carry the key.
 
-### D-14 – Keine persistenten Shells
+### D-14 – No persistent shells
 
-**Entscheidung:** QOC führt **keine persistenten Shells** ein. Background-Jobs,
-Prozess-Registry und Artefakte decken den Serverbetrieb. Optionale
-Session-Shells oder Managed Services erst bei konkretem Produktbedarf.
+**Decision:** QOC introduces **no persistent shells**. Background jobs, process
+registry and artifacts cover server operation. Optional session shells or
+managed services only on concrete product demand.
 
-**Begründung:** Persistente Shells bringen Zustand, Sicherheitsrisiken und
-Cleanup-Probleme. Der aktuelle Background-Job-Ansatz ist sicherer und
-wartbarer.
+**Rationale:** Persistent shells bring state, security risks and cleanup
+problems. The current background-job approach is safer and more maintainable.
 
-**Konsequenz:** P2-05 bleibt optional; keine P0/P1-Abhängigkeit.
+**Consequence:** P2-05 stays optional; no P0/P1 dependency.
 
-### 6.1 Konsequenzen für die Phasen
+### 6.1 Consequences for the phases
 
-| Phase | Entscheidungen |
+| Phase | Decisions |
 |---|---|
 | **Phase 0a** | D-01, D-02, D-13 |
 | **Phase 0b** | D-03, D-04, D-10 |
 | **Phase 1** | D-05, D-06, D-09, D-12 |
 | **Phase 2** | D-07 |
-| **Zurückgestellt** | D-08, D-11 |
+| **Deferred** | D-08, D-11 |
 
-### 6.2 Noch zu konkretisieren
+### 6.2 Still to be concretized
 
-- **D-08:** TODO „Model-Rollen prüfen“ mit Trigger zweiter Provider /
-  Kostenhebel.
-- **D-11:** TODO „Export-Redaction“ bei Start von P1-02.
-- **D-10:** konkrete Backup-/WAL-Konfiguration für SQLite und PostgreSQL.
-- **D-09:** Authz-/Isolations dokumentieren, auch wenn Single-Tenant.
+- **D-08:** TODO "check model roles" with trigger second provider / cost
+  lever.
+- **D-11:** TODO "export redaction" when starting P1-02.
+- **D-10:** concrete backup/WAL configuration for SQLite and PostgreSQL.
+- **D-09:** document authz/isolation even though single-tenant.
 
 ---
 
-## 7. Quellen-Mapping und Abgrenzung
+## 7. Source mapping and delimitation
 
-### 7.1 Mapping zu QOC-Findings
+### 7.1 Mapping to QOC findings
 
-| QOC-ID | Status | Diese Liste |
+| QOC ID | Status | This list |
 |---|---|---|
-| QOC-001 | DONE | Keine erneute Priorisierung; P2-05 optional |
-| QOC-002 | DONE | Grundlage für P0-05 |
-| QOC-003 | DONE | Grundlage für P1-03 |
-| QOC-004 | DONE | Grundlage für P1-05 |
-| QOC-005 | DONE | Grundlage für P1-02 |
-| QOC-006 | DONE | Grundlage für P1-02 |
-| QOC-007 | DONE | Guardrail; Regressionstest behalten |
-| QOC-008 | DONE | Guardrail; Outcome-Mapping P0-01 |
+| QOC-001 | DONE | No re-prioritization; P2-05 optional |
+| QOC-002 | DONE | Basis for P0-05 |
+| QOC-003 | DONE | Basis for P1-03 |
+| QOC-004 | DONE | Basis for P1-05 |
+| QOC-005 | DONE | Basis for P1-02 |
+| QOC-006 | DONE | Basis for P1-02 |
+| QOC-007 | DONE | Guardrail; keep regression test |
+| QOC-008 | DONE | Guardrail; outcome mapping P0-01 |
 | QOC-009 | OPEN | **P0-03** |
-| QOC-010 | DONE (Turn-Grenze) | **P0-05** für Token-Budget/Kapitel |
+| QOC-010 | DONE (turn boundary) | **P0-05** for token budget/chapters |
 | QOC-011 | OPEN | **P0-02 / P0-04** |
 | QOC-012 | OPEN | **P0-06** |
 | QOC-013 | OPEN | **P0-01** |
 
-### 7.2 Was die vier Analysen nicht abdecken
+### 7.2 What the four analyses do not cover
 
-Diese Punkte sind für „production ready“ wichtig, stehen aber nicht im Fokus
-der Referenzanalysen:
+These points matter for "production ready" but are not the focus of the
+reference analyses:
 
-- Multi-Tenancy, Authz jenseits von Basic Auth, Quotas.
-- SLOs/SLIs, Alarmierung, Runbooks, Incident-Prozess.
-- Backup/Restore, RPO/RTO, Migration-Rollback.
-- Last-, Soak- und Chaos-Tests.
-- Supply-Chain-Sicherheit, SBOM, Dependency-Scan.
-- Datenretention, Löschkonzept, Datenschutz.
-- Kostenkontrolle über Turn-/Session-Budgets.
-- Deployment-Rollback und Canary/Blue-Green.
+- Multi-tenancy, authz beyond Basic Auth, quotas.
+- SLOs/SLIs, alerting, runbooks, incident process.
+- Backup/restore, RPO/RTO, migration rollback.
+- Load, soak and chaos tests.
+- Supply-chain security, SBOM, dependency scan.
+- Data retention, deletion concept, data protection.
+- Cost control via turn/session budgets.
+- Deployment rollback and canary/blue-green.
 
-Diese Themen sind bewusst als **Production-Gate** in P0-08/P0-09 und in der
-Definition of Done verankert, nicht als Feature-Backlog.
+These topics are deliberately anchored as a **production gate** in P0-08/P0-09
+and in the Definition of Done, not as feature backlog.
 
-### 7.3 Abgrenzung
+### 7.3 Delimitation
 
-- Diese Datei ist eine **Synthese und Backlog-Vorlage**, keine
-  Implementierungsfreigabe.
-- Sie überschreibt weder `qoc-findings.md` noch die Spezifikation.
-- Sie ändert keine Architekturregeln: `engine.core` bleibt frei von Quarkus,
-  Jackson, CDI und HTTP; Adapter bleiben in `engine.adapter.*`.
-- Keine Commits, Branches oder Milestone-Änderungen ohne ausdrückliche
-  Anweisung.
-- Die vier Analysen bleiben die Detailquellen; diese Datei priorisiert und
-  verbindet sie.
+- This file is a **synthesis and backlog template**, not an implementation
+  approval.
+- It neither overwrites `qoc-findings.md` nor the specification.
+- It changes no architectural rules: `engine.core` stays free of Quarkus,
+  Jackson, CDI and HTTP; adapters stay in `engine.adapter.*`.
+- No commits, branches or milestone changes without explicit instruction.
+- The four analyses remain the detail sources; this file prioritizes and
+  connects them.
 
 ---
 
-*Erstellt: 2026-10-26 · Synthese aus `analysis/learnings/oc-open.md`, `analysis/learnings/pi.md`,
-`analysis/learnings/oh-my-pi.md`, `analysis/learnings/nessy.md` und dem aktuellen QOC-Findings-Register.*
+*Created: 2026-10-26 · Synthesis from `analysis/learnings/oc-open.md`,
+`analysis/learnings/pi.md`, `analysis/learnings/oh-my-pi.md`,
+`analysis/learnings/nessy.md` and the current QOC findings register.*

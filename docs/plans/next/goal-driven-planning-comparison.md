@@ -1,108 +1,108 @@
-# Goal-Driven AI Planning + Deterministische Workflow-Orchestrierung
+# Goal-Driven AI Planning + Deterministic Workflow Orchestration
 
-> **Status:** Konzept / Vergleich (2026-11-18).  
-> **Quellen:** User-Idee (Goal-Driven AI Planning) + `docs/plans/runtime-plan-adaptation.md`.  
-> **Ziel:** Beide Ansätze zusammenführen und als einheitliche Roadmap beschreiben.
-
----
-
-## Teil 1 – Aktuelle Idee: Goal-Driven AI Planning + deterministische Orchestrierung
-
-### Grundprinzip (zwei Welten)
-
-1. **KI-Ebene (Planung):** Die KI versteht den Ausgangszustand und das gewünschte Ziel, nutzt ihr Wissen über Drittsysteme und Tools und zerlegt den Weg in logische Zwischenschritte (Dekomposition).
-2. **Deterministische Ebene (Ausführung):** Der entworfene Pfad wird in ein festes, reproduzierbares Format (Workflow, Code-Skript, State Machine) übersetzt, sodass er bei gleicher Ausgangslage immer exakt gleich und fehlerfrei ausgeführt wird – ohne dass die KI bei jedem Schritt neu raten muss.
-
-### Architektur (vier Phasen)
-
-1. **State & Goal Input:** Der Benutzer definiert Ist-Zustand (z. B. „Unstrukturierte PDF-Rechnung liegt im S3-Bucket“) und Ziel (z. B. „Daten in SAP verbucht, Kunde hat Bestätigungsmail, Vorgang im CRM als ‚erledigt‘“).
-2. **Tool-Registry & Capability Mapping:** Die KI hat Zugriff auf eine Liste bekannter Drittsysteme und deren Schnittstellen (APIs, DBs, RPA-Tools). Sie weiß, welche Parameter ein Tool benötigt und was es zurückgibt.
-3. **Pathfinding & Graph Generation (LLM/Agent):** Die KI plant die Sequenz. Moderne Frameworks nutzen strukturierte Ausgaben (JSON Mode / Pydantic), um einen gerichteten Graphen (DAG) oder eine strikte Schritt-für-Schritt-Abfolge zu erstellen.
-4. **Deterministic Execution Engine:** Eine Workflow-Engine (keine KI mehr!) arbeitet diesen Plan Schritt für Schritt ab. Bei Fehlern greifen definierte Fehlerbehandlungsroutinen.
-
-### Relevante Frameworks
-
-**KI-Planung (Entwurf):**
-- LangGraph (LangChain): zustandsbasierte, deterministische Graphen.
-- CrewAI / AutoGen: spezialisierte Agenten im Team (Planer, API-Spezialist, Prüfer).
-- Semantic Kernel (Microsoft): native Planners aus registrierten Funktionen (Plugins/APIs).
-
-**Workflow-Orchestrierung (Determinierung):**
-- Temporal.io / Camunda: Königsklasse für deterministische Workflows (Retries, Status-Tracking).
-- n8n / Make: API-lastige Workflows; KI kann Workflows generieren/anpassen.
-- Apache Airflow: datenlastige / ETL-ähnliche Pfade.
-
-**Schnittstellen-Standardisierung:**
-- OpenAPI / Swagger: KI liest Schnittstellenbeschreibungen und weiß, welche Endpunkte für welchen Teilschritt zu nutzen sind.
-
-### Typischer Ablauf (Praxisbeispiel)
-
-Anfrage: „Migriere Kundendaten aus Altsystem X in CRM Y und validiere die E-Mail-Adressen.“
-
-1. KI-Planung erkennt:
-   - Schritt 1: API-Abfrage an Altsystem X (Tool: `Legacy_API_Connector`).
-   - Schritt 2: Datenbereinigung und Validierung (Tool: `Email_Validation_Service`).
-   - Schritt 3: Datensatz-Erstellung in CRM Y (Tool: `CRM_REST_API`).
-2. Ausgabe als deterministischer Code/Workflow: valides JSON oder Python-Skript (oder n8n-Workflow).
-3. Ausführung: klassischer Skript-Runner/Engine führt den exakten Code aus – schnell, sicher, ohne unerwartete KI-Kreativität zur Laufzeit.
+> **Status:** Concept / comparison (2026-11-18).  
+> **Sources:** User idea (Goal-Driven AI Planning) + `docs/plans/runtime-plan-adaptation.md`.  
+> **Goal:** Merge both approaches and describe them as a unified roadmap.
 
 ---
 
-## Teil 2 – Vergleich mit `runtime-plan-adaptation.md`
+## Part 1 – Current Idea: Goal-Driven AI Planning + Deterministic Orchestration
 
-### Übereinstimmungen
+### Core Principle (Two Worlds)
 
-| Aspekt | Pasted Ideas | runtime-plan-adaptation.md |
+1. **AI Layer (Planning):** The AI understands the initial state and the desired goal, uses its knowledge of third-party systems and tools, and breaks the path down into logical intermediate steps (decomposition).
+2. **Deterministic Layer (Execution):** The designed path is translated into a fixed, reproducible format (workflow, code script, state machine), so that given the same initial state it is always executed exactly the same way and without errors – without the AI having to guess again at every step.
+
+### Architecture (Four Phases)
+
+1. **State & Goal Input:** The user defines the current state (e.g. "Unstructured PDF invoice sits in the S3 bucket") and the goal (e.g. "Data booked in SAP, customer has received confirmation email, case marked as 'done' in the CRM").
+2. **Tool-Registry & Capability Mapping:** The AI has access to a list of known third-party systems and their interfaces (APIs, DBs, RPA tools). It knows which parameters a tool needs and what it returns.
+3. **Pathfinding & Graph Generation (LLM/Agent):** The AI plans the sequence. Modern frameworks use structured outputs (JSON Mode / Pydantic) to create a directed graph (DAG) or a strict step-by-step sequence.
+4. **Deterministic Execution Engine:** A workflow engine (no AI anymore!) works through this plan step by step. On errors, defined error-handling routines apply.
+
+### Relevant Frameworks
+
+**AI Planning (Drafting):**
+- LangGraph (LangChain): state-based, deterministic graphs.
+- CrewAI / AutoGen: specialized agents in a team (planner, API specialist, reviewer).
+- Semantic Kernel (Microsoft): native planners from registered functions (plugins/APIs).
+
+**Workflow Orchestration (Determinization):**
+- Temporal.io / Camunda: top tier for deterministic workflows (retries, status tracking).
+- n8n / Make: API-heavy workflows; AI can generate/adapt workflows.
+- Apache Airflow: data-heavy / ETL-like paths.
+
+**Interface Standardization:**
+- OpenAPI / Swagger: AI reads interface descriptions and knows which endpoints to use for which sub-step.
+
+### Typical Flow (Practical Example)
+
+Request: "Migrate customer data from legacy system X into CRM Y and validate the email addresses."
+
+1. AI planning recognizes:
+   - Step 1: API query against legacy system X (Tool: `Legacy_API_Connector`).
+   - Step 2: Data cleanup and validation (Tool: `Email_Validation_Service`).
+   - Step 3: Record creation in CRM Y (Tool: `CRM_REST_API`).
+2. Output as deterministic code/workflow: valid JSON or Python script (or n8n workflow).
+3. Execution: classic script runner/engine executes the exact code – fast, safe, without unexpected AI creativity at runtime.
+
+---
+
+## Part 2 – Comparison with `runtime-plan-adaptation.md`
+
+### Agreements
+
+| Aspect | Pasted Ideas | runtime-plan-adaptation.md |
 |---|---|---|
-| Trennung Planung vs. Ausführung | KI plant, Engine führt deterministisch aus | Supervisor plant Adaptation, Engine führt deterministisch aus |
-| Strukturierte Pläne (DAG/Graph) | JSON/Pydantic → DAG/Schrittfolge | AdaptationPlan + GraphCompiler-Validierung |
-| Tool-Registry / Capabilities | OpenAPI/Swagger für Schnittstellen | MCP-Tools, Agent-Refs, Output-Contracts |
-| Validierung vor Ausführung | implizit (strukturierte Ausgabe) | explizit: GraphCompiler + PlanValidator |
-| Resilienz/Retry | definierte Fehlerbehandlung | ErrorClassifier, RetryPolicy, TriageService, Circuit-Breaker |
-| Journaling/Replay | nicht explizit | zentral: PlanVersionChanged, Adaptation*-Events, Resume |
+| Separation of planning vs. execution | AI plans, engine executes deterministically | Supervisor plans adaptation, engine executes deterministically |
+| Structured plans (DAG/Graph) | JSON/Pydantic → DAG/step sequence | AdaptationPlan + GraphCompiler validation |
+| Tool-Registry / Capabilities | OpenAPI/Swagger for interfaces | MCP-Tools, Agent-Refs, Output-Contracts |
+| Validation before execution | implicit (structured output) | explicit: GraphCompiler + PlanValidator |
+| Resilience/Retry | defined error handling | ErrorClassifier, RetryPolicy, TriageService, Circuit-Breaker |
+| Journaling/Replay | not explicit | central: PlanVersionChanged, Adaptation*-Events, Resume |
 
-### Unterschiede & Lücken
+### Differences & Gaps
 
-**Was die pasted Ideas haben, das der Doc (noch) nicht abdeckt:**
-1. **Goal→Plan-Generierung (Phase 0):** Der Doc setzt voraus, dass ein Base-Plan existiert. Es fehlt ein Modul, das aus Ist-Zustand + Ziel einen initialen Workflow-DAG erzeugt (LLM mit strukturiertem Output, validiert durch GraphCompiler).
-2. **Tool-Registry als OpenAPI/Swagger-Quelle:** Der Doc nutzt MCP-Tools/Agent-Refs, aber keine explizite Schnittstellen-Standardisierung (OpenAPI) für die KI-Planung.
-3. **Framework-Integrationen:** LangGraph/CrewAI/Semantic Kernel und Temporal/Camunda/n8n werden in den pasted Ideas genannt; QOC hat eigene Engine + workflow-runner, keine externen Orchestratoren.
-4. **State & Goal Input als explizite Phase:** Der Doc hat `inputSchema` und `initial`-State, aber keine dedizierte „Ziel-Definition“-Phase.
+**What the pasted ideas have that the doc (still) does not cover:**
+1. **Goal→Plan Generation (Phase 0):** The doc assumes a Base-Plan already exists. What is missing is a module that generates an initial workflow DAG from current state + goal (LLM with structured output, validated by GraphCompiler).
+2. **Tool-Registry as OpenAPI/Swagger Source:** The doc uses MCP-Tools/Agent-Refs, but no explicit interface standardization (OpenAPI) for AI planning.
+3. **Framework Integrations:** LangGraph/CrewAI/Semantic Kernel and Temporal/Camunda/n8n are named in the pasted ideas; QOC has its own engine + workflow-runner, no external orchestrators.
+4. **State & Goal Input as Explicit Phase:** The doc has `inputSchema` and `initial` state, but no dedicated "goal definition" phase.
 
-**Was der Doc hat, das die pasted Ideas nicht abdecken:**
-1. **Runtime-Reparatur / Plan-Adaptation:** Base-Plan-Immutabilität, derived Plans mit Lineage, Rejoin-Anker.
-2. **Requirement-Gap-Modell:** Explizite Input-Requirements, Gap-Reasons, Severity (ERROR/INFO).
-3. **Blast-Radius & Divergenz-Handling:** Statische Abhängigkeitsanalyse, deterministische Reparatur-Modi (PATCH_ONLY, REPLAY_FROM, COMPENSATE_AND_REPLAY, ESCALATE).
-4. **Session-Requery:** Wiederaufnahme persistierter Child-Sessions zur Nachfrage fehlender Felder.
-5. **Idempotenz/Side-Effect-Gates:** Auto-Replay nur bei deklarierter Idempotenz/Kompensation (SAGA).
-6. **Resume nach Crash:** Journal-basierte Wiederherstellung des zuletzt akzeptierten Plans.
+**What the doc has that the pasted ideas do not cover:**
+1. **Runtime Repair / Plan-Adaptation:** Base-Plan immutability, derived plans with lineage, rejoin anchors.
+2. **Requirement-Gap Model:** Explicit input requirements, gap reasons, severity (ERROR/INFO).
+3. **Blast Radius & Divergence Handling:** Static dependency analysis, deterministic repair modes (PATCH_ONLY, REPLAY_FROM, COMPENSATE_AND_REPLAY, ESCALATE).
+4. **Session-Requery:** Resuming persisted child sessions to query missing fields.
+5. **Idempotency/Side-Effect Gates:** Auto-replay only with declared idempotency/compensation (SAGA).
+6. **Resume after Crash:** Journal-based recovery of the last accepted plan.
 
 ---
 
-## Teil 3 – Integrationsplan (Phasen)
+## Part 3 – Integration Plan (Phases)
 
-| Phase | Inhalt | Quelle |
+| Phase | Content | Source |
 |---|---|---|
-| **Phase 0 (neu)** | Goal→Plan-Generierung: LLM mit Tool-Registry (MCP/OpenAPI) erzeugt initialen DAG; Validierung durch GraphCompiler; Base-Plan-Version 1.0.0 | Pasted Ideas |
+| **Phase 0 (new)** | Goal→Plan generation: LLM with Tool-Registry (MCP/OpenAPI) produces initial DAG; validation by GraphCompiler; Base-Plan version 1.0.0 | Pasted Ideas |
 | **Phase A (Doc)** | RequirementChecker + Session-Requery + Reroute-Fallback | Doc |
-| **Phase B (Doc)** | AdaptationPlan + RuntimePlan + PlanValidator + InsertNode/PatchNode; Journal-Versionierung; Resume | Doc |
+| **Phase B (Doc)** | AdaptationPlan + RuntimePlan + PlanValidator + InsertNode/PatchNode; journal versioning; Resume | Doc |
 | **Phase C (Doc)** | LlmSupervisor via TriageService; HITL; UI/API | Doc |
-| **Phase D (Doc)** | Budgets, Metriken, Hardening | Doc |
+| **Phase D (Doc)** | Budgets, metrics, hardening | Doc |
 
-**Kernentscheidung:** Der Supervisor (Doc) wird nicht nur für Reparatur genutzt, sondern auch für Phase 0 (Goal→Plan) als `HumanSupervisor`/`LlmSupervisor`-Variante, die einen initialen Adaptationsplan auf einem leeren Base-Plan erzeugt. Damit bleibt die Architektur einheitlich: alles läuft über `AdaptationPlan` + `GraphCompiler`.
+**Core Decision:** The Supervisor (Doc) is not only used for repair, but also for Phase 0 (Goal→Plan) as a `HumanSupervisor`/`LlmSupervisor` variant that generates an initial adaptation plan on an empty Base-Plan. This keeps the architecture unified: everything runs through `AdaptationPlan` + `GraphCompiler`.
 
-### Nächste Schritte (Plan, keine Änderungen)
+### Next Steps (Plan, no changes)
 
-1. **Phase 0 spezifizieren:** Tool-Registry-Schema (MCP-Tools + OpenAPI) definieren; LLM-Prompt-Template für Goal→DAG; Output-Schema (JSON) validierbar durch GraphCompiler.
-2. **Phase A implementieren:** RequirementChecker, Session-Requery, Reroute; Tests (Doc Testplan Punkt 1–3).
-3. **UI/API:** `GET /run/{id}/plan`, Badge „Adapted (n)“ (Doc §10).
-4. **Keine externen Orchestratoren (Temporal/Camunda):** QOC behält eigene Engine; n8n-Export optional als späteres Feature.
+1. **Specify Phase 0:** Define Tool-Registry schema (MCP-Tools + OpenAPI); LLM prompt template for Goal→DAG; output schema (JSON) validatable by GraphCompiler.
+2. **Implement Phase A:** RequirementChecker, Session-Requery, Reroute; tests (Doc test plan points 1–3).
+3. **UI/API:** `GET /run/{id}/plan`, badge "Adapted (n)" (Doc §10).
+4. **No external orchestrators (Temporal/Camunda):** QOC keeps its own engine; n8n export optional as a later feature.
 
 ---
 
-## Referenzen
+## References
 
-- `docs/plans/runtime-plan-adaptation.md` (Original-Konzept)
+- `docs/plans/runtime-plan-adaptation.md` (original concept)
 - `docs/engineering/ReAct-Workflow.md`
 - `docs/resilience.md`
 - `docs/engineering/Task-Orchestration.md`

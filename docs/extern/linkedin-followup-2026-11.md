@@ -1,51 +1,51 @@
-# LinkedIn-Beitrag: QOC – vom Demo zum produktionsreifen Agenten-Service (Follow-up)
+# LinkedIn Post: QOC – from Demo to Production-Ready Agent Service (Follow-up)
 
-> Ablage: `docs/linkedin-followup-2026-11.md` (außerhalb des Git-Repos, nicht committed)
-> Sprache: Deutsch (wie der Vorgänger-Beitrag)
-> Projektname im Text: **QOC**
+> Location: `docs/linkedin-followup-2026-11.md` (outside the Git repo, not committed)
+> Language: English (like the predecessor post)
+> Project name in the text: **QOC**
 
 ---
 
-## Beitrag (kopierbar für LinkedIn)
+## Post (copy-paste for LinkedIn)
 
-Warum ich OpenCode nach Java portiert habe – Teil 2: Was QOC produktionsreif macht.
+Why I ported OpenCode to Java – Part 2: What makes QOC production-ready.
 
-Im ersten Teil ging es um die Grundlage: eine spec-getriebene Java-Portierung von OpenCode, mit Session-Engine, Tools, MCP, A2A, asynchronen Approvals und idempenter Runtime. Die Frage, die danach kam: „Und wie setze ich das jetzt wirklich ein, ohne dass der Agent alles darf?"
+The first part covered the foundation: a spec-driven Java port of OpenCode, with a session engine, tools, MCP, A2A, asynchronous approvals, and an idempotent runtime. The question that followed: "And how do I actually use this now, without the agent being allowed to do everything?"
 
-Genau dort setzt QOC an. Drei Themen haben den größten Unterschied gemacht.
+That is exactly where QOC comes in. Three topics made the biggest difference.
 
-🔹 1. Security: von allow-all zu least-privilege
+🔹 1. Security: from allow-all to least-privilege
 
-Am Anfang stand, wie bei vielen Agenten-Demos, ein großzügiges allow-all: der Agent durfte lesen, schreiben, ausführen. Das reicht für einen Prototypen – nicht für Produktion. QOC hat das in Stufen umgebaut:
+At the beginning, like with many agent demos, there was a generous allow-all: the agent could read, write, and execute. That is enough for a prototype – not for production. QOC rebuilt this in stages:
 
-- Permission-Default ist jetzt least-privilege (deny-by-default). Erlaubt wird nur, was explizit freigegeben ist.
-- Shell-Sandbox (bubblewrap) begrenzt Schreibzugriffe auf den Workspace; in Containern kommt die Grenze aus den Mounts.
-- Ask-Mode steuert, was bei fehlender Freigabe passiert: deny, allow oder interaktiv.
-- Kurzlebige, origin-bearing Tool-Tokens (60 s) für Downstream-Aufrufe.
+- The permission default is now least-privilege (deny-by-default). Only what is explicitly granted is allowed.
+- The shell sandbox (bubblewrap) limits write access to the workspace; in containers the boundary comes from the mounts.
+- Ask mode controls what happens when permission is missing: deny, allow, or interactive.
+- Short-lived, origin-bearing tool tokens (60 s) for downstream calls.
 
-💡 Der Wert: der Agent bekommt genau die Rechte, die er braucht – und nicht mehr. Least-Privilege als Default, nicht als Nachrüstung.
+💡 The value: the agent gets exactly the rights it needs – and no more. Least privilege as the default, not as a retrofit.
 
-🔹 2. OIDC statt „lokal admin"
+🔹 2. OIDC instead of "local admin"
 
-Für den ersten Entwickler-Modus reichte ein Login-freier Loopback mit lokalem Admin. Für Produktion nicht. QOC spricht jetzt OIDC (Keycloak im Dev-Profil, Auth0 in Prod) und löst Rollen aus dem JWT (realm_access/roles, permissions, groups). Dazu Trusted-Proxy-Auth (nginx/LB) und HTTP Basic als Fallback. Der Role-Claim-Pfad ist pro Profil konfiguriierbar, fehlende Claims führen fail-closed zu 403.
+For the first developer mode, a login-free loopback with a local admin was enough. Not for production. QOC now speaks OIDC (Keycloak in the dev profile, Auth0 in prod) and resolves roles from the JWT (realm_access/roles, permissions, groups). Plus trusted-proxy auth (nginx/LB) and HTTP Basic as a fallback. The role-claim path is configurable per profile; missing claims fail closed to 403.
 
-💡 Der Wert: derselbe Code läuft lokal ohne Login und in Produktion mit echter Identität und Rollen – kein „if (dev)"-Codepfad.
+💡 The value: the same code runs locally without login and in production with real identity and roles – no "if (dev)" code path.
 
-🔹 3. Dieselbe Engine als deterministische Workflow-Orchestrierung
+🔹 3. The same engine as deterministic workflow orchestration
 
-Der LLM-Loop (Prompt → Kontext → Tool-Calls → Ergebnis) ist erprobt und nachprüfbar. QOC nutzt ihn jetzt auch für Workflow-Orchestrierung: Workflows werden topologisch sortiert, Knoten (Agenten, Entscheidungen, Forks/Joins, Loops, MCP-Calls) laufen in der gleichen Engine. Der Zustand liegt im Journal (Event-Sourcing, in der DB oder in SQLite/In-Memory) – jeder Schritt ist nachvollziehbar, jeder Run wiederholbar und fortsetzbar.
+The LLM loop (prompt → context → tool calls → result) is proven and verifiable. QOC now also uses it for workflow orchestration: workflows are topologically sorted, nodes (agents, decisions, forks/joins, loops, MCP calls) run in the same engine. State lives in the journal (event sourcing, in the DB or in SQLite/in-memory) – every step is traceable, every run repeatable and resumable.
 
-💡 Der Wert: kein zweiter, ungetesteter Orchestrierungs-Stack. Deterministisch, weil der Loop derselbe ist, der schon in Produktion läuft. Auditable, weil alles im Journal landet.
+💡 The value: no second, untested orchestration stack. Deterministic because the loop is the same one already running in production. Auditable because everything lands in the journal.
 
-🔹 4. In-Memory-Variante für Helper-Aufgaben
+🔹 4. In-memory variant for helper tasks
 
-Nicht jede Aufgabe braucht eine Datenbank. QOC hat einen In-Memory-Modus: Sessions, Conversations, Journal, Claims und Tool-Outputs im Heap, keine Persistenz, kein Restart-Recovery. Ideal für eingebettete Helper, ephemere Sessions, Tests und Single-Process-Deployments. Der Footprint bleibt klein (Default-Budget 300 MB, LRU-begrenzte Tool-Outputs).
+Not every task needs a database. QOC has an in-memory mode: sessions, conversations, journal, claims, and tool outputs in the heap, no persistence, no restart recovery. Ideal for embedded helpers, ephemeral sessions, tests, and single-process deployments. The footprint stays small (default budget 300 MB, LRU-capped tool outputs).
 
-💡 Der Wert: dieselbe Engine, zwei Betriebsmodi – durable für Produktion, flüchtig für Helfer und Tests. Kein zweites Framework.
+💡 The value: the same engine, two operating modes – durable for production, ephemeral for helpers and tests. No second framework.
 
-Die AI liefert die Intelligenz. QOC liefert die Betriebsreife – und jetzt auch die Sicherheit, die Identität und die Orchestrierung, die aus einem Demo ein Produkt machen.
+AI delivers the intelligence. QOC delivers production readiness – and now also the security, identity, and orchestration that turn a demo into a product.
 
-🚀 Was fehlt noch auf eurem Weg vom Agenten-Demo zum Agenten-Service?
+🚀 What is still missing on your path from agent demo to agent service?
 
 📌 Repository: https://github.com/augmentia-de/QOC
 
@@ -53,18 +53,18 @@ Die AI liefert die Intelligenz. QOC liefert die Betriebsreife – und jetzt auch
 
 ---
 
-## Hinweise zur Veröffentlichung
+## Publication notes
 
-- Der Beitrag ist die Fortsetzung des Posts „Warum ich OpenCode nach Java portiert habe" (31.10.2026).
-- Fakten gegen den Code geprüft:
-  - `engine.permission.default=least-privilege` (Default), `allow-all` als Alternative (`application.properties`).
-  - Shell-Sandbox: `engine.shell.sandbox.mode=workspace-write`, bwrap; in Docker deaktiviert (unprivilegiert) (`06-security-hardening.md`).
-  - Ask-Mode: `deny | allow | interactive` (`engine.permission.ask-mode`).
-  - Tool-Token: `engine.security.tool-token.ttl-seconds=60` (Default).
-  - OIDC: `quarkus.oidc.enabled`, Keycloak (`%dev`) / Auth0 (`%prod`), Rollen aus `realm_access.roles`/`permissions`/`groups` (`OidcPrincipalProducer`, `SecurityConfig`).
-  - Trusted-Proxy: `TrustedProxyFilter`, `X-Forwarded-*`.
-  - Workflow-Orchestrierung: `DefaultNodeDispatcher`, `TopologicalSort`, `WorkflowExecutor`, Journal-Events (`WorkflowRunStarted`, `WorkflowNodeCompleted`), DB/SQLite/In-Memory (`Workflow.md`, `WorkflowStore`).
-  - In-Memory: `engine.storage=memory`, `RuntimeState`, No-Op-Adapter für optionale Stores, `engine.memory.max-bytes=314572800` (300 MiB), LRU-capped Tool-Outputs (max 256).
-  - Lightweight: e2-micro-Erwähnung aus dem Vorgänger-Beitrag beibehalten.
-- Hashtags am Ende anpassen (LinkedIn erlaubt max. ~5–10 Hashtags für beste Reichweite; aktuell 11).
-- Bildvorschlag: Screenshot der Workflow-UI (GraphEditor) oder das Security-Diagramm aus `docs/diagrams/`.
+- The post is the follow-up to "Why I ported OpenCode to Java" (31.10.2026).
+- Facts verified against the code:
+  - `engine.permission.default=least-privilege` (default), `allow-all` as alternative (`application.properties`).
+  - Shell sandbox: `engine.shell.sandbox.mode=workspace-write`, bwrap; disabled in Docker (unprivileged) (`06-security-hardening.md`).
+  - Ask mode: `deny | allow | interactive` (`engine.permission.ask-mode`).
+  - Tool token: `engine.security.tool-token.ttl-seconds=60` (default).
+  - OIDC: `quarkus.oidc.enabled`, Keycloak (`%dev`) / Auth0 (`%prod`), roles from `realm_access.roles`/`permissions`/`groups` (`OidcPrincipalProducer`, `SecurityConfig`).
+  - Trusted proxy: `TrustedProxyFilter`, `X-Forwarded-*`.
+  - Workflow orchestration: `DefaultNodeDispatcher`, `TopologicalSort`, `WorkflowExecutor`, journal events (`WorkflowRunStarted`, `WorkflowNodeCompleted`), DB/SQLite/in-memory (`Workflow.md`, `WorkflowStore`).
+  - In-memory: `engine.storage=memory`, `RuntimeState`, no-op adapters for optional stores, `engine.memory.max-bytes=314572800` (300 MiB), LRU-capped tool outputs (max 256).
+  - Lightweight: keep the e2-micro mention from the predecessor post.
+- Adjust the hashtags at the end (LinkedIn allows max. ~5–10 hashtags for best reach; currently 11).
+- Image suggestion: screenshot of the workflow UI (GraphEditor) or the security diagram from `docs/diagrams/`.
