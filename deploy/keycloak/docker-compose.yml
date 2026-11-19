@@ -1,0 +1,38 @@
+# Local Keycloak for QOC.
+#
+# Browser-facing issuer:  http://localhost:8180/realms/qoc
+# In-container JWKS URL:  http://host.docker.internal:8180/realms/qoc
+#
+# The network is intentionally named qoc-keycloak_default so that
+# deploy/docker-compose.yml can join it as an external network.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: keycloak-local
+    restart: unless-stopped
+    command:
+      - start-dev
+      - --features=token-exchange
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: http://localhost:8180
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8180:8080"
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+    networks:
+      keycloak-local:
+        aliases:
+          - keycloak
+
+volumes:
+  keycloak-data:
+    name: qoc-keycloak-data
+
+networks:
+  keycloak-local:
+    name: qoc-keycloak_default

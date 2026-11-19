@@ -48,7 +48,13 @@ export default function App() {
     (async () => {
       const { handleOidcCallback } = await import('@shared/auth');
       const handled = await handleOidcCallback();
-      if (handled) setAuthed(!!getToken());
+      if (handled) {
+        // Reload so every view mounts with the freshly stored token instead of
+        // rendering one cycle with the pre-login (401) API results.
+        window.location.replace(window.location.pathname);
+        return;
+      }
+      setAuthed(!!getToken());
     })();
   }, []);
   const handleAuth = async () => {

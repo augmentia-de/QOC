@@ -7,7 +7,10 @@ export interface RequestOptions extends RequestInit {
 }
 
 async function request(path: string, options: RequestOptions = {}): Promise<any> {
-  const response = await apiFetch(BASE + path, options)
+  const token = (typeof sessionStorage !== 'undefined' ? (sessionStorage.getItem('qoc.accessToken') || sessionStorage.getItem('qoc.idToken') || '') : '')
+  const headers = new Headers(options.headers || {})
+  if (token) headers.set('Authorization', 'Bearer ' + token)
+  const response = await fetch(BASE + path, { ...options, headers })
   if (!response.ok) {
     const text = await response.text().catch(() => '')
     throw new Error(text || response.statusText || ('HTTP ' + response.status))

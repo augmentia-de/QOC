@@ -89,7 +89,8 @@ export async function ensureOidcConfig(): Promise<void> {
 }
 
 export function tokenValid(): boolean {
-  return !!AUTH.token && (!AUTH.expiresAt || Date.now() < AUTH.expiresAt - 30000)
+  const token = AUTH.token || (typeof sessionStorage !== 'undefined' ? (sessionStorage.getItem('qoc.accessToken') || sessionStorage.getItem('qoc.idToken') || '') : '')
+  return !!token && (!AUTH.expiresAt || Date.now() < AUTH.expiresAt - 30000)
 }
 
 function pkcePending(): boolean {
@@ -111,10 +112,11 @@ export function storeTokens(data: {
   expires_in?: number
   id_token?: string
 }): void {
-  AUTH.token = data.access_token || ''
+  AUTH.token = data.access_token || data.id_token || ''
   AUTH.refresh = data.refresh_token || AUTH.refresh || ''
   AUTH.expiresAt = Date.now() + (Number(data.expires_in || 300) * 1000)
-  sessionStorage.setItem(AUTH_STORAGE_KEYS.accessToken, AUTH.token)
+  // Store the real access token for API calls; the ID token is kept separately.
+  sessionStorage.setItem(AUTH_STORAGE_KEYS.accessToken, data.access_token || AUTH.token)
   sessionStorage.setItem(AUTH_STORAGE_KEYS.refreshToken, AUTH.refresh)
   sessionStorage.setItem(AUTH_STORAGE_KEYS.expiresAt, String(AUTH.expiresAt))
   if (data.id_token) sessionStorage.setItem(AUTH_STORAGE_KEYS.idToken, data.id_token)
@@ -137,7 +139,8 @@ export function clearTokens(includePkce = false): void {
 
 export function authHeaders(headers?: HeadersInit): Headers {
   const result = new Headers(headers || {})
-  if (AUTH.token) result.set('Authorization', 'Bearer ' + AUTH.token)
+  const token = (typeof sessionStorage !== 'undefined' ? (sessionStorage.getItem('qoc.accessToken') || sessionStorage.getItem('qoc.idToken')) : '') || AUTH.token || ''
+  if (token) result.set('Authorization', 'Bearer ' + token)
   return result
 }
 
@@ -265,6 +268,7 @@ export async function handleOidcCallback(): Promise<boolean> {
     return false
   }
   if (!code) return false
+  console.log('OIDC callback: code found, exchanging...')
   await ensureOidcConfig()
   const expected = sessionStorage.getItem(AUTH_STORAGE_KEYS.pkceState)
   const verifier = sessionStorage.getItem(AUTH_STORAGE_KEYS.pkceVerifier)
@@ -297,6 +301,7 @@ export async function handleOidcCallback(): Promise<boolean> {
     }
     if (!res.ok) throw new Error(data.error_description || data.error || ('HTTP ' + res.status))
     storeTokens(data)
+    console.log('OIDC token stored, hasToken:', !!AUTH.token, 'tokenLen:', (AUTH.token||'').length)
     clearPkce()
     history.replaceState({}, document.title, window.location.pathname)
     return true
