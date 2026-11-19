@@ -59,6 +59,7 @@ public final class EventCodec {
         register(registry, SessionEvent.ExecutionSucceeded.class);
         register(registry, SessionEvent.ExecutionFailed.class);
         register(registry, SessionEvent.ExecutionInterrupted.class);
+        register(registry, SessionEvent.ChildSessionOrphaned.class);
         register(registry, SessionEvent.CompactionStarted.class);
         register(registry, SessionEvent.CompactionEnded.class);
         register(registry, SessionEvent.CompactionFailed.class);

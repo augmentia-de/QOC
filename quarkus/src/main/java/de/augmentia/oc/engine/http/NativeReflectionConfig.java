@@ -245,6 +245,7 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
             "de.augmentia.oc.engine.core.model.SessionError$ToolExecutionError",
             "de.augmentia.oc.engine.core.model.SessionError$Unknown",
             "de.augmentia.oc.engine.core.model.SessionEvent",
+            "de.augmentia.oc.engine.core.model.SessionEvent$ChildSessionOrphaned",
             "de.augmentia.oc.engine.core.model.SessionEvent$CompactionEnded",
             "de.augmentia.oc.engine.core.model.SessionEvent$CompactionFailed",
             "de.augmentia.oc.engine.core.model.SessionEvent$CompactionStarted",

@@ -50,6 +50,33 @@ public final class SessionId {
         return parse(raw);
     }
 
+    /**
+     * True when this ID was created with {@link #create(SessionId)} and
+     * therefore carries its parent ID.
+     */
+    public boolean isChild() {
+        return parent().isPresent();
+    }
+
+    /**
+     * Returns the direct parent encoded in a child ID. Top-level IDs and
+     * malformed child IDs return {@link Option#none()}.
+     */
+    public Option<SessionId> parent() {
+        if (!value.startsWith("ses_ses_")) {
+            return Option.none();
+        }
+        int separator = value.lastIndexOf('_');
+        if (separator <= 4) {
+            return Option.none();
+        }
+        try {
+            return Option.some(parse(value.substring(4, separator)));
+        } catch (IllegalArgumentException e) {
+            return Option.none();
+        }
+    }
+
     public String value() {
         return value;
     }

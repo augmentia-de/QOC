@@ -625,7 +625,19 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
             overrides = ov;
         }
         // Keep the child session so the parent run journal can link to it.
-        SessionId child = engine.createSession(prefixedName, principal.id(), "workspace");
+        // Encode the workflow run as parent when the cache key is a session ID;
+        // crash recovery can then route the orphan to the parent instead of
+        // resuming it as a generic "build" session.
+        SessionId parent = null;
+        if (cacheKey != null && !cacheKey.isBlank()) {
+            try {
+                parent = SessionId.parse(cacheKey);
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        SessionId child = parent == null
+                ? engine.createSession(prefixedName, principal.id(), "workspace")
+                : engine.createSession(prefixedName, principal.id(), "workspace", parent);
         EngineResult result = engine.runPrompt(child, prefixedName, prompt, config, true,
                 null, null, principal, overrides);
         if (result.failed()) {

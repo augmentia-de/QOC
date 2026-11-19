@@ -1019,15 +1019,6 @@ commandLoader = new CommandLoader(workspacePath,
                 providerApiKey,
                 () -> memoryMode || de.augmentia.oc.engine.adapter.sql.DbHealthSql.isHealthy(dataSource, 3),
                 workspacePath));
-        // Crash recovery: resume sessions that were interrupted by a previous process stop.
-        if (!memoryMode && recoveryEnabled) {
-            try {
-                qocEngine.recover();
-                LOG.info("Crash recovery completed");
-            } catch (RuntimeException e) {
-                LOG.warn("Crash recovery failed: " + e.getMessage(), e);
-            }
-        }
         // Resilience components
         preflightChecker = new de.augmentia.oc.engine.runtime.resilience.DefaultPreflightChecker(
                 java.net.http.HttpClient.newBuilder()
@@ -1050,6 +1041,18 @@ commandLoader = new CommandLoader(workspacePath,
         if (subagentTool != null) {
             subagentTool.setRunner((parent, agentName, prompt, depth, principal) ->
                     runSubagent(parent, agentName, prompt, depth, principal));
+        }
+        // Crash recovery: resume sessions that were interrupted by a previous
+        // process stop. Run after the execution components are wired so the
+        // subagent runner exists. Full Quarkus tool parity for recovered
+        // sessions is part of the recovery-overrides follow-up.
+        if (!memoryMode && recoveryEnabled) {
+            try {
+                qocEngine.recover();
+                LOG.info("Crash recovery completed");
+            } catch (RuntimeException e) {
+                LOG.warn("Crash recovery failed: " + e.getMessage(), e);
+            }
         }
         compaction = new CompactionService(journal, conversation, instructions,
                 new Compaction(journal, provider), clock, 8, provider);
@@ -2304,6 +2307,29 @@ commandLoader = new CommandLoader(workspacePath,
         };
     }
 
+    /**
+     * A subagent call is only successful when the child turn actually
+     * completed. Failed, cancelled, refused and paused outcomes must be
+     * propagated as tool failures instead of being returned as result text.
+     */
+    static void requireSubagentCompleted(String agentName, PromptResult result) {
+        if (result == null) {
+            throw new IllegalStateException("subagent " + agentName + " returned no result");
+        }
+        if (result.outcome() instanceof TurnOutcome.Completed) {
+            return;
+        }
+        String detail = result.text() == null ? "" : result.text().strip();
+        if (detail.length() > 500) {
+            detail = detail.substring(0, 500) + "…";
+        }
+        String outcome = result.outcome() == null
+                ? "unknown" : result.outcome().getClass().getSimpleName();
+        throw new IllegalStateException("subagent " + agentName + " did not complete: "
+                + result.finish() + " (" + outcome + ")"
+                + (detail.isBlank() ? "" : ": " + detail));
+    }
+
     public SubagentRunner.SubagentResult runSubagent(SessionId parent, String agentName, String prompt, int depth,
                                                     de.augmentia.oc.engine.core.model.Principal principal) {
         if (principal == null) principal = de.augmentia.oc.engine.core.model.Principal.anonymous();
@@ -2371,6 +2397,7 @@ commandLoader = new CommandLoader(workspacePath,
                 String subagentPrompt = "You are a subagent. Do not ask the user questions; "
                         + "make reasonable assumptions and report your result back.\n\n" + prompt;
                 result = runPrompt(child, subagentPrompt, agent, de.augmentia.oc.engine.core.model.Option.none(), principal);
+                requireSubagentCompleted(agentName, result);
 
                 // Token accumulation: add subagent usage to parent session
                 SessionInfo parentInfo = sessions.info(parent).orElse(null);

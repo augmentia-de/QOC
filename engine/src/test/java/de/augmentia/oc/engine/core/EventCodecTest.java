@@ -125,6 +125,7 @@ class EventCodecTest {
                 new SessionEvent.ExecutionSucceeded(session),
                 new SessionEvent.ExecutionFailed(session, new SessionError.Unknown("boom", "message")),
                 new SessionEvent.ExecutionInterrupted(session, InterruptReason.USER),
+                new SessionEvent.ChildSessionOrphaned(session, SessionId.create(), "parent must resume"),
                 new SessionEvent.CompactionStarted(session, CompactionReason.OVERFLOW, Option.none()),
                 new SessionEvent.CompactionEnded(session, CompactionReason.OVERFLOW, "summary", model,
                         Money.of(1), TokenCount.of(2, 3)),

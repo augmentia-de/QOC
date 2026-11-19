@@ -460,6 +460,15 @@ public static record EngineConfig(
     public TracerProvider tracerProvider() { return tracerProvider; }
 
     public SessionId createSession(String agentName, String user, String mode) {
+        return createSession(agentName, user, mode, null);
+    }
+
+    /**
+     * Creates a session. A non-null {@code parent} encodes the parent in the
+     * child's {@link SessionId} so crash recovery can recognise the child
+     * without an extra in-memory registry.
+     */
+    public SessionId createSession(String agentName, String user, String mode, SessionId parent) {
         String normalizedUser = (user == null || user.isBlank()) ? "anonymous" : user.trim();
         String normalizedMode = (mode == null || mode.isBlank()) ? "workspace" : mode.trim().toLowerCase();
         AgentId agent;
@@ -471,7 +480,7 @@ public static record EngineConfig(
         java.nio.file.Path dir = java.nio.file.Path.of(".").toAbsolutePath().normalize();
         Location location = new Location(dir, ProjectId.create(), Option.none());
         Instant now = clock.now();
-        SessionId id = sessionService.create(location, agent, Option.none(), now);
+        SessionId id = sessionService.create(location, agent, Option.none(), now, parent);
         SessionInfo info = new SessionInfo(id, location.projectId(), location,
                 (agentName == null ? "session" : agentName) + " " + now,
                 agent, Option.none(), List.of(), de.augmentia.oc.engine.core.model.Money.zero(),
@@ -523,6 +532,27 @@ public static record EngineConfig(
             for (de.augmentia.oc.engine.core.model.Claim claim : stores.claims().open()) {
                 de.augmentia.oc.engine.core.model.SessionId sessionId = claim.sessionId();
                 if (coordinator.active(sessionId)) continue;
+
+                // Child sessions (subagent or workflow node) are owned by their
+                // parent. Resuming them as a generic "build" session would use
+                // the wrong agent and duplicate the parent's work.
+                if (sessionId.isChild()) {
+                    de.augmentia.oc.engine.core.model.SessionId parent =
+                            sessionId.parent().orElse(null);
+                    try {
+                        stores.journal().append(new de.augmentia.oc.engine.core.model.EventDraft(
+                                sessionId.value(), 1,
+                                new de.augmentia.oc.engine.core.model.SessionEvent.ChildSessionOrphaned(
+                                        sessionId, parent,
+                                        "child session orphaned; parent must resume")));
+                    } catch (RuntimeException ignored) {
+                    }
+                    stores.claims().release(sessionId);
+                    log.fine("child session " + sessionId.value() + " orphaned; parent "
+                            + (parent == null ? "unknown" : parent.value()) + " owns recovery");
+                    continue;
+                }
+
                 if (isWorkflowSession(sessionId)) {
                     // Workflow runs are resumed by the workflow recovery
                     // service, which rebuilds the workflow context from the
@@ -553,9 +583,19 @@ public static record EngineConfig(
                 }
                 stores.claims().release(sessionId);
                 try {
-                    this.runPrompt(sessionId, "build",
+                    de.augmentia.oc.engine.core.model.SessionInfo info =
+                            stores.sessions().info(sessionId).orElse(null);
+                    String agentName = "build";
+                    if (info != null) {
+                        String resolved = agentResolver.nameOf(info.agent());
+                        if (resolved != null && !resolved.isBlank()) {
+                            agentName = resolved;
+                        }
+                    }
+                    this.runPrompt(sessionId, agentName,
                             de.augmentia.oc.engine.core.eval.PromptLoader.get("server-restarted"),
-                            null, false, null, null, de.augmentia.oc.engine.core.model.Principal.anonymous());
+                            agentResolver.config(agentName), false, null, null,
+                            de.augmentia.oc.engine.core.model.Principal.anonymous());
                 } catch (RuntimeException e) {
                     log.warning("recovery run failed for " + sessionId.value() + ": " + e.getMessage());
                 }

@@ -103,6 +103,19 @@ public sealed interface SessionEvent extends Payload {
 
     record ExecutionInterrupted(SessionId sessionId, InterruptReason reason) implements SessionEvent {}
 
+    /**
+     * A child session (subagent or workflow node) was left behind by a crash.
+     * The parent owns recovery; the child must not be resumed as a generic
+     * agent session.
+     */
+    record ChildSessionOrphaned(SessionId sessionId, SessionId parentId,
+                                String reason) implements SessionEvent {
+        public ChildSessionOrphaned {
+            if (parentId == null) throw new IllegalArgumentException("parentId must not be null");
+            if (reason == null) reason = "";
+        }
+    }
+
     record CompactionStarted(SessionId sessionId, CompactionReason reason,
                              Option<InboxId> inputId) implements SessionEvent {}
 
