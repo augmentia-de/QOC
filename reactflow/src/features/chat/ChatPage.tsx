@@ -385,8 +385,8 @@ export default function ChatPage() {
               placeholder="Prompt eingeben…" rows={2}
             />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <button onClick={() => void send()} disabled={!sessionId || !input.trim()} style={btnPrimary(sending ? 'Interrupt' : 'Send', !sessionId || !input.trim())}>{sending ? 'Interrupt' : 'Send'}</button>
-              <button onClick={() => void interrupt()} disabled={!sessionId} style={btnDanger('Cancel', !sessionId)}>Cancel</button>
+              <button onClick={() => void send()} disabled={!sessionId || !input.trim()} onTouchEnd={(e) => { if (!sessionId || !input.trim()) return; e.preventDefault(); void send() }} style={{ ...btnPrimary(sending ? 'Interrupt' : 'Send', !sessionId || !input.trim()), touchAction: 'manipulation' }}>{sending ? 'Interrupt' : 'Send'}</button>
+              <button onClick={() => void interrupt()} disabled={!sessionId} onTouchEnd={(e) => { if (!sessionId) return; e.preventDefault(); void interrupt() }} style={{ ...btnDanger('Cancel', !sessionId), touchAction: 'manipulation' }}>Cancel</button>
             </div>
           </div>
         </div>

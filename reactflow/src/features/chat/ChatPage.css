@@ -345,7 +345,18 @@
 }
 
 @media (max-width: 768px) {
-  .chat-main { overflow: visible; }
+  .chat-main { overflow: hidden; }
+  .chat-inputbar {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    background: #161616;
+  }
+  .chat-inputbar button {
+    touch-action: manipulation;
+    min-height: 44px;
+  }
   .chat-panel { min-width: 0; }
   .chat-side-resizer { display: none; }
   .chat-panel-resizer { display: none; }

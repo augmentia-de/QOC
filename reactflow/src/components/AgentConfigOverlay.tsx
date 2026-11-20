@@ -222,7 +222,7 @@ export function AgentConfigOverlay({ open, agent, onChange, onClose, onSave, onS
         <label style={{ display: 'block', marginTop: 8 }}>
           <input type="checkbox" checked={agent.requiresHITL} onChange={(e) => onChange({ requiresHITL: e.target.checked })} /> Requires HITL
         </label>
-        <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap', position: 'sticky', bottom: 0, background: '#2d2d2d', padding: '8px 0', zIndex: 2, touchAction: 'manipulation' }}>
           {onSave && <button onClick={onSave} style={{ padding: '6px 14px', background: '#5cb85c', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Save</button>}
           {showWorkflowActions && onSaveRef && <button onClick={onSaveRef} style={{ padding: '6px 14px', background: '#337ab7', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Save Ref</button>}
           {showWorkflowActions && onSaveToFile && <button onClick={onSaveToFile} style={{ padding: '6px 14px', background: '#17a2b8', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Save ref to file</button>}
