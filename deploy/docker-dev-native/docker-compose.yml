@@ -18,7 +18,7 @@ services:
       ENGINE_PERMISSION_DEFAULT: allow-all
       ENGINE_PERMISSION_ASK_MODE: interactive
       ENGINE_SHELL_SANDBOX_ENABLED: false
-      ENGINE_WORKSPACE: /data/workspace
+      ENGINE_WORKSPACE: /app
       ENGINE_APPROVAL_BASE_URL: http://localhost:8082
       MAVEN_CONFIG: /home/qoc/.m2
       MAVEN_OPTS: -Duser.home=/home/qoc

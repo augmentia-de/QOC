@@ -23,7 +23,7 @@ services:
       # General access base for the UI workspace switch. The mounted
       # /data/workspace is the project root; agents may be pointed at
       # subdirectories inside it.
-      ENGINE_WORKSPACE: /data/workspace
+      ENGINE_WORKSPACE: /app
       ENGINE_APPROVAL_BASE_URL: http://localhost:8070
       MAVEN_CONFIG: /home/ubuntu/.m2
       MAVEN_OPTS: -Duser.home=/home/ubuntu
@@ -32,7 +32,7 @@ services:
       - ../..:/app
       - ${HOME}/.m2:/home/ubuntu/.m2
       - ./data/home:/data/home
-      - ../../data/workspace:/data/workspace
+      - ../..:/data/workspace
       - ./log:/data/log
       - ../../wf-data:/data/wf
       - ./entrypoint-dev.sh:/usr/local/bin/entrypoint-dev.sh:ro

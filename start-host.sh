@@ -33,7 +33,7 @@ export ENGINE_LLM_LOG_LIMIT_BYTES=200000
 
 # Defaults (mirror docker-dev-native compose)
 export ENGINE_MODEL_ID="${ENGINE_MODEL_ID:-deepseek-v4.1-flash}"
-export ENGINE_WORKSPACE="${ENGINE_WORKSPACE:-$(cd "$REPO_ROOT/../.." && pwd)}"
+export ENGINE_WORKSPACE="${ENGINE_WORKSPACE:-$REPO_ROOT}"
 # export ENGINE_WORKSPACE="${ENGINE_WORKSPACE:-$REPO_ROOT}"
 export ENGINE_WORKFLOW_STORAGE_DIR="${ENGINE_WORKFLOW_STORAGE_DIR:-$REPO_ROOT/quarkus/wf-data}"
 export ENGINE_STORAGE="${ENGINE_STORAGE:-postgres}"
