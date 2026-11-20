@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Files, Workspace } from '../services/qocApi'
+import { Files } from '../services/qocApi'
+import WorkspaceSwitcher from '../components/WorkspaceSwitcher'
 
 interface FileEntry {
   name: string
@@ -50,7 +51,6 @@ export default function FilesPage() {
   const [editing, setEditing] = useState(false)
   const [editorContent, setEditorContent] = useState('')
   const [editorStatus, setEditorStatus] = useState('')
-  const [workspace, setWorkspace] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const uploadFileRef = useRef<HTMLInputElement>(null)
@@ -183,18 +183,8 @@ export default function FilesPage() {
     if (failed > 0) window.alert(failed + ' file(s) could not be uploaded.')
   }
 
-  const loadWorkspace = async () => {
-    try {
-      const data = await Workspace.get()
-      setWorkspace(String(data?.workspace ?? ''))
-    } catch {
-      setWorkspace('')
-    }
-  }
-
   useEffect(() => {
     void loadFiles('.')
-    void loadWorkspace()
   }, [])
 
   const buttonStyle = (background: string) => ({ padding: '4px 10px', background, color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12 })
@@ -232,7 +222,14 @@ export default function FilesPage() {
           )}
           {error ? <p style={{ color: '#f85149', fontSize: 12, marginTop: 8 }}>{error}</p> : null}
         </div>
-        {workspace ? <div style={{ padding: 8, borderTop: '1px solid #333', fontSize: 11, color: '#999' }}>Workspace: {workspace}</div> : null}
+        <WorkspaceSwitcher
+          onChanged={() => {
+            setCurrentDir('.')
+            setCurrentFile(null)
+            setFileContent('')
+            void loadFiles('.')
+          }}
+        />
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', minHeight: 0, border: '1px solid #333', borderRadius: 6, background: '#1e1e1e' }}>

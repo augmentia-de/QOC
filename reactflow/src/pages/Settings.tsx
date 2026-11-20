@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { QocApi } from '../services/qocApi.ts';
+import WorkspaceSwitcher from '../components/WorkspaceSwitcher';
 
 const STORAGE_KEY = 'qoc-ui-settings';
 const DEFAULTS = { backendUrl: `${window.location.origin}/api`, theme: 'Dark' };
@@ -124,6 +125,14 @@ export default function Settings() {
             {saved && <span style={{ color: '#5cb85c', fontSize: 12 }}>Saved.</span>}
           </div>
         </div>
+      </div>
+
+      <div style={{ background: '#1e1e1e', borderRadius: 6, border: '1px solid #333', padding: 16, marginBottom: 20, maxWidth: 640 }}>
+        <h2 style={{ fontSize: 14, color: '#5bc0de', marginBottom: 10 }}>Workspace</h2>
+        <p style={{ fontSize: 12, color: '#999', marginBottom: 8 }}>
+          Projekt-Root für Agenten, Dateien und Shell. Der Pfad muss innerhalb der erlaubten Basis liegen.
+        </p>
+        <WorkspaceSwitcher bordered={false} />
       </div>
 
       <div style={{ background: '#1e1e1e', borderRadius: 6, border: '1px solid #333', padding: 16, marginBottom: 20 }}>
