@@ -2243,6 +2243,27 @@ commandLoader = new CommandLoader(workspacePath,
         if (config != null && !config.permissions().isEmpty()) {
             rules.addAll(config.permissions());
         }
+        // Workflow-store agents (no EngineConfig.AgentConfig) carry their own
+        // permission rules in the unified store; fold them in so presets work.
+        if (config == null) {
+            try {
+                if (workflowRecoveryInstance != null && workflowRecoveryInstance.isResolvable()) {
+                    de.augmentia.qoc.workflowrunner.store.AgentStorePort store =
+                            workflowRecoveryInstance.get().agentStore;
+                    if (store != null) {
+                        de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent wa = store.get(name);
+                        if (wa == null) {
+                            for (de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent c : store.listAll()) {
+                                if (c != null && (name.equalsIgnoreCase(c.id()) || name.equalsIgnoreCase(c.name()))) { wa = c; break; }
+                            }
+                        }
+                        if (wa != null && wa.permissions() != null && !wa.permissions().isEmpty()) {
+                            rules.addAll(wa.permissions());
+                        }
+                    }
+                }
+            } catch (RuntimeException ignored) {}
+        }
         rules = withSkillRules(name, rules);
         int maxSteps = config == null ? 0 : config.maxSteps();
         Option<String> system = config == null ? Option.none() : Option.of(config.system());

@@ -336,6 +336,8 @@ public String workspace() { return workspace; }
     public boolean workspaceSettingsEnabled() { return workspaceSettingsEnabled; }
     public String url() { return url; }
     public String password() { return password == null ? "" : password; }
+    public static String permissionDefault() { return permissionDefault; }
+
     public List<AgentConfig> agents() { return List.copyOf(agents); }
 
     /** Baseline agents (build, plan) defined in code — always available, not editable. */

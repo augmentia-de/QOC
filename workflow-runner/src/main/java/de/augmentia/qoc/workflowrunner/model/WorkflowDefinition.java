@@ -186,6 +186,20 @@ public record WorkflowDefinition(
         }
     }
 
+    /**
+     * An agent definition shared by the workflow runner and the QOC engine.
+     *
+     * <p>Two independent authorization concepts:</p>
+     * <ul>
+     *   <li>{@code rolesAllowed} — WHO may invoke/use this agent (agent-level
+     *       access control). {@code *} = everyone. Empty = nobody.</li>
+     *   <li>{@code permissions} — WHAT the agent may do (tool-level rules:
+     *       {@code Rule(action, resource, effect)}). Empty = fall back to the
+     *       global default mode (least-privilege).</li>
+     * </ul>
+     * <p>Presets (readonly/retrieval/editor/full) materialize into a concrete
+     * {@code permissions} list together with a matching {@code tools} list.</p>
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Agent(
             String id,
@@ -210,7 +224,8 @@ public record WorkflowDefinition(
             List<String> skills,
             int maxTurns,
             double maxCost,
-            boolean requiresHITL
+            boolean requiresHITL,
+            List<de.augmentia.oc.engine.core.model.Rule> permissions
     ) {
         public Agent {
             if (id == null) id = "";
@@ -233,6 +248,8 @@ public record WorkflowDefinition(
             else skills = List.copyOf(skills);
             if (maxTurns <= 0) maxTurns = 10;
             if (maxCost <= 0) maxCost = 1.0;
+            if (permissions == null) permissions = List.of();
+            else permissions = List.copyOf(permissions);
         }
     }
 }

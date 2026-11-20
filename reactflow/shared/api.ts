@@ -74,6 +74,11 @@ export const Api = {
       body: JSON.stringify(agent),
     }),
     delete: (id: string) => request('/agents/' + encodeURIComponent(id), { method: 'DELETE' }),
+    permissionCheck: (agent: unknown) => request('/agents/permission-check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(agent),
+    }),
   },
 }
 

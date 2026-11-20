@@ -8,6 +8,8 @@ import de.augmentia.oc.engine.core.contract.provider.ModelMessage;
 import de.augmentia.oc.engine.core.contract.provider.OutcomePayload;
 import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
 import de.augmentia.oc.engine.core.contract.tool.ToolSnapshot;
+import de.augmentia.oc.engine.core.eval.PermissionRules;
+import de.augmentia.oc.engine.core.model.Effect;
 import de.augmentia.oc.engine.core.eval.CacheAffinity;
 import de.augmentia.oc.engine.core.eval.PromptLoader;
 import de.augmentia.oc.engine.core.eval.OutputBudget;
@@ -165,8 +167,13 @@ public final class ContextBuilder {
         rules.addAll(agent.permissions());
         rules.addAll(session.permissions());
 
+        // Runtime filtering (Option A): drop tools whose permission resolves to
+        // DENY, so the LLM only sees tools it can actually execute. ASK tools
+        // are kept (they may still prompt the user in interactive mode).
+        ToolSnapshot filteredTools = filterDeniedTools(tools, rules);
+
         List<String> system = new ArrayList<>();
-        String base = agent.system().orElse(basePrompt(tools));
+        String base = agent.system().orElse(basePrompt(filteredTools));
         if (!base.isBlank()) system.add(base);
         for (InstructionLoader.InstructionFile file
                 : instructionLoader.load(session.location().directory())) {
@@ -190,7 +197,7 @@ public final class ContextBuilder {
         checkpoint(session.id()).ifPresent(system::add);
 
         List<ModelMessage> messages = history(session.id(), from, agent);
-        LOG.fine("prepare step=" + step + " messages=" + messages.size() + " tools=" + tools.list().size());
+        LOG.fine("prepare step=" + step + " messages=" + messages.size() + " tools=" + filteredTools.list().size());
         Option<Choice> toolChoice = forcedChoice == null ? Option.none() : forcedChoice;
         if (toolChoice.isEmpty() && agent.maxSteps() > 0 && step >= agent.maxSteps()) {
             messages.add(new ModelMessage.Assistant(List.of(new ModelContent.Text(STEP_LIMIT_PROMPT))));
@@ -209,7 +216,7 @@ public final class ContextBuilder {
                 Option.none(), List.of());
 
         ModelRef modelRef = session.model().orElse(new ModelRef(model.providerId(), model.id()));
-        return new Prepared(modelRef, system, messages, tools.list(), toolChoice, generation, headers,
+        return new Prepared(modelRef, system, messages, filteredTools.list(), toolChoice, generation, headers,
                 Option.some(CacheAffinity.promptCacheKey(affinity)), Map.of());
     }
 
@@ -251,6 +258,26 @@ public final class ContextBuilder {
                     List.of(new ModelContent.Text(reminder))));
         }
         return messages;
+    }
+
+    /**
+     * Runtime permission filtering (Option A): drop tools whose permission
+     * resolves to DENY for action=toolName, resource="*". ASK tools are kept so
+     * they can still prompt the user in interactive mode.
+     */
+    private static ToolSnapshot filterDeniedTools(ToolSnapshot tools, List<Rule> rules) {
+        if (tools == null || tools.definitions().isEmpty()) return tools == null ? ToolSnapshot.empty() : tools;
+        Map<ToolName, ToolDefinition> kept = new LinkedHashMap<>();
+        for (Map.Entry<ToolName, ToolDefinition> e : tools.definitions().entrySet()) {
+            String action = e.getValue().effectiveName();
+            Effect effect = PermissionRules.evaluate(rules, action, "*");
+            if (effect != Effect.DENY) {
+                kept.put(e.getKey(), e.getValue());
+            } else {
+                LOG.fine("filtering denied tool: " + action);
+            }
+        }
+        return new ToolSnapshot(kept);
     }
 
     private static String basePrompt(ToolSnapshot tools) {

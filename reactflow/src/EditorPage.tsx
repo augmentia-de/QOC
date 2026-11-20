@@ -189,6 +189,7 @@ export default function EditorPage() {
   const [agentTopP, setAgentTopP] = useState(1.0);
   const [agentActive, setAgentActive] = useState(true);
   const [agentTools, setAgentTools] = useState([]);
+  const [agentPermissionRules, setAgentPermissionRules] = useState<any[]>([]);
   const [agentPermissions, setAgentPermissions] = useState('');
   const [agentGuardrailsInput, setAgentGuardrailsInput] = useState('');
   const [agentGuardrailsOutput, setAgentGuardrailsOutput] = useState('');
@@ -364,6 +365,7 @@ export default function EditorPage() {
     setAgentTopP(typeof d.topP === 'number' ? d.topP : 1.0);
     setAgentActive(d.active !== false);
     setAgentTools(Array.isArray(d.tools) ? d.tools : []);
+    setAgentPermissionRules(Array.isArray(d.permissionRules) ? d.permissionRules : []);
     setAgentPermissions(Array.isArray(d.rolesAllowed) ? d.rolesAllowed.join(', ') : (d.permissions || ''));
     setAgentGuardrailsInput(Array.isArray(d.guardrailsInput) ? d.guardrailsInput.join(', ') : '');
     setAgentGuardrailsOutput(Array.isArray(d.guardrailsOutput) ? d.guardrailsOutput.join(', ') : '');
@@ -392,6 +394,7 @@ export default function EditorPage() {
         if (typeof d.topP !== 'number') setAgentTopP(typeof a.topP === 'number' ? a.topP : 1.0);
         if (d.active === undefined) setAgentActive(a.active !== false);
         if (!Array.isArray(d.tools) || d.tools.length === 0) setAgentTools(Array.isArray(a.tools) ? a.tools : []);
+        if (!Array.isArray(d.permissionRules)) setAgentPermissionRules(Array.isArray(a.permissions) ? a.permissions : []);
         if (!d.rolesAllowed && !d.permissions) setAgentPermissions(Array.isArray(a.rolesAllowed) ? a.rolesAllowed.join(', ') : (a.permissions || ''));
         if (!Array.isArray(d.guardrailsInput)) setAgentGuardrailsInput(Array.isArray(a.guardrailsInput) ? a.guardrailsInput.join(', ') : '');
         if (!Array.isArray(d.guardrailsOutput)) setAgentGuardrailsOutput(Array.isArray(a.guardrailsOutput) ? a.guardrailsOutput.join(', ') : '');
@@ -527,6 +530,7 @@ export default function EditorPage() {
     updateSelected('topP', agentTopP);
     updateSelected('active', agentActive);
     updateSelected('tools', agentTools);
+    updateSelected('permissionRules', agentPermissionRules);
     updateSelected('permissions', agentPermissions);
     updateSelected('rolesAllowed', (agentPermissions.split(',').map((s) => s.trim()).filter(Boolean).length
       ? agentPermissions.split(',').map((s) => s.trim()).filter(Boolean)
@@ -555,6 +559,7 @@ export default function EditorPage() {
       maxTokens: agentMaxTokens,
       topP: agentTopP,
       tools: agentTools,
+      permissionRules: agentPermissionRules,
       guardrailsInput: [],
       guardrailsOutput: [],
       hooks: [],
@@ -596,6 +601,7 @@ export default function EditorPage() {
       maxTokens: agentMaxTokens,
       topP: agentTopP,
       tools: agentTools,
+      permissionRules: agentPermissionRules,
       guardrailsInput: agentGuardrailsInput.split(',').map((s) => s.trim()).filter(Boolean),
       guardrailsOutput: agentGuardrailsOutput.split(',').map((s) => s.trim()).filter(Boolean),
       hooks: agentHooks.split(',').map((s) => s.trim()).filter(Boolean),
@@ -649,6 +655,7 @@ export default function EditorPage() {
     setAgentTopP(typeof a.topP === 'number' ? a.topP : 1.0);
     setAgentActive(a.active !== false);
     setAgentTools(Array.isArray(a.tools) ? a.tools : []);
+    setAgentPermissionRules(Array.isArray(a.permissions) ? a.permissions : []);
     setAgentPermissions(Array.isArray(a.rolesAllowed) ? a.rolesAllowed.join(', ') : (a.permissions || ''));
   };
 
@@ -984,6 +991,7 @@ export default function EditorPage() {
                             setAgentTopP(typeof fetched.topP === 'number' ? fetched.topP : 1.0);
                             setAgentActive(fetched.active !== false);
                             setAgentTools(Array.isArray(fetched.tools) ? fetched.tools : []);
+                            setAgentPermissionRules(Array.isArray(fetched.permissions) ? fetched.permissions : []);
                             setAgentPermissions(Array.isArray(fetched.rolesAllowed) ? fetched.rolesAllowed.join(', ') : (fetched.permissions || ''));
                             updateSelected('model', fetched.model || '');
                             updateSelected('systemPrompt', fetched.systemPrompt || '');
@@ -1185,6 +1193,7 @@ export default function EditorPage() {
               jsonOutput: agentJsonOutput,
               schema: agentSchema,
               tools: agentTools,
+              permissionRules: agentPermissionRules,
               guardrailsInput: agentGuardrailsInput,
               guardrailsOutput: agentGuardrailsOutput,
               hooks: agentHooks,
@@ -1209,6 +1218,7 @@ export default function EditorPage() {
               if (patch.jsonOutput !== undefined) setAgentJsonOutput(patch.jsonOutput);
               if (patch.schema !== undefined) setAgentSchema(patch.schema);
               if (patch.tools !== undefined) setAgentTools(patch.tools);
+if (patch.permissionRules !== undefined) setAgentPermissionRules(patch.permissionRules);
               if (patch.guardrailsInput !== undefined) setAgentGuardrailsInput(patch.guardrailsInput);
               if (patch.guardrailsOutput !== undefined) setAgentGuardrailsOutput(patch.guardrailsOutput);
               if (patch.hooks !== undefined) setAgentHooks(patch.hooks);

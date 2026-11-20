@@ -1,4 +1,5 @@
 import { SchemaSource } from './SchemaSource.tsx';
+import { AGENT_PRESETS } from '../pages/agentPresets.ts';
 
 export type AgentForm = {
   name: string;
@@ -13,6 +14,7 @@ export type AgentForm = {
   jsonOutput: boolean;
   schema: string;
   tools: string[];
+  permissionRules: { action: string; resource: string; effect: string }[];
   guardrailsInput: string;
   guardrailsOutput: string;
   hooks: string;
@@ -56,6 +58,15 @@ export function AgentConfigOverlay({ open, agent, onChange, onClose, onSave, onS
           <label>Model (disabled — agent uses default model)<br />
             <select value="" disabled style={{ width: '100%', background: '#1e1e1e', color: '#888', border: '1px solid #555' }}>
               <option value="">(default)</option>
+            </select>
+          </label>
+          <label>Permission Preset<br />
+            <select value="" onChange={(e) => {
+              const p = AGENT_PRESETS.find((x) => x.id === e.target.value);
+              if (p) onChange({ tools: p.tools, permissionRules: p.permissions });
+            }} style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }}>
+              <option value="">(custom / unverändert)</option>
+              {AGENT_PRESETS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
             </select>
           </label>
           <label>Temperature<br /><input type="number" step="0.1" value={agent.temperature} onChange={(e) => onChange({ temperature: parseFloat(e.target.value) || 0.3 })} style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }} /></label>

@@ -64,7 +64,7 @@ public class WorkflowBeans {
                     "", 0.3, 4096, 1.0,
                     empty, empty, empty, empty, false, true,
                     "You are a helpful build agent. Reply concisely.", null, "", star,
-                    "all", empty, 10, 1.0, false);
+                    "all", empty, 10, 1.0, false, java.util.List.of());
             store.save("build", a);
         }
         LOG.infof("Agent store (%s): %s", store.getClass().getSimpleName(), store.list().size());

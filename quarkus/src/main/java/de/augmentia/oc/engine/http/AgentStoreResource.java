@@ -1,7 +1,14 @@
 package de.augmentia.oc.engine.http;
 
+import de.augmentia.oc.engine.core.eval.PermissionRules;
+import de.augmentia.oc.engine.core.model.Effect;
+import de.augmentia.oc.engine.core.model.Rule;
+import de.augmentia.oc.engine.runtime.context.ContextBuilder;
 import de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent;
 import de.augmentia.qoc.workflowrunner.store.AgentStorePort;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -121,6 +128,30 @@ public class AgentStoreResource {
         return Response.ok(saved).build();
     }
 
+    @POST
+    @Path("/permission-check")
+    public Response permissionCheck(Agent body) {
+        if (body == null) return badRequest("agent must not be null");
+        List<String> tools = body.tools() == null ? List.of() : body.tools();
+        List<String> denied = new ArrayList<>();
+        List<String> ask = new ArrayList<>();
+        List<Rule> rules;
+        try {
+            rules = new ArrayList<>(ContextBuilder.defaults(EngineConfig.permissionDefault()));
+            if (body.permissions() != null) rules.addAll(body.permissions());
+        } catch (RuntimeException e) {
+            rules = List.of();
+        }
+        for (String t : tools) {
+            if (t == null || t.isBlank()) continue;
+            Effect eff = PermissionRules.evaluate(rules, t, "*");
+            if (eff == Effect.DENY) denied.add(t);
+            else if (eff == Effect.ASK) ask.add(t);
+        }
+        return Response.ok(Map.of("deniedTools", denied, "askTools", ask,
+                "permissionDefault", EngineConfig.permissionDefault())).build();
+    }
+
     @DELETE
     @Path("/{id}")
     public Response delete(@PathParam("id") String id) {
@@ -160,7 +191,8 @@ public class AgentStoreResource {
                 ownerId == null ? "" : ownerId, a.rolesAllowed(),
                 a.mode() == null ? "all" : a.mode(),
                 a.skills() == null ? java.util.List.of() : a.skills(),
-                a.maxTurns(), a.maxCost(), a.requiresHITL());
+                a.maxTurns(), a.maxCost(), a.requiresHITL(),
+                a.permissions() == null ? java.util.List.of() : a.permissions());
     }
 
     private static Response badRequest(String message) {

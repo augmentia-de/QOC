@@ -49,7 +49,8 @@ public class InMemoryAgentStore implements AgentStorePort {
                     agent.ownerId(), agent.rolesAllowed(),
                     agent.mode() == null ? "all" : agent.mode(),
                     agent.skills() == null ? java.util.List.of() : agent.skills(),
-                    agent.maxTurns(), agent.maxCost(), agent.requiresHITL());
+                    agent.maxTurns(), agent.maxCost(), agent.requiresHITL(),
+                    agent.permissions() == null ? java.util.List.of() : agent.permissions());
         }
         store.put(id, agent);
         return agent;
@@ -61,7 +62,7 @@ public class InMemoryAgentStore implements AgentStorePort {
         if (id.isBlank()) id = "agent-" + System.currentTimeMillis();
         Agent agent = new Agent(id, name, "1.0.0", "", "deepseek-v4.1-flash", 0.3, 4096, 1.0,
                 List.of(), List.of(), List.of(), List.of(), false, true, "", null, "", List.of("*"),
-                "all", List.of(), 10, 1.0, false);
+                "all", List.of(), 10, 1.0, false, java.util.List.of());
         return save(id, agent);
     }
 }

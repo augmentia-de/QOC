@@ -5,7 +5,7 @@ import { AgentConfigOverlay, AgentForm } from '../components/AgentConfigOverlay.
 
 const emptyAgent: AgentForm = {
   name: '', version: '1.0.0', category: '', model: '',
-  temperature: 0.3, maxTokens: 4096, topP: 1.0, tools: [], guardrailsInput: '', guardrailsOutput: '',
+  temperature: 0.3, maxTokens: 4096, topP: 1.0, tools: [], permissionRules: [], guardrailsInput: '', guardrailsOutput: '',
   hooks: '', jsonOutput: false, active: true, ownerId: '',
   mode: 'all', skills: '', permissions: '', prompt: '', schema: '', requiresHITL: false,
   maxTurns: 10, maxCost: 1.0,
@@ -78,6 +78,7 @@ export default function Agents() {
     maxCost: f.maxCost,
     requiresHITL: f.requiresHITL,
     tools: f.tools,
+    permissions: f.permissionRules,
     guardrailsInput: f.guardrailsInput.split(',').map((s) => s.trim()).filter(Boolean),
     guardrailsOutput: f.guardrailsOutput.split(',').map((s) => s.trim()).filter(Boolean),
     hooks: f.hooks.split(',').map((s) => s.trim()).filter(Boolean),
@@ -96,6 +97,15 @@ export default function Agents() {
     if (!editing) return;
     const agent = toAgent(editing);
     try {
+      // Save-time permission check: warn if active tools are currently denied.
+      const check: any = await (QocApi.agents as any).permissionCheck?.(agent).catch(() => null);
+      if (check && Array.isArray(check.deniedTools) && check.deniedTools.length > 0) {
+        const ok = window.confirm(
+          `Diese Tools sind im aktuellen Permission-Modus (${check.permissionDefault}) gesperrt: ${check.deniedTools.join(', ')}.\\n` +
+          `Trotzdem speichern? (Berechtigung kann über Permission-Regeln oder den Modus freigegeben werden.)`
+        );
+        if (!ok) return;
+      }
       if (editing.name && agents.find((a: any) => a.id === editing.name || a.name === editing.name)) {
         await QocApi.agents.save(editing.name, agent);
       } else {
@@ -127,6 +137,7 @@ export default function Agents() {
       jsonOutput: !!a.jsonOutput,
       schema: a.responseSchema ? JSON.stringify(a.responseSchema, null, 2) : '',
       tools: Array.isArray(a.tools) ? a.tools : [],
+      permissionRules: Array.isArray(a.permissions) ? a.permissions : [],
       guardrailsInput: Array.isArray(a.guardrailsInput) ? a.guardrailsInput.join(', ') : '',
       guardrailsOutput: Array.isArray(a.guardrailsOutput) ? a.guardrailsOutput.join(', ') : '',
       hooks: Array.isArray(a.hooks) ? a.hooks.join(', ') : '',

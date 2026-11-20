@@ -839,7 +839,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                 cfg.systemPrompt() == null ? "" : cfg.systemPrompt(),
                 null,
                 "", java.util.List.of("*"),
-                "all", java.util.List.of(), 10, 1.0, false);
+                "all", java.util.List.of(), 10, 1.0, false, java.util.List.of());
     }
 
     private WorkflowDefinition.Node findNode(WorkflowDefinition def, String id) {
