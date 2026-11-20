@@ -14,11 +14,17 @@ services:
     environment:
       QUARKUS_TEST_CONTINUOUS_TESTING: disabled
       QUARKUS_DEV_SERVICES_ENABLED: "false"
-      ENGINE_MODEL_ID: glm-5.3-flash
+      ENGINE_MODEL_ID: deepseek-v4.1-flash
       ENGINE_PERMISSION_DEFAULT: allow-all
       ENGINE_PERMISSION_ASK_MODE: interactive
       ENGINE_SHELL_SANDBOX_ENABLED: false
-      ENGINE_WORKFLOW_STORAGE: file
+      ENGINE_STORAGE: postgres
+      ENGINE_WORKFLOW_STORAGE_DIR: /app/quarkus/wf-data
+      # General access base for the UI workspace switch. The mounted
+      # /data/workspace is the project root; agents may be pointed at
+      # subdirectories inside it.
+      ENGINE_WORKSPACE: /data/workspace
+      ENGINE_APPROVAL_BASE_URL: http://localhost:8070
       MAVEN_CONFIG: /home/ubuntu/.m2
       MAVEN_OPTS: -Duser.home=/home/ubuntu
       MAVEN_REPO: /home/ubuntu/.m2
