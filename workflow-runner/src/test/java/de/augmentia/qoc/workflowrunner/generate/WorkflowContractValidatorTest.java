@@ -19,7 +19,7 @@ class WorkflowContractValidatorTest {
                 new WorkflowDefinition.Point(0, 0), data);
         WorkflowDefinition.Agent a = new WorkflowDefinition.Agent("a1", "A", "1.0.0", "", "m", 0.3, 4096,
                 1.0, List.of(), List.of(), List.of(), List.of(), false, true,
-                "system prompt", null, "", List.of("*"), "all", List.of(), 10, 1.0, false);
+                "system prompt", null, "", List.of("*"), "all", List.of(), 10, 1.0, false, java.util.List.of());
         return new WorkflowDefinition("wf", "W", "1.0.0", "draft", List.of(n), List.of(), List.of(a), "", "");
     }
 
@@ -50,7 +50,7 @@ class WorkflowContractValidatorTest {
         // agent with blank systemPrompt
         WorkflowDefinition.Agent a = new WorkflowDefinition.Agent("a1", "A", "1.0.0", "", "m", 0.3, 4096,
                 1.0, List.of(), List.of(), List.of(), List.of(), false, true,
-                "", null, "", List.of("*"), "all", List.of(), 10, 1.0, false);
+                "", null, "", List.of("*"), "all", List.of(), 10, 1.0, false, java.util.List.of());
         def = new WorkflowDefinition("wf", "W", "1.0.0", "draft", def.nodes(), List.of(), List.of(a), "", "");
         List<String> w = WorkflowContractValidator.validate(def);
         assertTrue(w.stream().anyMatch(s -> s.contains("no systemPrompt")));

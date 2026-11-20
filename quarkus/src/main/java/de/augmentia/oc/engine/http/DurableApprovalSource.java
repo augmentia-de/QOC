@@ -57,7 +57,7 @@ public class DurableApprovalSource implements ApprovalSource {
     long pollSeconds;
 
     @Inject
-    @ConfigProperty(name = "engine.approval.base-url", defaultValue = "http://localhost:8080")
+    @ConfigProperty(name = "engine.approval.base-url", defaultValue = "http://localhost:8090")
     String baseUrl;
 
     private final SecureRandom random = new SecureRandom();

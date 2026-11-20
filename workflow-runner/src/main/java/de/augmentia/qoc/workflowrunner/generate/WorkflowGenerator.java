@@ -116,7 +116,8 @@ public class WorkflowGenerator {
                         a.skills(),
                         a.maxTurns(),
                         a.maxCost(),
-                        a.requiresHITL());
+                        a.requiresHITL(),
+                        a.permissions() == null ? java.util.List.of() : a.permissions());
                 agentStore.save(newId, persisted);
                 idMap.put(a.id(), newId);
                 newAgents.add(persisted);

@@ -57,7 +57,7 @@ public class EmailNotificationChannel implements NotificationChannel {
     boolean starttls;
 
     @Inject
-    @ConfigProperty(name = "engine.approval.base-url", defaultValue = "http://localhost:8080")
+    @ConfigProperty(name = "engine.approval.base-url", defaultValue = "http://localhost:8090")
     String baseUrl;
 
     @Inject

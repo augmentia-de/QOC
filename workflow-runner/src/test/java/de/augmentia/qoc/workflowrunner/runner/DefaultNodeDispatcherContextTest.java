@@ -32,7 +32,7 @@ class DefaultNodeDispatcherContextTest {
         WorkflowDefinition.Agent a = new WorkflowDefinition.Agent(
                 "a1", "Test Agent", "1.0.0", "", "model-x", 0.3, 4096, 1.0,
                 List.of(), List.of(), List.of(), List.of(), false, true,
-                "agent system prompt", null, "", List.of("*"), "all", List.of(), 10, 1.0, false);
+                "agent system prompt", null, "", List.of("*"), "all", List.of(), 10, 1.0, false, java.util.List.of());
         return new WorkflowDefinition("wf1", "Test", "1.0.0", "draft",
                 List.of(start, agent, end), List.of(), List.of(a), "", systemPrompt);
     }
