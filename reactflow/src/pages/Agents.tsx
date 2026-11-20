@@ -40,11 +40,13 @@ export default function Agents() {
   const grouped = useMemo(() => {
     const map = new Map<string, any[]>();
     for (const a of agents) {
-      const cat = (a.category || '').trim() || 'Ohne Kategorie';
+      const cat = (a.category || '').trim() || 'Uncategorized';
       if (!map.has(cat)) map.set(cat, []);
       map.get(cat)!.push(a);
     }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    return [...map.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([cat, list]) => [cat, [...list].sort((x, y) => String(x.name || x.id || '').localeCompare(String(y.name || y.id || '')))]) as [string, any[]];
   }, [agents]);
 
   const load = async () => {
