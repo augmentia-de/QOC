@@ -190,6 +190,7 @@ export default function EditorPage() {
   const [agentActive, setAgentActive] = useState(true);
   const [agentTools, setAgentTools] = useState([]);
   const [agentPermissionRules, setAgentPermissionRules] = useState<any[]>([]);
+  const [agentPermissionPreset, setAgentPermissionPreset] = useState('');
   const [agentPermissions, setAgentPermissions] = useState('');
   const [agentGuardrailsInput, setAgentGuardrailsInput] = useState('');
   const [agentGuardrailsOutput, setAgentGuardrailsOutput] = useState('');
@@ -366,6 +367,7 @@ export default function EditorPage() {
     setAgentActive(d.active !== false);
     setAgentTools(Array.isArray(d.tools) ? d.tools : []);
     setAgentPermissionRules(Array.isArray(d.permissionRules) ? d.permissionRules : []);
+    setAgentPermissionPreset(typeof d.permissionPreset === 'string' ? d.permissionPreset : '');
     setAgentPermissions(Array.isArray(d.rolesAllowed) ? d.rolesAllowed.join(', ') : (d.permissions || ''));
     setAgentGuardrailsInput(Array.isArray(d.guardrailsInput) ? d.guardrailsInput.join(', ') : '');
     setAgentGuardrailsOutput(Array.isArray(d.guardrailsOutput) ? d.guardrailsOutput.join(', ') : '');
@@ -395,6 +397,7 @@ export default function EditorPage() {
         if (d.active === undefined) setAgentActive(a.active !== false);
         if (!Array.isArray(d.tools) || d.tools.length === 0) setAgentTools(Array.isArray(a.tools) ? a.tools : []);
         if (!Array.isArray(d.permissionRules)) setAgentPermissionRules(Array.isArray(a.permissions) ? a.permissions : []);
+        if (typeof d.permissionPreset !== 'string') setAgentPermissionPreset('');
         if (!d.rolesAllowed && !d.permissions) setAgentPermissions(Array.isArray(a.rolesAllowed) ? a.rolesAllowed.join(', ') : (a.permissions || ''));
         if (!Array.isArray(d.guardrailsInput)) setAgentGuardrailsInput(Array.isArray(a.guardrailsInput) ? a.guardrailsInput.join(', ') : '');
         if (!Array.isArray(d.guardrailsOutput)) setAgentGuardrailsOutput(Array.isArray(a.guardrailsOutput) ? a.guardrailsOutput.join(', ') : '');
@@ -531,6 +534,7 @@ export default function EditorPage() {
     updateSelected('active', agentActive);
     updateSelected('tools', agentTools);
     updateSelected('permissionRules', agentPermissionRules);
+    updateSelected('permissionPreset', agentPermissionPreset);
     updateSelected('permissions', agentPermissions);
     updateSelected('rolesAllowed', (agentPermissions.split(',').map((s) => s.trim()).filter(Boolean).length
       ? agentPermissions.split(',').map((s) => s.trim()).filter(Boolean)
@@ -560,6 +564,7 @@ export default function EditorPage() {
       topP: agentTopP,
       tools: agentTools,
       permissionRules: agentPermissionRules,
+      permissionPreset: agentPermissionPreset,
       guardrailsInput: [],
       guardrailsOutput: [],
       hooks: [],
@@ -602,6 +607,7 @@ export default function EditorPage() {
       topP: agentTopP,
       tools: agentTools,
       permissionRules: agentPermissionRules,
+      permissionPreset: agentPermissionPreset,
       guardrailsInput: agentGuardrailsInput.split(',').map((s) => s.trim()).filter(Boolean),
       guardrailsOutput: agentGuardrailsOutput.split(',').map((s) => s.trim()).filter(Boolean),
       hooks: agentHooks.split(',').map((s) => s.trim()).filter(Boolean),
@@ -656,6 +662,7 @@ export default function EditorPage() {
     setAgentActive(a.active !== false);
     setAgentTools(Array.isArray(a.tools) ? a.tools : []);
     setAgentPermissionRules(Array.isArray(a.permissions) ? a.permissions : []);
+    setAgentPermissionPreset('');
     setAgentPermissions(Array.isArray(a.rolesAllowed) ? a.rolesAllowed.join(', ') : (a.permissions || ''));
   };
 
@@ -992,6 +999,7 @@ export default function EditorPage() {
                             setAgentActive(fetched.active !== false);
                             setAgentTools(Array.isArray(fetched.tools) ? fetched.tools : []);
                             setAgentPermissionRules(Array.isArray(fetched.permissions) ? fetched.permissions : []);
+                            setAgentPermissionPreset(typeof fetched.permissionPreset === 'string' ? fetched.permissionPreset : '');
                             setAgentPermissions(Array.isArray(fetched.rolesAllowed) ? fetched.rolesAllowed.join(', ') : (fetched.permissions || ''));
                             updateSelected('model', fetched.model || '');
                             updateSelected('systemPrompt', fetched.systemPrompt || '');
@@ -1016,6 +1024,8 @@ export default function EditorPage() {
                       setAgentTopP(typeof a.topP === 'number' ? a.topP : 1.0);
                       setAgentActive(a.active !== false);
                       setAgentTools(Array.isArray(a.tools) ? a.tools : []);
+                      setAgentPermissionRules(Array.isArray(a.permissions) ? a.permissions : []);
+                      setAgentPermissionPreset('');
                       setAgentPermissions(Array.isArray(a.rolesAllowed) ? a.rolesAllowed.join(', ') : (a.permissions || ''));
                       updateSelected('model', a.model || '');
                       updateSelected('systemPrompt', a.systemPrompt || '');
@@ -1194,6 +1204,7 @@ export default function EditorPage() {
               schema: agentSchema,
               tools: agentTools,
               permissionRules: agentPermissionRules,
+              permissionPreset: agentPermissionPreset,
               guardrailsInput: agentGuardrailsInput,
               guardrailsOutput: agentGuardrailsOutput,
               hooks: agentHooks,
@@ -1219,6 +1230,7 @@ export default function EditorPage() {
               if (patch.schema !== undefined) setAgentSchema(patch.schema);
               if (patch.tools !== undefined) setAgentTools(patch.tools);
 if (patch.permissionRules !== undefined) setAgentPermissionRules(patch.permissionRules);
+if (patch.permissionPreset !== undefined) setAgentPermissionPreset(patch.permissionPreset);
               if (patch.guardrailsInput !== undefined) setAgentGuardrailsInput(patch.guardrailsInput);
               if (patch.guardrailsOutput !== undefined) setAgentGuardrailsOutput(patch.guardrailsOutput);
               if (patch.hooks !== undefined) setAgentHooks(patch.hooks);

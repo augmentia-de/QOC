@@ -15,6 +15,7 @@ export type AgentForm = {
   schema: string;
   tools: string[];
   permissionRules: { action: string; resource: string; effect: string }[];
+  permissionPreset: string;
   guardrailsInput: string;
   guardrailsOutput: string;
   hooks: string;
@@ -61,9 +62,10 @@ export function AgentConfigOverlay({ open, agent, onChange, onClose, onSave, onS
             </select>
           </label>
           <label>Permission Preset<br />
-            <select value="" onChange={(e) => {
+            <select value={agent.permissionPreset || ''} onChange={(e) => {
               const p = AGENT_PRESETS.find((x) => x.id === e.target.value);
-              if (p) onChange({ tools: p.tools, permissionRules: p.permissions });
+              if (p) onChange({ permissionPreset: p.id, tools: p.tools, permissionRules: p.permissions });
+              else onChange({ permissionPreset: '' });
             }} style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }}>
               <option value="">(custom / unverändert)</option>
               {AGENT_PRESETS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}

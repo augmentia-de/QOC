@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { QocApi } from '../services/qocApi.ts';
 import { SchemaSource } from '../components/SchemaSource.tsx';
 import { AgentConfigOverlay, AgentForm } from '../components/AgentConfigOverlay.tsx';
+import { AGENT_PRESETS } from './agentPresets.ts';
 
 const emptyAgent: AgentForm = {
   name: '', version: '1.0.0', category: '', model: '',
-  temperature: 0.3, maxTokens: 4096, topP: 1.0, tools: [], permissionRules: [], guardrailsInput: '', guardrailsOutput: '',
+  temperature: 0.3, maxTokens: 4096, topP: 1.0, tools: [], permissionRules: [], permissionPreset: '', guardrailsInput: '', guardrailsOutput: '',
   hooks: '', jsonOutput: false, active: true, ownerId: '',
   mode: 'all', skills: '', permissions: '', prompt: '', schema: '', requiresHITL: false,
   maxTurns: 10, maxCost: 1.0,
@@ -138,6 +139,15 @@ export default function Agents() {
       schema: a.responseSchema ? JSON.stringify(a.responseSchema, null, 2) : '',
       tools: Array.isArray(a.tools) ? a.tools : [],
       permissionRules: Array.isArray(a.permissions) ? a.permissions : [],
+      permissionPreset: (() => {
+        const tools = Array.isArray(a.tools) ? a.tools : [];
+        const perms = Array.isArray(a.permissions) ? a.permissions : [];
+        const match = AGENT_PRESETS.find((p) =>
+          p.tools.length === tools.length && p.tools.every((t) => tools.includes(t)) &&
+          p.permissions.length === perms.length
+        );
+        return match ? match.id : '';
+      })(),
       guardrailsInput: Array.isArray(a.guardrailsInput) ? a.guardrailsInput.join(', ') : '',
       guardrailsOutput: Array.isArray(a.guardrailsOutput) ? a.guardrailsOutput.join(', ') : '',
       hooks: Array.isArray(a.hooks) ? a.hooks.join(', ') : '',
