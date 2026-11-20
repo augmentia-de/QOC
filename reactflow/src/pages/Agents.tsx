@@ -84,7 +84,8 @@ export default function Agents() {
     guardrailsOutput: f.guardrailsOutput.split(',').map((s) => s.trim()).filter(Boolean),
     hooks: f.hooks.split(',').map((s) => s.trim()).filter(Boolean),
     jsonOutput: f.jsonOutput,
-    systemPrompt: f.prompt,
+    active: f.active,
+    systemPrompt: f.prompt.trim() ? f.prompt : 'You are an agent. Use your available tools to fulfill the task.',
     responseSchema: f.schema.trim() ? (() => { try { return JSON.parse(f.schema); } catch { return null; } })() : null,
     ownerId: f.ownerId,
     rolesAllowed: (f.permissions || '').split(',').map((s) => s.trim()).filter(Boolean).length

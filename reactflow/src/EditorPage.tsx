@@ -570,7 +570,7 @@ export default function EditorPage() {
       hooks: [],
       jsonOutput: agentJsonOutput,
       active: agentActive,
-      systemPrompt: agentPrompt,
+      systemPrompt: agentPrompt.trim() ? agentPrompt : 'You are an agent. Use your available tools to fulfill the task.',
       responseSchema: schema,
       ownerId: '',
       rolesAllowed: (agentPermissions.split(',').map((s) => s.trim()).filter(Boolean).length
@@ -619,7 +619,7 @@ export default function EditorPage() {
       requiresHumanApproval: agentRequiresHITL,
       jsonOutput: agentJsonOutput,
       active: agentActive,
-      systemPrompt: agentPrompt,
+      systemPrompt: agentPrompt.trim() ? agentPrompt : 'You are an agent. Use your available tools to fulfill the task.',
       responseSchema: schema,
       permissions: agentPermissions,
       rolesAllowed: (agentPermissions.split(',').map((s) => s.trim()).filter(Boolean).length
