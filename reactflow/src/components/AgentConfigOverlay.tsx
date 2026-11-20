@@ -53,9 +53,9 @@ export function AgentConfigOverlay({ open, agent, onChange, onClose, onSave, onS
           <label>Name<br /><input value={agent.name} onChange={(e) => onChange({ name: e.target.value })} style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }} /></label>
           <label>Version<br /><input value={agent.version} onChange={(e) => onChange({ version: e.target.value })} style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }} /></label>
           <label>Category<br /><input value={agent.category} onChange={(e) => onChange({ category: e.target.value })} style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }} /></label>
-          <label>Model<br />
-            <select value={agent.model} onChange={(e) => onChange({ model: e.target.value })} style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }}>
-              {['deepseek-v4.1-flash', 'gpt-4o', 'gpt-4o-mini', 'claude-3.5-sonnet'].map((m) => <option key={m} value={m}>{m}</option>)}
+          <label>Model (disabled — agent uses default model)<br />
+            <select value="" disabled style={{ width: '100%', background: '#1e1e1e', color: '#888', border: '1px solid #555' }}>
+              <option value="">(default)</option>
             </select>
           </label>
           <label>Temperature<br /><input type="number" step="0.1" value={agent.temperature} onChange={(e) => onChange({ temperature: parseFloat(e.target.value) || 0.3 })} style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }} /></label>

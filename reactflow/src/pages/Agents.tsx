@@ -4,7 +4,7 @@ import { SchemaSource } from '../components/SchemaSource.tsx';
 import { AgentConfigOverlay, AgentForm } from '../components/AgentConfigOverlay.tsx';
 
 const emptyAgent: AgentForm = {
-  name: '', version: '1.0.0', category: '', model: 'deepseek-v4.1-flash',
+  name: '', version: '1.0.0', category: '', model: '',
   temperature: 0.3, maxTokens: 4096, topP: 1.0, tools: [], guardrailsInput: '', guardrailsOutput: '',
   hooks: '', jsonOutput: false, active: true, ownerId: '',
   mode: 'all', skills: '', permissions: '', prompt: '', schema: '', requiresHITL: false,
@@ -70,7 +70,7 @@ export default function Agents() {
     name: f.name,
     version: f.version,
     category: f.category,
-    model: f.model,
+    model: '',
     temperature: f.temperature,
     maxTokens: f.maxTokens,
     topP: f.topP,
@@ -115,7 +115,7 @@ export default function Agents() {
       name: a.name || a.id || '',
       version: a.version || '1.0.0',
       category: a.category || '',
-      model: a.model || 'deepseek-v4.1-flash',
+      model: '',
       temperature: a.temperature ?? 0.3,
       maxTokens: a.maxTokens ?? 4096,
       topP: a.topP ?? 1.0,
