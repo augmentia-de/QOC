@@ -44,6 +44,8 @@ export QUARKUS_FLYWAY_LOCATIONS="${QUARKUS_FLYWAY_LOCATIONS:-classpath:db/migrat
 # Permission mode: secure by default (least-privilege). Override via env/.env for testing.
 export ENGINE_PERMISSION_DEFAULT="allow-all"
 export ENGINE_PERMISSION_ASK_MODE="interactive"
+# This host lacks unprivileged user namespaces, so bwrap cannot run.
+export ENGINE_SHELL_SANDBOX_ENABLED="false"
 export ENGINE_LOG_JSON=false
 export MAVEN_CONFIG="${MAVEN_CONFIG:-$HOME/.m2}"
 export MAVEN_OPTS="${MAVEN_OPTS:--Duser.home=$HOME}"

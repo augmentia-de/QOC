@@ -58,7 +58,14 @@ public final class SandboxedProcessRunner implements ProcessRunner {
         this.extraWritable = extraWritable == null ? List.of() : List.copyOf(extraWritable);
         this.uid = uid;
         this.gid = gid;
-        this.bwrapPath = resolveBwrap(bwrapBinary);
+        String resolved = resolveBwrap(bwrapBinary);
+        // Probe bwrap at construction time: if it cannot create a namespace on
+        // this host (e.g. unprivileged containers), disable the sandbox and
+        // fall back to direct execution instead of failing every shell call.
+        if (resolved != null && !bwrapWorks(resolved)) {
+            resolved = null;
+        }
+        this.bwrapPath = resolved;
         this.envAllowlist = (envAllowlist == null || envAllowlist.isEmpty())
                 ? new ArrayList<>(DEFAULT_ENV_ALLOWLIST) : new ArrayList<>(envAllowlist);
     }
@@ -197,5 +204,16 @@ public final class SandboxedProcessRunner implements ProcessRunner {
             }
         }
         return null;
+    }
+
+    /** Probe whether bwrap can actually create a namespace on this host. */
+    private static boolean bwrapWorks(String bwrap) {
+        try {
+            Process p = new ProcessBuilder(bwrap, "--", "true").start();
+            int rc = p.waitFor();
+            return rc == 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
