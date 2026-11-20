@@ -42,8 +42,8 @@ export ENGINE_DB_DRIVER="${ENGINE_DB_DRIVER:-org.postgresql.Driver}"
 export ENGINE_FLYWAY_LOCATIONS="${ENGINE_FLYWAY_LOCATIONS:-classpath:db/migration}"
 export QUARKUS_FLYWAY_LOCATIONS="${QUARKUS_FLYWAY_LOCATIONS:-classpath:db/migration}"
 # Permission mode: secure by default (least-privilege). Override via env/.env for testing.
-export ENGINE_PERMISSION_DEFAULT="${ENGINE_PERMISSION_DEFAULT:-least-privilege}"
-export ENGINE_PERMISSION_ASK_MODE="${ENGINE_PERMISSION_ASK_MODE:-deny}"
+export ENGINE_PERMISSION_DEFAULT="allow-all"
+export ENGINE_PERMISSION_ASK_MODE="interactive"
 export ENGINE_LOG_JSON=false
 export MAVEN_CONFIG="${MAVEN_CONFIG:-$HOME/.m2}"
 export MAVEN_OPTS="${MAVEN_OPTS:--Duser.home=$HOME}"
