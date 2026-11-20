@@ -53,7 +53,7 @@ case "$ACTION" in
     up)
         echo "Installing engine + workflow-runner into local Maven repo..."
         cd "$REPO_ROOT"
-        mvn -q -pl engine,workflow-runner -am install -DskipTests -Djacoco.skip=true
+        mvn -q -pl engine,workflow-runner -am clean install -DskipTests -Djacoco.skip=true
         echo "Starting Quarkus dev mode on port $PORT..."
         cd "$QUARKUS_DIR"
         nohup mvn quarkus:dev \

@@ -14,7 +14,7 @@ services:
     environment:
       HOME: /data/home
       QUARKUS_TEST_CONTINUOUS_TESTING: disabled
-      ENGINE_MODEL_ID: glm-5.3-flash
+      ENGINE_MODEL_ID: deepseek-v4.1-flash
       ENGINE_PERMISSION_DEFAULT: allow-all
       ENGINE_PERMISSION_ASK_MODE: interactive
       MAVEN_CONFIG: /home/qoc/.m2

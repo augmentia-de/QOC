@@ -80,7 +80,8 @@ export function FileTreePanel({ path, onPathChange, onOpenFile, selected }: Prop
           <div className="entry" onClick={() => {
             const parts = path.split('/').filter(Boolean);
             parts.pop();
-            onPathChange(parts.length ? parts.join('/') : '.');
+            const joined = parts.join('/');
+            onPathChange(joined ? (path.startsWith('/') ? '/' + joined : joined) : '.');
           }}>
             <span>..</span>
           </div>

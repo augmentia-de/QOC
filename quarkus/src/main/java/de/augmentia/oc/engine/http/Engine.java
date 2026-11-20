@@ -862,7 +862,7 @@ commandLoader = new CommandLoader(workspacePath,
                 : InstructionLoader.none();
         contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
                 instructions == null ? Option.none() : Option.some(instructions), config.skillFilter(),
-                ContextBuilder.leastPrivilegeDefaults());
+                ContextBuilder.defaults(permissionDefault));
 
         // Create QocEngine (BaseEngine) for workflow delegation
         // Use Quarkus's stores for QocEngine (shared data)
@@ -2544,7 +2544,7 @@ commandLoader = new CommandLoader(workspacePath,
                 permissionGate, toolHooks, toolOutput, toolResultCache, stepTimeoutSeconds);
         contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
                 instructions == null ? Option.none() : Option.some(instructions), config.skillFilter(),
-                ContextBuilder.leastPrivilegeDefaults());
+                ContextBuilder.defaults(permissionDefault));
         LOG.infof("reloaded config: %d agent(s), %d skill(s)",
                 agentCatalogue.list().size(), skillCatalog.all().size());
         // SSOT: re-import QOC agents into the unified store after reload.
