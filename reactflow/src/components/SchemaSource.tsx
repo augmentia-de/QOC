@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react';
 
 const MODE_LABELS = { manual: 'Manuell (JSON)', java: 'Java-Quellcode', openapi: 'OpenAPI (YAML/JSON)', yaml: 'YAML (JSON Schema)' };
 
+async function safeFetch(url: string, options: RequestInit) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!res.ok) throw new Error(data?.error || data?.message || ('HTTP ' + res.status));
+  return data;
+}
+
 export function SchemaSource({ value, onChange, disabled = false, label }) {
   const [mode, setMode] = useState('manual');
   const [text, setText] = useState(value ? JSON.stringify(value, null, 2) : '');
@@ -36,8 +44,7 @@ export function SchemaSource({ value, onChange, disabled = false, label }) {
   const generateFromJava = async () => {
     setLoading(true); setError(null);
     try {
-      const res = await fetch('/api/schema/from-java', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source: text }) });
-      const data = await res.json();
+      const data = await safeFetch('/api/schema/from-java', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source: text }) });
       if (data.schema) { onChange(data.schema); setText(JSON.stringify(data.schema, null, 2)); }
       else setError(data.error || 'Error generating.');
     } catch (e) { setError(e?.message || 'Error'); }
@@ -47,8 +54,7 @@ export function SchemaSource({ value, onChange, disabled = false, label }) {
   const loadSchemaNames = async () => {
     setLoading(true); setError(null); setSchemaNames([]); setSelectedName('');
     try {
-      const res = await fetch('/api/schema/from-openapi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ spec: text }) });
-      const data = await res.json();
+      const data = await safeFetch('/api/schema/from-openapi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ spec: text }) });
       if (data.schemas) { setSchemaNames(data.schemas); if (data.schemas.length === 1) setSelectedName(data.schemas[0]); }
       else if (data.schema) { onChange(data.schema); setText(JSON.stringify(data.schema, null, 2)); }
       else setError(data.error || 'Error loading.');
@@ -59,8 +65,7 @@ export function SchemaSource({ value, onChange, disabled = false, label }) {
   const importYamlSchema = async () => {
     setLoading(true); setError(null); setSchemaNames([]); setSelectedName('');
     try {
-      const res = await fetch('/api/schema/from-yaml', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml: text }) });
-      const data = await res.json();
+      const data = await safeFetch('/api/schema/from-yaml', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml: text }) });
       if (data.schemas) { setSchemaNames(data.schemas); if (data.schemas.length === 1) setSelectedName(data.schemas[0]); }
       else if (data.schema) { onChange(data.schema); setText(JSON.stringify(data.schema, null, 2)); }
       else setError(data.error || 'Error parsing.');
@@ -72,8 +77,7 @@ export function SchemaSource({ value, onChange, disabled = false, label }) {
     if (!selectedName) return;
     setLoading(true); setError(null);
     try {
-      const res = await fetch(mode === 'openapi' ? '/api/schema/from-openapi' : '/api/schema/from-yaml', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ spec: text, schemaName: selectedName, yaml: text }) });
-      const data = await res.json();
+      const data = await safeFetch(mode === 'openapi' ? '/api/schema/from-openapi' : '/api/schema/from-yaml', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ spec: text, schemaName: selectedName, yaml: text }) });
       if (data.schema) { onChange(data.schema); setText(JSON.stringify(data.schema, null, 2)); }
     } catch (e) { setError(e?.message || 'Error'); }
     finally { setLoading(false); }
@@ -83,8 +87,7 @@ export function SchemaSource({ value, onChange, disabled = false, label }) {
     if (!value) { setError('No schema to validate.'); return; }
     setLoading(true); setError(null);
     try {
-      const res = await fetch('/api/schema/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schema: value }) });
-      const data = await res.json();
+      const data = await safeFetch('/api/schema/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schema: value }) });
       if (data.valid) { setError(null); alert('Schema is valid.'); }
       else setError(data.message || data.error || 'Schema invalid.');
     } catch (e) { setError(e?.message || 'Error'); }
@@ -119,42 +122,28 @@ export function SchemaSource({ value, onChange, disabled = false, label }) {
       )}
       {(mode === 'openapi' || mode === 'yaml') && (
         <>
-          <input type="file" accept={mode === 'openapi' ? '.yaml,.yml,.json' : '.yaml,.yml'} onChange={handleFileUpload} disabled={disabled} style={{ marginBottom: 4, fontSize: 11, color: '#d4d4d4' }} />
-          <textarea value={text} onChange={(e) => setText(e.target.value)} disabled={disabled} placeholder={mode === 'openapi' ? 'openapi: 3.0.0' : 'type: object'}
+          <textarea value={text} onChange={(e) => setText(e.target.value)} disabled={disabled} placeholder={mode === 'openapi' ? 'openapi: 3.0.0...' : 'type: object\nproperties:...'}
             style={{ width: '100%', height: 80, background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555', fontFamily: 'monospace', fontSize: 11 }} />
-          <div style={{ marginTop: 4, display: 'flex', gap: 4, alignItems: 'center' }}>
-            <button onClick={mode === 'openapi' ? loadSchemaNames : importYamlSchema} disabled={disabled || loading || !text.trim()}
-              style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, border: '1px solid #555', background: '#2d2d2d', color: '#d4d4d4' }}>
-              {loading ? '...' : (mode === 'openapi' ? 'Schemas laden' : 'Schema parsen')}
+          <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+            <button onClick={mode === 'openapi' ? loadSchemaNames : importYamlSchema} disabled={disabled || loading || !text.trim()} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, border: '1px solid #555', background: '#2d2d2d', color: '#d4d4d4' }}>
+              {loading ? '...' : (mode === 'openapi' ? 'Schemas laden' : 'Importieren')}
             </button>
-            {schemaNames.length > 0 && (
+            {schemaNames.length > 1 && (
               <>
-                <select value={selectedName} onChange={(e) => setSelectedName(e.target.value)} style={{ fontSize: 10, background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }}>
-                  <option value="">– Schema –</option>
-                  {schemaNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                <select value={selectedName} onChange={(e) => setSelectedName(e.target.value)} disabled={disabled} style={{ fontSize: 10, padding: '2px 4px', borderRadius: 4, border: '1px solid #555', background: '#1e1e1e', color: '#d4d4d4' }}>
+                  <option value="">-- Schema wählen --</option>
+                  {schemaNames.map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
-                <button onClick={importSelectedSchema} disabled={disabled || loading || !selectedName}
-                  style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, border: '1px solid #555', background: '#2d2d2d', color: '#d4d4d4' }}>
-                  Apply
+                <button onClick={importSelectedSchema} disabled={disabled || loading || !selectedName} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, border: '1px solid #555', background: '#2d2d2d', color: '#d4d4d4' }}>
+                  Importieren
                 </button>
               </>
             )}
           </div>
         </>
       )}
-      {value && (
-        <details style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
-          <summary style={{ cursor: 'pointer' }}>Aktuelles Schema (Vorschau)</summary>
-          <pre style={{ maxHeight: 80, overflow: 'auto', background: '#111', padding: 4, borderRadius: 4 }}>{JSON.stringify(value, null, 2)}</pre>
-        </details>
-      )}
-      <div style={{ marginTop: 4, display: 'flex', gap: 4, alignItems: 'center' }}>
-        <button onClick={validateSchema} disabled={disabled || loading || !value}
-          style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, border: '1px solid #555', background: '#2d2d2d', color: '#d4d4d4' }}>
-          {loading ? '...' : 'Validieren'}
-        </button>
-        {error && <span style={{ fontSize: 10, color: '#f66' }}>{error}</span>}
-      </div>
+      {error && <div style={{ color: '#d9534f', fontSize: 11, marginTop: 4 }}>{error}</div>}
+      {value && <div style={{ marginTop: 4 }}><button onClick={validateSchema} disabled={disabled || loading} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, border: '1px solid #555', background: '#2d2d2d', color: '#d4d4d4' }}>Validieren</button></div>}
     </div>
   );
 }

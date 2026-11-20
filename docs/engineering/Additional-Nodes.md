@@ -1,6 +1,6 @@
 # Additional Nodes — Dynamic Node Registration
 
-**Status:** Plan (2026-11-11) · Reference: `ReAct-Umsetzung.md`, `ReAct-Workflow.md`
+**Status:** Plan (2026-11-11) · Reference: `ReAct-Implementation.md`, `ReAct-Workflow.md`
 
 ## Problem
 

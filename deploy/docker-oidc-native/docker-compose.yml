@@ -20,7 +20,7 @@ services:
       MAVEN_CONFIG: /home/qoc/.m2
       MAVEN_OPTS: -Duser.home=/home/qoc
       MAVEN_REPO: /home/qoc/.m2
-      DEV_NATIVE_REBUILD: "never"
+      DEV_NATIVE_REBUILD: "${DEV_NATIVE_REBUILD:-never}"
       DEV_NATIVE_OIDC: "true"
       RUNNER_FILE: quarkus/target/runner-oidc
       ENGINE_SECURITY_MODE: oidc

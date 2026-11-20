@@ -14,9 +14,10 @@ export default function HITL() {
     setLoading(true);
     try {
       const res = await fetch('/api/workflows/runs?limit=50', { headers: { 'X-QOC-User': (localStorage.getItem('qoc-user') || 'dev') } });
-      const data = await res.json();
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
       setRuns(Array.isArray(data.runs) ? data.runs : []);
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); setRuns([]); }
     finally { setLoading(false); }
   };
 
@@ -28,9 +29,10 @@ export default function HITL() {
     setLoadingPending(true);
     try {
       const res = await fetch(`/api/session/${encodeURIComponent(run.sessionId)}/permission?includeChildren=true`, { headers: { 'X-QOC-User': (localStorage.getItem('qoc-user') || 'dev') } });
-      const data = await res.json();
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
       setPending(Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []));
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); setPending([]); }
     finally { setLoadingPending(false); }
   };
 

@@ -26,9 +26,12 @@ export default function Testbench() {
       <div style={{ display: 'grid', gap: 10, maxWidth: 600 }}>
         <input value={workflowId} onChange={(e) => setWorkflowId(e.target.value)} placeholder="Workflow ID" style={inp} />
         <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="Input for the workflow" style={{ ...inp, height: 80, resize: 'vertical' }} />
-        <button onClick={run} disabled={running || !workflowId.trim()} style={{ padding: '8px 16px', background: '#27ae60', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, opacity: running || !workflowId.trim() ? 0.5 : 1, justifySelf: 'start' }}>
-          {running ? 'Running...' : 'Run'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={run} disabled={running || !workflowId.trim()} style={{ padding: '8px 16px', background: '#27ae60', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, opacity: running || !workflowId.trim() ? 0.5 : 1 }}>
+            {running ? 'Running...' : 'Run'}
+          </button>
+          {!workflowId.trim() && <span style={{ fontSize: 11, color: '#999' }}>Workflow ID erforderlich</span>}
+        </div>
         {result && <pre style={{ background: '#161616', padding: 12, borderRadius: 4, fontSize: 11, color: '#5cb85c', overflow: 'auto', maxHeight: 300 }}>{JSON.stringify(result, null, 2)}</pre>}
       </div>
     </div>

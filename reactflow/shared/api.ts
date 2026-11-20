@@ -13,11 +13,24 @@ async function request(path: string, options: RequestOptions = {}): Promise<any>
   const response = await fetch(BASE + path, { ...options, headers })
   if (!response.ok) {
     const text = await response.text().catch(() => '')
-    throw new Error(text || response.statusText || ('HTTP ' + response.status))
+    if (text) {
+      try {
+        const parsed = JSON.parse(text)
+        throw new Error(parsed?.message || parsed?.error || text)
+      } catch (e) {
+        if (e instanceof Error && e.message !== text) throw e
+        throw new Error(text || response.statusText || ('HTTP ' + response.status))
+      }
+    }
+    throw new Error(response.statusText || ('HTTP ' + response.status))
   }
   if (response.status === 204) return null
   const contentType = response.headers.get('content-type') || ''
-  if (contentType.includes('application/json')) return response.json()
+  if (contentType.includes('application/json')) {
+    const text = await response.text().catch(() => '')
+    if (!text) return null
+    try { return JSON.parse(text) } catch { return text }
+  }
   return response.text()
 }
 

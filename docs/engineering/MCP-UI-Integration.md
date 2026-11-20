@@ -1,6 +1,6 @@
 # MCP Tools in the UI — Integration (Quarkus-based)
 
-**Status:** Plan (2026-11-11) · Reference: `Additional-Nodes.md`, `ReAct-Umsetzung.md`
+**Status:** Plan (2026-11-11) · Reference: `Additional-Nodes.md`, `ReAct-Implementation.md`
 **Assumption:** The workflow runner runs via Quarkus (`WorkflowResource`); `WorkflowRunnerMain` is no longer needed.
 
 ## Goal
