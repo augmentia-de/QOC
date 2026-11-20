@@ -207,7 +207,10 @@ public record WorkflowDefinition(
             String ownerId,
             List<String> rolesAllowed,
             String mode,
-            List<String> skills
+            List<String> skills,
+            int maxTurns,
+            double maxCost,
+            boolean requiresHITL
     ) {
         public Agent {
             if (id == null) id = "";
@@ -228,6 +231,8 @@ public record WorkflowDefinition(
             if (mode == null || mode.isBlank()) mode = "all";
             if (skills == null) skills = List.of();
             else skills = List.copyOf(skills);
+            if (maxTurns <= 0) maxTurns = 10;
+            if (maxCost <= 0) maxCost = 1.0;
         }
     }
 }

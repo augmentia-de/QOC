@@ -32,7 +32,7 @@ public final class WorkflowBuilder {
                         step.tools() == null ? List.of() : List.copyOf(step.tools()),
                         List.of(), List.of(), List.of(), false, true,
                         step.systemPrompt() != null ? step.systemPrompt() : step.instruction(),
-                        null, "", List.of("*"), "all", List.of()));
+                        null, "", List.of("*"), "all", List.of(), 10, 1.0, false));
             }
         }
 

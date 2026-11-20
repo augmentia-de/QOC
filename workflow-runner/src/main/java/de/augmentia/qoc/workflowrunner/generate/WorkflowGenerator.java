@@ -113,7 +113,10 @@ public class WorkflowGenerator {
                         a.ownerId(),
                         a.rolesAllowed(),
                         a.mode(),
-                        a.skills());
+                        a.skills(),
+                        a.maxTurns(),
+                        a.maxCost(),
+                        a.requiresHITL());
                 agentStore.save(newId, persisted);
                 idMap.put(a.id(), newId);
                 newAgents.add(persisted);

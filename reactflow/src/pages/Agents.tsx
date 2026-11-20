@@ -74,6 +74,9 @@ export default function Agents() {
     temperature: f.temperature,
     maxTokens: f.maxTokens,
     topP: f.topP,
+    maxTurns: f.maxTurns,
+    maxCost: f.maxCost,
+    requiresHITL: f.requiresHITL,
     tools: f.tools,
     guardrailsInput: f.guardrailsInput.split(',').map((s) => s.trim()).filter(Boolean),
     guardrailsOutput: f.guardrailsOutput.split(',').map((s) => s.trim()).filter(Boolean),
@@ -119,7 +122,7 @@ export default function Agents() {
       temperature: a.temperature ?? 0.3,
       maxTokens: a.maxTokens ?? 4096,
       topP: a.topP ?? 1.0,
-      permissions: '',
+      permissions: Array.isArray(a.rolesAllowed) ? a.rolesAllowed.join(', ') : (a.permissions || ''),
       prompt: a.systemPrompt || '',
       jsonOutput: !!a.jsonOutput,
       schema: a.responseSchema ? JSON.stringify(a.responseSchema, null, 2) : '',
@@ -130,10 +133,10 @@ export default function Agents() {
       mode: a.mode || 'all',
       skills: Array.isArray(a.skills) ? a.skills.join(', ') : '',
       ownerId: a.ownerId || '',
-      maxTurns: 10,
-      maxCost: 1.0,
+      maxTurns: typeof a.maxTurns === 'number' ? a.maxTurns : 10,
+      maxCost: typeof a.maxCost === 'number' ? a.maxCost : 1.0,
       active: a.active !== false,
-      requiresHITL: false,
+      requiresHITL: Boolean(a.requiresHITL),
     });
     setShowForm(true);
   };

@@ -159,7 +159,8 @@ public class AgentStoreResource {
                 a.hooks(), a.jsonOutput(), a.active(), a.systemPrompt(), a.responseSchema(),
                 ownerId == null ? "" : ownerId, a.rolesAllowed(),
                 a.mode() == null ? "all" : a.mode(),
-                a.skills() == null ? java.util.List.of() : a.skills());
+                a.skills() == null ? java.util.List.of() : a.skills(),
+                a.maxTurns(), a.maxCost(), a.requiresHITL());
     }
 
     private static Response badRequest(String message) {

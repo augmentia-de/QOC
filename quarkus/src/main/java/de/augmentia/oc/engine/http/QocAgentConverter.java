@@ -45,7 +45,7 @@ public final class QocAgentConverter {
                 null,       // ownerId (global/shared)
                 cfg.rolesAllowed() == null ? List.of("*") : List.copyOf(cfg.rolesAllowed()),
                 cfg.mode() == null ? "all" : cfg.mode(),
-                List.of()   // skills (QOC skills are patterns, not names)
-        );
+                List.of(),   // skills (QOC skills are patterns, not names)
+                10, 1.0, false);
     }
 }
