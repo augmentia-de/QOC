@@ -490,6 +490,58 @@ public static record EngineConfig(
         return id;
     }
 
+    /**
+     * Compacts a session's conversation to a single result message: deletes all
+     * messages at or after {@code startSeq} and inserts one assistant message
+     * carrying {@code result}. Used by context agents to drop intermediate
+     * tool calls from the (shared) workflow session.
+     */
+    public Seq nextSeq(SessionId session) {
+        if (session == null) return null;
+        try {
+            return stores.conversation().nextSeq(session);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    public void compactSessionToResult(SessionId session, Seq startSeq, String result) {
+        if (session == null || startSeq == null) return;
+        de.augmentia.oc.engine.core.model.AgentId agent = null;
+        de.augmentia.oc.engine.core.model.ModelRef modelRef = null;
+        try {
+            de.augmentia.oc.engine.core.model.Option<SessionInfo> info = stores.sessions().info(session);
+            if (info.isPresent()) {
+                agent = info.orElseThrow().agent();
+                if (info.orElseThrow().model().isPresent()) modelRef = info.orElseThrow().model().orElseThrow();
+            }
+        } catch (RuntimeException ignored) {}
+        if (agent == null) agent = de.augmentia.oc.engine.core.model.AgentId.parse("build");
+        if (modelRef == null) modelRef = new de.augmentia.oc.engine.core.model.ModelRef(
+                de.augmentia.oc.engine.core.model.ProviderId.parse("openai"),
+                de.augmentia.oc.engine.core.model.ModelId.create());
+        try {
+            stores.conversation().deleteFrom(session, startSeq);
+        } catch (RuntimeException ignored) {}
+        try {
+            Seq seq = stores.conversation().nextSeq(session);
+            stores.conversation().insert(session, seq,
+                    new de.augmentia.oc.engine.core.model.Message.AssistantMessage(
+                            de.augmentia.oc.engine.core.model.MessageId.create(),
+                            agent,
+                            modelRef,
+                            java.util.List.of(new de.augmentia.oc.engine.core.model.Content.TextContent(
+                                    result == null ? "" : result, clock.now())),
+                            de.augmentia.oc.engine.core.model.Option.none(),
+                            de.augmentia.oc.engine.core.model.Option.none(),
+                            de.augmentia.oc.engine.core.model.Option.none(),
+                            de.augmentia.oc.engine.core.model.Option.none(),
+                            de.augmentia.oc.engine.core.model.Money.zero(),
+                            de.augmentia.oc.engine.core.model.TokenCount.zero(),
+                            de.augmentia.oc.engine.core.model.AssistantTime.started(clock.now())));
+        } catch (RuntimeException ignored) {}
+    }
+
     public Option<SessionInfo> session(SessionId id) {
         return stores.sessions().info(id);
     }

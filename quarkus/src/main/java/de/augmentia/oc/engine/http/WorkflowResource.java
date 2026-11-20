@@ -11,6 +11,7 @@ import de.augmentia.qoc.workflowrunner.store.WorkflowDefinitionStore;
 import de.augmentia.qoc.workflowrunner.validation.GraphCompiler;
 
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -40,6 +41,10 @@ public class WorkflowResource {
 
     @Inject
     SessionAccessGuard accessGuard;
+
+    @Inject
+    @ConfigProperty(name = "engine.context.default-task", defaultValue = "start")
+    String contextDefaultTask;
 
     @GET
     @Path("/workflows")
@@ -282,7 +287,7 @@ public class WorkflowResource {
 
     private WorkflowExecutor executor() {
         return new WorkflowExecutor(engine.qocEngine(), store, engine.mcp().manager(), agentStore,
-                engine.qocEngine().workflowNodeMaxRepetitions());
+                engine.qocEngine().workflowNodeMaxRepetitions(), contextDefaultTask);
     }
 
     /** Global agents may be referenced from workflow nodes (Option B). */

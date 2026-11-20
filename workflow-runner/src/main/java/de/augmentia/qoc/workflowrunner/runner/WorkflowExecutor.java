@@ -39,6 +39,7 @@ public class WorkflowExecutor {
     private final McpServerManager mcpManager;
     private final de.augmentia.qoc.workflowrunner.store.AgentStorePort agentStore;
     private final int maxNodeRepetitions;
+    private final String defaultContextTask;
 
     public WorkflowExecutor(QocEngine engine, WorkflowDefinitionStore store) {
         this(engine, store, null, null);
@@ -58,11 +59,19 @@ public class WorkflowExecutor {
                             McpServerManager mcpManager,
                             de.augmentia.qoc.workflowrunner.store.AgentStorePort agentStore,
                             int maxNodeRepetitions) {
+        this(engine, store, mcpManager, agentStore, maxNodeRepetitions, "start");
+    }
+
+    public WorkflowExecutor(QocEngine engine, WorkflowDefinitionStore store,
+                            McpServerManager mcpManager,
+                            de.augmentia.qoc.workflowrunner.store.AgentStorePort agentStore,
+                            int maxNodeRepetitions, String defaultContextTask) {
         this.engine = engine;
         this.store = store;
         this.mcpManager = mcpManager;
         this.agentStore = agentStore;
         this.maxNodeRepetitions = Math.max(1, maxNodeRepetitions);
+        this.defaultContextTask = (defaultContextTask == null || defaultContextTask.isBlank()) ? "start" : defaultContextTask;
     }
 
     /**
@@ -214,7 +223,7 @@ public class WorkflowExecutor {
                                   de.augmentia.oc.engine.core.model.Principal principal) {
         if (principal == null) principal = de.augmentia.oc.engine.core.model.Principal.anonymous();
         ctx.setInitialPrompt(input == null ? "" : input);
-        NodeDispatcher dispatcher = new DefaultNodeDispatcher(engine, store, mcpManager, agentStore, principal, session.value());
+        NodeDispatcher dispatcher = new DefaultNodeDispatcher(engine, store, mcpManager, agentStore, principal, session.value(), defaultContextTask);
         WorkflowStepProviderImpl provider = new WorkflowStepProviderImpl(definition, dispatcher, sink, maxNodeRepetitions);
 
         try {

@@ -39,6 +39,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     private final AgentStorePort agentStore;
     private final de.augmentia.oc.engine.core.model.Principal principal;
     private final String cacheKey;
+    private final String defaultContextTask;
 
     public DefaultNodeDispatcher(QocEngine engine, WorkflowDefinitionStore store) {
         this(engine, store, null, null, de.augmentia.oc.engine.core.model.Principal.anonymous());
@@ -63,6 +64,13 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                                  McpServerManager mcpManager, AgentStorePort agentStore,
                                  de.augmentia.oc.engine.core.model.Principal principal,
                                  String cacheKey) {
+        this(engine, store, mcpManager, agentStore, principal, cacheKey, "start");
+    }
+
+    public DefaultNodeDispatcher(QocEngine engine, WorkflowDefinitionStore store,
+                                 McpServerManager mcpManager, AgentStorePort agentStore,
+                                 de.augmentia.oc.engine.core.model.Principal principal,
+                                 String cacheKey, String defaultContextTask) {
         this.engine = engine;
         this.store = store;
         this.expander = store != null ? new SubWorkflowExpander(store) : null;
@@ -70,6 +78,7 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
         this.agentStore = agentStore;
         this.principal = principal == null ? de.augmentia.oc.engine.core.model.Principal.anonymous() : principal;
         this.cacheKey = cacheKey;
+        this.defaultContextTask = (defaultContextTask == null || defaultContextTask.isBlank()) ? "start" : defaultContextTask;
     }
 
     @Override
@@ -158,9 +167,16 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
 
                 String systemPrompt = resolveSystemPrompt(def, agentDef);
 
-                String task = node.data().title();
-                if (task == null || task.isBlank()) task = node.data().defaultTarget();
-                if (task == null || task.isBlank()) task = "Continue with the next step.";
+                // Generic user message (task) for context agents. The system prompt
+                // is designed in the workflow; the task defaults to a minimal
+                // trigger and can be overridden via node.data().title() or
+                // mcpArgs.userMessage (configurable).
+                // The user task for a context agent is a generic default ("start"),
+                // defined in application.properties (engine.context.default-task).
+                // The title is NOT used as a task; the system prompt is designed
+                // in the workflow. Configurable via constructor (default "start").
+                String task = defaultContextTask;
+                if (task == null || task.isBlank()) task = "start";
 
                 String fullContext = ContextAssembler.assemble(def, ctx, policy, task, customRefs);
                 String userPrompt = "## Previous context\n" + fullContext
@@ -187,7 +203,8 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
                             node.id(), estimated, CONTEXT_BUDGET_TOKENS);
                 }
 
-                NodeResult result = runAgent(node, prefixedName, userPrompt, config, ctx, principal, overrides);
+                boolean compactCtx = boolOpt(node, "compactContext", true);
+                NodeResult result = runAgent(node, prefixedName, userPrompt, config, ctx, principal, overrides, compactCtx);
                 applyPostGuard(node, ctx, result);
                 return result;
             }
@@ -602,13 +619,21 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
     private NodeResult runAgent(WorkflowDefinition.Node node, String prefixedName, String prompt,
                                 QocEngine.AgentConfig config, WorkflowContext ctx,
                                 de.augmentia.oc.engine.core.model.Principal principal) {
-        return runAgent(node, prefixedName, prompt, config, ctx, principal, null);
+        return runAgent(node, prefixedName, prompt, config, ctx, principal, null, false);
     }
 
     private NodeResult runAgent(WorkflowDefinition.Node node, String prefixedName, String prompt,
                                 QocEngine.AgentConfig config, WorkflowContext ctx,
                                 de.augmentia.oc.engine.core.model.Principal principal,
                                 QocEngine.ExecutionOverrides overrides) {
+        return runAgent(node, prefixedName, prompt, config, ctx, principal, overrides, false);
+    }
+
+    private NodeResult runAgent(WorkflowDefinition.Node node, String prefixedName, String prompt,
+                                QocEngine.AgentConfig config, WorkflowContext ctx,
+                                de.augmentia.oc.engine.core.model.Principal principal,
+                                QocEngine.ExecutionOverrides overrides,
+                                boolean compactAfterRun) {
         if (principal == null) principal = de.augmentia.oc.engine.core.model.Principal.anonymous();
         // Enforce the agent's tool allow-list (empty = no tools, "*" = all).
         if (overrides == null || overrides.toolSnapshot() == null) {
@@ -635,10 +660,23 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
             } catch (IllegalArgumentException ignored) {
             }
         }
-        SessionId child = parent == null
-                ? engine.createSession(prefixedName, principal.id(), "workspace")
-                : engine.createSession(prefixedName, principal.id(), "workspace", parent);
-        EngineResult result = engine.runPrompt(child, prefixedName, prompt, config, true,
+        // Context agents run in the workflow session (no child session) so
+        // their tool calls can be compacted out of the shared conversation.
+        final boolean useWorkflowSession = compactAfterRun && parent != null;
+        final SessionId runSession;
+        de.augmentia.oc.engine.core.model.Seq startSeq = null;
+        if (useWorkflowSession) {
+            runSession = parent;
+            try {
+                startSeq = engine.nextSeq(runSession);
+            } catch (RuntimeException ignored) {
+            }
+        } else {
+            runSession = parent == null
+                    ? engine.createSession(prefixedName, principal.id(), "workspace")
+                    : engine.createSession(prefixedName, principal.id(), "workspace", parent);
+        }
+        EngineResult result = engine.runPrompt(runSession, prefixedName, prompt, config, true,
                 null, null, principal, overrides);
         if (result.failed()) {
             throw new IllegalStateException("Agent node " + node.id() + " failed: "
@@ -651,7 +689,14 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
         }
         Map<String, Object> structured = StructuredOutputConverter.toMap(result.structured());
         ctx.setNodeOutput(node.id(), structured != null ? structured : result.text());
-        return new NodeResult(result.text(), structured, child.value(), NodeResult.Status.COMPLETED,
+        // Compact the shared workflow session: drop intermediate tool calls,
+        // keep only the agent's final result in context and DB.
+        if (compactAfterRun && useWorkflowSession && startSeq != null && !result.paused() && !result.failed()) {
+            try {
+                engine.compactSessionToResult(runSession, startSeq, result.text());
+            } catch (RuntimeException ignored) {}
+        }
+        return new NodeResult(result.text(), structured, runSession.value(), NodeResult.Status.COMPLETED,
                 null, null, de.augmentia.oc.engine.core.model.TokenCount.of(
                         result.inputTokens(), result.outputTokens()));
     }
@@ -1121,6 +1166,22 @@ public class DefaultNodeDispatcher implements NodeDispatcher {
 
     private static String str(Object o, String dflt) {
         return o instanceof String s && !s.isBlank() ? s : dflt;
+    }
+
+    private static boolean boolOpt(Object o, boolean dflt) {
+        if (o instanceof Boolean b) return b;
+        if (o instanceof String s) {
+            String t = s.trim().toLowerCase(java.util.Locale.ROOT);
+            if ("true".equals(t) || "1".equals(t) || "yes".equals(t)) return true;
+            if ("false".equals(t) || "0".equals(t) || "no".equals(t)) return false;
+        }
+        if (o instanceof Number n) return n.intValue() != 0;
+        return dflt;
+    }
+
+    private static boolean boolOpt(WorkflowDefinition.Node node, String key, boolean dflt) {
+        if (node == null || node.data() == null || node.data().mcpArgs() == null) return dflt;
+        return boolOpt(node.data().mcpArgs().get(key), dflt);
     }
 
     private static int intOpt(Object o, int dflt) {

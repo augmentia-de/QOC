@@ -61,16 +61,30 @@ export function AgentConfigOverlay({ open, agent, onChange, onClose, onSave, onS
         const items: ToolItem[] = data
           .map((d: any) => ({ name: String(d?.name || '').trim(), namespace: String(d?.namespace || 'core').trim() || 'core' }))
           .filter((t: ToolItem) => t.name)
-        setAvailableTools(items.length ? items : CORE_TOOLS.map((n) => ({ name: n, namespace: 'core' })))
+        const finalItems = items.length ? items : CORE_TOOLS.map((n) => ({ name: n, namespace: 'core' }))
+        setAvailableTools(finalItems)
+        if (agent.tools.includes('*')) {
+          onChange({ tools: finalItems.map((t) => t.name) })
+        }
       } catch {
-        setAvailableTools(CORE_TOOLS.map((n) => ({ name: n, namespace: 'core' })))
+        const fallback = CORE_TOOLS.map((n) => ({ name: n, namespace: 'core' }))
+        setAvailableTools(fallback)
+        if (agent.tools.includes('*')) {
+          onChange({ tools: fallback.map((t) => t.name) })
+        }
       } finally {
         setLoadingTools(false)
       }
     })()
   }, [open])
 
-  const selectedSet = useMemo(() => new Set(agent.tools), [agent.tools])
+  const selectedSet = useMemo(() => {
+    const s = new Set(agent.tools)
+    if (s.has('*')) {
+      for (const t of availableTools) s.add(t.name)
+    }
+    return s
+  }, [agent.tools, availableTools])
 
   const filteredAvailable = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -136,7 +150,7 @@ export function AgentConfigOverlay({ open, agent, onChange, onClose, onSave, onS
           <label>Permission Preset<br />
             <select value={agent.permissionPreset || ''} onChange={(e) => {
               const p = AGENT_PRESETS.find((x) => x.id === e.target.value)
-              if (p) onChange({ permissionPreset: p.id, tools: p.tools, permissionRules: p.permissions })
+              if (p) onChange({ permissionPreset: p.id, tools: p.tools, permissionRules: p.permissions, ...(p.prompt ? { prompt: p.prompt } : {}) })
               else onChange({ permissionPreset: '' })
             }} style={{ width: '100%', background: '#1e1e1e', color: '#d4d4d4', border: '1px solid #555' }}>
               <option value="">(custom / unverändert)</option>

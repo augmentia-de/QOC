@@ -8,6 +8,15 @@ export interface AgentPreset {
   id: string;
   label: string;
   description: string;
+  // Optional generic system prompt applied to the agent. For context agents
+  // this is intentionally NOT set: the system prompt is designed in the workflow
+  // (workflow.systemPrompt). The generic instruction is a USER message (the
+  // node title / task), not a system prompt.
+  prompt?: string;
+  // Optional default node contextMode hint (node-level, not stored on agent).
+  contextMode?: 'focused' | 'full' | 'artifacts' | 'custom';
+  // Optional comment shown in the UI explaining the preset's intent.
+  comment?: string;
   tools: string[];
   permissions: PermRule[];
 }
@@ -70,6 +79,33 @@ export const AGENT_PRESETS: AgentPreset[] = [
       { action: 'edit', resource: '*', effect: 'ALLOW' },
       { action: 'write', resource: '*', effect: 'ALLOW' },
       { action: 'patch', resource: '*', effect: 'ALLOW' },
+      { action: 'shell', resource: '*', effect: 'ASK' },
+      { action: 'shell', resource: '*git log*', effect: 'ALLOW' },
+      { action: 'shell', resource: '*git status*', effect: 'ALLOW' },
+      { action: 'shell', resource: '*git diff*', effect: 'ALLOW' },
+      { action: 'shell', resource: '*ls*', effect: 'ALLOW' },
+      { action: 'shell', resource: '*cat*', effect: 'ALLOW' },
+      ...ENV_PROTECTION,
+    ],
+  },
+  {
+    id: 'context-agent',
+    label: 'Context Agent (generisch, full context)',
+    description: 'Generischer Kontext-Agent: verarbeitet den automatisch injizierten Kontext (contextMode=full) und liefert ein Endergebnis. Gilt für alle Kontext-Agenten — Prompt bleibt generisch, Aufgabe kommt aus dem Node-Title.',
+    // Applies to ALL context agents. The generic instruction is a USER message
+    // (the node title / task), NOT a system prompt — the system prompt is
+    // designed in the workflow. contextMode=full injects the entire context.
+    comment: 'Generischer Kontext-Agent: System-Prompt wird im Workflow designed. Die Aufgabe (User-Message) kommt aus dem Node-Title. contextMode=full.',
+    contextMode: 'full',
+    tools: ['read', 'glob', 'grep', 'webfetch', 'firecrawl'],
+    permissions: [
+      { action: '*', resource: '*', effect: 'DENY' },
+      { action: 'read', resource: '*', effect: 'ALLOW' },
+      { action: 'external_directory', resource: '*', effect: 'DENY' },
+      { action: 'webfetch', resource: '*', effect: 'ALLOW' },
+      { action: 'firecrawl', resource: '*', effect: 'ALLOW' },
+      { action: 'glob', resource: '*', effect: 'ALLOW' },
+      { action: 'grep', resource: '*', effect: 'ALLOW' },
       { action: 'shell', resource: '*', effect: 'ASK' },
       { action: 'shell', resource: '*git log*', effect: 'ALLOW' },
       { action: 'shell', resource: '*git status*', effect: 'ALLOW' },
