@@ -33,7 +33,7 @@ class GraphCompilerTest {
                 ),
                 List.of(new WorkflowDefinition.Agent("a1", "A", "1.0.0", "", "m", 0.3, 4096,
                         1.0, List.of(), List.of(), List.of(), List.of(), false, true,
-                        "", null, "", List.of("*"), "all", List.of())),
+                        "", null, "", List.of("*"), "all", List.of(), 10, 1.0, false)),
                 "",
                 "");
 

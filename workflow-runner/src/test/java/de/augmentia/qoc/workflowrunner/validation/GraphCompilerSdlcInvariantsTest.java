@@ -61,7 +61,7 @@ class GraphCompilerSdlcInvariantsTest {
     private static WorkflowDefinition.Agent agentDef(String id) {
         return new WorkflowDefinition.Agent(id, "A", "1.0.0", "", "m", 0.3, 4096, 1.0,
                 List.of(), List.of(), List.of(), List.of(), false, true, "", null, "", List.of("*"),
-                "all", List.of());
+                "all", List.of(), 10, 1.0, false);
     }
 
     private static WorkflowDefinition.Edge edge(String id, String from, String to) {
