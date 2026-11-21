@@ -20,6 +20,7 @@ services:
       ENGINE_SHELL_SANDBOX_ENABLED: false
       ENGINE_STORAGE: postgres
       ENGINE_WORKFLOW_STORAGE_DIR: /app/quarkus/wf-data
+      ENGINE_WORKFLOW_MAX_STEPS: "100"
       # General access base for the UI workspace switch. The mounted
       # /data/workspace is the project root; agents may be pointed at
       # subdirectories inside it.

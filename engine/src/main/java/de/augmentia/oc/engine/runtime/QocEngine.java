@@ -421,7 +421,7 @@ public static record EngineConfig(
 
     /** Configures the step budget for workflow-mode loops. */
     public void setWorkflowMaxSteps(int workflowMaxSteps) {
-        this.workflowMaxSteps = Math.max(1, workflowMaxSteps);
+        this.workflowMaxSteps = workflowMaxSteps;
     }
 
     public int workflowNodeMaxRepetitions() {
@@ -961,7 +961,7 @@ public static record EngineConfig(
             //   agent.maxSteps() > 0 → that limit, with a status notice and a
             //                          "continue?" question at the boundary
             //   otherwise (0)        → unlimited
-            int maxSteps = workflowMode ? Math.max(1, workflowMaxSteps)
+            int maxSteps = workflowMode ? workflowMaxSteps
                     : (agent.maxSteps() > 0 ? agent.maxSteps() : 0);
             // Interactive sessions (ask mode INTERACTIVE, non-subagent) get a
             // soft boundary with a status message and a yes/no continue question.

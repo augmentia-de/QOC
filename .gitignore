@@ -38,3 +38,4 @@ deploy/docker-*/workspace/**
 # maven-shade-plugin output (generated)
 dependency-reduced-pom.xml
 /workflow-runner/workflow-runner.log
+/docs/sdlc/
