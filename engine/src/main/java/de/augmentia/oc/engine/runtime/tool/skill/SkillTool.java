@@ -36,7 +36,8 @@ public final class SkillTool {
         Schema input = Schema.obj(Map.of("id", Schema.str()));
         return new ToolDefinition(new ToolName("skill"), "Load a skill by ID",
                 input, Option.none(),
-                (value, context) -> execute(catalog, safeRules, value), null);
+                (value, context) -> execute(catalog, safeRules, value),
+        new ToolOptions(Option.none(), Option.of("skill_load"), true, false));
     }
 
     /**
@@ -54,7 +55,7 @@ public final class SkillTool {
                 (value, context) -> {
                     List<Rule> rules = resolver.apply(context.agentId());
                     return execute(catalog, rules == null ? List.of() : rules, value);
-                }, null);
+                }, new ToolOptions(Option.none(), Option.of("skill_load"), true, false));
     }
 
     /**
@@ -75,7 +76,7 @@ public final class SkillTool {
                     List<Rule> rules = resolver.apply(context.agentId());
                     return list(catalog, rules == null ? List.of() : rules);
                 },
-                new ToolOptions(Option.none(), Option.of("skill"), true, false));
+                new ToolOptions(Option.none(), Option.of("skill_list"), true, false));
     }
 
     static ToolOutcome list(SkillCatalog catalog, List<Rule> rules) {

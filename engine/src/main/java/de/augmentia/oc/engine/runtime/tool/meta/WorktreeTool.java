@@ -4,6 +4,7 @@ import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
 import de.augmentia.oc.engine.core.contract.tool.ToolOptions;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
+import de.augmentia.oc.engine.core.contract.tool.UndoSpec;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.json.Schema;
 import de.augmentia.oc.engine.core.model.Option;
@@ -89,7 +90,22 @@ public final class WorktreeTool {
                         return ReadTool.failure("worktree_create", e.getMessage());
                     }
                 },
-                new ToolOptions(Option.none(), Option.of("worktree"), true, false));
+                new ToolOptions(Option.none(), Option.of("worktree"), true, false).withUndo(
+                        new UndoSpec(new ToolName("worktree_remove"),
+                                (originalInput, output, metadata) -> {
+                                    Object directory = metadata.get("directory");
+                                    if (directory == null || String.valueOf(directory).isBlank()) {
+                                        throw new IllegalArgumentException(
+                                                "worktree_create result has no directory");
+                                    }
+                                    return JsonValue.of(Map.of(
+                                            "directory", JsonValue.of(String.valueOf(directory)),
+                                            "force", JsonValue.of(true)));
+                                },
+                                (originalInput, output, metadata) -> {
+                                    Object directory = metadata.get("directory");
+                                    return directory != null && !String.valueOf(directory).isBlank();
+                                })));
     }
 
     public static ToolDefinition list(WorktreeTool tool) {

@@ -19,7 +19,8 @@ class AgentMarkdownExporterTest {
     void roundTripParse() throws Exception {
         Agent a = new Agent("my-agent", "My Agent", "1.0.0", "core", "gpt-4o",
                 0.3, 4096, 1.0, List.of("bash"), List.of(), List.of(), List.of(),
-                false, true, "You are helpful.", null, "", List.of("admin"), "all", List.of());
+                false, true, "You are helpful.", null, "", List.of("admin"), "all", List.of(),
+                100, 1.0, false, List.of());
         AgentMarkdownExporter.write(dir, a);
         Path file = dir.resolve("my-agent.md");
         assertThat(Files.exists(file)).isTrue();

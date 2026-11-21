@@ -115,6 +115,9 @@ import de.augmentia.oc.engine.runtime.tool.skill.SkillAuthorizer;
 import de.augmentia.oc.engine.runtime.skill.SkillFilterOptions;
 import de.augmentia.oc.engine.runtime.skill.SkillSelection;
 import de.augmentia.oc.engine.runtime.tool.runtime.ToolRuntime;
+import de.augmentia.oc.engine.runtime.tool.undo.UndoRegistry;
+import de.augmentia.oc.engine.runtime.tool.undo.UndoRuntime;
+import de.augmentia.oc.engine.runtime.tool.undo.UndoToolFactory;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -518,6 +521,10 @@ public String generateText(String prompt) {
     private PermissionGate permissionGate;
     private ToolOutputStore toolOutput;
     private ToolRuntime toolRuntime;
+    private UndoRegistry undoRegistry;
+    private UndoRuntime undoRuntime;
+    private final java.util.concurrent.atomic.AtomicReference<ToolRuntime> toolRuntimeRef =
+            new java.util.concurrent.atomic.AtomicReference<>();
     private de.augmentia.oc.engine.core.port.store.SessionWorkspaceStore sessionWorkspaces;
     private de.augmentia.oc.engine.core.port.store.ToolResultCache toolResultCache;
     private String instanceId;
@@ -853,9 +860,23 @@ commandLoader = new CommandLoader(workspacePath,
         mcp.setup(registry, config, a2aConfig);
         registry.register(McpResourceTools.list(mcp.manager()));
         registry.register(McpResourceTools.read(mcp.manager()));
+
+        // Saga/undo support: index forward tools with a declared undo pattern
+        // and register one undo_<tool> per pattern. The runtime is late-bound
+        // because undo tools must be part of the snapshot they execute against.
+        undoRegistry = new UndoRegistry();
+        undoRegistry.rebuildFrom(registry);
+        undoRuntime = new UndoRuntime(conversation, journal, registry, undoRegistry,
+                toolRuntimeRef::get, clock);
+        for (ToolDefinition forward : new java.util.ArrayList<>(registry.list())) {
+            forward.options().undo().ifPresent(spec ->
+                    registry.register(UndoToolFactory.create(forward, spec, undoRuntime)));
+        }
+
         toolSnapshot = registry.snapshot(allowAll);
         toolRuntime = new ToolRuntime(toolSnapshot, effectiveAuthorizer,
                 permissionGate, toolHooks, toolOutput, toolResultCache, stepTimeoutSeconds);
+        toolRuntimeRef.set(toolRuntime);
         instructionLoader = instructionsEnabled
                 ? new NioInstructionLoader(Path.of(System.getProperty("user.home", "."),
                         ".config", "opencode"))
@@ -2560,9 +2581,16 @@ commandLoader = new CommandLoader(workspacePath,
         registry.register(SkillTool.definition(skillCatalog, skillRules));
         registry.register(SkillTool.listDefinition(skillCatalog, skillRules));
         allowAll = List.of(new Rule("*", "*", Effect.ALLOW));
+        if (undoRegistry == null) undoRegistry = new UndoRegistry();
+        undoRegistry.rebuildFrom(registry);
+        if (undoRuntime == null) {
+            undoRuntime = new UndoRuntime(conversation, journal, registry, undoRegistry,
+                    toolRuntimeRef::get, clock);
+        }
         toolSnapshot = registry.snapshot(allowAll);
         toolRuntime = new ToolRuntime(toolSnapshot, effectiveAuthorizer,
                 permissionGate, toolHooks, toolOutput, toolResultCache, stepTimeoutSeconds);
+        toolRuntimeRef.set(toolRuntime);
         contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
                 instructions == null ? Option.none() : Option.some(instructions), config.skillFilter(),
                 ContextBuilder.defaults(permissionDefault));

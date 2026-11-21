@@ -7,6 +7,7 @@ import de.augmentia.oc.engine.core.contract.provider.ModelInfo;
 import de.augmentia.oc.engine.core.contract.provider.ModelMessage;
 import de.augmentia.oc.engine.core.contract.provider.OutcomePayload;
 import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
+import de.augmentia.oc.engine.core.contract.tool.ToolOptions;
 import de.augmentia.oc.engine.core.contract.tool.ToolSnapshot;
 import de.augmentia.oc.engine.core.eval.PermissionRules;
 import de.augmentia.oc.engine.core.model.Effect;
@@ -269,7 +270,7 @@ public final class ContextBuilder {
         if (tools == null || tools.definitions().isEmpty()) return tools == null ? ToolSnapshot.empty() : tools;
         Map<ToolName, ToolDefinition> kept = new LinkedHashMap<>();
         for (Map.Entry<ToolName, ToolDefinition> e : tools.definitions().entrySet()) {
-            String action = e.getValue().effectiveName();
+            String action = e.getValue().options().permission().orElse(e.getValue().effectiveName());
             Effect effect = PermissionRules.evaluate(rules, action, "*");
             if (effect != Effect.DENY) {
                 kept.put(e.getKey(), e.getValue());
