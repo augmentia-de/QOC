@@ -524,7 +524,8 @@ public String generateText(String prompt) {
     private ToolRuntime toolRuntime;
     private UndoRegistry undoRegistry;
     private UndoRuntime undoRuntime;
-    private final java.util.Set<String> undoToolNames = new java.util.HashSet<>();
+    private final java.util.Set<String> undoToolNames =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final java.util.concurrent.atomic.AtomicReference<ToolRuntime> toolRuntimeRef =
             new java.util.concurrent.atomic.AtomicReference<>();
     private de.augmentia.oc.engine.core.port.store.SessionWorkspaceStore sessionWorkspaces;
