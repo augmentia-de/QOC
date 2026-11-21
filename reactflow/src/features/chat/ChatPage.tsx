@@ -21,7 +21,21 @@ interface QuestionOption { label: string; description?: string }
 interface QuestionEntry { question: string; options?: QuestionOption[]; multiple?: boolean }
 interface QuestionInfo { id: string; sessionId: string; questions?: QuestionEntry[] }
 
-function uid(): string { return crypto.randomUUID() }
+// crypto.randomUUID() is only available in secure contexts (HTTPS or localhost).
+// When the UI is served over plain HTTP on a LAN address (e.g. from a phone),
+// fall back to a getRandomValues-based RFC 4122 v4 UUID so message handling
+// keeps working in insecure contexts.
+function uid(): string {
+  const c = globalThis.crypto
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID()
+  const bytes = new Uint8Array(16)
+  if (c && typeof c.getRandomValues === 'function') c.getRandomValues(bytes)
+  else for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`
+}
 function roleClass(role: ChatMessage['role']): string {
   if (role === 'user') return '#337ab7'
   if (role === 'assistant') return '#5bc0de'
@@ -254,29 +268,37 @@ export default function ChatPage() {
   }
 
   const send = async () => {
-    const text = input.trim(); if (!text || !sessionId) return
-    if (text.startsWith('/')) { await handleCommand(text); setInput(''); return }
-    addMessage('user', text); setInput('')
-    sendingRef.current = true; setSending(true); setStatus('Denke…')
-    sawStreamedRef.current = false; currentAssistantIdRef.current = null; assistantRawRef.current = ''
-    if (permissionTimerRef.current !== null) window.clearInterval(permissionTimerRef.current)
-    permissionTimerRef.current = window.setInterval(() => { void checkPermissions() }, 700)
+    let text = ''
     try {
+      if (sendingRef.current) { sendingRef.current = false; setSending(false) }
+      text = input.trim()
+      if (!sessionId) { setStatus('Keine Session'); return }
+      if (!text) { setStatus('Eingabe leer'); return }
+      if (text.startsWith('/')) { await handleCommand(text); setInput(''); return }
+      addMessage('user', text)
+      setInput('')
+      sendingRef.current = true; setSending(true); setStatus('Denke…')
+      sawStreamedRef.current = false; currentAssistantIdRef.current = null; assistantRawRef.current = ''
+      if (permissionTimerRef.current !== null) window.clearInterval(permissionTimerRef.current)
+      permissionTimerRef.current = window.setInterval(() => { void checkPermissions() }, 700)
       const data = await Sessions.prompt(sessionId, text)
       if (data?.text && !sawStreamedRef.current) addMessage('assistant', data.text)
-    } catch (e) { addMessage('error', 'Error: ' + (e instanceof Error ? e.message : String(e))) }
-    finally {
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      addMessage('error', 'Error: ' + msg); setStatus('Error: ' + msg)
+    } finally {
       if (permissionTimerRef.current !== null) { window.clearInterval(permissionTimerRef.current); permissionTimerRef.current = null }
       sendingRef.current = false; setSending(false); setStatus('ready')
-      await loadSessions(); await loadTasks(sessionId); startTaskPoll(sessionId)
-      setLastTask(text)
+      try { await loadSessions(); if (sessionId) { await loadTasks(sessionId); startTaskPoll(sessionId) } setLastTask(text) }
+      catch (e) { pushEvent('send finalize: ' + (e instanceof Error ? e.message : String(e))) }
     }
   }
 
   const interrupt = async () => {
-    if (!sessionId) return
-    await Sessions.interrupt(sessionId)
-    await loadTasks(sessionId)
+    sendingRef.current = false
+    setSending(false)
+    if (!sessionId) { setStatus('Keine Session — zuerst "New Session" klicken'); return }
+    try { await Sessions.interrupt(sessionId); await loadTasks(sessionId); setStatus('Interrupted') } catch (e) { setStatus('Interrupt err: ' + (e instanceof Error ? e.message : String(e))) }
   }
 
   const replyQuestion = async (q: QuestionInfo) => {
@@ -385,8 +407,8 @@ export default function ChatPage() {
               placeholder="Prompt eingeben…" rows={2}
             />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <button onClick={() => void send()} disabled={!sessionId || !input.trim()} onTouchEnd={(e) => { if (!sessionId || !input.trim()) return; e.preventDefault(); void send() }} style={{ ...btnPrimary(sending ? 'Interrupt' : 'Send', !sessionId || !input.trim()), touchAction: 'manipulation' }}>{sending ? 'Interrupt' : 'Send'}</button>
-              <button onClick={() => void interrupt()} disabled={!sessionId} onTouchEnd={(e) => { if (!sessionId) return; e.preventDefault(); void interrupt() }} style={{ ...btnDanger('Cancel', !sessionId), touchAction: 'manipulation' }}>Cancel</button>
+              <button onClick={() => void send()} style={{ ...btnPrimary(sending ? 'Interrupt' : 'Send', !sessionId || !input.trim()), touchAction: 'manipulation' }}>{sending ? 'Interrupt' : 'Send'}</button>
+              <button onClick={() => void interrupt()} style={{ ...btnDanger('Cancel', !sessionId), touchAction: 'manipulation' }}>Cancel</button>
             </div>
           </div>
         </div>
