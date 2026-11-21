@@ -14,12 +14,20 @@ public final class UndoToolFactory {
 
     private UndoToolFactory() {}
 
+    /** Effective name of the generated undo tool for a forward tool. */
+    public static String undoToolName(String forwardEffectiveName) {
+        if (forwardEffectiveName == null || forwardEffectiveName.isBlank()) {
+            throw new IllegalArgumentException("forwardEffectiveName must not be blank");
+        }
+        return "undo_" + forwardEffectiveName;
+    }
+
     public static ToolDefinition create(ToolDefinition forward, UndoSpec spec, UndoRuntime runtime) {
         if (forward == null || spec == null || runtime == null) {
             throw new IllegalArgumentException("forward tool, spec and runtime must not be null");
         }
         String effective = forward.effectiveName();
-        ToolName undoName = new ToolName("undo_" + effective);
+        ToolName undoName = new ToolName(undoToolName(effective));
         Schema input = Schema.obj(Map.of(
                 "callId", Schema.str(),
                 "sessionId", Schema.opt(Schema.str())));

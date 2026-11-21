@@ -14,6 +14,7 @@ import de.augmentia.oc.engine.core.model.Content;
 import de.augmentia.oc.engine.core.model.EventDraft;
 import de.augmentia.oc.engine.core.model.IdempotencyKey;
 import de.augmentia.oc.engine.core.model.Message;
+import de.augmentia.oc.engine.core.model.Option;
 import de.augmentia.oc.engine.core.model.Seq;
 import de.augmentia.oc.engine.core.model.SessionError;
 import de.augmentia.oc.engine.core.model.SessionEvent;
@@ -67,12 +68,13 @@ public final class UndoRuntime {
             throw new IllegalArgumentException("undo input, context, forward tool and spec must not be null");
         }
 
-        String callIdStr;
-        try {
-            callIdStr = requireString(input, "callId");
-        } catch (IllegalArgumentException e) {
-            return new UndoOutcome.Failed("", error("invalid_call_id", e.getMessage()));
+        Option<UndoRequest> parsed = UndoRequest.from(input);
+        if (parsed.isEmpty()) {
+            return new UndoOutcome.Failed("",
+                    error("invalid_call_id", "callId must be a non-blank string"));
         }
+        UndoRequest request = parsed.orElseThrow();
+        String callIdStr = request.callId();
 
         CallId originalCallId;
         try {
@@ -83,8 +85,9 @@ public final class UndoRuntime {
 
         SessionId sessionId;
         try {
-            String sessionIdStr = optionalString(input, "sessionId");
-            sessionId = sessionIdStr == null ? ctx.sessionId() : SessionId.of(sessionIdStr);
+            sessionId = request.sessionId().isPresent()
+                    ? SessionId.of(request.sessionId().orElseThrow())
+                    : ctx.sessionId();
         } catch (IllegalArgumentException e) {
             return new UndoOutcome.Failed(callIdStr, error("invalid_session_id", e.getMessage()));
         }
@@ -162,17 +165,19 @@ public final class UndoRuntime {
             throw new PausedException(paused.approvalId(), paused.approvalUrl());
         }
 
-        String undoToolName = "undo_" + forward.effectiveName();
-        appendAudit(sessionId, ctx, undoToolName, originalCallId, undoCallId, outcome);
+        ToolOutcome auditOutcome = outcome instanceof ToolOutcome.Ok
+                || outcome instanceof ToolOutcome.Failed
+                ? outcome
+                : new ToolOutcome.Failed(error("undo_execution_error",
+                        "unexpected outcome: " + outcome.getClass().getSimpleName()));
+        String undoToolName = UndoToolFactory.undoToolName(forward.effectiveName());
+        appendAudit(sessionId, ctx, undoToolName, originalCallId, undoCallId, auditOutcome);
 
-        if (outcome instanceof ToolOutcome.Ok) {
-            return new UndoOutcome.Undone(callIdStr, undoCallId.value(), outcome);
+        if (auditOutcome instanceof ToolOutcome.Ok) {
+            return new UndoOutcome.Undone(callIdStr, undoCallId.value(), auditOutcome);
         }
-        if (outcome instanceof ToolOutcome.Failed failed) {
-            return new UndoOutcome.Failed(callIdStr, failed.error());
-        }
-        return new UndoOutcome.Failed(callIdStr, error("undo_execution_error",
-                "unexpected outcome: " + outcome.getClass().getSimpleName()));
+        ToolOutcome.Failed failed = (ToolOutcome.Failed) auditOutcome;
+        return new UndoOutcome.Failed(callIdStr, failed.error());
     }
 
     private ToolCard findToolCard(SessionId sessionId, CallId callId) {
@@ -265,24 +270,6 @@ public final class UndoRuntime {
             }
         }
         return JsonValue.of(values);
-    }
-
-    private static String requireString(JsonValue input, String key) {
-        String value = optionalString(input, key);
-        if (value == null) {
-            throw new IllegalArgumentException(key + " must be a non-blank string");
-        }
-        return value;
-    }
-
-    private static String optionalString(JsonValue input, String key) {
-        if (input instanceof JsonValue.Obj object) {
-            JsonValue value = object.values().get(key);
-            if (value instanceof JsonValue.Str text && !text.value().isBlank()) {
-                return text.value();
-            }
-        }
-        return null;
     }
 
     private static SessionError.ToolExecutionError error(String code, String message) {

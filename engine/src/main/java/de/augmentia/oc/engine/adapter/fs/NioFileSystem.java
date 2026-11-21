@@ -71,6 +71,15 @@ public final class NioFileSystem implements FileSystem {
     }
 
     @Override
+    public void delete(Path path) {
+        try {
+            Files.deleteIfExists(normalize(path));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    @Override
     public FileStat stat(Path path) {
         Path normalized = normalize(path);
         if (!Files.exists(normalized)) {

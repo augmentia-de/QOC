@@ -14,6 +14,9 @@ public interface FileSystem {
 
     void write(Path path, byte[] content);
 
+    /** Deletes a file or empty directory. Missing paths are a no-op. */
+    void delete(Path path);
+
     FileStat stat(Path path);
 
     List<Path> list(Path directory);

@@ -37,7 +37,10 @@ public final class SkillTool {
         return new ToolDefinition(new ToolName("skill"), "Load a skill by ID",
                 input, Option.none(),
                 (value, context) -> execute(catalog, safeRules, value),
-        new ToolOptions(Option.none(), Option.of("skill_load"), true, false));
+                // "skill" is reserved for skill-ID rights (action=skill,
+                // resource=id). A dedicated tool action keeps skill allow/deny
+                // rules from hiding the tool itself.
+                new ToolOptions(Option.none(), Option.of("skill_load"), true, false));
     }
 
     /**

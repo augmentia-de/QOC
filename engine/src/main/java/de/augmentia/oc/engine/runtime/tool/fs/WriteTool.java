@@ -3,8 +3,10 @@ package de.augmentia.oc.engine.runtime.tool.fs;
 import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
 import de.augmentia.oc.engine.core.contract.permission.PermissionRequest;
 import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
+import de.augmentia.oc.engine.core.contract.tool.ToolOptions;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
+import de.augmentia.oc.engine.core.contract.tool.UndoSpec;
 import de.augmentia.oc.engine.core.json.JsonValue;
 import de.augmentia.oc.engine.core.json.Schema;
 import de.augmentia.oc.engine.core.model.Option;
@@ -52,7 +54,19 @@ public final class WriteTool {
                         }
                     }
                     return execute(fileSystem, access, value);
-                }, null);
+                }, new ToolOptions(Option.none(), Option.of("edit"), true, false).withUndo(
+                        new UndoSpec(new ToolName("delete"),
+                                (originalInput, output, metadata) -> {
+                                    Object path = metadata.get("path");
+                                    if (path == null || String.valueOf(path).isBlank()) {
+                                        throw new IllegalArgumentException(
+                                                "write result has no path");
+                                    }
+                                    return JsonValue.of(Map.of(
+                                            "path", JsonValue.of(String.valueOf(path))));
+                                },
+                                (originalInput, output, metadata) ->
+                                        "false".equals(String.valueOf(metadata.get("existed"))))));
     }
 
     static ToolOutcome execute(FileSystem fileSystem, FileAccess access, JsonValue value) {
@@ -71,9 +85,12 @@ public final class WriteTool {
                     "resource", JsonValue.of(resolved.resource()),
                     "existed", JsonValue.of(existed)));
             String text = (existed ? "Updated " : "Created ") + resolved.absolute();
-            Map<String, Object> metadata = Map.of("files", List.of(Map.of(
+            Map<String, Object> metadata = Map.of(
+                    "files", List.of(Map.of(
+                            "path", resolved.absolute().toString(),
+                            "kind", existed ? "modified" : "added")),
                     "path", resolved.absolute().toString(),
-                    "kind", existed ? "modified" : "added")));
+                    "existed", existed);
             return new ToolOutcome.Ok(new ToolResult(Option.some(output),
                     List.of(new ToolContent.TextItem(text)), metadata));
         } catch (IllegalArgumentException e) {

@@ -3,6 +3,7 @@ package de.augmentia.oc.engine.runtime.tool.fs;
 import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
 import de.augmentia.oc.engine.core.contract.permission.PermissionRequest;
 import de.augmentia.oc.engine.core.contract.tool.ToolDefinition;
+import de.augmentia.oc.engine.core.contract.tool.ToolOptions;
 import de.augmentia.oc.engine.core.contract.tool.ToolOutcome;
 import de.augmentia.oc.engine.core.contract.tool.ToolResult;
 import de.augmentia.oc.engine.core.json.JsonValue;
@@ -57,7 +58,7 @@ public final class PatchTool {
                         }
                     }
                     return execute(fileSystem, access, value);
-                }, null);
+                }, new ToolOptions(Option.none(), Option.of("edit"), true, false));
     }
 
     static ToolOutcome execute(FileSystem fileSystem, FileAccess access, JsonValue value) {

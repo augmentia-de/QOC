@@ -139,7 +139,12 @@ public final class ToolRuntime {
             if (outcome instanceof ToolOutcome.Failed failed) {
                 return keyed(failed, context);
             }
-            ToolResult result = keyed(((ToolOutcome.Ok) outcome).result(), context);
+            if (!(outcome instanceof ToolOutcome.Ok ok)) {
+                // Empty/InvalidArgument/Unavailable carry no ToolResult; pass
+                // them through unchanged.
+                return outcome;
+            }
+            ToolResult result = keyed(ok.result(), context);
 
             if (definition.outputSchema().isPresent()) {
                 JsonValue output = result.output().orElse(JsonValue.ofNull());

@@ -32,6 +32,7 @@ import de.augmentia.oc.engine.runtime.permission.engine.ReplyOutcome;
 import de.augmentia.oc.engine.core.model.SessionEvent;
 import de.augmentia.oc.engine.core.port.store.ConversationStore;
 import de.augmentia.oc.engine.runtime.tool.fs.FileAccess;
+import de.augmentia.oc.engine.runtime.tool.fs.DeleteTool;
 import de.augmentia.oc.engine.adapter.fs.CachedFileSystem;
 import de.augmentia.oc.engine.adapter.fs.NioFileSystem;
 import de.augmentia.oc.engine.adapter.fs.NioInstructionLoader;
@@ -523,6 +524,7 @@ public String generateText(String prompt) {
     private ToolRuntime toolRuntime;
     private UndoRegistry undoRegistry;
     private UndoRuntime undoRuntime;
+    private final java.util.Set<String> undoToolNames = new java.util.HashSet<>();
     private final java.util.concurrent.atomic.AtomicReference<ToolRuntime> toolRuntimeRef =
             new java.util.concurrent.atomic.AtomicReference<>();
     private de.augmentia.oc.engine.core.port.store.SessionWorkspaceStore sessionWorkspaces;
@@ -748,6 +750,7 @@ commandLoader = new CommandLoader(workspacePath,
         registry.register(ReadTool.definition(fs, access, permissionGate, toolOutput));
         registry.register(WriteTool.definition(fs, access, permissionGate));
         registry.register(EditTool.definition(fs, access, permissionGate));
+        registry.register(DeleteTool.definition(fs, access, permissionGate));
         registry.register(AgentCreateTool.definition(agentCatalogue, permissionGate));
         registry.register(AgentListTool.definition(agentCatalogue));
         registry.register(PatchTool.definition(fs, access, permissionGate));
@@ -868,10 +871,8 @@ commandLoader = new CommandLoader(workspacePath,
         undoRegistry.rebuildFrom(registry);
         undoRuntime = new UndoRuntime(conversation, journal, registry, undoRegistry,
                 toolRuntimeRef::get, clock);
-        for (ToolDefinition forward : new java.util.ArrayList<>(registry.list())) {
-            forward.options().undo().ifPresent(spec ->
-                    registry.register(UndoToolFactory.create(forward, spec, undoRuntime)));
-        }
+        undoToolNames.clear();
+        registerUndoTools();
 
         toolSnapshot = registry.snapshot(allowAll);
         toolRuntime = new ToolRuntime(toolSnapshot, effectiveAuthorizer,
@@ -2226,7 +2227,7 @@ commandLoader = new CommandLoader(workspacePath,
 
     private static final int MAX_CONCURRENT_SUBAGENTS = 4;
     private static final java.util.Set<String> WORKSPACE_TOOL_NAMES = java.util.Set.of(
-            "read", "write", "edit", "patch", "glob", "grep", "shell",
+            "read", "write", "edit", "delete", "patch", "glob", "grep", "shell",
             "worktree_create", "worktree_list", "worktree_remove");
     private final java.util.concurrent.Semaphore subagentSemaphore = new java.util.concurrent.Semaphore(MAX_CONCURRENT_SUBAGENTS);
 
@@ -2587,6 +2588,7 @@ commandLoader = new CommandLoader(workspacePath,
             undoRuntime = new UndoRuntime(conversation, journal, registry, undoRegistry,
                     toolRuntimeRef::get, clock);
         }
+        registerUndoTools();
         toolSnapshot = registry.snapshot(allowAll);
         toolRuntime = new ToolRuntime(toolSnapshot, effectiveAuthorizer,
                 permissionGate, toolHooks, toolOutput, toolResultCache, stepTimeoutSeconds);
@@ -3301,10 +3303,33 @@ commandLoader = new CommandLoader(workspacePath,
                 shellSandboxUid, gid, shellSandboxBwrap, allowlist);
     }
 
+    /**
+     * Registers one {@code undo_<tool>} for every forward tool with an undo
+     * pattern that does not already have one. Called on start and after reload
+     * so newly added forward tools become undoable without duplicating tools.
+     */
+    private void registerUndoTools() {
+        if (undoRuntime == null) return;
+        java.util.Set<String> existing = new java.util.HashSet<>();
+        for (ToolDefinition definition : registry.list()) {
+            existing.add(definition.effectiveName());
+        }
+        for (ToolDefinition forward : new java.util.ArrayList<>(registry.list())) {
+            forward.options().undo().ifPresent(spec -> {
+                String name = UndoToolFactory.undoToolName(forward.effectiveName());
+                if (existing.add(name)) {
+                    registry.register(UndoToolFactory.create(forward, spec, undoRuntime));
+                    undoToolNames.add(name);
+                }
+            });
+        }
+    }
+
     private ToolSnapshot buildEphemeralBaseSnapshot(Path root) {
         ToolRegistry r = new ToolRegistry();
         for (ToolDefinition d : registry.list()) {
-            if (!WORKSPACE_TOOL_NAMES.contains(d.effectiveName())) {
+            if (!WORKSPACE_TOOL_NAMES.contains(d.effectiveName())
+                    && !undoToolNames.contains(d.effectiveName())) {
                 r.register(d);
             }
         }
@@ -3323,6 +3348,7 @@ commandLoader = new CommandLoader(workspacePath,
         defs.add(ReadTool.definition(fs, access, permissionGate, toolOutput));
         defs.add(WriteTool.definition(fs, access, permissionGate));
         defs.add(EditTool.definition(fs, access, permissionGate));
+        defs.add(DeleteTool.definition(fs, access, permissionGate));
         defs.add(PatchTool.definition(fs, access, permissionGate));
         defs.add(GlobTool.definition(fs, access, permissionGate));
         defs.add(GrepTool.definition(fs, access, permissionGate, toolOutput));

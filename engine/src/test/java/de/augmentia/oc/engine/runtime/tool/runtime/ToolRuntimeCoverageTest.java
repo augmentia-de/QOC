@@ -172,6 +172,17 @@ class ToolRuntimeCoverageTest {
     }
 
     @Test
+    void emptyOutcomePassesThroughUnchanged() {
+        ToolRuntime runtime = runtime(definition((input, context) -> new ToolOutcome.Empty("none")),
+                request -> {}, noopHooks(), null, 30);
+
+        ToolOutcome outcome = runtime.execute(call(), context());
+
+        assertThat(outcome).isInstanceOf(ToolOutcome.Empty.class);
+        assertThat(((ToolOutcome.Empty) outcome).message()).isEqualTo("none");
+    }
+
+    @Test
     void unexpectedExecutorExceptionBecomesToolError() {
         ToolRuntime runtime = runtime(definition((input, context) -> {
             throw new IllegalStateException("exploded");

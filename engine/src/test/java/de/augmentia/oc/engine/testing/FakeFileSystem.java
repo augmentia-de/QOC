@@ -61,6 +61,13 @@ public final class FakeFileSystem implements FileSystem {
     }
 
     @Override
+    public synchronized void delete(Path path) {
+        Path normalized = normalize(path);
+        files.remove(normalized);
+        directories.remove(normalized);
+    }
+
+    @Override
     public synchronized FileStat stat(Path path) {
         Path normalized = normalize(path);
         byte[] content = files.get(normalized);

@@ -43,6 +43,12 @@ public final class CachedFileSystem implements FileSystem {
     }
 
     @Override
+    public void delete(Path path) {
+        delegate.delete(path);
+        invalidate();
+    }
+
+    @Override
     public FileStat stat(Path path) {
         return delegate.stat(path);
     }

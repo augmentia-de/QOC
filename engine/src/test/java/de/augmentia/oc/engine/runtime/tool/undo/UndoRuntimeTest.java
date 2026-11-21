@@ -76,6 +76,7 @@ class UndoRuntimeTest {
     private JsonValue compensatorInput;
     private JsonValue mapperOutput;
     private boolean compensatorFails;
+    private boolean compensatorEmpty;
 
     @BeforeEach
     void setUp() {
@@ -87,6 +88,7 @@ class UndoRuntimeTest {
         compensatorInput = null;
         mapperOutput = null;
         compensatorFails = false;
+        compensatorEmpty = false;
 
         registry.register(forwardDefinition(UndoSpec.of(COMPENSATE,
                 (input, output, metadata) -> {
@@ -234,6 +236,20 @@ class UndoRuntimeTest {
         UndoOutcome.Failed failed = (UndoOutcome.Failed) execute();
 
         assertThat(failed.error().message()).isEqualTo("compensator failed");
+    }
+
+    @Test
+    void emptyCompensatorOutcomeIsReportedAsFailure() {
+        addCompleted(FORWARD, forwardCall, JsonValue.of(Map.of()),
+                List.of(new ToolContent.TextItem("done")), Map.of());
+        compensatorEmpty = true;
+
+        UndoOutcome.Failed failed = (UndoOutcome.Failed) execute();
+
+        assertThat(failed.error().message()).contains("unexpected outcome");
+        assertThat(journal.history(session.value(), Seq.zero()))
+                .anyMatch(event -> event.payload() instanceof SessionEvent.ToolFailed toolFailed
+                        && forwardCall.value().equals(toolFailed.metadata().get("undoOf")));
     }
 
     @Test
@@ -395,6 +411,9 @@ class UndoRuntimeTest {
                     if (compensatorFails) {
                         return new ToolOutcome.Failed(new SessionError.ToolExecutionError(
                                 "boom", "compensator failed"));
+                    }
+                    if (compensatorEmpty) {
+                        return new ToolOutcome.Empty("nothing to do");
                     }
                     return new ToolOutcome.Ok(ToolResult.of("compensated"));
                 },
