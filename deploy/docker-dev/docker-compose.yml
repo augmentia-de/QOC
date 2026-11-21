@@ -16,7 +16,7 @@ services:
       QUARKUS_DEV_SERVICES_ENABLED: "false"
       ENGINE_MODEL_ID: deepseek-v4.1-flash
       ENGINE_PERMISSION_DEFAULT: allow-all
-      ENGINE_PERMISSION_ASK_MODE: interactive
+      ENGINE_PERMISSION_ASK_MODE: allow
       ENGINE_SHELL_SANDBOX_ENABLED: false
       ENGINE_STORAGE: postgres
       ENGINE_WORKFLOW_STORAGE_DIR: /app/quarkus/wf-data
