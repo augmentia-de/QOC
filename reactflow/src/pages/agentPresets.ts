@@ -25,6 +25,9 @@ const ENV_PROTECTION: PermRule[] = [
   { action: 'read', resource: '*.env', effect: 'ASK' },
   { action: 'read', resource: '*.env.*', effect: 'ASK' },
   { action: 'read', resource: '*.env.example', effect: 'ALLOW' },
+  { action: 'edit', resource: '*.env', effect: 'DENY' },
+  { action: 'edit', resource: '*.env.*', effect: 'DENY' },
+  { action: 'edit', resource: '*.env.example', effect: 'ALLOW' },
 ];
 
 export const AGENT_PRESETS: AgentPreset[] = [
