@@ -32,7 +32,7 @@ public final class QocAgentConverter {
                 cfg.hidden() ? "hidden" : "",
                 cfg.model() == null ? "" : cfg.model(),
                 0.3,
-                4096,
+                128000,
                 1.0,
                 tools,
                 guardrailsIn,
@@ -46,6 +46,6 @@ public final class QocAgentConverter {
                 cfg.rolesAllowed() == null ? List.of("*") : List.copyOf(cfg.rolesAllowed()),
                 cfg.mode() == null ? "all" : cfg.mode(),
                 List.of(),   // skills (QOC skills are patterns, not names)
-                10, 1.0, false, java.util.List.of());
+                100, 1.0, false, java.util.List.of());
     }
 }

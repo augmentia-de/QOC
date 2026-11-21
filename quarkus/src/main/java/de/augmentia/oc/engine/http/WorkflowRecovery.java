@@ -97,7 +97,7 @@ public class WorkflowRecovery {
             //    Markdown/config files cannot override them.
             if (engineConfig != null) {
                 for (EngineConfig.AgentConfig cfg : engineConfig.baselineAgents()) {
-                    if (agentStore.get(cfg.name()) == null) {
+                    if (agentStore.get(cfg.name().toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9-]", "-")) == null) {
                         de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent converted =
                                 QocAgentConverter.fromQoc(cfg);
                         if (converted != null) {
@@ -109,7 +109,7 @@ public class WorkflowRecovery {
             }
             // 1. Config agents (settings.json / application.properties)
             for (EngineConfig.AgentConfig cfg : engineConfig.agents()) {
-                if (agentStore.get(cfg.name()) == null) {
+                if (agentStore.get(cfg.name().toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9-]", "-")) == null) {
                     de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent converted =
                             QocAgentConverter.fromQoc(cfg);
                     if (converted != null) {
@@ -120,7 +120,7 @@ public class WorkflowRecovery {
             }
             // 2. Markdown agents (global)
             for (EngineConfig.AgentConfig cfg : AgentMarkdownLoader.loadDirectory(AgentMarkdownLoader.globalAgentDir())) {
-                if (agentStore.get(cfg.name()) == null) {
+                if (agentStore.get(cfg.name().toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9-]", "-")) == null) {
                     de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent converted =
                             QocAgentConverter.fromQoc(cfg);
                     if (converted != null) {
@@ -135,7 +135,7 @@ public class WorkflowRecovery {
                     java.nio.file.Path ws = java.nio.file.Path.of(engineConfig.workspace());
                     for (java.nio.file.Path dir : AgentMarkdownLoader.projectAgentDirs(ws)) {
                         for (EngineConfig.AgentConfig cfg : AgentMarkdownLoader.loadDirectory(dir)) {
-                            if (agentStore.get(cfg.name()) == null) {
+                            if (agentStore.get(cfg.name().toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9-]", "-")) == null) {
                                 de.augmentia.qoc.workflowrunner.model.WorkflowDefinition.Agent converted =
                                         QocAgentConverter.fromQoc(cfg);
                                 if (converted != null) {
