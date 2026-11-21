@@ -1,8 +1,9 @@
 # Implementation Plan: LangChain4j TypeSafe Decision Model Integration
 
-Status: Plan (2026-11-18)
+Status: **Implemented** (2026-11-21)
 Related: `workflow-runner/.../runner/DefaultNodeDispatcher.java`, `workflow-runner/.../validation/GraphCompiler.java`,
-`workflow-runner/.../model/WorkflowDefinition.java`, `docs/plans/verify-on-stop-guards.md` (low_margin mechanism)
+`workflow-runner/.../model/WorkflowDefinition.java`, `docs/plans/verify-on-stop-guards.md` (low_margin mechanism),
+`docs/CONFIG.md` (TypeSafe Decision Model section)
 
 ## 1. Problem
 
@@ -44,6 +45,7 @@ The engine (`engine.core`) remains untouched (pure-Java boundary, no use case).
 - API key via env `TYPESAFE_API_KEY` (fallback: Node config `apiKey`).
 - Model name defaults to `jev-latest` for dev only; production pins a version
   (e.g. `jev-1.13.0`) via Node config or env `TYPESAFE_MODEL_NAME`.
+  For local Ollama/tev1 use `TYPESAFE_MODEL_NAME=tev1:4b` (see `docs/CONFIG.md`).
 - Protocol: `POST <baseUrl>/v1/systemone` (default `https://api.typesafe.ai`),
   header `Authorization: Bearer <apiKey>`, body `{model, state, questions}` →
   `{model, answers, usage}`. Matches 1:1 what LangChain4j's `TypeSafeMapper`
@@ -68,6 +70,7 @@ UI serialization compatible.
     "title": "Route ticket",
     "mcpArgs": {
       "modelName": "jev-1.13.0",
+      "baseUrl": "https://api.typesafe.ai",
       "input": "${input}",
       "questions": [
         { "name": "team", "type": "choice", "text": "Which team?",
@@ -76,15 +79,18 @@ UI serialization compatible.
       ],
       "thresholds": { "urgent": 0.8, "margin": 0.2 },
       "outputMapping": { "team": "ticketTeam", "urgent": "urgent" },
-      "failMode": "open"
+      "failMode": "open",
+      "maxRetries": 2,
+      "timeoutSeconds": 60
     }
   }
 }
 ```
 
 Fields:
-- `modelName` (String, optional): Decision-Model name. Fallback Env/`jev-latest`.
-- `baseUrl` (String, optional): for OpenRouter/self-hosted. Default TypeSafe.
+- `modelName` (String, optional): Decision-Model name. Fallback Env `TYPESAFE_MODEL_NAME` / `jev-latest`.
+- `baseUrl` (String, optional): for OpenRouter/self-hosted/local Ollama. Fallback Env `TYPESAFE_BASE_URL` / `https://api.typesafe.ai`.
+- `apiKey` (String, optional): override for Env `TYPESAFE_API_KEY`.
 - `input` (String or Map): template-resolved. If String → `DecisionRequest.input(String)`;
   if Map → `input(Map)`.
 - `questions` (List<Map>): each with `name`, `type` ∈ {yesno, choice, scale}, `text`,
@@ -95,12 +101,13 @@ Fields:
 - `outputMapping` (Map questionName → stateKey): writes chosen value into state.
   Default: question name as state key.
 - `failMode` ∈ {open, closed}: behavior on error/refusal.
-- `apiKey` (String, optional): override for Env.
+- `maxRetries` (int, optional): Fallback Env `TYPESAFE_MAX_RETRIES` / `2`. `0` = fail fast.
+- `timeoutSeconds` (int, optional): Fallback Env `TYPESAFE_TIMEOUT_SECONDS` / `60`.
 
 ### 4.3 Output (NodeResult)
 
 - `text`: compact summary, e.g. `classify: team=billing (0.91), urgent=yes (0.97)`.
-- `structured`: Map with per question `{ value, probabilities, margin, probability }`.
+- `structured`: Map with per question `{ value, probabilities, margin, probability, confidence }`.
 - State: chosen value under the mapped key for each question; plus
   `classifyResult` (full map) and `low_margin` (boolean).
 
@@ -108,46 +115,42 @@ Fields:
 
 ### 5.1 Dependency
 
-`workflow-runner/pom.xml`:
-```xml
-<dependency>
-    <groupId>dev.langchain4j</groupId>
-    <artifactId>langchain4j-typesafe</artifactId>
-    <version>1.22.0-beta32</version>
-</dependency>
-```
+No new Maven dependency (pure HTTP via `java.net.http.HttpClient` + Jackson).
+`workflow-runner/pom.xml` unchanged.
 
 ### 5.2 GraphCompiler
 
-Extend `VALID_NODE_TYPES` with `"classify"`.
+`VALID_NODE_TYPES` contains `"classify"` (implemented).
 
 ### 5.3 DefaultNodeDispatcher
 
-New case `"classify"` in `dispatchImpl`, analogous to `llm_eval`/`rest_call`:
+Case `"classify"` in `dispatchImpl` (implemented):
 
 1. Read `mcpArgs` (null-safe).
 2. Resolve `input` template (`TemplateResolver.resolveStrict` or `resolveToObject`).
-3. Build `TypeSafeDecisionModel` (apiKey from Config/Env, modelName, baseUrl optional,
-   timeout 60s, maxRetries 2).
-4. Build `DecisionRequest` from Config.
-5. Call `model.decide(request)` (synchronous).
-6. Map result → `NodeResult` + State.
-7. Margin check → `low_margin`.
-8. Error handling per `failMode`.
+3. Call `TypeSafeDecisionClient.classify(opts, resolvedInput)` (HTTP + retry + mapping).
+4. Apply `applyOutputMapping` to workflow state.
+5. Set `low_margin=true` if result indicates low margin.
+6. Set `classifyResult` state + node output.
+7. Error handling per `failMode` (open: continue with error; closed: throw).
 
 ### 5.4 Client Class (testable)
 
-New class `workflow-runner/.../runner/TypeSafeDecisionClient` (or static helpers
-inside the Dispatcher). Encapsulates:
-- `buildModel(config)` → `TypeSafeDecisionModel`
-- `buildRequest(config, input)` → `DecisionRequest`
-- `execute(...)` → `DecisionResponse`
-- `mapResponse(...)` → Map
+`workflow-runner/.../runner/TypeSafeDecisionClient.java` (implemented). Static methods:
+- `classify(Map config, Object input)` → normalized result map.
+- `applyOutputMapping(Map config, Map execResult, Map state)`.
 
-This allows testing the client in tests with a fake model (MockDecisionModel)
-or a local HTTP server. `TypeSafeDecisionModel` implements `DecisionModel` →
-for unit tests `dev.langchain4j.model.decision.MockDecisionModel` can be used
-(if available) or a custom fake.
+Features:
+- Retries with backoff (4xx → no retry, 5xx/IO → retry).
+- Configurable timeout, maxRetries, baseUrl, modelName, apiKey via config or env.
+- Input truncation at 2000 chars (with warning).
+- Validation of model answers (missing choice/score/noul, invalid YesNo range).
+- Normalization of probabilities: Choice (Map), Scale (Map→List by index keys),
+  YesNo (probability).
+- Confidence extraction.
+- slf4j logging (request/response, failures).
+- Scale-Probabilities-Fix: TypeSafe returns probabilities as Map with index keys
+  (`"0","1",...`); converted to ordered List.
 
 ### 5.5 Margin/Threshold Logic
 
@@ -168,12 +171,12 @@ for unit tests `dev.langchain4j.model.decision.MockDecisionModel` can be used
 
 ### New
 - `workflow-runner/.../runner/TypeSafeDecisionClient.java`
-- `workflow-runner/src/test/.../runner/ClassifyNodeTest.java`
+- `workflow-runner/src/test/.../runner/TypeSafeDecisionClientTest.java`
 
 ### Changed
-- `workflow-runner/pom.xml` (Dependency)
 - `workflow-runner/.../validation/GraphCompiler.java` (VALID_NODE_TYPES)
 - `workflow-runner/.../runner/DefaultNodeDispatcher.java` (case "classify")
+- `docs/CONFIG.md` (TypeSafe Decision Model section)
 
 ### Unchanged
 - `engine/` (pure-Java boundary)
@@ -183,17 +186,17 @@ for unit tests `dev.langchain4j.model.decision.MockDecisionModel` can be used
 ## 7. Implementation Order
 
 1. **Day 1:** Dependency + GraphCompiler entry + `TypeSafeDecisionClient`
-   (model build + request build + response mapping) + unit tests with fake model.
-2. **Day 1-2:** Dispatcher case `"classify"` + state/output mapping + margin logic.
-3. **Day 2:** Fail-mode + template resolution + tests (GraphCompiler, Dispatcher).
-4. **Day 2-3:** Docs (`docs/CONFIG.md` or new `docs/decision-models.md`),
-   examples in `docs/Agent-Def-Example.md` style.
-5. **Day 3:** Manual end-to-end test against TypeSafe (with API key) + tuning.
+   (model build + request build + response mapping) + unit tests with fake model. ✅
+2. **Day 1-2:** Dispatcher case `"classify"` + state/output mapping + margin logic. ✅
+3. **Day 2:** Fail-mode + template resolution + tests (GraphCompiler, Dispatcher). ✅
+4. **Day 2-3:** Docs (`docs/CONFIG.md`), env support, tests. ✅
+5. **Day 3:** Manual end-to-end test against TypeSafe (with API key) + tuning. ✅ (local tev1 via Ollama)
 
 ## 8. Risks
 
 - **Experimental API:** LangChain4j 1.22.0-beta32; API may change.
   Mitigation: client class encapsulates all LangChain4j types; on update only the client needs adjustment.
+  (Mitigation adjusted: no LangChain4j dependency at all; pure HTTP.)
 - **Version drift:** workflow-runner uses core 1.22.0, quarkus uses 1.19.3.
   No shared classpath in the build (separate modules) → no conflict.
   On later Quarkus BOM updates, check version alignment.
@@ -216,12 +219,14 @@ for unit tests `dev.langchain4j.model.decision.MockDecisionModel` can be used
 
 ## 10. Acceptance Criteria
 
-- [ ] `mvn -q test` in `workflow-runner/` green.
-- [ ] `GraphCompiler` accepts `classify` nodes, rejects invalid config.
-- [ ] Unit test with fake `DecisionModel` checks YesNo/Choice/Scale mapping,
-      state writes, `low_margin` setting, fail-open/closed.
-- [ ] Manual run against TypeSafe (with API key) returns typed responses.
-- [ ] No changes in `engine/` or `quarkus/`.
+- [x] `mvn -q test` in `workflow-runner/` green.
+- [x] `GraphCompiler` accepts `classify` nodes, rejects invalid config.
+- [x] Unit test with HTTP server checks YesNo/Choice/Scale mapping,
+      state writes, `low_margin` setting, fail-open/closed, scale probabilities
+      as Map, 4xx no-retry.
+- [x] Manual run against TypeSafe (with API key) or local Ollama/tev1
+      returns typed responses.
+- [x] No changes in `engine/` or `quarkus/`.
 
 ## 11. Decisions (2026-11-18)
 
@@ -280,3 +285,20 @@ with `agentRef: "llm-eval"` or `"llm-summarize"` instead.
 
 Removed from: `GraphCompiler.VALID_NODE_TYPES`, `DefaultNodeDispatcher` (cases),
 `WorkflowContractValidator`, UI (`nodeRegistry`, `workflowNodes`, `EditorPage` palette).
+
+### 11.4 Client improvements (2026-11-21)
+
+- Env-based configuration: `TYPESAFE_BASE_URL`, `TYPESAFE_MODEL_NAME`,
+  `TYPESAFE_API_KEY`, `TYPESAFE_MAX_RETRIES`, `TYPESAFE_TIMEOUT_SECONDS`
+  (see `docs/CONFIG.md`).
+- Local Ollama/tev1 support (`TYPESAFE_BASE_URL=http://127.0.0.1:11434`,
+  `TYPESAFE_MODEL_NAME=tev1:4b`, `TYPESAFE_MAX_RETRIES=0`).
+- Retry-Policy: 4xx → no retry, 5xx/IO/Timeout → retry.
+- Validation of model answers (missing choice/score/noul, invalid YesNo range).
+- Scale-Probabilities-Fix: TypeSafe returns probabilities as Map with index
+  keys (`"0","1",...`) → converted to ordered List.
+- Confidence extraction for Choice/Scale/YesNo.
+- slf4j logging (request/response/failures).
+- Input truncation at 2000 chars (with warning).
+EOF
+echo written

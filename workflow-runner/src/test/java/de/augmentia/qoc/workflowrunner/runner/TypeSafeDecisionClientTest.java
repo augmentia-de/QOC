@@ -129,6 +129,54 @@ class TypeSafeDecisionClientTest {
     }
 
     @Test
+    void scaleProbabilitiesAsMap() throws Exception {
+        // TypeSafe liefert Skalen-Wahrscheinlichkeiten als Map mit Index-Keys.
+        String resp = "{\"model\":\"m\",\"answers\":{" +
+                "\"risk\":{\"type\":\"score\",\"score\":1.2,\"probabilities\":{\"0\":0.1,\"1\":0.2,\"2\":0.7}}" +
+                "},\"usage\":{}}";
+        startServer(resp);
+
+        Map<String, Object> config = Map.of(
+                "baseUrl", baseUrl,
+                "questions", List.of(
+                        Map.of("name", "risk", "type", "scale", "text", "Risk?",
+                                "levels", List.of("low", "med", "high"))
+                )
+        );
+        Map<String, Object> result = TypeSafeDecisionClient.classify(config, "x");
+        Map<?, ?> risk = (Map<?, ?>) ((Map<?, ?>) result.get("answers")).get("risk");
+        assertEquals(1.2, risk.get("mean"));
+        assertEquals(List.of(0.1, 0.2, 0.7), risk.get("probabilities"));
+    }
+
+    @Test
+    void noRetryOn4xx() throws Exception {
+        AtomicReference<Integer> calls = new AtomicReference<>(0);
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/v1/systemone", (HttpExchange ex) -> {
+            calls.set(calls.get() + 1);
+            byte[] bytes = "{\"error\":\"bad\"}".getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(400, bytes.length);
+            try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
+        });
+        server.start();
+        String url = "http://127.0.0.1:" + server.getAddress().getPort();
+
+        Map<String, Object> config = Map.of(
+                "baseUrl", url,
+                "maxRetries", 2,
+                "questions", List.of(Map.of("name", "q", "type", "yesno", "text", "ok?"))
+        );
+        try {
+            TypeSafeDecisionClient.classify(config, "x");
+            throw new AssertionError("expected exception");
+        } catch (RuntimeException e) {
+            assertTrue(e.getMessage().contains("HTTP 400"));
+        }
+        assertEquals(1, calls.get(), "4xx must not be retried");
+    }
+
+    @Test
     void failOnHttpError() throws Exception {
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/v1/systemone", (HttpExchange ex) -> {

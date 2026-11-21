@@ -2,6 +2,9 @@ package de.augmentia.qoc.workflowrunner.runner;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -26,7 +29,9 @@ import java.util.Map;
  */
 public final class TypeSafeDecisionClient {
 
+    private static final Logger LOG = LoggerFactory.getLogger(TypeSafeDecisionClient.class);
     private static final ObjectMapper M = new ObjectMapper();
+    private static final int MAX_INPUT_CHARS = 2000;
 
     private TypeSafeDecisionClient() {
     }
@@ -49,7 +54,12 @@ public final class TypeSafeDecisionClient {
         Map<String, Object> body = new LinkedHashMap<>();
         String modelName = str(c.get("modelName"), System.getenv().getOrDefault("TYPESAFE_MODEL_NAME", "jev-latest"));
         body.put("model", modelName);
-        body.put("state", toState(input));
+        Object state = toState(input);
+        if (state instanceof String s && s.length() > MAX_INPUT_CHARS) {
+            LOG.warn("Input truncated from {} to {} chars", s.length(), MAX_INPUT_CHARS);
+            state = s.substring(0, MAX_INPUT_CHARS);
+        }
+        body.put("state", state);
 
         Map<String, Object> questions = new LinkedHashMap<>();
         Object qs = c.get("questions");
@@ -133,7 +143,8 @@ public final class TypeSafeDecisionClient {
         }
 
         // ---- HTTP ----
-        String baseUrl = str(c.get("baseUrl"), "https://api.typesafe.ai");
+        String baseUrl = str(c.get("baseUrl"),
+                System.getenv().getOrDefault("TYPESAFE_BASE_URL", "https://api.typesafe.ai"));
         while (baseUrl.endsWith("/")) baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         String apiPath = str(c.get("apiPath"), "v1/systemone");
         while (apiPath.startsWith("/")) apiPath = apiPath.substring(1);
@@ -141,9 +152,12 @@ public final class TypeSafeDecisionClient {
 
         String apiKey = str(c.get("apiKey"), System.getenv("TYPESAFE_API_KEY"));
 
-        int timeout = intVal(c.get("timeoutSeconds"), 60);
-        int maxRetries = intVal(c.get("maxRetries"), 2);
+        int timeout = intVal(c.get("timeoutSeconds"),
+                intVal(System.getenv("TYPESAFE_TIMEOUT_SECONDS"), 60));
+        int maxRetries = intVal(c.get("maxRetries"),
+                intVal(System.getenv("TYPESAFE_MAX_RETRIES"), 2));
 
+        LOG.info("TypeSafe request: url={} model={} questions={}", url, modelName, questions.size());
         String responseBody = null;
         Exception lastErr = null;
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
@@ -168,6 +182,12 @@ public final class TypeSafeDecisionClient {
                 HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
                 if (resp.statusCode() >= 200 && resp.statusCode() < 300) {
                     responseBody = resp.body();
+                    LOG.info("TypeSafe response: HTTP {} ({} chars)", resp.statusCode(), responseBody.length());
+                    break;
+                } else if (resp.statusCode() >= 400 && resp.statusCode() < 500) {
+                    // Client-Fehler: nicht retryen
+                    lastErr = new RuntimeException("HTTP " + resp.statusCode() + ": " + resp.body());
+                    LOG.warn("TypeSafe request failed (no retry): HTTP {}", resp.statusCode());
                     break;
                 } else {
                     lastErr = new RuntimeException("HTTP " + resp.statusCode() + ": " + resp.body());
@@ -236,6 +256,9 @@ public final class TypeSafeDecisionClient {
             switch (type) {
                 case "choice" -> {
                     String choice = str(ans.get("choice"), null);
+                    if (choice == null) {
+                        throw new RuntimeException("Invalid decision response: missing 'choice' for " + qname);
+                    }
                     amap.put("type", "choice");
                     amap.put("value", choice);
                     Map<String, Object> probMap = new LinkedHashMap<>();
@@ -255,24 +278,52 @@ public final class TypeSafeDecisionClient {
                     }
                     double margin = max - second;
                     amap.put("margin", margin);
+                    if (ans.get("confidence") != null) amap.put("confidence", toDouble(ans.get("confidence")));
                     if (margin < marginThreshold) lowMargin = true;
                 }
                 case "scale" -> {
                     double mean = toDouble(ans.get("score"));
+                    // Validierung: score muss vorhanden sein
+                    if (ans.get("score") == null) {
+                        throw new RuntimeException("Invalid decision response: missing 'score' for " + qname);
+                    }
                     amap.put("type", "scale");
                     amap.put("mean", mean);
+                    // Probabilities koennen als Map (Index-Keys) oder Liste kommen
                     List<Object> probList = new ArrayList<>();
                     Object probs = ans.get("probabilities");
-                    if (probs instanceof List<?> pl) {
+                    if (probs instanceof Map<?, ?> pm) {
+                        // Erst versuchen, index-basierte Keys ("0","1",...) zu lesen
+                        boolean foundIndex = false;
+                        for (int i = 0; i < pm.size(); i++) {
+                            Object v = pm.get(String.valueOf(i));
+                            if (v != null) { foundIndex = true; break; }
+                        }
+                        if (foundIndex) {
+                            for (int i = 0; i < pm.size(); i++) {
+                                Object v = pm.get(String.valueOf(i));
+                                probList.add(toDouble(v));
+                            }
+                        } else {
+                            // Fallback: Einfuegereihenfolge
+                            for (Object v : pm.values()) probList.add(toDouble(v));
+                        }
+                    } else if (probs instanceof List<?> pl) {
                         for (Object o : pl) probList.add(toDouble(o));
                     }
                     amap.put("probabilities", probList);
+                    if (ans.get("confidence") != null) amap.put("confidence", toDouble(ans.get("confidence")));
+                    // Validierung: Probabilities-Anzahl passt zu Levels (falls vorhanden)
                 }
                 default -> { // yesno
                     double noul = toDouble(ans.get("noul"));
+                    if (ans.get("noul") == null || noul < 0.0 || noul > 1.0) {
+                        throw new RuntimeException("Invalid decision response: invalid 'noul' for " + qname);
+                    }
                     amap.put("type", "yesno");
                     amap.put("value", noul >= 0.5 ? "yes" : "no");
                     amap.put("probability", noul);
+                    if (ans.get("confidence") != null) amap.put("confidence", toDouble(ans.get("confidence")));
                     Double t = perQ.get(qname);
                     if (t != null && noul > (1.0 - t) && noul < t) lowMargin = true;
                 }

@@ -394,3 +394,38 @@ ENGINE_AUDIT_RETENTION_DAYS=1
     (`engine.loop.detection.threshold`) + token/cost budget + observability
     should serve as monitoring. Temporal (planned in workflow-runner)
     provides heartbeats/timeouts.
+## TypeSafe Decision Model (classify node)
+
+Der `classify`-Node nutzt `TypeSafeDecisionClient` (`POST <baseUrl>/v1/systemone`).
+
+**Defaults / Env-Fallbacks**
+| Parameter | Config (mcpArgs) | Env | Default |
+|---|---|---|---|
+| baseUrl | `baseUrl` | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` |
+| modelName | `modelName` | `TYPESAFE_MODEL_NAME` | `jev-latest` |
+| apiKey | `apiKey` | `TYPESAFE_API_KEY` | (none) |
+| timeoutSeconds | `timeoutSeconds` | `TYPESAFE_TIMEOUT_SECONDS` | `60` |
+| maxRetries | `maxRetries` | `TYPESAFE_MAX_RETRIES` | `2` |
+
+**Lokales Ollama / tev1 (analog zum Decision-Demo)**
+```bash
+TYPESAFE_BASE_URL=http://127.0.0.1:11434
+TYPESAFE_MODEL_NAME=tev1:4b
+TYPESAFE_API_KEY=
+TYPESAFE_MAX_RETRIES=0
+```
+Oder per Node:
+```json
+{
+  "type": "classify",
+  "data": {
+    "mcpArgs": {
+      "baseUrl": "http://127.0.0.1:11434",
+      "modelName": "tev1:4b",
+      "maxRetries": 0,
+      "questions": [ { "name": "team", "type": "choice", "text": "Which team?",
+        "options": { "billing": "Payments", "support": "Usage" } } ]
+    }
+  }
+}
+```
