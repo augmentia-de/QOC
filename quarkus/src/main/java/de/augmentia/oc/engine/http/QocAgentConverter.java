@@ -46,6 +46,6 @@ public final class QocAgentConverter {
                 cfg.rolesAllowed() == null ? List.of("*") : List.copyOf(cfg.rolesAllowed()),
                 cfg.mode() == null ? "all" : cfg.mode(),
                 List.of(),   // skills (QOC skills are patterns, not names)
-                100, 1.0, false, java.util.List.of());
+                ("build".equalsIgnoreCase(name) || "plan".equalsIgnoreCase(name)) ? 0 : 100, 1.0, false, java.util.List.of());
     }
 }

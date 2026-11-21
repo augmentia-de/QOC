@@ -246,7 +246,7 @@ public record WorkflowDefinition(
             if (mode == null || mode.isBlank()) mode = "all";
             if (skills == null) skills = List.of();
             else skills = List.copyOf(skills);
-            if (maxTurns <= 0) maxTurns = 10;
+            if (maxTurns < 0) maxTurns = 10;
             if (maxCost <= 0) maxCost = 1.0;
             if (permissions == null) permissions = List.of();
             else permissions = List.copyOf(permissions);
