@@ -45,6 +45,40 @@ public final class PermissionEngine {
     private final AskMode askMode;
     private final Map<AgentId, AskMode> agentAskModes = new HashMap<>();
     private final PendingApprovals pending = new PendingApprovals();
+    private volatile de.augmentia.oc.engine.core.port.runtime.DecisionModel decisionModel;
+
+    /** Optional DecisionModel for risk scoring (fail-open). */
+    public void setDecisionModel(de.augmentia.oc.engine.core.port.runtime.DecisionModel dm) {
+        this.decisionModel = dm;
+    }
+
+    public de.augmentia.oc.engine.core.port.runtime.DecisionModel decisionModel() {
+        return decisionModel;
+    }
+
+    /** Returns true if the decision model considers the check high-risk. Fail-open: false on error/unavailable. */
+    public boolean isHighRisk(de.augmentia.oc.engine.core.eval.PermissionCheck check) {
+        if (decisionModel == null || !decisionModel.isAvailable() || check == null) return false;
+        try {
+            de.augmentia.oc.engine.core.model.DecisionResult r = decisionModel.decide(
+                    new de.augmentia.oc.engine.core.model.DecisionRequest(
+                            "permission_risk",
+                            check.request() == null ? "" : check.request().action(),
+                            java.util.List.of(),
+                            check.request() == null ? "" : String.valueOf(check.request()),
+                            java.util.Map.of()));
+            String a = r.answer() == null ? "" : r.answer().trim().toUpperCase(java.util.Locale.ROOT);
+            if (a.equals("HIGH") || a.equals("YES") || a.equals("TRUE")) return true;
+            if (a.equals("LOW") || a.equals("NO") || a.equals("FALSE") || a.equals("MEDIUM")) return false;
+            try {
+                return Double.parseDouble(a) >= 0.7;
+            } catch (NumberFormatException ignored) {
+                return false;
+            }
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
 
     public PermissionEngine(Option<ApprovalStore> approvals, Option<ApprovalSource> approvalSource,
                             Option<PolicySource> policySource, Option<PermissionHook> hook) {
@@ -74,7 +108,13 @@ public final class PermissionEngine {
     }
 
     public PermissionDecision decide(PermissionCheck check) {
-        return PermissionRules.decide(withPolicies(check), hook);
+        PermissionDecision decision = PermissionRules.decide(withPolicies(check), hook);
+        // Optional risk gate: a high-risk operation that would require human
+        // approval is denied outright. Allowed/Denied decisions are unchanged.
+        if (decision instanceof PermissionDecision.Ask && isHighRisk(check)) {
+            return new PermissionDecision.Denied("high risk (decision model)", List.of());
+        }
+        return decision;
     }
 
     /**

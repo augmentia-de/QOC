@@ -57,6 +57,18 @@ class ArchitectureTest {
             .that().resideInAPackage("..adapter..")
             .should().dependOnClassesThat().resideInAPackage("de.augmentia.oc.engine.runtime..");
 
+    /**
+     * Provider clients (including the decision adapter) are leaf adapters:
+     * they may use core contracts/ports and JDK HTTP, but not engine wiring or
+     * higher runtime layers.
+     */
+    @ArchTest
+    static final ArchRule providerClientsAreLeafAdapters = noClasses()
+            .that().resideInAPackage("..runtime.provider.client..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "..core.wiring..", "..runtime.execution..", "..runtime.session..",
+                    "..runtime.workflow..", "..runtime.tool..", "..adapter..");
+
     @ArchTest
     static final ArchRule adaptersAreOnlyUsedByWiring = noClasses()
             .that().resideOutsideOfPackage("..adapter..")

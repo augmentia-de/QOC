@@ -34,6 +34,15 @@ public final class SessionService {
         this.delivery = new Delivery(journal, sessions, removeInbox);
     }
 
+    /** Optional DecisionModel for prompt-relation classification (fail-open). */
+    public void setDecisionModel(de.augmentia.oc.engine.core.port.runtime.DecisionModel dm) {
+        this.admission.setDecisionModel(dm);
+    }
+
+    public de.augmentia.oc.engine.core.port.runtime.DecisionModel decisionModel() {
+        return this.admission.decisionModel();
+    }
+
     public SessionId create(Location location, AgentId agent, Option<ModelRef> model, Instant at) {
         return this.create(location, agent, model, at, null);
     }

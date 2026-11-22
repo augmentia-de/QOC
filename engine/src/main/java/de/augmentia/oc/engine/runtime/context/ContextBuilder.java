@@ -40,6 +40,11 @@ public final class ContextBuilder {
 
     public static final String STEP_LIMIT_PROMPT = PromptLoader.get("step-limit");
 
+    /** Added when the optional decision model reports insufficient context. */
+    static final String ANSWERABILITY_PROMPT =
+            "Context check: the available context may be insufficient to answer the user's request. "
+            + "Ask a concise clarifying question or gather the missing information before proceeding.";
+
     /**
      * Default least-privilege permission rules: deny everything, then explicitly
      * allow the implied permissions (edit implies read, write implies read, etc.).
@@ -99,6 +104,7 @@ public final class ContextBuilder {
     private final Option<InstructionStore> instructionStore;
     private final SkillFilterOptions skillFilter;
     private final List<Rule> defaultPermissions;
+    private volatile de.augmentia.oc.engine.core.port.runtime.DecisionModel decisionModel;
 
     public ContextBuilder(Conversation conversation, SkillCatalog skills) {
         this(conversation, skills, InstructionLoader.none(), Option.none(), SkillFilterOptions.defaults());
@@ -128,6 +134,66 @@ public final class ContextBuilder {
         this.instructionStore = instructionStore == null ? Option.none() : instructionStore;
         this.skillFilter = skillFilter == null ? SkillFilterOptions.defaults() : skillFilter;
         this.defaultPermissions = defaultPermissions == null ? List.of() : List.copyOf(defaultPermissions);
+    }
+
+    /** Optional DecisionModel for context-sufficiency checks (fail-open). */
+    public void setDecisionModel(de.augmentia.oc.engine.core.port.runtime.DecisionModel dm) {
+        this.decisionModel = dm;
+    }
+
+    public de.augmentia.oc.engine.core.port.runtime.DecisionModel decisionModel() {
+        return decisionModel;
+    }
+
+    /** Returns true if the decision model considers the question answerable given the context. Fail-open: true on error/unavailable. */
+    public boolean isAnswerable(String question, String context) {
+        if (decisionModel == null || !decisionModel.isAvailable()) return true;
+        try {
+            de.augmentia.oc.engine.core.model.DecisionResult r = decisionModel.decide(
+                    new de.augmentia.oc.engine.core.model.DecisionRequest(
+                            "answerable", question == null ? "" : question, java.util.List.of(),
+                            context == null ? "" : context, java.util.Map.of()));
+            String a = r.answer() == null ? "" : r.answer().trim().toUpperCase(java.util.Locale.ROOT);
+            return !(a.equals("NO") || a.equals("FALSE"));
+        } catch (RuntimeException e) {
+            return true;
+        }
+    }
+
+    /** Bounded context for the optional answerability check (system + recent messages). */
+    private static String answerabilityContext(List<String> system, List<ModelMessage> messages) {
+        int max = 4000;
+        StringBuilder sb = new StringBuilder();
+        for (String block : system) {
+            appendBounded(sb, block, max);
+            if (sb.length() >= max) break;
+        }
+        int start = Math.max(0, messages.size() - 6);
+        for (int i = start; i < messages.size() && sb.length() < max; i++) {
+            ModelMessage m = messages.get(i);
+            if (m instanceof ModelMessage.User u) {
+                appendContent(sb, u.content(), max);
+            } else if (m instanceof ModelMessage.Assistant a) {
+                appendContent(sb, a.content(), max);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static void appendContent(StringBuilder sb, List<ModelContent> content, int max) {
+        for (ModelContent c : content) {
+            if (c instanceof ModelContent.Text t) {
+                appendBounded(sb, t.text(), max);
+                if (sb.length() >= max) return;
+            }
+        }
+    }
+
+    private static void appendBounded(StringBuilder sb, String text, int max) {
+        if (text == null) return;
+        int remaining = max - sb.length();
+        if (remaining <= 0) return;
+        sb.append(text, 0, Math.min(text.length(), remaining)).append('\n');
     }
 
     public Prepared prepare(SessionInfo session, AgentProfile agent, ModelInfo model,
@@ -203,6 +269,15 @@ public final class ContextBuilder {
         if (toolChoice.isEmpty() && agent.maxSteps() > 0 && step >= agent.maxSteps()) {
             messages.add(new ModelMessage.Assistant(List.of(new ModelContent.Text(STEP_LIMIT_PROMPT))));
             toolChoice = Option.some(new Choice.None());
+        }
+
+        // Optional context-sufficiency check: only on the first step of a turn,
+        // only when a real query is present, and only when the decision model is
+        // available (isAnswerable is fail-open). The result is advisory: it adds
+        // one system block instead of blocking or rewriting the user's query.
+        if (step == 0 && query != null && query.isPresent() && !query.orElseThrow().isBlank()
+                && !isAnswerable(query.orElseThrow(), answerabilityContext(system, messages))) {
+            system.add(ANSWERABILITY_PROMPT);
         }
 
         String affinity = (promptCacheKey != null && promptCacheKey.isPresent() && !promptCacheKey.orElseThrow().isBlank())

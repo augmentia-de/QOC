@@ -256,6 +256,7 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
             "de.augmentia.oc.engine.core.model.SessionEvent$InboxCancelled",
             "de.augmentia.oc.engine.core.model.SessionEvent$InboxDelivered",
             "de.augmentia.oc.engine.core.model.SessionEvent$InboxDeliveryChanged",
+            "de.augmentia.oc.engine.core.model.SessionEvent$PromptRelationClassified",
             "de.augmentia.oc.engine.core.model.SessionEvent$InboxEnqueued",
             "de.augmentia.oc.engine.core.model.SessionEvent$InstructionsUpdated",
             "de.augmentia.oc.engine.core.model.SessionEvent$ReasoningEnded",

@@ -143,6 +143,82 @@ class QocEngineTest {
     }
 
     @Test
+    void decisionModelDefaultsToNoOp() {
+        QocEngine e = engine(config(false));
+        assertThat(e.decisionModel()).isNotNull();
+        assertThat(e.decisionModel().isAvailable()).isFalse();
+        assertThat(e.classifyPromptRelation(de.augmentia.oc.engine.core.model.SessionId.create(null), "hi"))
+                .isEqualTo(de.augmentia.oc.engine.core.model.PromptRelation.UNKNOWN);
+    }
+
+    @Test
+    void classifyPromptRelationUsesDecisionModel() {
+        de.augmentia.oc.engine.core.port.runtime.DecisionModel dm = new de.augmentia.oc.engine.core.port.runtime.DecisionModel() {
+            @Override
+            public de.augmentia.oc.engine.core.model.DecisionResult decide(de.augmentia.oc.engine.core.model.DecisionRequest request) {
+                return new de.augmentia.oc.engine.core.model.DecisionResult("prompt_relation", "SUPPLEMENT",
+                        java.util.List.of(), java.util.List.of(), 0.9, false, 1);
+            }
+            @Override
+            public boolean isAvailable() { return true; }
+        };
+        de.augmentia.oc.engine.core.wiring.ExtensionPorts ep =
+                new de.augmentia.oc.engine.core.wiring.ExtensionPorts(null, null, dm, null);
+        FixedClock clock = new FixedClock(NOW);
+        QocEngine e = QocEngine.create(stores(clock), new StorageConfig(StorageKind.MEMORY), clock,
+                false, null, config(false), EventPublisher.noop(), AgentResolver.noop(),
+                TracerProvider.noop(), ToolDependencies.none(), ep);
+        assertThat(e.classifyPromptRelation(de.augmentia.oc.engine.core.model.SessionId.create(null), "hi"))
+                .isEqualTo(de.augmentia.oc.engine.core.model.PromptRelation.SUPPLEMENT);
+        var detailed = e.classifyPromptRelationDetailed(
+                de.augmentia.oc.engine.core.model.SessionId.create(null), "hi");
+        assertThat(detailed.relation())
+                .isEqualTo(de.augmentia.oc.engine.core.model.PromptRelation.SUPPLEMENT);
+        assertThat(detailed.confidence()).isEqualTo(0.9);
+    }
+
+    @Test
+    void classifyPromptRelationFallsBackOnInvalidAnswer() {
+        de.augmentia.oc.engine.core.port.runtime.DecisionModel dm = new de.augmentia.oc.engine.core.port.runtime.DecisionModel() {
+            @Override
+            public de.augmentia.oc.engine.core.model.DecisionResult decide(de.augmentia.oc.engine.core.model.DecisionRequest request) {
+                return new de.augmentia.oc.engine.core.model.DecisionResult("prompt_relation", "GARBAGE",
+                        java.util.List.of(), java.util.List.of(), 0.9, false, 1);
+            }
+            @Override
+            public boolean isAvailable() { return true; }
+        };
+        de.augmentia.oc.engine.core.wiring.ExtensionPorts ep =
+                new de.augmentia.oc.engine.core.wiring.ExtensionPorts(null, null, dm, null);
+        FixedClock clock = new FixedClock(NOW);
+        QocEngine e = QocEngine.create(stores(clock), new StorageConfig(StorageKind.MEMORY), clock,
+                false, null, config(false), EventPublisher.noop(), AgentResolver.noop(),
+                TracerProvider.noop(), ToolDependencies.none(), ep);
+        assertThat(e.classifyPromptRelation(de.augmentia.oc.engine.core.model.SessionId.create(null), "hi"))
+                .isEqualTo(de.augmentia.oc.engine.core.model.PromptRelation.UNKNOWN);
+    }
+
+    @Test
+    void classifyPromptRelationFailOpenOnException() {
+        de.augmentia.oc.engine.core.port.runtime.DecisionModel dm = new de.augmentia.oc.engine.core.port.runtime.DecisionModel() {
+            @Override
+            public de.augmentia.oc.engine.core.model.DecisionResult decide(de.augmentia.oc.engine.core.model.DecisionRequest request) {
+                throw new RuntimeException("boom");
+            }
+            @Override
+            public boolean isAvailable() { return true; }
+        };
+        de.augmentia.oc.engine.core.wiring.ExtensionPorts ep =
+                new de.augmentia.oc.engine.core.wiring.ExtensionPorts(null, null, dm, null);
+        FixedClock clock = new FixedClock(NOW);
+        QocEngine e = QocEngine.create(stores(clock), new StorageConfig(StorageKind.MEMORY), clock,
+                false, null, config(false), EventPublisher.noop(), AgentResolver.noop(),
+                TracerProvider.noop(), ToolDependencies.none(), ep);
+        assertThat(e.classifyPromptRelation(de.augmentia.oc.engine.core.model.SessionId.create(null), "hi"))
+                .isEqualTo(de.augmentia.oc.engine.core.model.PromptRelation.UNKNOWN);
+    }
+
+    @Test
     void createAcceptsExplicitToolDependenciesNone() {
         FixedClock clock = new FixedClock(NOW);
         QocEngine engine = QocEngine.create(stores(clock), new StorageConfig(StorageKind.MEMORY),

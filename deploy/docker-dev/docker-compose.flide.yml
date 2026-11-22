@@ -1,0 +1,30 @@
+# Optional overlay: QOC with a self-hosted Flide decision backend.
+#
+# Flide serves the same /v1/systemone API as TypeSafe, so no code changes are
+# needed — only the base URL and model name. The image is deployment-specific;
+# set FLIDE_IMAGE to your Flide build.
+#
+# Usage (from deploy/docker-dev):
+#   FLIDE_IMAGE=your-registry/flide:tag \
+#     docker compose -f docker-compose.yml -f docker-compose.flide.yml \
+#     --profile flide up -d
+#
+# Then verify with:
+#   curl -s http://localhost:8070/api/config | grep -i decision
+services:
+  qoc-dev:
+    depends_on:
+      - flide
+    environment:
+      ENGINE_DECISION_ENABLED: "true"
+      ENGINE_DECISION_BASE_URL: "http://flide:8080"
+      ENGINE_DECISION_MODEL: "${FLIDE_MODEL:-flide}"
+      ENGINE_DECISION_PROMPT_RELATION_ENABLED: "false"
+
+  flide:
+    image: ${FLIDE_IMAGE:?set FLIDE_IMAGE to the Flide image}
+    container_name: qoc-flide
+    profiles: ["flide"]
+    restart: unless-stopped
+    ports:
+      - "8081:8080"

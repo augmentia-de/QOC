@@ -46,6 +46,22 @@ public sealed interface SessionEvent extends Payload {
     record InboxDeliveryChanged(SessionId sessionId, InboxId inboxId,
                                 Delivery delivery) implements SessionEvent {}
 
+    /**
+     * Optional decision-layer event: records how a new prompt was classified
+     * and which delivery was chosen. It is advisory and never a truth source
+     * for the session projection.
+     */
+    record PromptRelationClassified(SessionId sessionId, PromptRelation relation,
+                                    double confidence, Delivery delivery,
+                                    String model) implements SessionEvent {
+        public PromptRelationClassified {
+            if (relation == null) relation = PromptRelation.UNKNOWN;
+            if (delivery == null) delivery = Delivery.QUEUE;
+            if (model == null) model = "";
+            if (confidence < 0) confidence = 0;
+        }
+    }
+
     record InstructionsUpdated(SessionId sessionId, Map<String, Option<String>> delta,
                                Option<String> text) implements SessionEvent {}
 

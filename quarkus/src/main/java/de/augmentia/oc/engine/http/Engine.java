@@ -598,6 +598,31 @@ public String generateText(String prompt) {
     @ConfigProperty(name = "engine.workflow.node-max-repetitions", defaultValue = "5")
     int workflowNodeMaxRepetitions;
 
+    // Decision Layer (ext-04, optional)
+    @ConfigProperty(name = "engine.decision.enabled", defaultValue = "false")
+    boolean decisionEnabled;
+
+    @ConfigProperty(name = "engine.decision.base-url", defaultValue = "https://api.typesafe.ai")
+    String decisionBaseUrl;
+
+    @ConfigProperty(name = "engine.decision.model", defaultValue = "jev-latest")
+    String decisionModel;
+
+    @ConfigProperty(name = "engine.decision.api-key", defaultValue = "")
+    java.util.Optional<String> decisionApiKey;
+
+    @ConfigProperty(name = "engine.decision.timeout-seconds", defaultValue = "5")
+    int decisionTimeoutSeconds;
+
+    @ConfigProperty(name = "engine.decision.max-retries", defaultValue = "2")
+    int decisionMaxRetries;
+
+    @ConfigProperty(name = "engine.decision.prompt-relation.enabled", defaultValue = "false")
+    boolean decisionPromptRelationEnabled;
+
+    @ConfigProperty(name = "engine.decision.prompt-relation.threshold", defaultValue = "0.7")
+    double decisionPromptRelationThreshold;
+
     @PostConstruct
     void wire() {
         effectiveAuthorizer = new SkillAuthorizer(toolAuthorizer == null ? ToolAuthorizer.defaultAuthorizer() : toolAuthorizer);
@@ -886,6 +911,7 @@ commandLoader = new CommandLoader(workspacePath,
         contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
                 instructions == null ? Option.none() : Option.some(instructions), config.skillFilter(),
                 ContextBuilder.defaults(permissionDefault));
+        if (contextBuilder != null && qocEngine != null) contextBuilder.setDecisionModel(qocEngine.decisionModel());
 
         // Create QocEngine (BaseEngine) for workflow delegation
         // Use Quarkus's stores for QocEngine (shared data)
@@ -1006,7 +1032,15 @@ commandLoader = new CommandLoader(workspacePath,
                             } catch (RuntimeException e) {
                                 LOG.warnf("MCP tool registration for QocEngine failed: %s", e.getMessage());
                             }
-                        }));
+                        }),
+                new de.augmentia.oc.engine.core.wiring.ExtensionPorts(
+                        null, null,
+                        decisionEnabled
+                                ? new de.augmentia.oc.engine.runtime.provider.client.TypeSafeDecisionAdapter(
+                                        decisionBaseUrl, decisionModel,
+                                        decisionApiKey.orElse(null), decisionTimeoutSeconds, decisionMaxRetries)
+                                : new de.augmentia.oc.engine.core.noop.NoOpDecisionModel(),
+                        null));
         if (toolTokenEnabled && toolTokenSigningKey != null && !toolTokenSigningKey.isBlank()
                 && !"disabled".equalsIgnoreCase(toolTokenSigningKey)) {
             qocEngine.toolTokenService = new de.augmentia.oc.engine.adapter.security.HmacToolTokenService(toolTokenSigningKey);
@@ -1053,12 +1087,17 @@ commandLoader = new CommandLoader(workspacePath,
                 preflightHttpCheckEnabled);
         errorClassifier = new de.augmentia.oc.engine.runtime.resilience.DefaultErrorClassifier(loopDetectionThreshold);
         retryPolicy = new de.augmentia.oc.engine.runtime.resilience.RetryPolicy.Default();
-        loopDetector = new de.augmentia.oc.engine.runtime.resilience.LoopDetector.Default();
+        loopDetector = new de.augmentia.oc.engine.runtime.resilience.DecisionLoopDetector(
+                new de.augmentia.oc.engine.runtime.resilience.LoopDetector.Default(),
+                qocEngine.decisionModel());
+        if (permissionEngine != null) permissionEngine.setDecisionModel(qocEngine.decisionModel());
         webhookAlerter = new de.augmentia.oc.engine.runtime.resilience.WebhookAlerter.Default(webhookUrl, webhookFormat);
         modelRef = new ModelRef(ProviderId.create(), ModelId.create());
-        triageService = triageEnabled
-                ? new de.augmentia.oc.engine.runtime.resilience.LlmTriageService(provider, modelRef)
-                : new de.augmentia.oc.engine.runtime.resilience.NoOpTriageService();
+        triageService = new de.augmentia.oc.engine.runtime.resilience.DecisionTriageService(
+                triageEnabled
+                        ? new de.augmentia.oc.engine.runtime.resilience.LlmTriageService(provider, modelRef)
+                        : new de.augmentia.oc.engine.runtime.resilience.NoOpTriageService(),
+                qocEngine.decisionModel());
         titleGenerator = new TitleGenerator(provider, modelRef);
         step = new Step(provider, toolRuntime);
         if (subagentTool != null) {
@@ -1718,6 +1757,21 @@ commandLoader = new CommandLoader(workspacePath,
         };
     }
 
+    /** Latest non-blank assistant text for a session (used by STATUS routing). */
+    private String latestAssistantText(SessionId id) {
+        List<Message> messages = conversation.messages(id, Seq.zero());
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i) instanceof Message.AssistantMessage assistant) {
+                String text = assistant.content().stream()
+                        .filter(item -> item instanceof Content.TextContent)
+                        .map(item -> ((Content.TextContent) item).text())
+                        .reduce("", String::concat);
+                if (!text.isBlank()) return text;
+            }
+        }
+        return "";
+    }
+
     /** One message in the session tree projection. */
     public record SessionTreeEntry(String id, String parentId, long seq, String type, String text) {}
 
@@ -1990,6 +2044,48 @@ commandLoader = new CommandLoader(workspacePath,
             runSnapshot = buildEphemeralBaseSnapshot(ephemeralRoot);
         }
 
+        // Optional prompt-relation routing (ext-04, opt-in, fail-open). Only
+        // meaningful for user prompts while the session is actually running;
+        // otherwise the prompt is admitted normally.
+        PromptRelation relation = PromptRelation.UNKNOWN;
+        double relationConfidence = 0.0;
+        Delivery delivery = Delivery.QUEUE;
+        if (decisionPromptRelationEnabled && agentOverride == null && qocEngine.isActive(id)) {
+            de.augmentia.oc.engine.runtime.QocEngine.PromptRelationResult classified =
+                    qocEngine.classifyPromptRelationDetailed(id, text);
+            relation = classified.relation();
+            relationConfidence = classified.confidence();
+            if (relation != PromptRelation.UNKNOWN
+                    && relationConfidence >= decisionPromptRelationThreshold) {
+                switch (relation) {
+                    case SUPPLEMENT, CORRECTION -> {
+                        // STEER would require the running turn to consume
+                        // delivered inbox items between steps. The synchronous
+                        // runPrompt path does not do that yet, so the message
+                        // must stay QUEUE to avoid losing it.
+                        delivery = Delivery.QUEUE;
+                    }
+                    case INDEPENDENT -> delivery = Delivery.QUEUE;
+                    case CANCEL -> {
+                        qocEngine.interrupt(id);
+                        journal.append(new EventDraft(id.value(), 1,
+                                new SessionEvent.PromptRelationClassified(id, relation,
+                                        relationConfidence, Delivery.QUEUE, decisionModel)));
+                        return PromptResult.cancelled();
+                    }
+                    case STATUS -> {
+                        journal.append(new EventDraft(id.value(), 1,
+                                new SessionEvent.PromptRelationClassified(id, relation,
+                                        relationConfidence, Delivery.QUEUE, decisionModel)));
+                        String status = latestAssistantText(id);
+                        return new PromptResult("STATUS", 0, 0,
+                                status.isBlank() ? "Session is running." : status, Option.none());
+                    }
+                    case UNKNOWN -> { /* normal admission */ }
+                }
+            }
+        }
+
         InboxId inboxId = InboxId.create();
         CorrelationContext.set(inboxId.value(), id.value());
         org.jboss.logmanager.MDC.put("correlation_id", inboxId.value());
@@ -1997,8 +2093,12 @@ commandLoader = new CommandLoader(workspacePath,
         InboxItem item = new InboxItem.UserItem(text, List.of(), List.of(), List.of(), Map.of());
         sessionService.enqueue(id, inboxId, item);
         Seq enqueuedSeq = journal.lastSeq(id.value());
-        sessions.putInbox(new InboxEntry(inboxId, id, item,
-                de.augmentia.oc.engine.core.model.Delivery.QUEUE, enqueuedSeq, clock.now()));
+        sessions.putInbox(new InboxEntry(inboxId, id, item, delivery, enqueuedSeq, clock.now()));
+        if (decisionPromptRelationEnabled && agentOverride == null && qocEngine.isActive(id)) {
+            journal.append(new EventDraft(id.value(), 1,
+                    new SessionEvent.PromptRelationClassified(id, relation,
+                            relationConfidence, delivery, decisionModel)));
+        }
         sessionService.deliver(id);
         SessionInfo info = sessions.info(id).orElseThrow();
         sessions.put(new SessionInfo(info.id(), info.projectId(), info.location(), info.title(),
@@ -2597,6 +2697,7 @@ commandLoader = new CommandLoader(workspacePath,
         contextBuilder = new ContextBuilder(conversation, skillCatalog, instructionLoader,
                 instructions == null ? Option.none() : Option.some(instructions), config.skillFilter(),
                 ContextBuilder.defaults(permissionDefault));
+        if (contextBuilder != null && qocEngine != null) contextBuilder.setDecisionModel(qocEngine.decisionModel());
         LOG.infof("reloaded config: %d agent(s), %d skill(s)",
                 agentCatalogue.list().size(), skillCatalog.all().size());
         // SSOT: re-import QOC agents into the unified store after reload.

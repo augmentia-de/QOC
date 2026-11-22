@@ -21,9 +21,10 @@ public record DecisionResult(
     }
 
     public double confidence() {
-        if (probabilities.isEmpty()) return margin;
         double max = 0;
         for (double p : probabilities) if (p > max) max = p;
-        return max;
+        // A response may carry an empty or all-zero probability list (e.g. a
+        // yes/no answer with only a margin); fall back to the margin.
+        return max > 0 ? max : margin;
     }
 }

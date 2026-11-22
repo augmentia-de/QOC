@@ -155,9 +155,18 @@ public static record EngineConfig(
      */
     public de.augmentia.oc.engine.core.model.PromptRelation classifyPromptRelation(
             de.augmentia.oc.engine.core.model.SessionId session, String text) {
+        return classifyPromptRelationDetailed(session, text).relation();
+    }
+
+    /**
+     * Detailed variant of {@link #classifyPromptRelation}: returns the relation
+     * plus the model confidence. Fail-open: UNKNOWN with confidence 0.
+     */
+    public PromptRelationResult classifyPromptRelationDetailed(
+            de.augmentia.oc.engine.core.model.SessionId session, String text) {
         de.augmentia.oc.engine.core.port.runtime.DecisionModel dm = decisionModel();
         if (dm == null || !dm.isAvailable()) {
-            return de.augmentia.oc.engine.core.model.PromptRelation.UNKNOWN;
+            return PromptRelationResult.unknown();
         }
         try {
             de.augmentia.oc.engine.core.model.DecisionResult r = dm.decide(
@@ -165,13 +174,33 @@ public static record EngineConfig(
                             "prompt_relation", text == null ? "" : text, java.util.List.of(), "", java.util.Map.of()));
             String a = r.answer() == null ? "" : r.answer().trim().toUpperCase();
             try {
-                return de.augmentia.oc.engine.core.model.PromptRelation.valueOf(a);
+                return new PromptRelationResult(
+                        de.augmentia.oc.engine.core.model.PromptRelation.valueOf(a), r.confidence());
             } catch (IllegalArgumentException ignored) {
-                return de.augmentia.oc.engine.core.model.PromptRelation.UNKNOWN;
+                return PromptRelationResult.unknown();
             }
         } catch (RuntimeException e) {
-            return de.augmentia.oc.engine.core.model.PromptRelation.UNKNOWN;
+            return PromptRelationResult.unknown();
         }
+    }
+
+    /** Relation plus model confidence (0 when unknown/unavailable). */
+    public record PromptRelationResult(
+            de.augmentia.oc.engine.core.model.PromptRelation relation, double confidence) {
+        public PromptRelationResult {
+            if (relation == null) relation = de.augmentia.oc.engine.core.model.PromptRelation.UNKNOWN;
+            if (confidence < 0) confidence = 0;
+        }
+
+        public static PromptRelationResult unknown() {
+            return new PromptRelationResult(
+                    de.augmentia.oc.engine.core.model.PromptRelation.UNKNOWN, 0.0);
+        }
+    }
+
+    /** Interrupts the active execution of a session, if any (I-03-05). */
+    public boolean interrupt(de.augmentia.oc.engine.core.model.SessionId session) {
+        return coordinator.interrupt(session);
     }
     private final de.augmentia.oc.engine.core.contract.provider.ModelInfo modelInfo;
     private int workflowMaxSteps = 100;
@@ -298,6 +327,7 @@ public static record EngineConfig(
 
         SessionService sessionService = new SessionService(stores.journal(), stores.sessions(),
                 session -> { /* no-op SessionWake */ }, stores.sessions()::removeInbox);
+        sessionService.setDecisionModel(extensionPorts == null ? null : extensionPorts.decision());
 
         ExecutionRunner runner = (session, execution, scope) -> new de.augmentia.oc.engine.runtime.execution.ExecutionOutcome.Succeeded();
 
@@ -342,6 +372,12 @@ public static record EngineConfig(
         de.augmentia.oc.engine.runtime.resilience.WebhookAlerter webhookAlt =
                 new de.augmentia.oc.engine.runtime.resilience.WebhookAlerter.Default(cfg2.webhookUrl(), cfg2.webhookFormat());
 
+        // Wrap resilience components with the optional DecisionModel (fail-open).
+        de.augmentia.oc.engine.core.port.runtime.DecisionModel dm =
+                extensionPorts == null ? null : extensionPorts.decision();
+        lDetector = new de.augmentia.oc.engine.runtime.resilience.DecisionLoopDetector(lDetector, dm);
+        triageSvc = new de.augmentia.oc.engine.runtime.resilience.DecisionTriageService(triageSvc, dm);
+
         // ContextBuilder (without security — least-privilege defaults)
         de.augmentia.oc.engine.runtime.skill.SkillCatalog skillCatalog =
                 de.augmentia.oc.engine.runtime.skill.SkillCatalog.empty();
@@ -352,6 +388,7 @@ public static record EngineConfig(
                 de.augmentia.oc.engine.core.model.Option.none(),
                 de.augmentia.oc.engine.runtime.skill.SkillFilterOptions.defaults(),
                 de.augmentia.oc.engine.runtime.context.ContextBuilder.leastPrivilegeDefaults());
+        cb.setDecisionModel(dm);
 
         // ToolRegistry with basic file tools (without security/permission checks)
         java.nio.file.Path workspacePath = (toolDeps != null && toolDeps.workspacePath() != null)

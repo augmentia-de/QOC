@@ -37,6 +37,7 @@ public final class EventCodec {
         register(registry, SessionEvent.InboxDelivered.class);
         register(registry, SessionEvent.InboxCancelled.class);
         register(registry, SessionEvent.InboxDeliveryChanged.class);
+        register(registry, SessionEvent.PromptRelationClassified.class);
         register(registry, SessionEvent.InstructionsUpdated.class);
         register(registry, SessionEvent.SyntheticRaised.class);
         register(registry, SessionEvent.SkillActivated.class);

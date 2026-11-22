@@ -96,6 +96,8 @@ class EventCodecTest {
                 new SessionEvent.InboxDelivered(session, InboxId.create()),
                 new SessionEvent.InboxCancelled(session, InboxId.create()),
                 new SessionEvent.InboxDeliveryChanged(session, InboxId.create(), Delivery.STEER),
+                new SessionEvent.PromptRelationClassified(session, PromptRelation.SUPPLEMENT,
+                        0.8, Delivery.STEER, "jev-latest"),
                 new SessionEvent.InstructionsUpdated(session, Map.of("a", Option.some("b")), Option.some("text")),
                 new SessionEvent.SyntheticRaised(session, "text", Option.none(), Map.of()),
                 new SessionEvent.SkillActivated(session, SkillId.create(), "skill", "body"),

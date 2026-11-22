@@ -22,6 +22,7 @@ public final class Admission {
     private final Journal journal;
     private final SessionReader sessions;
     private final SessionWake wake;
+    private volatile de.augmentia.oc.engine.core.port.runtime.DecisionModel decisionModel;
 
     public Admission(Journal journal, SessionReader sessions, SessionWake wake) {
         if (journal == null || sessions == null || wake == null) {
@@ -30,6 +31,15 @@ public final class Admission {
         this.journal = journal;
         this.sessions = sessions;
         this.wake = wake;
+    }
+
+    /** Optional DecisionModel for prompt-relation classification (fail-open). */
+    public void setDecisionModel(de.augmentia.oc.engine.core.port.runtime.DecisionModel dm) {
+        this.decisionModel = dm;
+    }
+
+    public de.augmentia.oc.engine.core.port.runtime.DecisionModel decisionModel() {
+        return decisionModel;
     }
 
     public AdmissionResult admit(SessionId session, InboxId id, InboxItem item) {

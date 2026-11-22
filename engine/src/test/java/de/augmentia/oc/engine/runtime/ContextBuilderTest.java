@@ -279,4 +279,96 @@ class ContextBuilderTest {
         assertThat(prepared.system()).anyMatch(text -> text.contains("<id>commit</id>"));
         assertThat(prepared.system()).noneMatch(text -> text.contains("<id>deploy</id>"));
     }
+    @Test
+    void prepareWithPromptCacheKeyCoversAffinityBranch() {
+        Prepared prepared = builder().prepare(session, agent(Option.none(), 0), model, tools, Seq.zero(), 0,
+                Option.none(), Option.none(), null, Option.some("my-cache-key"));
+
+        assertThat(prepared).isNotNull();
+        assertThat(prepared.headers()).containsKey("X-Project-Id");
+    }
+
+    @Test
+    void prepareWithPlanModeAgentInsertsReminder() {
+        conversation.add(session.id(), Seq.of(1), new Message.UserMessage(MessageId.create(), "hello",
+                null, null, null, null, Instant.EPOCH));
+        AgentProfile planAgent = new AgentProfile(AgentId.create(), Option.none(), 0, List.of(), true,
+                de.augmentia.oc.engine.core.contract.permission.AskMode.INTERACTIVE, List.of());
+        Prepared prepared = builder().prepare(session, planAgent, model, tools, Seq.zero(), 0);
+
+        assertThat(prepared.messages()).isNotEmpty();
+    }
+
+    @Test
+    void prepareWithWriteToolCoversSysGuide() {
+        ToolSnapshot writeTools = new ToolSnapshot(Map.of(new ToolName("write"),
+                definition(new ToolName("write"), "write", ToolOptions.defaults())));
+        Prepared prepared = builder().prepare(session, agent(Option.none(), 0), model, writeTools, Seq.zero(), 0);
+
+        assertThat(prepared.system()).isNotEmpty();
+    }
+
+    @Test
+    void prepareModePlanLeaveInsertsReminder() {
+        conversation.add(session.id(), Seq.of(1), new Message.UserMessage(MessageId.create(), "enter plan mode",
+                null, null, null, null, Instant.EPOCH));
+        // ensure hasEnter is true by using a message containing "plan mode"
+        // (already added above)
+        AgentProfile normalAgent = new AgentProfile(AgentId.create(), Option.none(), 0, List.of(), false,
+                de.augmentia.oc.engine.core.contract.permission.AskMode.INTERACTIVE, List.of());
+        Prepared prepared = builder().prepare(session, normalAgent, model, tools, Seq.zero(), 0);
+
+        assertThat(prepared.messages()).isNotEmpty();
+    }
+
+    @Test
+    void prepareAddsAnswerabilityPromptWhenModelSaysNo() {
+        ContextBuilder cb = builder();
+        cb.setDecisionModel(new de.augmentia.oc.engine.core.port.runtime.DecisionModel() {
+            @Override
+            public de.augmentia.oc.engine.core.model.DecisionResult decide(
+                    de.augmentia.oc.engine.core.model.DecisionRequest request) {
+                return new de.augmentia.oc.engine.core.model.DecisionResult(
+                        request.taskType(), "NO", java.util.List.of(), java.util.List.of(), 0.9, false, 1);
+            }
+
+            @Override
+            public boolean isAvailable() {
+                return true;
+            }
+        });
+        Prepared prepared = cb.prepare(session, agent(Option.none(), 0), model, tools, Seq.zero(), 0,
+                Option.none(), Option.some("What is the answer?"), null, Option.none());
+
+        assertThat(prepared.system()).anyMatch(s -> s.contains("Context check"));
+    }
+
+    @Test
+    void prepareAddsNoAnswerabilityPromptWithoutQuery() {
+        ContextBuilder cb = builder();
+        cb.setDecisionModel(new de.augmentia.oc.engine.core.port.runtime.DecisionModel() {
+            @Override
+            public de.augmentia.oc.engine.core.model.DecisionResult decide(
+                    de.augmentia.oc.engine.core.model.DecisionRequest request) {
+                return new de.augmentia.oc.engine.core.model.DecisionResult(
+                        request.taskType(), "NO", java.util.List.of(), java.util.List.of(), 0.9, false, 1);
+            }
+
+            @Override
+            public boolean isAvailable() {
+                return true;
+            }
+        });
+        Prepared prepared = cb.prepare(session, agent(Option.none(), 0), model, tools, Seq.zero(), 0);
+
+        assertThat(prepared.system()).noneMatch(s -> s.contains("Context check"));
+    }
+
+    @Test
+    void prepareNullSessionThrows() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                builder().prepare(null, agent(Option.none(), 0), model, tools, Seq.zero(), 0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
 }

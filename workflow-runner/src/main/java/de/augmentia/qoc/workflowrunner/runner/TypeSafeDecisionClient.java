@@ -5,11 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -142,71 +137,28 @@ public final class TypeSafeDecisionClient {
             throw new RuntimeException("serialize request", e);
         }
 
-        // ---- HTTP ----
+        // ---- HTTP (shared transport) ----
         String baseUrl = str(c.get("baseUrl"),
                 System.getenv().getOrDefault("TYPESAFE_BASE_URL", "https://api.typesafe.ai"));
-        while (baseUrl.endsWith("/")) baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         String apiPath = str(c.get("apiPath"), "v1/systemone");
-        while (apiPath.startsWith("/")) apiPath = apiPath.substring(1);
-        String url = baseUrl + "/" + apiPath;
-
         String apiKey = str(c.get("apiKey"), System.getenv("TYPESAFE_API_KEY"));
-
         int timeout = intVal(c.get("timeoutSeconds"),
                 intVal(System.getenv("TYPESAFE_TIMEOUT_SECONDS"), 60));
         int maxRetries = intVal(c.get("maxRetries"),
                 intVal(System.getenv("TYPESAFE_MAX_RETRIES"), 2));
-
-        LOG.info("TypeSafe request: url={} model={} questions={}", url, modelName, questions.size());
-        String responseBody = null;
-        Exception lastErr = null;
-        for (int attempt = 0; attempt <= maxRetries; attempt++) {
-            try {
-                HttpClient client = HttpClient.newBuilder()
-                        .connectTimeout(Duration.ofSeconds(Math.max(1, timeout))).build();
-                HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(url))
-                        .timeout(Duration.ofSeconds(Math.max(1, timeout)))
-                        .header("Content-Type", "application/json");
-                if (apiKey != null && !apiKey.isBlank()) {
-                    rb.header("Authorization", "Bearer " + apiKey);
-                }
-                Object ch = c.get("customHeaders");
-                if (ch instanceof Map<?, ?> m) {
-                    for (Map.Entry<?, ?> e : m.entrySet()) {
-                        if (e.getKey() == null) continue;
-                        rb.header(String.valueOf(e.getKey()),
-                                e.getValue() == null ? "" : String.valueOf(e.getValue()));
-                    }
-                }
-                HttpRequest req = rb.POST(HttpRequest.BodyPublishers.ofString(requestBody)).build();
-                HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
-                if (resp.statusCode() >= 200 && resp.statusCode() < 300) {
-                    responseBody = resp.body();
-                    LOG.info("TypeSafe response: HTTP {} ({} chars)", resp.statusCode(), responseBody.length());
-                    break;
-                } else if (resp.statusCode() >= 400 && resp.statusCode() < 500) {
-                    // Client-Fehler: nicht retryen
-                    lastErr = new RuntimeException("HTTP " + resp.statusCode() + ": " + resp.body());
-                    LOG.warn("TypeSafe request failed (no retry): HTTP {}", resp.statusCode());
-                    break;
-                } else {
-                    lastErr = new RuntimeException("HTTP " + resp.statusCode() + ": " + resp.body());
-                }
-            } catch (Exception e) {
-                lastErr = e;
-            }
-            if (attempt < maxRetries) {
-                try {
-                    Thread.sleep(200L * (attempt + 1));
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
+        Map<String, String> customHeaders = new LinkedHashMap<>();
+        Object ch = c.get("customHeaders");
+        if (ch instanceof Map<?, ?> m) {
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                if (e.getKey() == null) continue;
+                customHeaders.put(String.valueOf(e.getKey()),
+                        e.getValue() == null ? "" : String.valueOf(e.getValue()));
             }
         }
-        if (responseBody == null) {
-            throw new RuntimeException("TypeSafe request failed: " +
-                    (lastErr == null ? "unknown" : lastErr.getMessage()), lastErr);
-        }
+        LOG.info("TypeSafe request: url={} model={} questions={}", baseUrl, modelName, questions.size());
+        String responseBody = de.augmentia.oc.engine.runtime.provider.client.SystemOneHttpClient.post(
+                baseUrl, apiPath, apiKey, customHeaders, requestBody, timeout, maxRetries);
+        LOG.info("TypeSafe response: {} chars", responseBody.length());
 
         // ---- parse response ----
         Map<String, Object> parsed;
