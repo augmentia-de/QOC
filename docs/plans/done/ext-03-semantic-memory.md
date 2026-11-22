@@ -1,5 +1,7 @@
 # Erweiterung: Semantisches Langzeitgedächtnis (MemoryPort)
 
+> **Hinweis:** Diese Datei liegt in `done/`, obwohl noch Integrationsarbeiten offen sind (s. "Noch offen"). Die Kernkomponenten (Domain, Port, Adapter, Tools, Services) sind implementiert und getestet. Die verbleibenden Punkte sind Wiring/Integration, keine neuen Komponenten.
+
 **Wofür:** QOC hat Session-Historie, Instructions und Compaction, aber kein sessionübergreifendes, versioniertes Wissen. Diese Erweiterung führt einen optionalen `MemoryPort` ein, der Fakten mit temporaler Gültigkeit, Provenance und Konfliktregeln speichert und abfragt. Die autonome Extraktion bleibt bewusst ausgeschlossen; zuerst manuelle, kuratierte Memory.
 
 **Gewinn:** Agenten können über Sessions hinweg auf Projektwissen, Entscheidungen und Präferenzen zugreifen, statt bei jedem Turn neu zu recherchieren. Retrieval (BM25 + Graph-Links, ohne Vektor-Store) hält den Kontext klein. `check_answerable` reduziert Halluzinationen, indem vor der Antwort geprüft wird, ob das Wissen überhaupt vorhanden ist.
@@ -129,7 +131,13 @@ Antwortqualität, Tokens, Latenz, Halluzinationen, Pflegeaufwand, Datenhoheit au
 - **M9** ContextBuilder-Integration: Optionaler Memory-Block in Prompt-Assembly.
 - **M10** RetrievalService: BM25 + graph-traversal retrieval.
 
-**Noch offen:** Memory-Tools Registrierung in ToolRegistry (nur wenn enabled + Agent erlaubt), Import-Aufruf beim Startup, ContextBuilder memory block injection in prepare() (method vorhanden, Aufruf im system-prompt), Preflight-Integration in Agent-Loop.
+**Noch offen (Integration/Wiring):**
+- Memory-Tools sind in ToolRegistry registriert (Engine.start), aber nur wenn memoryEnabled. Agent-Level allow/deny nicht geprüft.
+- MemoryImporter ist vorhanden, wird aber nicht automatisch beim Startup aufgerufen.
+- ContextBuilder.memoryBlock() und isMemoryAnswerable() sind vorhanden; Memory-Block wird in prepare() eingefügt, aber memoryStore muss gesetzt sein.
+- check_answerable Preflight ist als Methode vorhanden, aber nicht in den Agent-Loop integriert.
+- M3: StorageFactory erstellt keinen MemoryStore (wiring in Engine.start, nicht in StorageFactory).
+- RetrievalService bietet BM25+Graph, wird aber nicht automatisch von MemoryStore.query() genutzt.
 
 ## Offene Todos (detailiert)
 
