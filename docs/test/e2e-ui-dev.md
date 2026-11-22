@@ -609,6 +609,78 @@ Shall I begin with Phase 1 once you leave plan mode? Or would you like adjustmen
 
 ---
 
+
+---
+
+## 12. New Features Test Scenarios (added 2026-11-22)
+
+### 12.1 Semantic Memory
+
+| Step | Action | Expectation |
+|---|---|---|
+| 1 | Enable `ENGINE_MEMORY_ENABLED=true` in .env | Memory store activated |
+| 2 | Create agent with `memory` permission | Agent can use memory tools |
+| 3 | Run workflow with memory_write tool | Fact stored in memory_fact table |
+| 4 | Run workflow with memory_query tool | Facts retrieved and displayed |
+| 5 | Check memory via API: `GET /api/memory/facts` | Facts listed |
+| 6 | Verify InMemoryMemoryStore (memory mode) | Facts in memory, lost on restart |
+| 7 | Verify SqlMemoryStore (postgres mode) | Facts persisted in DB |
+
+### 12.2 Execution Isolation (Sandbox)
+
+| Step | Action | Expectation |
+|---|---|---|
+| 1 | Set `ENGINE_SANDBOX_MODE=container` | Container mode activated |
+| 2 | Run shell command in sandbox | Command executes in container |
+| 3 | Attempt path escape (`../`) | Blocked by SandboxedFileSystem |
+| 4 | Attempt egress to blocked host | Blocked by EgressProxy |
+| 5 | Verify EgressProxy allowlist | Only listed hosts allowed |
+| 6 | Check SandboxReconciler on startup | Orphaned containers cleaned up |
+
+### 12.3 New Node Types
+
+| Node Type | Test | Expectation |
+|---|---|---|
+| context_agent_executor | Create node, set agentRef | Node renders, runs with full context |
+| classify | Create node, set decision model | Typed decision returned |
+| guard | Create node, set condition | Branches based on condition |
+| inject | Create node, set injectRefs | Refs added to contextInclude |
+| compact | Create node | Context compacted |
+
+### 12.4 New UI Pages
+
+| Page | Status | Notes |
+|---|---|---|
+| Chat | ✅ | Page exists, not deeply tested |
+| A2A | ✅ | Page exists |
+| Files | ✅ | Page exists |
+| LlmTrace | ✅ | Page exists |
+
+### 12.5 Agent Types
+
+| Agent | Test | Expectation |
+|---|---|---|
+| aisdlc-requirements | Run test workflow | STATUS/COMMIT/OFFENE PUNKTE returned |
+| aisdlc-architecture | Run test workflow | Architecture artifacts created |
+| aisdlc-execution | Run test workflow | Code implemented and committed |
+| aisdlc-qa | Run test workflow | Tests run, coverage checked |
+| aisdlc-spec-review | Run test workflow | Spec reviewed, verdict returned |
+| aisdlc-triage | Run test workflow | Triage recommendation returned |
+
+### 12.6 New Test Workflows
+
+| Workflow | Status | Notes |
+|---|---|---|
+| aisdlc-test-req | ✅ | Requirements agent test |
+| aisdlc-test-arch | ✅ | Architecture agent test |
+| aisdlc-test-exec | ✅ | Execution agent test |
+| aisdlc-test-qa | ✅ | QA agent test |
+| aisdlc-test-spec | ✅ | Spec review agent test |
+| aisdlc-test-orch | ✅ | Orchestrator agent test |
+| aisdlc-test-triage | ✅ | Triage agent test |
+
+---
+
 ## Test Results (2026-11-22)
 
 ### Round 1: UI Smoke Test
