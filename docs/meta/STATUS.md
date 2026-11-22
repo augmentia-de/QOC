@@ -1,6 +1,6 @@
 # Documentation Status
 
-> **Status:** 2026-11-14  
+> **Status:** 2026-11-22
 > **Reference:** QOC Java engine under `qoc/`.  
 > **Purpose:** Quick overview of which documents are specification, implementation
 > or working material. The status is a documentation statement, not a substitute
@@ -28,7 +28,7 @@
 | Provider | [`spec/provider/`](../spec/provider/README.md) | `implemented` | Classification, budget, cache, event stream |
 | Persistence | [`spec/persistence/`](../spec/persistence/README.md) | `implemented` | SQLite/PostgreSQL adapter |
 | Operations | [`spec/betrieb/`](../spec/betrieb/README.md) | `implemented` | HTTP/SSE, skills, credentials |
-| Quality | [`spec/qualitaet/`](../spec/qualitaet/README.md) | `partial` | ArchUnit/JaCoCo gates to verify before commit |
+| Quality | [`spec/qualitaet/`](../spec/qualitaet/README.md) | `partial` | Engine + Quarkus ArchUnit green, including the dedicated `core.wiring` rule (A2, 2026-11-22); coverage 80.26% (2026-11-22); POM gate not enforced |
 | Agents | [`spec/agents/`](../spec/agents/README.md) | `implemented` | Catalog, tool restrictions, MCP scoping |
 | Agents – SDLC workflow | [`spec/agents/05-aisdlc-workflow.md`](../spec/agents/05-aisdlc-workflow.md) | `partial` | SDLC process as a deterministic workflow graph (SDW-01…08); ConditionEvaluator implemented (Phase 1), graph compiler checks outstanding |
 | OIDC/Auth0 | [`spec/betrieb/04-oidc-auth0.md`](../spec/betrieb/04-oidc-auth0.md) | `spec-only` | Auth0 as OIDC provider (planned) |
@@ -49,6 +49,21 @@
 | AWS Lambda Serverless | [`deployment/05-aws-lambda-serverless.md`](../deployment/05-aws-lambda-serverless.md) | `spec-only` | Lambda-specific (planned) |
 | Webhook Guardrail | [`webhook.md`](../webhook.md) | `partial` | Specification + service |
 | SDLC-Workflow-Graph | [`engineering/Workflow-SDLC.md`](../engineering/Workflow-SDLC.md) | `working` | Complete definition (Nodes/Edges/Agents); migration plan Phase 1 (ConditionEvaluator) done 2026-11-14 |
+| Workflow engine | [`engineering/Workflow.md`](../engineering/Workflow.md) | `implemented` | `workflow-runner`: graph compiler, executor, stores (memory/SQLite/Postgres), sub-workflows, context agents, node contracts, structured output, `verifyOnStop`, workflow generator |
+| Workflow UI | [`engineering/Workflow.md`](../engineering/Workflow.md) | `implemented` | ReactFlow editor under `/workflow/`: workflows, runs, agents, MCP servers, settings, i18n, mobile |
+| RBAC & security | [`engineering/Workflow-OIDC.md`](../engineering/Workflow-OIDC.md) | `partial` | Principal propagation, HMAC tool tokens, `SecureRest`, A2A OIDC, system-token, `ownerId`/`rolesAllowed`, execution/session guards; local Keycloak. Auth0 mapping and full OIDC phases remain spec-only |
+| Structured output | [`engineering/Structured-Output.md`](../engineering/Structured-Output.md) | `implemented` | Java/YAML/OpenAPI schema sources, `strict` flag, automatic `contextRefs`, configurable output limit |
+| MCP server persistence | [`engineering/MCP-UI-Integration.md`](../engineering/MCP-UI-Integration.md) | `implemented` | V12 migration, `SqlMcpServerStore`, CRUD/reload API, UI page |
+| ACP adapter | [`plans/acp-adapter.md`](../plans/acp-adapter.md) | `partial` | Phase 2–5: JSON-RPC over stdio, session/new, prompt, cancel, load, list, delete, close, config, mode, auth; Phase 6 tests outstanding |
+| Context agents | [`engineering/Workflow.md`](../engineering/Workflow.md) | `implemented` | `compactAfterRun`, compact nodes, `engine.context.default-task` (default `start`) |
+| Tool configuration | [`plans/tool-configuration.md`](../plans/tool-configuration.md) | `implemented` | Dynamic tool list, presets, permission-check endpoint, `rolesAllowed` vs `permissions`, least-privilege default |
+| Deployment – native memory | [`deployment/README.md`](../deployment/README.md) | `implemented` | `deploy/gcp-native-memory` (no DB), native memory runner, GCP/AWS ECS |
+| Deployment – Keycloak | [`deployment/README.md`](../deployment/README.md) | `implemented` | Local Keycloak (`deploy/keycloak`, `deploy/docker-oidc-native`); Auth0 remains spec-only (`deployment/03-gcp-auth0.md`) |
+| Resilience & retry | [`resilience.md`](../resilience.md) | `partial` | Error classification, retry policy, loop detector, webhook alerter, optional LLM triage; `SessionWake` is an intentional no-op |
+| In-memory runtime | [`engineering/InMemory.md`](../engineering/InMemory.md) | `implemented` | All storage/coordination ports replaceable by in-memory adapters (no restart recovery) |
+| Memory/storage analysis | [`memory-use.md`](../memory-use.md) | `reference` | Memory and DB/file storage during a task |
+| Saga / Undo (M1–M4) | [`plans/saga-undo-tools.md`](../plans/saga-undo-tools.md) | `implemented` | Contract, registry, generated `undo_<tool>`, Engine wiring; reference pairs `write → delete` and `worktree_create → worktree_remove`; 1191 engine / 143 Quarkus tests green (2026-11-22) |
+| Saga orchestration (M5–M10) | [`plans/saga-orchestration.md`](../plans/saga-orchestration.md) | `spec-only` | Complete saga: scope, durable compensation state machine, recovery, backup/restore, REST/UI; opt-in via `SagaPolicy` (`off/manual/observe/best-effort/strict`) |
 
 ## Cross-cutting
 

@@ -1,6 +1,6 @@
 # QOC – Documentation
 
-> **Status:** 2026-10-25  
+> **Status:** 2026-11-22
 > **Reference:** QOC Java engine (Java 21, Quarkus, LangChain4j).  
 > **Role:** Entry point into the documentation. The operative specification
 > is under [`spec/`](../spec/README.md); analysis and reference material is kept
@@ -11,10 +11,18 @@
 | If you want to … | Start here |
 |---|---|
 | get an overview | [`INDEX.md`](./INDEX.md) |
+| see the current feature inventory | [`Features.md`](../Features.md) |
 | see the implementation status | [`STATUS.md`](./STATUS.md) |
 | implement | [`ROADMAP.md`](./ROADMAP.md) → [`spec/README.md`](../spec/README.md) |
 | understand the architecture | [`overview.md`](../analysis/overview.md) → [`diagrams/`](../diagrams/README.md) |
 | look up decisions | [`open-questions.md`](./open-questions.md) |
+| read the architecture/code review | [`review.md`](./review.md) (§7: engine architecture 2026-11-22) |
+| understand or extend workflows | [`engineering/Workflow.md`](../engineering/Workflow.md) → [`workflow-runner/`](../../workflow-runner) |
+| understand RBAC / OIDC | [`engineering/Workflow-OIDC.md`](../engineering/Workflow-OIDC.md) |
+| understand structured output | [`engineering/Structured-Output.md`](../engineering/Structured-Output.md) |
+| integrate MCP servers in the UI | [`engineering/MCP-UI-Integration.md`](../engineering/MCP-UI-Integration.md) |
+| understand the ACP adapter | [`plans/acp-adapter.md`](../plans/acp-adapter.md) |
+| see implementation plans | [`plans/saga-orchestration.md`](../plans/saga-orchestration.md) · [`plans/saga-undo-tools.md`](../plans/saga-undo-tools.md) · [`plans/async-approval.md`](../plans/async-approval.md) |
 | optimize | [`optimization.md`](../optimization.md) |
 
 ## Two roles

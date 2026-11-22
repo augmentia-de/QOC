@@ -2,7 +2,9 @@
 
 > **Purpose:** Compact feature inventory of the current state.
 > **Focus:** Isomorphic loop and database/persistence.
-> **Status:** Engine M0–M14 implemented; workflow mode and workflow runner are active.
+> **Status:** Engine M0–M14 implemented; workflow mode and workflow runner are active;
+> RBAC/security, ACP, structured output, MCP server persistence, tool configuration and
+> saga/undo MVP added (2026-11-22).
 > **Sources:** Code under `../engine/`, `../workflow-runner/`, `../quarkus/`
 > as well as `./spec/` and `./engineering/`.
 
@@ -290,18 +292,36 @@ spec naming one-to-one.**
 - Workflow runner with graph validation, execution, resume, and recovery.
 - Workflow, agent, and MCP specs in DB or files.
 - Quarkus workflow API and standalone runner.
+- RBAC/security (core): Principal propagation, HMAC tool tokens, `SecureRest`, A2A/MCP token
+  forwarding, `Principal.system()`, system-token auth, `ownerId`/`rolesAllowed`, guards.
+- Structured output: Java/YAML/OpenAPI schema sources, `strict` flag, automatic
+  `contextRefs`, configurable output limit.
+- MCP server persistence (V12, `SqlMcpServerStore`, CRUD/reload API + UI).
+- ACP adapter (Phase 2–5; JSON-RPC over stdio; session/prompt/cancel/load/list/delete/
+  close/config/mode/auth).
+- Tool configuration: dynamic tool list, presets, permission-check endpoint,
+  `rolesAllowed` vs `permissions`.
+- Saga/undo MVP: generated `undo_<tool>`, `write → delete` (creations only),
+  `worktree_create → worktree_remove`; complete saga plan in `plans/saga-orchestration.md`.
 
 **Spec/concept only (do not count as features):**
 
-- **Temporal integration** in the workflow runner: described as a plan in
-  `engineering/Workflow.md`, not implemented in the current runner. The
-  standalone runner uses an in-memory `QocEngine`.
+- **Temporal integration was removed.** The standalone runner uses an in-memory
+  `QocEngine`; `temporal/` and `temporal-ui/` are no longer part of the build.
 - **Runtime plan adaptation / goal-driven planning**: `RequirementChecker`,
   `RuntimePlan`, `AdaptationPlan`, `PlanValidator` do not yet exist as
   code.
 - **`project`/`worktree` tables** from the persistence spec are not present
   in the current migration state.
 - **`workflow_run` table** deliberately does not exist.
+- **Complete saga orchestration (M5–M10)**: scope, durable compensation,
+  recovery, backup/restore, REST/UI — plan only.
+- **Task-level SAGA** (`engineering/SAGA.md`) and **Directory-Scoping** are concepts/
+  plans.
+- **Auth0 mapping / full OIDC phase set**: core RBAC is implemented; Auth0 remains
+  spec-only (`deployment/03-gcp-auth0.md`).
+- **ACP Phase 6 tests**: the adapter (Phase 2–5) is implemented; the test phase is
+  outstanding.
 
 ---
 
@@ -320,3 +340,10 @@ spec naming one-to-one.**
 | Persistence spec | `./spec/persistence/` |
 | Workflow docs | `./engineering/Workflow.md` |
 | Workflow SDLC | `./engineering/Workflow-SDLC.md` |
+| RBAC / OIDC | `./engineering/Workflow-OIDC.md` |
+| Structured output | `./engineering/Structured-Output.md` |
+| MCP UI integration | `./engineering/MCP-UI-Integration.md` |
+| ACP adapter | `./plans/acp-adapter.md` |
+| Tool configuration | `./plans/tool-configuration.md` |
+| Saga/undo MVP | `./plans/saga-undo-tools.md` |
+| Complete saga plan | `./plans/saga-orchestration.md` |

@@ -1,6 +1,6 @@
 # Documentation Index
 
-> **Status:** 2026-11-04
+> **Status:** 2026-11-22
 > **Purpose:** Role-based entry into `docs`. The operative specification
 > is under `spec/`; analysis and reference material is kept separate.
 
@@ -9,9 +9,17 @@
 | I want to … | Start here |
 |---|---|
 | understand the architecture | `analysis/overview.md` -> `diagrams/` |
+| see the current feature inventory | `Features.md` |
 | implement the Java engine | `ROADMAP.md` -> `spec/module-plan.md` -> `spec/java-packages.md` |
 | understand the session engine flow | `spec/session-engine/README.md` -> `spec/session-engine/04-algorithms.md` |
 | build or check tools | `spec/tools/README.md` -> `spec/tools/05-contract-invariants.md` |
+| understand or extend saga/undo | `plans/saga-undo-tools.md` -> `plans/saga-orchestration.md` |
+| understand or extend workflows | `engineering/Workflow.md` -> `workflow-runner/` |
+| understand RBAC / OIDC | `engineering/Workflow-OIDC.md` |
+| understand structured output | `engineering/Structured-Output.md` |
+| integrate MCP servers/tools in the UI | `engineering/MCP-UI-Integration.md` |
+| understand the ACP adapter | `plans/acp-adapter.md` |
+| configure tools and permissions | `plans/tool-configuration.md` -> `spec/permissions/` |
 | understand rights and policies | `spec/permissions/README.md` -> `spec/permissions/02-evaluation.md` |
 | integrate providers | `spec/provider/README.md` -> `spec/provider/02-event-stream.md` |
 | understand persistence | `spec/persistence/README.md` -> `spec/persistence/01-jdbc-flyway.md` |
@@ -21,6 +29,7 @@
 | run QOC as an agent registry | `guides/Agent-Registry.md` |
 | design subagent delegation and worker pools | `guides/Subagent-Delegation.md` |
 | check quality and tests | `spec/qualitaet/README.md` -> `spec/qualitaet/01-tests.md` |
+| review architecture and code | `review.md` (§7: engine architecture 2026-11-22) |
 | prioritize optimizations | `optimization.md` |
 | see open decisions | `open-questions.md` |
 | see documentation status | `STATUS.md` |
@@ -81,6 +90,59 @@ QOC-specific implementation guides; the operative spec remains under `spec/`:
 - `guides/deployment-modes.md` - Server/Serverless-Modi (planned, spec-only)
 - `guides/research-agent.md` - Research-Agent (async, parallel)
 
+## Modules
+
+| Module | Role |
+|---|---|
+| `engine/` | Pure Java core: contract, model, ports, runtime, adapters; no Quarkus/Jackson/CDI/HTTP in `core` |
+| `quarkus/` | Outer skin: HTTP/SSE, OIDC/Keycloak, MCP/A2A, ACP, RBAC guards, static UI |
+| `workflow-runner/` | Workflow library: store, graph compiler, executor, sub-workflows, node contracts, context agents |
+| `reactflow/` | React UI: chat at `/`, workflow editor at `/workflow/` |
+| `cli/` | Java CLI client |
+| `tui/` | Terminal UI |
+| `deploy/` | Docker, GCP native memory, AWS ECS, Keycloak, dev stacks |
+
+## Engineering
+
+Architecture and implementation notes for the workflow stack, security and storage:
+
+- `engineering/Workflow.md` - workflow orchestration + ReactFlow integration
+- `engineering/Workflow-OIDC.md` - RBAC, system user, OIDC
+- `engineering/Workflow-SDLC.md` - AI-SDLC workflow graph
+- `engineering/Workflow-Startup.md` - workflow stack startup guide
+- `engineering/Quarkus-Workflow.md` - Quarkus workflow integration
+- `engineering/Structured-Output.md` - JSON-schema output for agents/workflows
+- `engineering/MCP-UI-Integration.md` - MCP tools in the UI
+- `engineering/Task-Orchestration.md` - dependencies, tiered versions, SAGA
+- `engineering/SAGA.md` - task-level SAGA concept (tool-level MVP: `plans/saga-undo-tools.md`)
+- `engineering/InMemory.md` - in-memory runtime
+- `engineering/Native-Deployment.md` - native deployment
+- `engineering/Unified-Storage.md` - unified storage configuration
+- `engineering/Multi-Memory.md` - selectable storage backends
+- `engineering/Storage-alternative.md` - storage alternatives per port
+- `engineering/Two-Agent-Systems.md` - QOC agents vs workflow agents
+- `engineering/Directory-Scoping.md` - per-task writable directories
+- `engineering/Additional-Nodes.md` - dynamic node registration
+- `engineering/Async-use.md` - async agent calls and heartbeat
+- `engineering/ReAct-Workflow.md` / `engineering/ReAct-Implementation.md` - ReAct design
+- `engineering/ReactFlow-temporal.md` - ReactFlow + engine analysis
+- `engineering/Test.md` - manual test plan
+
+## Plans
+
+Time-limited implementation plans (not operative spec):
+
+- `plans/async-approval.md` - async approvals (phases 1+2+3 implemented)
+- `plans/saga-undo-tools.md` - saga undo MVP M1–M4 (implemented)
+- `plans/saga-orchestration.md` - complete saga M5–M10 (planned; opt-in via `SagaPolicy`)
+- `plans/e2e-security-test.md` - E2E security test plan
+
+## Change logs
+
+- `changes-2026-11-22.md` - saga undo MVP, `delete` tool, permission action alignment,
+  skill tool visibility, complete saga plan
+- `changes-2026-11-05.md` - least-privilege permission system, Auth0 OIDC
+
 ## Deployment
 
 - `deployment/README.md` - Uebersicht aller Zielumgebungen
@@ -105,3 +167,4 @@ implementation specification:
 - `analysis/flow-db-service/README.md`
 - `memory-use.md` - Memory-Nutzung und DB-/File-Storage waehrend eines Tasks
 - `engineering/Unified-Storage.md` - Einheitliche Speicher-Konfiguration (engine.storage, MCP, Agents, RBAC)
+- `review.md` - Code review 2026-11-09, addendum 2026-11-22, engine architecture review §7

@@ -8,6 +8,14 @@
 > **Status:** 2026-11-10 – Concept + storage requirements documented;
 > `Recovery` is wired up, a dedicated `SagaStore` does not yet exist.
 >
+> **Update 2026-11-22:** Tool-level undo is implemented
+> ([`plans/saga-undo-tools.md`](../plans/saga-undo-tools.md)) and the complete
+> tool-level saga is planned in
+> [`plans/saga-orchestration.md`](../plans/saga-orchestration.md). This document
+> describes the **task/workflow-step-level** SAGA; its `SagaStore` and durable
+> step compensations are still not implemented. The two levels share the
+> compensation idea but operate on different units (workflow step vs. tool call).
+>
 > **Code references:**
 > - `engine/runtime/execution/Recovery.java` – Crash recovery (Claims)
 > - `engine/runtime/execution/Coordinator.java` – Claim acquire/release

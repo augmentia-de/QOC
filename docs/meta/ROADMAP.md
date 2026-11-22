@@ -7,7 +7,7 @@
 > **Basis:** `spec/module-plan.md` §6–§9, `spec/java-packages.md`,
 > `spec/session-engine/Java-Impl.md` §13–§14, `open-questions.md` (all points decided).
 >
-> **Status:** 2026-10-24 · post-M14 hardening (revert, manual compaction, PTY, skill limit, LLM trace).
+> **Status:** 2026-11-22 · post-M14 hardening (revert, manual compaction, PTY, skill limit, LLM trace, saga undo MVP).
 
 ## Contents
 
@@ -21,6 +21,7 @@
 - [7. Prohibitions (short)](#7-prohibitions-short)
 - [3. Future milestones (M15+)](#3-future-milestones-m15)
 - [4. Post-M14 implementation status (2026-10-24)](#4-post-m14-implementation-status-2026-10-24)
+- [8. Post-M14 extensions (2026-11-22)](#8-post-m14-extensions-2026-11-22)
 
 ## 0. Roadmap vs. reference
 
@@ -260,14 +261,19 @@ rules.
 > only when a concrete question arises.
 ## 3. Future milestones (M15+)
 
-| # | Stage | Modules | Key deliverable | Done when |
-|---|---|---|---|---|
-| **M15** | S8 | `http`, `runtime` | Agent-specific config (tools, permissions, MCP, model, maxSteps) | agent with deny cannot call tool |
-| **M16** | S4/S8 | `runtime` (tool.runtime), `http` | Agent-scoped tool snapshot and permission rules | filtered tools in prompt request |
-| **M17** | S3/S8 | `runtime` (tool.mcp), `http` | MCP server subsets per agent | MCP tools filtered by agent |
-| **M18** | S7/S8 | `runtime` (execution), `http` | Multi-agent workflow handoff | workflow runs plan → build → review |
-| **M19** | S8 | `cli` (new module) | Java CLI client (Picocli): health, session, run, chat (REPL), agent/model listing | `qoc run`/`qoc chat` work against a running engine |
-| **M20** | S8 | `cli` (TS/TUI) | TypeScript TUI client (analog OpenCode TUI) talking to the QOC REST/SSE API | TUI renders sessions, streaming output, approvals and questions |
+| # | Stage | Modules | Key deliverable | Done when | Status |
+|---|---|---|---|---|---|
+| **M15** | S8 | `http`, `runtime` | Agent-specific config (tools, permissions, MCP, model, maxSteps) | agent with deny cannot call tool | delivered |
+| **M16** | S4/S8 | `runtime` (tool.runtime), `http` | Agent-scoped tool snapshot and permission rules | filtered tools in prompt request | delivered |
+| **M17** | S3/S8 | `runtime` (tool.mcp), `http` | MCP server subsets per agent | MCP tools filtered by agent | delivered |
+| **M18** | S7/S8 | `runtime` (execution), `http` | Multi-agent workflow handoff | workflow runs plan → build → review | delivered |
+| **M19** | S8 | `cli` (new module) | Java CLI client (Picocli): health, session, run, chat (REPL), agent/model listing | `qoc run`/`qoc chat` work against a running engine | delivered (`cli`) |
+| **M20** | S8 | `cli` (TS/TUI) | TypeScript TUI client (analog OpenCode TUI) talking to the QOC REST/SSE API | TUI renders sessions, streaming output, approvals and questions | delivered (`tui`) |
+| **M21** | S4/S6/S8 | `runtime` (tool.undo, saga), `http` | Saga orchestration (see `plans/saga-orchestration.md`): scopes, durable compensation, recovery, backup/restore, REST/UI | Turn/node failure compensates in reverse; `off/manual/observe/best-effort/strict` modes; concurrent undo applies once | planned |
+| **M22** | S7/S8 | `workflow-runner` (validation) | SDLC workflow graph: graph compiler checks / semantic review | SDLC graph validates with node contracts and semantic review | partial |
+| **M23** | S4/S7 | `runtime` (task/saga), `http` | Task-level SAGA + directory scoping | Durable task compensation and per-task writable directories | planned |
+| **M24** | S4/S6/S8 | `runtime`, `http`, `deploy` | Remote Shell / Lambda serverless / Auth0 / quality gates | Spec-only items implemented and gated | spec-only |
+| **M25** | S0/S8 | `engine` (core/runtime/adapter), `quarkus` | Architecture hygiene (review §7): `ToolDependencies` leak, `core.wiring` ArchUnit slice, `runtime/task` split, task quota, capability flags, `QocEngine` builder, lock ordering, `MetricsPort` | `mvn test` green; engine ArchUnit covers `core.wiring`; no `engine → quarkus/workflow-runner` imports | partial (A1/A2 done 2026-11-22) |
 
 These milestones extend M0–M14 without changing their invariants.
 
@@ -294,3 +300,27 @@ Still open from the decision log:
 - **L-7** model catalog snapshot and refresh — `StaticCatalogSource` is not wired.
 - **Persistent PTY** across calls (only one-off PTY is implemented).
 - **Native image** rebuild: no GraalVM on the build host; the existing runner predates the post-M14 changes.
+
+## 8. Post-M14 extensions (2026-11-22)
+
+Implemented beyond the original M0–M20 scope:
+
+| Area | State | Reference |
+|---|---|---|
+| **Workflow stack** | Implemented: `workflow-runner` (graph compiler, executor, stores, sub-workflows, node contracts, context agents, structured output, generator) + ReactFlow UI under `/workflow/` | [`engineering/Workflow.md`](../engineering/Workflow.md) |
+| **RBAC & security** | Core implemented: Principal propagation, HMAC tool tokens, `SecureRest`, A2A/MCP token forwarding, `Principal.system()`, system-token, `ownerId`/`rolesAllowed`, guards, ownership tests; Auth0 mapping spec-only | [`engineering/Workflow-OIDC.md`](../engineering/Workflow-OIDC.md) |
+| **Structured output** | Implemented: Java/YAML/OpenAPI schema sources, `strict` flag, automatic `contextRefs`, configurable output limit | [`engineering/Structured-Output.md`](../engineering/Structured-Output.md) |
+| **MCP server persistence** | Implemented: V12 migration, `SqlMcpServerStore`, CRUD/reload API, UI page | [`engineering/MCP-UI-Integration.md`](../engineering/MCP-UI-Integration.md) |
+| **ACP adapter** | Phase 2–5 implemented: JSON-RPC over stdio; session/new, prompt, cancel, load, list, delete, close, config, mode, auth; Phase 6 tests outstanding | [`plans/acp-adapter.md`](../plans/acp-adapter.md) |
+| **Context agents** | Implemented: `compactAfterRun`, compact nodes, `engine.context.default-task` (default `start`) | [`engineering/Workflow.md`](../engineering/Workflow.md) |
+| **Tool configuration** | Implemented: dynamic tool list, presets, permission-check endpoint, `rolesAllowed` vs `permissions`, least-privilege default | [`plans/tool-configuration.md`](../plans/tool-configuration.md) |
+| **Deployment** | Implemented: GCP native memory, AWS ECS, docker-dev/docker-dev-native, Keycloak OIDC; sandbox fallback | [`deployment/README.md`](../deployment/README.md) |
+| **UI/mobile** | Implemented: chat workspace switcher, files/settings pages, i18n (DE/EN), mobile Send/Cancel fix | `reactflow/`, `quarkus/.../resources` |
+| **Saga / Undo MVP (M1–M4)** | Implemented: `UndoSpec`/`UndoRegistry`/`UndoToolFactory`/`UndoRuntime`, Engine wiring, generated `undo_<tool>`, audit marker `{undoOf}`; reference pairs `write → delete` (creations only) and `worktree_create → worktree_remove`; tests green (1191 engine / 143 Quarkus) | [`plans/saga-undo-tools.md`](../plans/saga-undo-tools.md) |
+| **Saga orchestration plan (M5–M10)** | Plan only: scope model, durable `CompensationRecord` state machine, CAS/lease, recovery, compaction-safe `SagaStore`, backup/restore, `SagaPolicy` (`off/manual/observe/best-effort/strict`), REST/UI | [`plans/saga-orchestration.md`](../plans/saga-orchestration.md) |
+| **Permission action alignment** | `write`/`edit`/`patch`/`delete` use action `edit` per `spec/tools/02-filesystem.md`; `.env` edit protection now effective | `WriteTool`, `EditTool`, `PatchTool`, `DeleteTool` |
+| **Tool runtime completeness** | `ToolOutcome.Empty`/`InvalidArgument`/`Unavailable` pass through instead of being cast to `Ok` (previous `ClassCastException`) | `ToolRuntime.execute` |
+| **Skill tool visibility** | `skill`/`skill_list` use dedicated actions `skill_load`/`skill_list`; `ContextBuilder` filters by permission action, so skill allow/deny rules no longer hide the tools themselves | `SkillTool`, `ContextBuilder` |
+
+The complete saga is **opt-in**; the default is `manual` (current MVP behavior). See
+`saga-orchestration.md` §2.3 for the activation hierarchy and no-op wiring.

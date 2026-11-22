@@ -1,6 +1,6 @@
 # Documentation Inventory and Consolidation Recommendation
 
-> **Status:** 2026-11-04
+> **Status:** 2026-11-22
 > **Purpose:** Overview of all Markdown files in `docs/` with categorization,
 > redundancy analysis, and consolidation recommendation. The operative specification
 > under `spec/` is excluded from consolidation.
@@ -39,8 +39,14 @@ The operative, language-neutral specification. Source of truth.
 | `INDEX.md` | Role-based entry point, spec map, guides, deployment | Active |
 | `FUTURE-WORK.md` | Central overview of planned/unimplemented parts | New |
 | `README.md` | Documentation roles, entry point | Active |
+| `Features.md` | Compact feature inventory (engine + workflow runner) | Active |
+| `review.md` | Code review 2026-11-09 + addendum 2026-11-22 + §7 engine architecture review | Active |
 | `open-questions.md` | Decision register (mostly decided) | Reference |
 | `optimization.md` | Optimization catalog | Working |
+| `resilience.md` | Robust agent infrastructure (retry, triage, escalation) | Working |
+| `CONFIG.md` | Copy-paste configuration profiles | Active |
+| `settings.md` | Configuration hierarchy and modes | Active |
+| `maintenance.md` | Database maintenance/cleanup | Active |
 
 ### 1.3 Security & Deployment
 
@@ -97,9 +103,40 @@ The operative, language-neutral specification. Source of truth.
 |---|---|---|
 | `plans/async-approval.md` | Async approvals (phases 1+2+3 implemented) | Partial |
 | `plans/e2e-security-test.md` | E2E security test plan | Working |
+| `plans/acp-adapter.md` | ACP adapter (Phase 2–5) | Partial |
+| `plans/tool-configuration.md` | Tool configuration, presets, permission JSON | Implemented |
+| `plans/saga-undo-tools.md` | Saga undo MVP M1–M4 (implemented) | Implemented |
+| `plans/saga-orchestration.md` | Complete saga M5–M10 (opt-in via `SagaPolicy`) | Plan |
 | `issues/qoc-findings.md` | Current problems/findings | Working |
 
-### 1.8 Top-Level Extensions
+### 1.8 Engineering
+
+| File | Content | Status |
+|---|---|---|
+| `engineering/Workflow.md` | Workflow orchestration + ReactFlow integration | Implemented |
+| `engineering/Workflow-OIDC.md` | RBAC, system user, OIDC | Partial (core RBAC; Auth0 spec-only) |
+| `engineering/Workflow-SDLC.md` | AI-SDLC workflow graph | Partial |
+| `engineering/Workflow-Startup.md` | Workflow stack startup guide | Working |
+| `engineering/Quarkus-Workflow.md` | Quarkus workflow integration | Working |
+| `engineering/Structured-Output.md` | JSON-schema output for agents/workflows | Implemented |
+| `engineering/MCP-UI-Integration.md` | MCP tools in the UI | Implemented |
+| `engineering/Task-Orchestration.md` | Dependencies, tiered versions, SAGA | Plan |
+| `engineering/SAGA.md` | Task-level SAGA concept | Concept |
+| `engineering/InMemory.md` | In-memory runtime | Implemented |
+| `engineering/Native-Deployment.md` | Native deployment | Implemented |
+| `engineering/Unified-Storage.md` | Unified storage configuration | Implemented |
+| `engineering/Multi-Memory.md` | Selectable storage backends | Implemented |
+| `engineering/Storage-alternative.md` | Storage alternatives per port | Analysis |
+| `engineering/Two-Agent-Systems.md` | QOC agents vs workflow agents | Analysis |
+| `engineering/Directory-Scoping.md` | Per-task writable directories | Plan |
+| `engineering/Additional-Nodes.md` | Dynamic node registration | Working |
+| `engineering/Async-use.md` | Async agent calls and heartbeat | Concept |
+| `engineering/ReAct-Workflow.md` | ReAct workflow architecture | Plan |
+| `engineering/ReAct-Implementation.md` | ReAct implementation plan | Plan |
+| `engineering/ReactFlow-temporal.md` | ReactFlow + engine analysis | Draft |
+| `engineering/Test.md` | Manual test plan | Working |
+
+### 1.9 Top-Level Extensions
 
 | File | Content | Status |
 |---|---|---|

@@ -880,9 +880,33 @@ an opinion.
 | J-C | Per family: tool.fs, tool.shell, tool.mcp | 2026-10-22 | Compact packages |
 | J-D | Separate: http and wiring separate | 2026-10-22 | Sharper rule |
 | J-E | No: ports not sealed (adapter + fakes testable) | 2026-10-22 | Second implementation allowed |
+| SAGA-1 | Undo tools are generated per forward tool (`undo_<tool>`); there is no generic `saga` tool | 2026-11-21 | `UndoRuntimeTest`/`WriteUndoIntegrationTest` green; `/api/tool` lists `undo_write` |
+| SAGA-2 | Undo reads the folded conversation (`ToolCard`), not the journal; complete saga adds a dedicated `SagaStore` | 2026-11-21 | `UndoRuntimeTest` green; compaction gap documented in `saga-orchestration.md` §5.3 |
+| SAGA-3 | Complete saga is opt-in (`SagaPolicy`: `off/manual/observe/best-effort/strict`); default `manual`, overrides only lower the mode | 2026-11-22 | Policy resolver/cap tests (`saga-orchestration.md` §16.1) |
 
 Note: O-08 was already resolved (detect via projected message, without
 enqueue history) – no action.
 
 **Rule:** A decision is updated **in the responsible spec**, not only here.
 This file is the register, the spec is the contract.
+## 11. Decisions since 2026-11-05
+
+These decisions were taken during the workflow/RBAC/tooling expansion. They are recorded
+here because they change architecture or security behaviour; the responsible specs are
+updated separately.
+
+| # | Decision (short) | Date | Evidence |
+|---|---|---|---|
+| WF-1 | `workflow-runner` is a library; Temporal and `temporal-ui` were removed | 2026-11-11 | `c59d97e4`; `workflow-runner/pom.xml` |
+| WF-2 | ReactFlow UI is served under `/workflow/`; the agent chat UI stays at `/` | 2026-11-11+ | `reactflow/`, `quarkus/.../META-INF/resources/` |
+| WF-3 | Workflow/agent stores are pluggable (memory/SQLite/Postgres) | 2026-11-11+ | `workflow-runner/.../store`, `adapter/sql*` |
+| WF-4 | Node contracts + `verifyOnStop`; structured output from Java/YAML/OpenAPI schemas; `strict` flag | 2026-11-15 | `NodeContractValidator`, `JavaSourceToJsonSchema`, `YamlToJsonSchema`, `StructuredOutputConverter` |
+| SEC-1 | Principal propagation + HMAC tool tokens + `SecureRest`; A2A/MCP token forwarding | 2026-11-11 | `45faab9a`…`6c6b993f`; `HmacToolTokenService`, `SecureRestTool` |
+| SEC-2 | RBAC with `ownerId`/`rolesAllowed`, `Principal.system()`, system-token and guards | 2026-11-12 | `ae21882f`, `8da6542f`, `67092f7f`, `3df4b815` |
+| SEC-3 | Local Keycloak for dev; Auth0 remains spec-only | 2026-11-19 | `cc173d51`, `deploy/keycloak`, `deploy/docker-oidc-native` |
+| MCP-1 | MCP server definitions are persisted in the DB (V12), with CRUD/reload API + UI | 2026-11-15 | `48081ea1`, `V12__mcp_server.sql`, `SqlMcpServerStore` |
+| ACP-1 | ACP adapter uses JSON-RPC over stdio; phases 2–5 implemented | 2026-11-15 | `fd533688`, `plans/acp-adapter.md` |
+| TOOL-1 | Tool config = presets + concrete `tools`/`permissions` JSON; empty = none, `*` = all; `rolesAllowed` ≠ `permissions` | 2026-11-18/20 | `dd6488d7`, `f1996c4b`, `46f6ded0`, `agentPresets.ts` |
+| CTX-1 | Context agents run in the workflow session, compact after run; default task `start` | 2026-11-13/20 | `1084e1cf`, `ec7849bb`, `engine.context.default-task` |
+| DEP-1 | Native memory mode + ECS + docker-dev; workspace points at the `qoc` folder; sandbox disabled on hosts without user-ns | 2026-11-12/20 | `bd2abc2e`, `840a836e`, `46f6ded0`, `9b439cc5` |
+| QUAL-1 | Instruction coverage ≥ 80% (80.26% on 2026-11-22); 1191 engine / 143 Quarkus tests | 2026-11-22 | Surefire/JaCoCo reports |

@@ -49,7 +49,7 @@ Opposed to this is a **massively grown adapter/outer-skin layer (`quarkus`)**, i
 
 ### 3.2 Architecture bypass in `quarkus` (Direct SQL bypassing the port)
 
-While `engine` strictly checks that `java.sql.*` only appears in `adapter.sql` and `adapter.sqlite` (`engine/src/test/.../arch/ArchitectureTest.java:61`), this ArchUnit rule does **not** apply to the `quarkus` module. The Quarkus ArchUnit rules only check `noImplSuffix` and `noStandardStreams` (`quarkus/src/test/.../arch/ArchitectureTest.java:18-23`).
+While `engine` strictly checks that `java.sql.*` only appears in `adapter.sql` and `adapter.sqlite` (`engine/src/test/.../arch/ArchitectureTest.java:61`), the Quarkus test has `noImplSuffix`, `noStandardStreams` **and** a `javaSqlOnlyInSqlAdapter` rule — but the latter analyzes only `de.augmentia.oc.engine.http`, so it does not cover the engine adapters, and the direct JDBC usage in `Engine.java` is apparently not caught (the test is green).
 
 As a result, direct SQL access has moved into the HTTP/wiring layer:
 
@@ -598,3 +598,306 @@ The measures are sorted by priority, dependency and risk. Recommended order: **c
 | `PSQLException` in reports | not reproduced (0 hits) | Surefire reports |
 | Retention test overrides | confirmed: no `%test` overrides | `application.properties` |
 | Dirty working tree | confirmed (5 modified, 2 untracked) | `git status` |
+
+---
+
+## 6. Addendum 2026-11-22
+
+The review above is dated 2026-11-09; line numbers may have shifted. The repository has
+since grown a workflow stack, RBAC/security, structured outputs, MCP-server persistence,
+an ACP adapter, tool configuration and a saga/undo MVP. The following table records what
+changed; it does **not** replace a fresh review of the original findings.
+
+### 6.1 New since 2026-11-09
+
+| Change | Effect |
+|---|---|
+| **Workflow stack** | `workflow-runner` (graph compiler, executor, stores, sub-workflows, node contracts, context agents, structured output, generator) and `reactflow` `/workflow/` UI (workflows, runs, agents, MCP servers, settings). `docs/engineering/Workflow.md`. |
+| **RBAC & security** | Principal propagation, HMAC tool tokens, `SecureRest`, A2A/MCP token forwarding, `Principal.system()`, system-token auth, `ownerId`/`rolesAllowed`, `ExecutionGuards`/`SessionAccessGuard`, ownership integration tests. `docs/engineering/Workflow-OIDC.md`. |
+| **Structured output** | Java/YAML/OpenAPI schema sources, `strict` flag, automatic `contextRefs`, configurable output limit. `docs/engineering/Structured-Output.md`. |
+| **MCP server persistence** | V12 migration, `SqlMcpServerStore`, CRUD/reload API and UI page. `docs/engineering/MCP-UI-Integration.md`. |
+| **ACP adapter** | JSON-RPC over stdio; `AcpHandler`, `AcpSessionManager`, `AcpServer`, `AcpTransport`; session/new, prompt, cancel, load, list, delete, close, config, mode, auth. `docs/plans/acp-adapter.md`. |
+| **Tool configuration** | Dynamic tool list, presets (`readonly`, `retrieval`, `editor`, `full`, `context-agent`), permission-check endpoint, `rolesAllowed` vs `permissions`, least-privilege default. `docs/plans/tool-configuration.md`. |
+| **Saga/undo MVP** | `UndoSpec`/`UndoRegistry`/`UndoToolFactory`/`UndoRuntime`, generated `undo_<tool>`, reference pairs `write → delete` (creations only) and `worktree_create → worktree_remove`. Complete plan: `docs/plans/saga-orchestration.md` (M5–M10, opt-in `SagaPolicy`). |
+| **`ToolRuntime` correctness fix** | `Empty`/`InvalidArgument`/`Unavailable` are no longer cast to `Ok`; they pass through unchanged. Removes a latent `ClassCastException`. |
+| **Permission action alignment** | `write`/`edit`/`patch`/`delete` use action `edit`; `ContextBuilder.filterDeniedTools` uses the permission action. `.env` edit protection is effective. |
+| **Skill tool visibility** | `skill`/`skill_list` use dedicated actions (`skill_load`/`skill_list`); skill-ID rules still apply in `SkillTool.execute`/`list`. |
+| **Deployment** | GCP native memory, AWS ECS, docker-dev/docker-dev-native, Keycloak OIDC; workspace points at the `qoc` folder; sandbox fallback when `bwrap` is unavailable. |
+| **UI/mobile** | Chat workspace switcher, files/settings pages, i18n (DE/EN), mobile Send/Cancel fix (`uid()` in insecure contexts). |
+
+### 6.2 Corrections / re-verify
+
+- **Code size (2026-11-22):** 582 Java files / ~52k LOC in main sources of
+  `engine`, `quarkus`, `cli` and `workflow-runner` (excludes tests and the React/TS UI).
+  The original 597/55,717 figure had a different scope and module set.
+- **Test base:** 1191 engine tests / 143 Quarkus tests, 0 failures (2026-11-22);
+  engine instruction coverage is **80.26%**. The original 763/122 numbers are obsolete.
+- **Session isolation (§3.7.2):** RBAC guards and ownership tests were added. The specific
+  endpoints listed in the original finding should be re-verified against
+  `SessionAccessGuard`/`ExecutionGuards`; do not treat the old “partially implemented”
+  statement as current without a fresh check.
+- **God-classes (§3.1):** the real God class is `quarkus/.../Engine.java` (3,558 lines);
+  `QocEngine` is a 1,579-line facade, and `ContextBuilder` is 299 lines / 6 fields.
+  The architecture review's "16k-line ContextBuilder" was a byte/line mix-up (see §7.4).
+- **Direct SQL (§3.2):** `SagaStore` is planned as a port; the complete-saga plan explicitly
+  keeps saga persistence out of the Quarkus outer skin. Existing direct SQL paths are
+  unchanged.
+- **Tool runtime completeness:** the non-`Ok` outcome bug is fixed; `Empty`/`InvalidArgument`/
+  `Unavailable` are valid tool outcomes and should be handled by new tools.
+
+The architectural recommendations in §4 remain open unless a later change explicitly
+closed them. The workflow/RBAC/tooling work did not attempt the God-class split or the
+SQL adapter de-duplication.
+
+---
+
+## 7. Architecture Review 2026-11-22 (engine)
+
+> **Source:** `docs/tmp/architecture-review.md` (scratch, gitignored).
+> This section is the **validated, durable** summary. The scratch file was re-checked
+> against the code before incorporation; several quantitative claims were wrong
+> (bytes vs. lines, stale line numbers) and the existing ArchUnit test was overlooked.
+> The second-round self-corrections from the scratch file (§7) are folded in below.
+
+### 7.1 Scope and method
+
+| Module | Main Java files | Main LOC | Role |
+|---|---:|---:|---|
+| `engine` | 411 | 27,235 | Core + agent runtime + adapters |
+| `quarkus` | 101 | 15,737 | Outer skin (HTTP/SSE, OIDC, UI, MCP/A2A/ACP) |
+| `workflow-runner` | 60 | 8,423 | Workflow layer (graph compiler, executor, stores) |
+| `cli` | 10 | 701 | HTTP client, no engine dependency |
+
+Method: `grep` for import directions, `wc -l`/`wc -c` for sizes, inspection of the
+existing ArchUnit tests, and a consumer check across `quarkus`/`workflow-runner`.
+The engine test tree contains 188 Java files.
+
+### 7.2 Strengths (validated)
+
+- Hexagonal ports/adapters: `core.port.{store,world,human,runtime}` and `adapter.*`.
+- Pure Java core: no Quarkus/Jakarta/Jackson imports in `engine/src/main/java`.
+- Event sourcing with `SessionEvent` as the source of truth; sealed domain types and
+  records; `Option<T>` instead of `null`.
+- Claim-based concurrency, journal-before-side-effect, idempotency keys, tool-result
+  cache, clock abstraction.
+- Deny-by-default permissions, scoped tool registry with epochs, frozen tool snapshots,
+  compaction with epoch, Flyway migrations, Testcontainers.
+- The **engine** is consumed by **both** `quarkus` and `workflow-runner`; it imports
+  neither. The dependency direction is clean except for one `core.wiring` leak (§7.3).
+
+### 7.3 Validated findings
+
+| # | Finding | Evidence | Severity |
+|---|---|---|---|
+| **L1** | `core.wiring.ToolDependencies` imported `runtime.tool.registry.ToolRegistry` | Fixed 2026-11-22 by A1 (`ToolRegistrar`); formerly `core/wiring/ToolDependencies.java:6` | Closed |
+| **L2** | Task/subagent boundary is mixed | 6 classes in `runtime/tool/subagent`; used by `quarkus`, not by `workflow-runner`; `Layering.md` §7 targets `runtime/workflow` (wrong module model) | Medium |
+| **L3** | ArchUnit existed, but the `core.wiring` slice was not covered | Fixed 2026-11-22 by A2; formerly S0–S2 omitted `core.wiring` | Closed |
+| **L4** | `QocEngine` facade ergonomics | 1,579 lines, 29 `private final` fields, 23-param ctor, 4 `create` overloads, 43 public methods; `EngineConfig` 18 fields | Medium |
+| **L5** | Silent no-ops in minimal mode | `NoOp*` adapters return empty results | Medium |
+| **L6** | Error channels are `RuntimeException` | `PermissionDenied`, `Aborted`, `Defect`, `StoreFailure`, `PausedException` | Low (documented trade-off) |
+| **L7** | No documented lock ordering | 37× `synchronized`, 22× `ReentrantLock`, 17× `volatile`, 31× `Atomic*` | Low |
+| **L8** | Metrics are ad-hoc `AtomicLong` | 5 counters in `QocEngine` | Low–Medium |
+| **L9** | `quarkus.Engine` is the real God class | 3,558 lines | High (already in §3.1) |
+| **L10** | `workflow-runner` bypasses engine ports for SQL dialects | imports `engine.adapter.sql.SqlDialect`, `PostgresDialect`, `SqliteDialect`, `StorageFactory`, `SystemClock`, `adapter.memory.RuntimeState` | Low–Medium (trade-off) |
+
+**L1 was the only internal import-direction violation.** After A1 (2026-11-22):
+`adapter → runtime`: 0; `runtime → adapter`: 0; `core → adapter`: 0;
+`core → runtime`: 0 (was 1, `ToolDependencies`); `engine → quarkus/workflow-runner/cli`: 0.
+
+**L10 is a consumer-level trade-off, not an engine violation.** `workflow-runner` is an
+outer consumer and may use `engine.adapter`, but sharing `SqlDialect` couples its stores
+to engine internals. If the port boundary is the goal, the dialect helper should move to
+a neutral utility or `workflow-runner` should use the engine's `Journal`/`SessionStore`
+ports. The current choice is pragmatic because `workflow-runner` has its own schema.
+
+### 7.4 Validation corrections (must not be lost)
+
+The scratch review's quantitative table is **not** line counts. It mixed `wc -l` for
+`QocEngine` with byte sizes for the other files:
+
+| File | Claimed "lines" | Actual lines | Actual bytes |
+|---|---:|---:|---:|
+| `QocEngine.java` | 1,579 | **1,579** | 98,986 |
+| `ContextBuilder.java` | 16,015 | **299** | 16,015 |
+| `ContractCodec.java` | 16,172 | **408** | 16,172 |
+| `Json.java` | 14,512 | **356** | 14,512 |
+| `NioFileSystem.java` | 14,433 | **383** | 14,433 |
+| `McpDiscoveryClient.java` | 14,512 | **292** | 14,512 |
+| `GrepTool.java` | 10–13k | **279** | 13,526 |
+| `EmailTool.java` | 10–13k | **264** | 13,175 |
+| `WorktreeTool.java` | 10–13k | **207** | 10,883 |
+| `UndoRuntime.java` | 10–13k | **278** | 13,001 |
+| `PermissionEngine.java` | 11,909 | **251** | 12,010 |
+| `CompactionService.java` | 11,901 | **234** | 11,909 |
+| `SkillCatalog.java` | 11,561 | **283** | 11,561 |
+| `ToolRegistry.java` | 12k | **133** | 4,819 |
+
+Consequences:
+
+- **`ContextBuilder` is not a 16k-line God class.** It has 299 lines and 6 fields
+  (`conversation`, `skills`, `instructionLoader`, `instructionStore`, `skillFilter`,
+  `defaultPermissions`). The decomposition recommendation (A8) is **withdrawn**.
+- **`QocEngine` numbers:** 29 `private final` fields (23 injected + 5 counters + 1
+  agent map), 23-param private constructor, 4 `create` overloads, 43 public methods —
+  not "~40 fields / 25 params / 7 overloads / 28 methods".
+- **Engine size:** 411 main Java files / 27,235 lines, not 833 files.
+- **ArchUnit:** an engine test **does exist**
+  (`engine/src/test/java/de/augmentia/oc/engine/arch/ArchitectureTest.java`) and covers
+  S0–S2, runtime→adapter, adapter→runtime, adapter-only-by-wiring, package cycles,
+  `java.sql` confinement, Quarkus/HTTP freedom, `Impl` suffix, standard streams, generic
+  exceptions and port interfaces. The gap was narrower: **`core.wiring` was not in
+  S0–S2**, so L1 passed. Fixed on 2026-11-22 with a dedicated `core.wiring` rule (not by
+  adding the package to S0; see A2). The scratch claim "no ArchUnit tests" is wrong.
+- **Workflow layer:** the workflow layer is the **`workflow-runner` module**, not
+  `engine.runtime.workflow`. The engine's `runtime/workflow` contains only
+  `WorkflowStepProvider` (a bridge). The scratch table's "Workflow-Orchestrierung |
+  runtime/workflow/*" is a category error.
+- **`MAX_CONCURRENT_SUBAGENTS`:** `quarkus/.../Engine.java:2229`, not `Engine.java:2249`
+  (line drift). It is an outer-skin constant and a `Semaphore`; see A4.
+- **Real God class:** `quarkus.Engine` (3,558 lines), already tracked in §3.1. The
+  architecture review should not redirect that finding to `ContextBuilder`.
+
+### 7.5 Second-round self-corrections (incorporated)
+
+| # | Original claim | Validated correction |
+|---|---|---|
+| 1 | `QocEngine` is a God class | Facade/composition root; the issue is **constructor ergonomics**, not diffuse responsibility. |
+| 2 | `ContextBuilder` mixes too many responsibilities | 299 lines / 6 fields; cohesive; **no decomposition needed**. |
+| 3 | Error channels as `RuntimeException` are a problem | Deliberate, documented 3-channel trade-off; record as ADR, not a defect. |
+| 4 | `file` mode with in-memory runtime is buggy | Documented behavior; operator-UX/data-loss risk, not a correctness bug. |
+| 5 | Adapters have no transactions | Consistent with event sourcing; the obligation is recovery reconciliation. |
+| 6 | Engine imports Quarkus/Jakarta | 0 imports; the "pure core" claim holds. |
+| 7 | Adapters import runtime | 0 imports; the only violation was `core → runtime` in `ToolDependencies` (fixed 2026-11-22). |
+| 8 | No ArchUnit tests | Wrong: engine and quarkus tests exist; the `core.wiring` slice gap was fixed 2026-11-22. |
+| 9 | `ContextBuilder` is a God class | Withdrawn (see #2). |
+| 10 | QOC has no vector/graph memory | Out of scope for this review; a missing feature, not an architecture defect. |
+
+### 7.6 Revised, targeted improvements (order matters)
+
+**Status 2026-11-22:** **A1 and A2 are implemented.** Engine: 1,191 tests, 0 failures,
+4 skipped; workflow-runner: 233 tests, 0 failures, 1 skipped; quarkus: 143 tests,
+0 failures, 23 skipped. A3–A8, A10 and A11 remain open; A9 is withdrawn. The original
+order note still applies to anyone redoing the change: **do A1 before A2** — adding the
+dedicated `core.wiring` rule while L1 still exists would make the build red. Fix the leak
+first, then add the gate.
+
+| # | Measure | Effort | Impact | Concrete change |
+|---|---|---|---|---|
+| **A1** | Decouple `ToolDependencies` from `ToolRegistry` | S | Core becomes runtime-free | Add `core.contract.tool.ToolRegistrar` (`void register(Consumer<ToolDefinition> sink)`); `ToolDependencies` holds it; `QocEngine.create` calls `toolRegistrar.register(registry::register)`; `quarkus.Engine` passes a sink lambda. `workflow-runner` is unaffected. |
+| **A2** | Tighten the existing engine ArchUnit test | S | Prevents L1 regression | Add a **dedicated** rule: `..core.wiring..` must not depend on `..runtime..`/`..adapter..`. **Do not** add it to S0: S0 forbids `core.contract`, and `ToolDependencies` legitimately needs `ToolDefinition`/`ToolRegistrar` from `core.contract.tool`. Extend `engineStaysFreeOfQuarkusAndHttp` with `de.augmentia.qoc.workflowrunner..` and `de.augmentia.oc.engine.http..`. No new dependency needed (`archunit-junit5` is already in `engine/pom.xml`). |
+| **A3** | Split task orchestration from tool adapters | M | Real boundary, both consumers keep working | New `runtime/task`: `BackgroundTasks`, `SubagentSessionRegistry`, `InMemorySubagentSessionRegistry`, `SubagentRunner`; keep `SubagentTool`/`TaskTool` in `runtime/tool/subagent` as adapters. Update `quarkus` imports and `NativeReflectionConfig`. **Do not** move to `runtime/workflow` or `workflow-runner`: `workflow-runner` does not use these classes, and `quarkus` agent chat does. |
+| **A4** | Move the subagent quota into the engine | S–M | Removes policy from the outer skin | Replace `MAX_CONCURRENT_SUBAGENTS` + `Semaphore` in `quarkus.Engine` with a `runtime.task.TaskQuota` (configurable, default 4); `quarkus` passes the config. |
+| **A5** | Capability flags for minimal mode | S | Operator UX | Add `capabilities()`/`isSupported()` or throw explicit `Unsupported` instead of silent `NoOp*`. |
+| **A6** | Builder for `QocEngine`/`EngineConfig` | M | Ergonomics | Keep `create(...)` overloads as delegating factories; validate in one builder. |
+| **A7** | Document lock ordering | S | Deadlock prevention | Add a short section to `Core.md`/`InMemory.md`: session lock → claim lock → journal; never reverse. |
+| **A8** | `MetricsPort` | M | Embedded observability | Port + adapter for Micrometer/OTel; keep `AtomicLong` as the memory adapter. |
+| **A9** | `ContextBuilder` decomposition | — | **Withdrawn** | 299 lines / 6 fields; no action. |
+| **A10** | Correct `Layering.md` §7/§8 | S | Docs match code | State that the workflow layer is `workflow-runner`; `engine.runtime.workflow` is a bridge; task primitives stay in `engine.runtime.task`. |
+| **A11** | Split `quarkus.Engine` | L | The real God class | Separate HTTP resources, wiring, MCP/A2A/ACP, task endpoints; preserve behavior. This is the existing §3.1 work, not a new finding. |
+
+### 7.7 Module boundary matrix (validated)
+
+| From → To | `engine.core` | `engine.runtime` | `engine.adapter` | `workflow-runner` | `quarkus` | `cli` |
+|---|---|---|---|---|---|---|
+| `engine.core` | — | **1 violation (L1)** | 0 | 0 | 0 | 0 |
+| `engine.runtime` | allowed | — | 0 | 0 | 0 | 0 |
+| `engine.adapter` | allowed | 0 | — | 0 | 0 | 0 |
+| `workflow-runner` | allowed | allowed | allowed (L10) | — | 0 | 0 |
+| `quarkus` | allowed | allowed | allowed | allowed | — | 0 |
+| `cli` | 0 | 0 | 0 | 0 | HTTP only | — |
+
+Rules to encode (A2): engine must not depend on `quarkus`, `workflow-runner` or `cli`;
+`core.wiring` must not depend on `runtime`/`adapter` (dedicated rule — **not** part of S0,
+which forbids `core.contract`); `adapter` must not depend on `runtime`; `runtime` must
+not depend on `adapter`. The first two are the ones that matter for the dual-consumer
+setup (`quarkus` and `workflow-runner` both consume engine, never the reverse).
+
+**Consumer-side enforcement is separate.** The engine ArchUnit test only sees
+**outgoing** imports from `de.augmentia.oc.engine..`; it cannot check what
+`workflow-runner` or `quarkus` import. The existing `quarkus` ArchUnit test analyzes only
+`de.augmentia.oc.engine.http`, not `de.augmentia.qoc.workflowrunner`. To make the
+consumer boundary mechanical, add small tests in the consumer modules:
+
+- `workflow-runner`: allowed `engine.core`, `engine.runtime`, `engine.adapter`; forbidden
+  `quarkus`, `cli`.
+- `quarkus`: allowed `engine`, `workflow-runner`; forbidden `cli`.
+- `cli`: no `engine`, no `workflow-runner` (HTTP only).
+
+If the goal is also "`workflow-runner` uses ports, not adapters", L10 must be resolved
+first; otherwise the rule would fail on `SqlDialect`/`StorageFactory`. That is a
+deliberate follow-up decision, not part of A1/A2.
+
+### 7.8 A1/A2 implementation (done 2026-11-22)
+
+**A1 — core-owned registrar**
+
+```java
+// engine/src/main/java/de/augmentia/oc/engine/core/contract/tool/ToolRegistrar.java
+package de.augmentia.oc.engine.core.contract.tool;
+
+import java.util.function.Consumer;
+
+/** Core-owned callback: the runtime supplies a sink; the host emits definitions. */
+@FunctionalInterface
+public interface ToolRegistrar {
+    void register(Consumer<ToolDefinition> sink);
+}
+```
+
+```java
+// core/wiring/ToolDependencies.java
+import de.augmentia.oc.engine.core.contract.tool.ToolRegistrar;
+// ...
+ToolRegistrar toolRegistrar
+// compact ctor: if (toolRegistrar == null) toolRegistrar = sink -> {};
+// legacy ctor/none(): this(..., sink -> {});
+```
+
+```java
+// runtime/QocEngine.java (create)
+if (toolDeps != null && toolDeps.toolRegistrar() != null) {
+    toolDeps.toolRegistrar().register(registry::register); // Registration is discarded
+}
+```
+
+```java
+// quarkus/.../Engine.java
+new ToolDependencies(..., sink -> {
+    for (var tool : mgr.discovered(serverName)) {
+        sink.accept(McpTool.definition(serverName, tool.name(), tool.description(),
+                tool.inputSchema(), client));
+    }
+});
+```
+
+**A2 — ArchUnit**
+
+```java
+@ArchTest
+static final ArchRule wiringDoesNotDependOnRuntimeOrAdapter = noClasses()
+        .that().resideInAPackage("..core.wiring..")
+        .should().dependOnClassesThat()
+        .resideInAnyPackage("de.augmentia.oc.engine.runtime..", "..adapter..");
+```
+
+Extend `engineStaysFreeOfQuarkusAndHttp` with
+`de.augmentia.qoc.workflowrunner..` and `de.augmentia.oc.engine.http..`.
+
+**Verification**
+
+```bash
+mvn -pl engine test -Dtest=ArchitectureTest
+mvn -pl engine test
+mvn -pl quarkus test -Dtest=ArchitectureTest
+```
+
+`workflow-runner` does not use `ToolDependencies`, so it needed no change; its build is
+green (`mvn -pl workflow-runner test`). If A2 is added before A1, the engine ArchUnit
+test will fail on the existing `ToolDependencies` import — hence the order.
+
+**Result (2026-11-22):** `engine` 1,191 tests green (4 skipped), `workflow-runner` 233
+green (1 skipped), `quarkus` 143 green (23 skipped). The new rule
+`wiringDoesNotDependOnRuntimeOrAdapter` is part of
+`engine/.../arch/ArchitectureTest.java`; `ToolDependencies` no longer imports
+`runtime.tool.registry.ToolRegistry`. `engineStaysFreeOfQuarkusAndHttp` now also guards
+against `de.augmentia.qoc.workflowrunner..` and `de.augmentia.oc.engine.http..`.
