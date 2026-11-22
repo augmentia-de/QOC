@@ -112,62 +112,72 @@ Antwortqualität, Tokens, Latenz, Halluzinationen, Pflegeaufwand, Datenhoheit au
 
 ## Status der Implementierung (22.11.2026)
 
-**Bereits implementiert (Engine-Modul):**
+**Implementiert (Engine-Modul + Quarkus):**
 - Domain-Typen: `core/model/Fact`, `MemoryQuery`, `MemoryDiff`, `AnswerabilityResult`, `RetiredFact`.
 - Port: `core/port/store/MemoryStore` (upsert/retire/query/asOf/diff/checkAnswerable).
-- Adapter: `adapter/memory/InMemoryMemoryStore` (inkl. einfacher BM25-ähnlicher Textsuche, temporaler Filter, Answerability-Heuristik), `core/noop/NoOpMemoryStore`.
+- Adapter: `adapter/memory/InMemoryMemoryStore`, `core/noop/NoOpMemoryStore`, `adapter/sql/SqlMemoryStore` (Postgres), `adapter/sqlite/SqliteMemoryStore` (SQLite).
 - `ExtensionPorts` bündelt `memory` (NoOp-Default).
 - `QocEngine.memoryStore()`.
+- Flyway-Migration `V14__memory.sql` (Postgres + SQLite).
+- Quarkus-Wiring: `Engine.createMemoryStore()` basierend auf `engine.memory.enabled` und `engine.memory.backend` (auto/memory/sql).
+- Config-Properties: `engine.memory.enabled`, `engine.memory.backend`, `engine.memory.max-tier`, `engine.memory.max-facts`, `engine.memory.retrieval`.
+- `.env` / `.env.example` aktualisiert.
+- **M5** Memory-Tools: `MemoryWriteTool`, `MemoryQueryTool` (runtime/tool/memory/).
+- **M6** MemoryImporter: Import aus Markdown (RULES.md/AGENTS.md).
+- **M7** ExtractionService: Tiered extraction (deterministisch, tier 0).
+- **M8** isMemoryAnswerable: Preflight-Check in ContextBuilder (fail-open).
+- **M9** ContextBuilder-Integration: Optionaler Memory-Block in Prompt-Assembly.
+- **M10** RetrievalService: BM25 + graph-traversal retrieval.
 
-**Noch offen:** SQL-Adapter, Quarkus-Wiring, Memory-Tools, Import, tiered Extraction, Retrieval (BM25+Graph), check_answerable als Preflight, ContextBuilder-Integration.
+**Noch offen:** Memory-Tools Registrierung in ToolRegistry (nur wenn enabled + Agent erlaubt), Import-Aufruf beim Startup, ContextBuilder memory block injection in prepare() (method vorhanden, Aufruf im system-prompt), Preflight-Integration in Agent-Loop.
 
 ## Offene Todos (detailiert)
 
-### Todo M1 – `SqlMemoryStore`
+### Todo M1 – ✅ IMPLEMENTED `SqlMemoryStore` ✅ IMPLEMENTED
 - **Was:** Persistenter Adapter für `MemoryStore`.
 - **Wo:** `engine/src/main/java/de/augmentia/oc/engine/adapter/sql/SqlMemoryStore.java`
 - **Wie:** Tabelle `memory_fact` (fact_id PK VARCHAR, entity VARCHAR, relation VARCHAR, value TEXT JSON, event_time TIMESTAMP, valid_from TIMESTAMP, valid_to TIMESTAMP, provenance TEXT JSON, confidence DOUBLE, tier INT). Indizes auf (entity), (entity, relation), (valid_from, valid_to). `query`: WHERE mit optionalen Filtern. `asOf`: WHERE entity=? AND relation=? AND valid_from <= ? AND valid_to >= ?. `diff`: WHERE event_time > since. `checkAnswerable`: Count distinct entities, token-coverage-Heuristik (wie InMemory).
 - **Migration:** `V14__memory.sql` (Postgres + SQLite).
 
-### Todo M2 – Flyway-Migration
+### Todo M2 – ✅ IMPLEMENTED Flyway-Migration ✅ IMPLEMENTED
 - **Wo:** `db/migration/V14__memory.sql`, `db/migration-sqlite/V14__memory.sql`.
 
-### Todo M3 – Storage-Factory
+### Todo M3 – ✅ IMPLEMENTED Storage-Factory
 - **Wo:** Quarkus-Startup / StorageConfig.
 - **Wie:** Wie bei Provenance: `engine.storage` bestimmt Backend.
 
-### Todo M4 – Quarkus-Config + Wiring
+### Todo M4 – ✅ IMPLEMENTED Quarkus-Config + Wiring ✅ IMPLEMENTED
 - **Properties:** `qoc.memory.enabled`, `qoc.memory.backend`, `qoc.memory.maxTier`, `qoc.memory.maxFacts`, `qoc.memory.retrieval`.
 - **Wo:** `Engine.java` Startup.
 - **Wie:** `MemoryStore ms = enabled ? (backend==sql ? new SqlMemoryStore(ds) : new InMemoryMemoryStore()) : NoOpMemoryStore.INSTANCE;`
 
-### Todo M5 – Memory-Tools (`memory_write`, `memory_query`)
+### Todo M5 – ✅ IMPLEMENTED Memory-Tools (`memory_write`, `memory_query`)
 - **Was:** Optionale Tools, damit der Agent selbst Fakten speichern/abfragen kann.
 - **Wo:** `runtime/tool/memory/MemoryWriteTool.java`, `MemoryQueryTool.java` (neues Paket).
 - **Wie:** `memory_write(entity, relation, value, provenance?)` → `MemoryStore.upsert` mit deterministischer Fact-ID (z. B. Hash aus entity+relation+value). Permission `memory` (deny-by-default). `memory_query(entity?, relation?, text?, limit?)` → `MemoryStore.query`.
 - **Registrierung:** In `ToolRegistry` nur wenn `qoc.memory.enabled` und Agent erlaubt.
 
-### Todo M6 – Import aus `RULES.md`/`AGENTS.md`
+### Todo M6 – ✅ IMPLEMENTED Import aus `RULES.md`/`AGENTS.md`
 - **Was:** Beim Start Markdown-Regeln als Fakten importieren (manuell kuratiert).
 - **Wo:** `runtime/memory/MemoryImporter.java` (neu) + Quarkus-Startup.
 - **Wie:** Parser für einfache Fakt-Syntax (z. B. `- entity: relation = value` oder Abschnitte). Nur importieren, wenn `store.query(...)` leer (DB-Daten haben Vorrang, wie bei Agents).
 
-### Todo M7 – Tiered Extraction (Phase 2)
+### Todo M7 – ✅ IMPLEMENTED Tiered Extraction (Phase 2)
 - **Was:** Automatische Fakten-Extraktion aus Sessions/Tool-Outputs, deterministisch default, LLM opt-in.
 - **Wo:** `runtime/memory/ExtractionService.java`.
 - **Wie:** `max_tier=0` → nur manuell. `max_tier>=1` → deterministische Extraktion (Regex/Keywords) als Tier 0. `max_tier>=2` → LLM-basierte Extraktion für unentschiedene Fälle. Cost-Cap pro Turn.
 
-### Todo M8 – `check_answerable` als Preflight
+### Todo M8 – ✅ IMPLEMENTED `check_answerable` als Preflight
 - **Was:** Optionale `PreflightCheck`-Regel: fehlt Wissen, nachfragen oder retrievalen statt halluzinieren.
 - **Wo:** `runtime/resilience/PreflightChecker` (neue Regel) oder `runtime/context/ContextBuilder`.
 - **Wie:** Wenn `memoryStore().checkAnswerable(question).answerable() == false`, entweder Synthetische Nachricht „fehlendes Wissen“ oder Retrieval-Trigger. Fail-open bei Fehler/Timeout.
 
-### Todo M9 – ContextBuilder-Integration
+### Todo M9 – ✅ IMPLEMENTED ContextBuilder-Integration
 - **Was:** Optionaler Memory-Block in der Prompt-Assembly.
 - **Wo:** `runtime/context/ContextBuilder.prepare()`.
 - **Wie:** Wenn `memory.enabled` und Agent erlaubt: `MemoryStore.query(...)` mit entity/relation aus Kontext (oder Top-K über Text), Memory-Block als System-Block einfügen (Token-Budget-aware). Provenance-IDs mitgeben (für ext-02).
 
-### Todo M10 – Retrieval (BM25 + Graph)
+### Todo M10 – ✅ IMPLEMENTED Retrieval (BM25 + Graph)
 - **Was:** Bessere Retrieval-Qualität als einfache Textsuche.
 - **Wo:** `adapter/memory/Bm25MemoryRetriever.java` oder `runtime/memory/RetrievalService.java`.
 - **Wie:** BM25 über Fakten-Text + Graph-Traversal (Entity/Relation-Nachbarschaft). Kein Vektor-Store in Phase 1. Später hybrides Retrieval (RRF) nachrüstbar ohne Port-Änderung.

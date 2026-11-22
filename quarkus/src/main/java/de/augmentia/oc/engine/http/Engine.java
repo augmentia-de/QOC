@@ -71,6 +71,8 @@ import de.augmentia.oc.engine.runtime.tool.web.SecureRestTool;
 import de.augmentia.oc.engine.runtime.tool.email.EmailTool;
 import de.augmentia.oc.engine.runtime.tool.email.EmailLimits;
 import de.augmentia.oc.engine.runtime.tool.fs.WriteTool;
+import de.augmentia.oc.engine.runtime.tool.memory.MemoryWriteTool;
+import de.augmentia.oc.engine.runtime.tool.memory.MemoryQueryTool;
 import de.augmentia.oc.engine.runtime.tool.agent.AgentCreateTool;
 import de.augmentia.oc.engine.runtime.tool.agent.AgentListTool;
 import de.augmentia.oc.engine.runtime.tool.registry.ToolRegistry;
@@ -617,11 +619,49 @@ public String generateText(String prompt) {
     @ConfigProperty(name = "engine.decision.max-retries", defaultValue = "2")
     int decisionMaxRetries;
 
+    // Memory (ext-03, optional)
+    @ConfigProperty(name = "engine.memory.enabled", defaultValue = "false")
+    boolean memoryEnabled;
+
+    @ConfigProperty(name = "engine.memory.backend", defaultValue = "auto")
+    String memoryBackend;
+
     @ConfigProperty(name = "engine.decision.prompt-relation.enabled", defaultValue = "false")
     boolean decisionPromptRelationEnabled;
 
     @ConfigProperty(name = "engine.decision.prompt-relation.threshold", defaultValue = "0.7")
     double decisionPromptRelationThreshold;
+
+    private de.augmentia.oc.engine.core.port.store.MemoryStore createMemoryStore() {
+        if (!memoryEnabled) return null; // NoOpMemoryStore via ExtensionPorts default
+        String backend = memoryBackend == null ? "auto" : memoryBackend.trim().toLowerCase();
+        if ("auto".equals(backend)) {
+            backend = memoryMode ? "memory" : "sql";
+        }
+        if ("memory".equals(backend) || "inmemory".equals(backend)) {
+            return new de.augmentia.oc.engine.adapter.memory.InMemoryMemoryStore();
+        }
+        if (dataSource == null) {
+            java.util.logging.Logger.getLogger(Engine.class.getName())
+                    .warning("Memory backend 'sql' requested but no dataSource; falling back to in-memory");
+            return new de.augmentia.oc.engine.adapter.memory.InMemoryMemoryStore();
+        }
+        try {
+            if (memoryMode) {
+                return new de.augmentia.oc.engine.adapter.memory.InMemoryMemoryStore();
+            }
+            // Detect SQLite vs Postgres by driver/URL
+            String url = dataSource.getConnection().getMetaData().getURL();
+            if (url != null && url.contains("sqlite")) {
+                return new de.augmentia.oc.engine.adapter.sqlite.SqliteMemoryStore(dataSource);
+            }
+            return new de.augmentia.oc.engine.adapter.sql.SqlMemoryStore(dataSource);
+        } catch (java.sql.SQLException e) {
+            java.util.logging.Logger.getLogger(Engine.class.getName())
+                    .warning("Memory store creation failed: " + e.getMessage());
+            return new de.augmentia.oc.engine.adapter.memory.InMemoryMemoryStore();
+        }
+    }
 
     @PostConstruct
     void wire() {
@@ -790,6 +830,11 @@ commandLoader = new CommandLoader(workspacePath,
         subagentTool = new SubagentTool(null, permissionGate);
         registry.register(SubagentTool.definition(subagentTool));
         registry.register(TaskTool.definition(subagentTool));
+        // Memory tools (ext-03, optional, gated by engine.memory.enabled)
+        if (memoryEnabled && qocEngine != null && qocEngine.memoryStore() != null) {
+            registry.register(MemoryWriteTool.definition(qocEngine.memoryStore(), permissionGate));
+            registry.register(MemoryQueryTool.definition(qocEngine.memoryStore(), permissionGate));
+        }
         String firecrawlKey = firecrawlApiKey == null ? "" : firecrawlApiKey.orElse("");
         registry.register(FirecrawlTool.definition(
                 new FirecrawlTool(new JdkHttpTransport(), firecrawlKey, firecrawlEndpoint)));
@@ -912,6 +957,7 @@ commandLoader = new CommandLoader(workspacePath,
                 instructions == null ? Option.none() : Option.some(instructions), config.skillFilter(),
                 ContextBuilder.defaults(permissionDefault));
         if (contextBuilder != null && qocEngine != null) contextBuilder.setDecisionModel(qocEngine.decisionModel());
+        if (contextBuilder != null && qocEngine != null) contextBuilder.setMemoryStore(qocEngine.memoryStore());
 
         // Create QocEngine (BaseEngine) for workflow delegation
         // Use Quarkus's stores for QocEngine (shared data)
@@ -1034,7 +1080,8 @@ commandLoader = new CommandLoader(workspacePath,
                             }
                         }),
                 new de.augmentia.oc.engine.core.wiring.ExtensionPorts(
-                        null, null,
+                        null,
+                        createMemoryStore(),
                         decisionEnabled
                                 ? new de.augmentia.oc.engine.runtime.provider.client.TypeSafeDecisionAdapter(
                                         decisionBaseUrl, decisionModel,

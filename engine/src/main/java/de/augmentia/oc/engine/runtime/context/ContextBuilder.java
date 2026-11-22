@@ -105,6 +105,7 @@ public final class ContextBuilder {
     private final SkillFilterOptions skillFilter;
     private final List<Rule> defaultPermissions;
     private volatile de.augmentia.oc.engine.core.port.runtime.DecisionModel decisionModel;
+    private volatile de.augmentia.oc.engine.core.port.store.MemoryStore memoryStore;
 
     public ContextBuilder(Conversation conversation, SkillCatalog skills) {
         this(conversation, skills, InstructionLoader.none(), Option.none(), SkillFilterOptions.defaults());
@@ -143,6 +144,45 @@ public final class ContextBuilder {
 
     public de.augmentia.oc.engine.core.port.runtime.DecisionModel decisionModel() {
         return decisionModel;
+    }
+
+    /** Optional MemoryStore for semantic long-term memory (fail-open). */
+    public void setMemoryStore(de.augmentia.oc.engine.core.port.store.MemoryStore ms) {
+        this.memoryStore = ms;
+    }
+
+    public de.augmentia.oc.engine.core.port.store.MemoryStore memoryStore() {
+        return memoryStore;
+    }
+
+    /** Build a memory block for the given query text. Returns empty string if disabled. */
+    public String memoryBlock(String query) {
+        if (memoryStore == null) return "";
+        try {
+            de.augmentia.oc.engine.core.model.MemoryQuery mq =
+                    new de.augmentia.oc.engine.core.model.MemoryQuery(null, null, null, query, 10);
+            java.util.List<de.augmentia.oc.engine.core.model.Fact> facts = memoryStore.query(mq);
+            if (facts.isEmpty()) return "";
+            StringBuilder sb = new StringBuilder();
+            sb.append("## Semantic Memory\n");
+            for (de.augmentia.oc.engine.core.model.Fact f : facts) {
+                sb.append("- ").append(f.entity()).append(" / ").append(f.relation())
+                        .append(" = ").append(f.value()).append("\n");
+            }
+            return sb.toString();
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    /** Check if the memory store considers the question answerable. Fail-open: true on error. */
+    public boolean isMemoryAnswerable(String question) {
+        if (memoryStore == null || question == null || question.isBlank()) return true;
+        try {
+            return memoryStore.checkAnswerable(question).answerable();
+        } catch (RuntimeException e) {
+            return true;
+        }
     }
 
     /** Returns true if the decision model considers the question answerable given the context. Fail-open: true on error/unavailable. */
@@ -258,6 +298,11 @@ public final class ContextBuilder {
         if (!instruction.isBlank()) {
             LOG.fine("skills attached: " + instruction.lines().count() + " instruction lines");
             system.add(instruction);
+        }
+        // Optional memory block (fail-open).
+        if (memoryStore != null) {
+            String mb = memoryBlock(null);
+            if (!mb.isBlank()) system.add(mb);
         }
         // Keep the compaction checkpoint at the end of the stable system
         // blocks instead of rewriting message index 0 on every compaction.

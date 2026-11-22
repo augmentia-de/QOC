@@ -4,6 +4,7 @@ import de.augmentia.oc.engine.adapter.sql.SqlDialect;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -34,5 +35,14 @@ public final class SqliteDialect implements SqlDialect {
     @Override
     public Instant instant(ResultSet resultSet, String column) throws SQLException {
         return Sqlite.instant(resultSet, column);
+    }
+
+    @Override
+    public void setInstant(PreparedStatement statement, int index, Instant instant) throws SQLException {
+        if (instant == null) {
+            statement.setNull(index, java.sql.Types.BIGINT);
+        } else {
+            statement.setLong(index, instant.toEpochMilli());
+        }
     }
 }
