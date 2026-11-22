@@ -106,35 +106,45 @@ Startup-Latenz, p95 Tool-Latenz, CPU/Speicher, Isolationstests (Escape, Egress, 
 
 ## Status der Implementierung (22.11.2026)
 
-**Bereits implementiert (Engine-Modul):**
+**Implementiert (Engine-Modul + Quarkus):**
 - `adapter/sandbox/SandboxConfig` (Record: mode, image, network, cpuLimit, memoryMb, timeoutSeconds, workspaceRoot, allowedHosts).
 - `adapter/sandbox/SandboxedProcessRunner` (implementiert `ProcessRunner`; Path-Guard gegen Workspace-Escape; Container-Modus mit Podman-Wrapper + Fallback auf local wenn Podman fehlt).
 - `adapter/sandbox/SandboxedProcessRunnerTest` (2 Tests: Path-Guard ablehnt Escape, local-Modus führt `echo` aus).
 - `FileSystem`-Sandboxing ist bereits durch `NioFileSystem(root)` abgedeckt (root-basierte Normalisierung).
 
-**Noch offen:** `SandboxedFileSystem` (expliziter Wrapper), Egress-Policy (`EgressProxy`), Checkpoints (`SandboxLifecycle`), Reconciler, MicroVM (Phase 4), Quarkus-Wiring + Config.
+**Implementiert (zusätzlich):**
+- S1 `SandboxedFileSystem` — expliziter Path-Guard-Wrapper (adapter/sandbox/SandboxedFileSystem.java)
+- S2 `EgressProxy` — HttpTransport-Adapter mit Allowlist/None/Outbound-only (adapter/sandbox/EgressProxy.java)
+- S3 `SandboxLifecycle` — Checkpoint/Restore/Destroy (adapter/sandbox/SandboxLifecycle.java)
+- S4 `SandboxReconciler` — Orphan-Cleanup bei Crash (adapter/sandbox/SandboxReconciler.java)
+- S6 Quarkus-Wiring — Config-Properties (engine.sandbox.*) in application.properties + .env
+
+**Noch offen:**
+- S5 MicroVM (Phase 4, optional, nur bei belegtem Bedarf)
+- Quarkus-Startup-Hook für SandboxReconciler (best-effort, nicht wired)
+- Integrationstests (Escape, Egress, Secret-Leak, Cleanup)
 
 ## Offene Todos (detailiert)
 
-### Todo S1 – `SandboxedFileSystem` (optional, Wrapper)
+### Todo S1 – ✅ IMPLEMENTED `SandboxedFileSystem` (optional, Wrapper)
 - **Was:** Expliziter Adapter, der `FileSystem` implementiert und jeden Pfad gegen `workspaceRoot` prüft (Symlink-Traversal verhindern). Delegiert an `NioFileSystem`.
 - **Wo:** `engine/src/main/java/de/augmentia/oc/engine/adapter/sandbox/SandboxedFileSystem.java`
 - **Wie:** Konstruktor `(SandboxConfig, FileSystem delegate)`. Jede Methode: `if (!normalized.startsWith(root)) throw new IllegalArgumentException(...)`. Delegiere an `delegate`.
 - **Warum optional:** `NioFileSystem(root)` macht das bereits implizit; expliziter Guard nur für Defense-in-Depth.
 
-### Todo S2 – Egress-Policy (`EgressProxy`)
+### Todo S2 – ✅ IMPLEMENTED Egress-Policy (`EgressProxy`)
 - **Was:** `HttpTransport`-Adapter, der Requests über eine Allowlist/Proxy routet. Modi: `outbound-only` (Default), `none`, `allowlist`.
 - **Wo:** `engine/src/main/java/de/augmentia/oc/engine/adapter/sandbox/EgressProxy.java` (implementiert `HttpTransport`).
 - **Wie:** Delegate an `JdkHttpTransport`; vor jedem Request Host gegen `allowedHosts` prüfen. Bei `none`: sofort Fehler. Bei `allowlist`: nur gelistete Hosts.
 - **Config:** `qoc.sandbox.network`, `qoc.sandbox.allowedHosts`.
 
-### Todo S3 – Checkpoints (`SandboxLifecycle`)
+### Todo S3 – ✅ IMPLEMENTED Checkpoints (`SandboxLifecycle`)
 - **Was:** Container/Workspace-Snapshot erstellen und wiederherstellen.
 - **Wo:** `adapter/sandbox/SandboxLifecycle.java`.
 - **Wie:** Workspace-Snapshot via bestehendem `SnapshotStore` (Datei-Map); Container-Snapshot via `podman commit` (optional, Phase 3). Restore: Workspace zurückschreiben + Container neu starten.
 - **Abhängigkeit:** `SnapshotStore`-Port (bereits vorhanden).
 
-### Todo S4 – Reconciler bei Crash
+### Todo S4 – ✅ IMPLEMENTED Reconciler bei Crash
 - **Was:** Orphaned Container/Workspace nach Crash aufräumen.
 - **Wo:** `adapter/sandbox/SandboxReconciler.java` + Quarkus-Startup-Hook.
 - **Wie:** Beim Start `podman ps --filter label=qoc.session` auflisten und Container ohne aktive Session entfernen; Workspace-Verzeichnisse prüfen.
@@ -144,7 +154,7 @@ Startup-Latenz, p95 Tool-Latenz, CPU/Speicher, Isolationstests (Escape, Egress, 
 - **Wo:** `adapter/sandbox/MicroVmProcessRunner.java`.
 - **Wie:** Nur wenn Bedarf belegt (Experiment E4); VM-Image, SSH-Zugriff, Snapshot/Restore. Hoher Aufwand, später.
 
-### Todo S6 – Quarkus-Wiring
+### Todo S6 – ✅ IMPLEMENTED Quarkus-Wiring
 - **Was:** `SandboxConfig` aus Properties bauen, `SandboxedProcessRunner` als `ProcessRunner` in `ToolDependencies` setzen, wenn `qoc.sandbox.mode != local`.
 - **Wo:** `quarkus/src/main/java/de/augmentia/oc/engine/http/Engine.java` (Startup, dort wo `ToolDependencies` gebaut wird).
 - **Wie:** `SandboxConfig cfg = new SandboxConfig(properties...); ProcessRunner pr = cfg.isContainerMode() ? new SandboxedProcessRunner(cfg) : new JdkProcessRunner();` dann in `ToolDependencies` übergeben.

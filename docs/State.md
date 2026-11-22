@@ -8,6 +8,7 @@ Generated: 2026-11-22
 |---|---|
 | `plans/done/Hybrid.md` | Implemented — context_agent_executor node, systemPrompt, initialPrompt, compactionEnabled, buildFullContext, tests |
 | `plans/done/WorkflowMode-ContextAgent.md` | Implemented — ArtifactRef/Store, ContextAssembler, guard/inject nodes, dynamic jumps, postGuard, ContextBudgetGate |
+| `plans/done/ext-01-execution-isolation.md` | Implemented (S1-S4, S6) — SandboxedFileSystem, EgressProxy, SandboxLifecycle, SandboxReconciler, config. Open: S5 MicroVM, reconciler wiring, integration tests | Implemented — ArtifactRef/Store, ContextAssembler, guard/inject nodes, dynamic jumps, postGuard, ContextBudgetGate |
 | `plans/done/ext-03-semantic-memory.md` | Implemented (core) — Domain, Port, Adapter (SQL+SQLite+InMemory), Tools, Importer, Extraction, Retrieval, ContextBuilder. Open: ToolRegistry agent-level gating, startup import, agent-loop preflight, StorageFactory |
 | `plans/done/mobile-workflow-ui.md` | Implemented — Mobile support in reactflow (useIsMobile, responsive layout) |
 | `plans/done/node-data-contracts-and-context-economy.md` | Implemented — All 8 phases (0-7), node data contract, tool outcomes, context economy |
@@ -51,7 +52,6 @@ Generated: 2026-11-22
 
 | File | Reason |
 |---|---|
-| `plans/ext-01-execution-isolation.md` | Excluded |
 | `plans/ext-02-provenance-governance.md` | Excluded |
 | `plans/ext-04-decision-layer.md` | Excluded |
 | `plans/Learnings.md` | Excluded |

@@ -34,4 +34,8 @@ public record SandboxConfig(
     public boolean isContainerMode() {
         return "container".equalsIgnoreCase(mode);
     }
+
+    public boolean isLocalMode() {
+        return "local".equalsIgnoreCase(mode);
+    }
 }
