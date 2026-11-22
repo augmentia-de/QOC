@@ -124,7 +124,8 @@ class TypeSafeDecisionAdapterTest {
             TypeSafeDecisionAdapter a = new TypeSafeDecisionAdapter("http://localhost:" + port, "m", "k", 5, 0);
             DecisionResult r = a.decide(new DecisionRequest("triage", "q", java.util.List.of(), "ctx", java.util.Map.of()));
             assertThat(r.answer()).isEqualTo("yes");
-            assertThat(r.noul()).isTrue();
+            assertThat(r.noul()).isFalse();
+            assertThat(r.confidence()).isEqualTo(0.9);
         } finally {
             server.stop(0);
         }
@@ -288,6 +289,28 @@ class TypeSafeDecisionAdapterTest {
             TypeSafeDecisionAdapter a = new TypeSafeDecisionAdapter("http://localhost:" + port, "m", "k", 5, 1);
             DecisionResult r = a.decide(new DecisionRequest("triage", "q", java.util.List.of(), "ctx", java.util.Map.of()));
             assertThat(r.noul()).isFalse();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void decideMarksMissingLabelAsUnknown() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/v1/systemone", exchange -> {
+            String body = "{\"model\":\"m\",\"answers\":{\"q0\":{\"type\":\"yesno\"}},\"lowMargin\":false}";
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) { os.write(bytes); }
+        });
+        server.start();
+        int port = server.getAddress().getPort();
+        try {
+            TypeSafeDecisionAdapter a = new TypeSafeDecisionAdapter("http://localhost:" + port, "m", "k", 5, 0);
+            DecisionResult r = a.decide(new DecisionRequest("triage", "q", java.util.List.of(), "ctx", java.util.Map.of()));
+            assertThat(r.noul()).isTrue();
+            assertThat(r.answer()).isEmpty();
+            assertThat(r.confidence()).isZero();
         } finally {
             server.stop(0);
         }

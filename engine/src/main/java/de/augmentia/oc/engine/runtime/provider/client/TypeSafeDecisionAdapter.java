@@ -153,46 +153,59 @@ public final class TypeSafeDecisionAdapter implements DecisionModel {
         List<String> answerList = new ArrayList<>();
         List<Double> probList = new ArrayList<>();
         double margin = 0.0;
-        boolean noul = false;
+        boolean unknown = false;
         for (Map.Entry<String, JsonValue> qe : answersRaw.entrySet()) {
             if (!(qe.getValue() instanceof JsonValue.Obj am)) continue;
             JsonValue value = am.values().get("value");
             if (value == null) value = am.values().get("choice");
             if (value == null) value = am.values().get("mean");
             if (value == null) value = am.values().get("score");
+
+            double maxP = 0.0;
+            boolean yesNo = false;
             if (value == null) {
+                // Yes/no answer: noul is the probability of "yes"; the chosen
+                // label's probability is max(noul, 1 - noul).
                 JsonValue nu = am.values().get("noul");
                 if (nu instanceof JsonValue.Num n) {
-                    value = JsonValue.of(n.value().doubleValue() >= 0.5 ? "yes" : "no");
+                    double noulValue = n.value().doubleValue();
+                    value = JsonValue.of(noulValue >= 0.5 ? "yes" : "no");
+                    maxP = Math.max(noulValue, 1.0 - noulValue);
+                    margin = Math.max(margin, Math.abs(2.0 * noulValue - 1.0));
+                    yesNo = true;
                 }
             }
             String strVal = (value instanceof JsonValue.Str s) ? s.value()
                     : (value instanceof JsonValue.Num n) ? n.value().toPlainString()
                     : (value == null ? "" : value.toString());
+            if (strVal.isEmpty()) {
+                // No usable label: the caller should fall back.
+                unknown = true;
+                probList.add(0.0);
+                continue;
+            }
             answerList.add(strVal);
 
-            double maxP = 0.0;
-            JsonValue probs = am.values().get("probabilities");
-            if (probs instanceof JsonValue.Obj po) {
-                for (JsonValue v : po.values().values()) {
-                    if (v instanceof JsonValue.Num n && n.value().doubleValue() > maxP) maxP = n.value().doubleValue();
+            if (!yesNo) {
+                JsonValue probs = am.values().get("probabilities");
+                if (probs instanceof JsonValue.Obj po) {
+                    for (JsonValue v : po.values().values()) {
+                        if (v instanceof JsonValue.Num n && n.value().doubleValue() > maxP) maxP = n.value().doubleValue();
+                    }
+                } else if (probs instanceof JsonValue.Arr pa) {
+                    for (JsonValue v : pa.values()) {
+                        if (v instanceof JsonValue.Num n && n.value().doubleValue() > maxP) maxP = n.value().doubleValue();
+                    }
                 }
-            } else if (probs instanceof JsonValue.Arr pa) {
-                for (JsonValue v : pa.values()) {
-                    if (v instanceof JsonValue.Num n && n.value().doubleValue() > maxP) maxP = n.value().doubleValue();
-                }
+                JsonValue prob = am.values().get("probability");
+                if (prob instanceof JsonValue.Num n && n.value().doubleValue() > maxP) maxP = n.value().doubleValue();
+                JsonValue m = am.values().get("margin");
+                if (m instanceof JsonValue.Num n) margin = Math.max(margin, n.value().doubleValue());
             }
-            JsonValue prob = am.values().get("probability");
-            if (prob instanceof JsonValue.Num n && n.value().doubleValue() > maxP) maxP = n.value().doubleValue();
             probList.add(maxP);
-
-            JsonValue m = am.values().get("margin");
-            if (m instanceof JsonValue.Num n) margin = n.value().doubleValue();
-
-            JsonValue nu = am.values().get("noul");
-            if (nu instanceof JsonValue.Num n) noul = n.value().doubleValue() >= 0.5;
         }
         String answer = answerList.isEmpty() ? "" : answerList.get(0);
+        boolean noul = answerList.isEmpty() || unknown;
         long latency = System.currentTimeMillis() - start;
         return new DecisionResult(taskType, answer, answerList, probList, margin, noul, latency);
     }

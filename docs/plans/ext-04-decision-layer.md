@@ -92,6 +92,40 @@ Der Code folgt der bestehenden Konvention `engine.*` (nicht `qoc.*`). Die urspr�
 
 **Nicht mehr vorhanden:** `engine.decision.backend` (Flide ist derselbe Adapter mit anderer `base-url`) und `engine.decision.fail-closed` (der Adapter ist bewusst immer fail-open).
 
+**Umgebungsvariablen (empfohlen):** SmallRye mappt `engine.decision.*` automatisch auf:
+`ENGINE_DECISION_ENABLED`, `ENGINE_DECISION_BASE_URL`, `ENGINE_DECISION_MODEL`,
+`ENGINE_DECISION_API_KEY`, `ENGINE_DECISION_TIMEOUT_SECONDS`, `ENGINE_DECISION_MAX_RETRIES`,
+`ENGINE_DECISION_PROMPT_RELATION_ENABLED`, `ENGINE_DECISION_PROMPT_RELATION_THRESHOLD`.
+Die Werte stehen dokumentiert in `.env.example`; die lokale `.env` (nicht committet)
+enthält die aktiven Ollama-Werte.
+
+**Lokales Ollama/tev1** (Modell muss `/v1/systemone` anbieten; `tev1:4b` hat die
+Capability `decision`):
+```bash
+ENGINE_DECISION_ENABLED=true
+ENGINE_DECISION_BASE_URL=http://127.0.0.1:11434
+ENGINE_DECISION_MODEL=tev1:4b
+ENGINE_DECISION_MAX_RETRIES=0
+ENGINE_DECISION_TIMEOUT_SECONDS=60
+ENGINE_DECISION_PROMPT_RELATION_ENABLED=true
+ENGINE_DECISION_PROMPT_RELATION_THRESHOLD=0.7
+```
+
+**Smoke-Test gegen das echte Modell** (opt-in; wird ohne
+`ENGINE_DECISION_ENABLED=true` übersprungen):
+```bash
+ENGINE_DECISION_ENABLED=true \
+ENGINE_DECISION_BASE_URL=http://127.0.0.1:11434 \
+ENGINE_DECISION_MODEL=tev1:4b \
+mvn -pl engine test -Dtest=OllamaDecisionSmokeTest
+```
+Der Test prüft `prompt_relation` (Choice), `answerable`, `permission_risk` und
+`triage` gegen das laufende Modell und gibt die `DecisionResult`s aus.
+
+**Hinweis:** `prompt_relation` wird als Choice-Frage mit den fünf Relationen
+(`SUPPLEMENT`, `CORRECTION`, `INDEPENDENT`, `CANCEL`, `STATUS`) gesendet. Ein
+Yes/No-Frage würde nur `yes`/`no` liefern und könnte keine Relation abbilden.
+
 ## 8. Flide als Backend (L-01)
 
 - Flide serviert `/v1/systemone` → gleicher Client, andere `baseUrl` + `model`.
@@ -148,7 +182,7 @@ Der Code folgt der bestehenden Konvention `engine.*` (nicht `qoc.*`). Die urspr�
 - `DecisionConsumerTest` (Triage/Loop/Permission/Context/Admission/SessionService)
 - `TypeSafeDecisionAdapterTest`, `SystemOneHttpClientTest` (HTTP-Success, 4xx/5xx, Retry, Custom-Header, URL-Normalisierung, Parse-Fehler, Truncation)
 - `EventCodecTest` (`PromptRelationClassified` Round-trip), `QocEngineTest` (`decisionModel()`, `classifyPromptRelation(...)`, `classifyPromptRelationDetailed(...)`)
-- Engine: 1256 Tests, 0 Failures, 4 skipped; JaCoCo 80,00 %.
+- Engine: 1262 Tests, 0 Failures, 9 skipped (davon 5 Ollama-Smoke-Tests); JaCoCo 80,00 %.
 
 ## Todos mit Status
 

@@ -171,7 +171,11 @@ public static record EngineConfig(
         try {
             de.augmentia.oc.engine.core.model.DecisionResult r = dm.decide(
                     new de.augmentia.oc.engine.core.model.DecisionRequest(
-                            "prompt_relation", text == null ? "" : text, java.util.List.of(), "", java.util.Map.of()));
+                            "prompt_relation",
+                            "Classify the relation of the new prompt to the running task.",
+                            java.util.List.of(),
+                            text == null ? "" : text,
+                            PROMPT_RELATION_OPTIONS));
             String a = r.answer() == null ? "" : r.answer().trim().toUpperCase();
             try {
                 return new PromptRelationResult(
@@ -183,6 +187,16 @@ public static record EngineConfig(
             return PromptRelationResult.unknown();
         }
     }
+
+    /** Choice options for the prompt-relation decision (TypeSafe/Flide/Ollama). */
+    private static final java.util.Map<String, Object> PROMPT_RELATION_OPTIONS = java.util.Map.of(
+            "type", "choice",
+            "options", java.util.Map.of(
+                    "SUPPLEMENT", "The new prompt adds to the running task.",
+                    "CORRECTION", "The new prompt corrects the running task.",
+                    "INDEPENDENT", "The new prompt is independent and should be queued.",
+                    "CANCEL", "The new prompt cancels the running task.",
+                    "STATUS", "The new prompt asks for a status update."));
 
     /** Relation plus model confidence (0 when unknown/unavailable). */
     public record PromptRelationResult(
