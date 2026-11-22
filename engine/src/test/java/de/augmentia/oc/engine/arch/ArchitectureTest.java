@@ -37,6 +37,16 @@ class ArchitectureTest {
             .should().dependOnClassesThat().resideInAnyPackage("de.augmentia.oc.engine.runtime..",
                     "..adapter..");
 
+    /**
+     * Wiring may depend on core contracts/ports, but never on runtime or adapters.
+     * This closes the gap left by S0–S2, which do not include {@code core.wiring}.
+     */
+    @ArchTest
+    static final ArchRule wiringDoesNotDependOnRuntimeOrAdapter = noClasses()
+            .that().resideInAPackage("..core.wiring..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "de.augmentia.oc.engine.runtime..", "..adapter..");
+
     @ArchTest
     static final ArchRule runtimeDoesNotDependOnAdapters = noClasses()
             .that().resideInAPackage("..runtime..")
@@ -65,9 +75,11 @@ class ArchitectureTest {
     @ArchTest
     static final ArchRule engineStaysFreeOfQuarkusAndHttp = noClasses()
             .that().resideInAPackage("de.augmentia.oc.engine..")
+            .and().resideOutsideOfPackage("de.augmentia.oc.engine.http..")
             .should().dependOnClassesThat().resideInAnyPackage("io.quarkus..", "jakarta..",
                     "javax.ws.rs..", "org.jboss..", "com.fasterxml..", "io.smallrye..",
-                    "org.eclipse.microprofile..");
+                    "org.eclipse.microprofile..", "de.augmentia.qoc.workflowrunner..",
+                    "de.augmentia.oc.engine.http..");
 
     @ArchTest
     static final ArchRule noImplSuffix = noClasses()

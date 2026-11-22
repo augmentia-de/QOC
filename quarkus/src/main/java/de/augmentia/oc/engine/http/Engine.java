@@ -990,7 +990,7 @@ commandLoader = new CommandLoader(workspacePath,
                         new de.augmentia.oc.engine.adapter.process.JdkProcessRunner(),
                         new de.augmentia.oc.engine.adapter.net.JdkHttpTransport(),
                         java.nio.file.Path.of(".").toAbsolutePath().normalize(),
-                        registry -> {
+                        sink -> {
                             // Register MCP tools into QocEngine's ToolRegistry
                             try {
                                 de.augmentia.oc.engine.runtime.tool.mcp.McpServerManager mgr = mcp.manager();
@@ -999,7 +999,7 @@ commandLoader = new CommandLoader(workspacePath,
                                     de.augmentia.oc.engine.runtime.tool.mcp.McpClient client = mgr.client(serverName);
                                     if (client == null) continue;
                                     for (de.augmentia.oc.engine.runtime.tool.mcp.McpRegistrar.McpToolSpec tool : mgr.discovered(serverName)) {
-                                        registry.register(de.augmentia.oc.engine.runtime.tool.mcp.McpTool.definition(
+                                        sink.accept(de.augmentia.oc.engine.runtime.tool.mcp.McpTool.definition(
                                                 serverName, tool.name(), tool.description(), tool.inputSchema(), client));
                                     }
                                 }

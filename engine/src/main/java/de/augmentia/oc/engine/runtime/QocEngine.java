@@ -369,7 +369,7 @@ public static record EngineConfig(
 
         // Allow external callers to register additional tools (e.g. MCP tools) before snapshot.
         if (toolDeps != null && toolDeps.toolRegistrar() != null) {
-            toolDeps.toolRegistrar().accept(registry);
+            toolDeps.toolRegistrar().register(registry::register);
         }
 
         java.util.List<de.augmentia.oc.engine.core.model.Rule> allowAll = java.util.List.of(

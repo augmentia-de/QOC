@@ -128,9 +128,9 @@ class QocEngineTest {
         AtomicBoolean registrarCalled = new AtomicBoolean(false);
         ToolDependencies deps = new ToolDependencies(
                 new FakeFileSystem(), null, new ScriptedHttp(), Path.of(".").toAbsolutePath(),
-                registry -> {
+                sink -> {
                     registrarCalled.set(true);
-                    registry.register(de.augmentia.oc.engine.runtime.tool.meta.TodoTool.definition(
+                    sink.accept(de.augmentia.oc.engine.runtime.tool.meta.TodoTool.definition(
                             new de.augmentia.oc.engine.runtime.tool.meta.TodoTool()));
                 });
 
