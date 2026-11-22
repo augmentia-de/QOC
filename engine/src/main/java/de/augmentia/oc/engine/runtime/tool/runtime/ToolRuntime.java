@@ -1,5 +1,8 @@
 package de.augmentia.oc.engine.runtime.tool.runtime;
 
+import de.augmentia.oc.engine.core.contract.permission.DataPolicy;
+import de.augmentia.oc.engine.core.contract.permission.DataPolicyDecision;
+import de.augmentia.oc.engine.core.contract.permission.DataPolicyEffect;
 import de.augmentia.oc.engine.core.contract.permission.PermissionGate;
 import de.augmentia.oc.engine.core.contract.permission.PermissionRequest;
 import de.augmentia.oc.engine.core.contract.tool.Hooks;
@@ -43,6 +46,7 @@ public final class ToolRuntime {
     private final ToolResultCache resultCache;
     private final long stepTimeoutSeconds;
     private final long cacheTtlSeconds;
+    private DataPolicy dataPolicy; // optional, null = pass-through
 
     public ToolRuntime(ToolSnapshot snapshot, ToolAuthorizer authorizer, PermissionGate permission,
                        Hooks hooks, ToolOutputStore outputStore) {
@@ -75,6 +79,15 @@ public final class ToolRuntime {
         this.resultCache = resultCache;
         this.stepTimeoutSeconds = stepTimeoutSeconds > 0 ? stepTimeoutSeconds : 30;
         this.cacheTtlSeconds = cacheTtlSeconds > 0 ? cacheTtlSeconds : 0;
+    }
+
+    /** Optional data-level policy. Null disables (pass-through). */
+    public void setDataPolicy(DataPolicy policy) {
+        this.dataPolicy = policy;
+    }
+
+    public DataPolicy dataPolicy() {
+        return dataPolicy;
     }
 
     public ToolOutcome execute(ToolCall rawCall, ToolContext context) {
@@ -162,6 +175,28 @@ public final class ToolRuntime {
                 hooked = result;
             }
             ToolResult normalized = normalize(hooked);
+
+            // Optional data-level policy (allow/filter/deny).
+            if (dataPolicy != null) {
+                DataPolicyDecision decision = dataPolicy.evaluate(context.sessionId(),
+                        context.agentId().value(),
+                        call.name().value(), call.name().value(), normalized.output().orElse(null));
+                if (decision.effect() == DataPolicyEffect.DENY) {
+                    ToolOutcome.Failed fo = keyed(new ToolOutcome.Failed(
+                            new SessionError.ToolExecutionError("data_policy_denied", decision.reason())), context);
+                    if (resultCache != null && context.idempotencyKey() != null) {
+                        try { resultCache.store(context.idempotencyKey(), context.sessionId().value(),
+                                call.name().value(), ToolOutcomeJson.encode(fo)); } catch (RuntimeException ignored) {}
+                    }
+                    return fo;
+                }
+                if (decision.effect() == DataPolicyEffect.FILTER && decision.filteredOutput() != null) {
+                    // Replace the tool result output with the filtered version.
+                    normalized = new ToolResult(de.augmentia.oc.engine.core.model.Option.some(decision.filteredOutput()),
+                            normalized.content(), normalized.metadata());
+                }
+            }
+
             ToolOutcome.Ok finalOutcome = new ToolOutcome.Ok(bound(normalized, call, context));
             if (resultCache != null && context.idempotencyKey() != null) {
                 try { resultCache.store(context.idempotencyKey(), context.sessionId().value(),

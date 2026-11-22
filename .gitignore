@@ -39,3 +39,5 @@ deploy/docker-*/workspace/**
 dependency-reduced-pom.xml
 /workflow-runner/workflow-runner.log
 /docs/sdlc/
+/docs/tmp/
+/.ai/

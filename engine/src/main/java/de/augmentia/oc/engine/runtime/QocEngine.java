@@ -1,5 +1,6 @@
 package de.augmentia.oc.engine.runtime;
 
+import de.augmentia.oc.engine.core.wiring.ExtensionPorts;
 import de.augmentia.oc.engine.core.wiring.Stores;
 import de.augmentia.oc.engine.core.wiring.StorageConfig;
 import de.augmentia.oc.engine.core.wiring.StorageKind;
@@ -91,6 +92,7 @@ public static record EngineConfig(
 
 
     private final Stores stores;
+    private final ExtensionPorts extensionPorts;
     private final Clock clock;
     public de.augmentia.oc.engine.core.port.world.ToolTokenService toolTokenService =
             de.augmentia.oc.engine.core.port.world.ToolTokenService.disabled();
@@ -124,6 +126,53 @@ public static record EngineConfig(
     public de.augmentia.oc.engine.core.contract.tool.ToolSnapshot globalToolSnapshot() {
         return toolSnapshot;
     }
+
+    public ExtensionPorts extensionPorts() {
+        return extensionPorts;
+    }
+
+    public de.augmentia.oc.engine.core.port.store.ProvenanceStore provenanceStore() {
+        return extensionPorts.provenance();
+    }
+
+    public de.augmentia.oc.engine.core.port.store.MemoryStore memoryStore() {
+        return extensionPorts.memory();
+    }
+
+    public de.augmentia.oc.engine.core.port.runtime.DecisionModel decisionModel() {
+        return extensionPorts.decision();
+    }
+
+    public de.augmentia.oc.engine.core.contract.permission.DataPolicy dataPolicy() {
+        return extensionPorts.dataPolicy();
+    }
+
+    /**
+     * Optional helper: classify the relation of a new prompt to a running
+     * session using the configured decision model. Returns
+     * {@link de.augmentia.oc.engine.core.model.PromptRelation#UNKNOWN} when no
+     * decision model is configured or the call fails (fail-open).
+     */
+    public de.augmentia.oc.engine.core.model.PromptRelation classifyPromptRelation(
+            de.augmentia.oc.engine.core.model.SessionId session, String text) {
+        de.augmentia.oc.engine.core.port.runtime.DecisionModel dm = decisionModel();
+        if (dm == null || !dm.isAvailable()) {
+            return de.augmentia.oc.engine.core.model.PromptRelation.UNKNOWN;
+        }
+        try {
+            de.augmentia.oc.engine.core.model.DecisionResult r = dm.decide(
+                    new de.augmentia.oc.engine.core.model.DecisionRequest(
+                            "prompt_relation", text == null ? "" : text, java.util.List.of(), "", java.util.Map.of()));
+            String a = r.answer() == null ? "" : r.answer().trim().toUpperCase();
+            try {
+                return de.augmentia.oc.engine.core.model.PromptRelation.valueOf(a);
+            } catch (IllegalArgumentException ignored) {
+                return de.augmentia.oc.engine.core.model.PromptRelation.UNKNOWN;
+            }
+        } catch (RuntimeException e) {
+            return de.augmentia.oc.engine.core.model.PromptRelation.UNKNOWN;
+        }
+    }
     private final de.augmentia.oc.engine.core.contract.provider.ModelInfo modelInfo;
     private int workflowMaxSteps = 100;
     private int workflowNodeMaxRepetitions = 5;
@@ -156,7 +205,7 @@ public static record EngineConfig(
         }
     }
 
-    private QocEngine(Stores stores, StorageConfig storageConfig, Clock clock,
+    private QocEngine(Stores stores, ExtensionPorts extensionPorts, StorageConfig storageConfig, Clock clock,
                       SessionService sessionService, Coordinator coordinator,
                       boolean recoveryEnabled,
                       de.augmentia.oc.engine.core.contract.provider.ProviderAdapter provider,
@@ -177,6 +226,7 @@ public static record EngineConfig(
                       de.augmentia.oc.engine.core.contract.tool.ToolSnapshot toolSnapshot,
                       de.augmentia.oc.engine.core.contract.provider.ModelInfo modelInfo) {
         this.stores = stores;
+        this.extensionPorts = extensionPorts == null ? ExtensionPorts.defaults() : extensionPorts;
         this.storageConfig = storageConfig;
         this.clock = clock;
         this.sessionService = sessionService;
@@ -239,7 +289,8 @@ public static record EngineConfig(
                                   EventPublisher eventPublisher,
                                   AgentResolver agentResolver,
                                   TracerProvider tracerProvider,
-                                  de.augmentia.oc.engine.core.wiring.ToolDependencies toolDeps) {
+                                  de.augmentia.oc.engine.core.wiring.ToolDependencies toolDeps,
+                                  de.augmentia.oc.engine.core.wiring.ExtensionPorts extensionPorts) {
         if (stores == null) throw new IllegalArgumentException("stores must not be null");
         if (clock == null) throw new IllegalArgumentException("clock must not be null");
         Clock c = clock;
@@ -411,10 +462,26 @@ public static record EngineConfig(
                 de.augmentia.oc.engine.core.model.Option.none(),
                 de.augmentia.oc.engine.core.model.Option.none());
 
-        return new QocEngine(stores, cfg, c, sessionService, coordinator, recoveryEnabled, provider,
+        return new QocEngine(stores, extensionPorts, cfg, c, sessionService, coordinator, recoveryEnabled, provider,
                 cfg2,
                 errClassifier, rPolicy, lDetector, triageSvc, preflightChk, webhookAlt,
                 eventPublisher, agentResolver, tracerProvider, compService, cb, st, null, ts, mi);
+    }
+
+    /**
+     * Convenience overload without explicit extension ports (all no-op).
+     */
+    public static QocEngine create(Stores stores, StorageConfig config, Clock clock,
+                                  boolean recoveryEnabled,
+                                  de.augmentia.oc.engine.core.contract.provider.ProviderAdapter provider,
+                                  EngineConfig engineConfig,
+                                  EventPublisher eventPublisher,
+                                  AgentResolver agentResolver,
+                                  TracerProvider tracerProvider,
+                                  de.augmentia.oc.engine.core.wiring.ToolDependencies toolDeps) {
+        return create(stores, config, clock, recoveryEnabled, provider, engineConfig,
+                eventPublisher, agentResolver, tracerProvider, toolDeps,
+                de.augmentia.oc.engine.core.wiring.ExtensionPorts.defaults());
     }
 
     // --- Public API ---
