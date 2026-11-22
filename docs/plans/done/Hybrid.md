@@ -1,7 +1,7 @@
 # Hybrid Workflow/Agent Execution — Implementation Plan
 
 Date: 2026-11-12  
-Status: Plan (no implementation)  
+Status: Implemented (2026-11-22) — context_agent_executor node, WorkflowDefinition.systemPrompt, WorkflowContext.initialPrompt, ExecutionOverrides.compactionEnabled, buildFullContext, GraphCompiler validation, reactflow UI, tests all implemented.
 Reference: `docs/engineering/ReAct-Workflow.md`, `docs/engineering/Additional-Nodes.md`
 
 ## 1. Goal and Scope

@@ -1,6 +1,6 @@
 # Runtime Plan Adaptation — Concept (Supervisor / Orchestrator)
 
-> **Status:** Concept (2026-11-17), not implemented.  
+> **Status:** Concept (2026-11-22), not implemented — Supervisor/orchestrator concept for runtime plan adaptation. Not an implementation plan.
 > **Scope:** `workflow-runner` (Plan, Dispatch, Context) and `engine` (Run-Loop, Journal, Claims, Resilience).  
 > **Starting point:** adapting a node when an input requirement is not present.
 

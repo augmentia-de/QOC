@@ -1,6 +1,6 @@
 # Plan: Asynchronous Approvals (Option B – Suspend & Resume)
 
-> **Status:** Plan · 2026-10-31  
+> **Status:** Partially implemented (2026-11-22) — Phase 1 (infrastructure) done; Phase 2 (suspend/resume) partially done; Phase 3 (granular approval) not started.
 > **Goal:** Approvals (HITL) should be possible asynchronously via external channels (email),
 > without blocking the tool-call thread indefinitely.
 
@@ -37,6 +37,38 @@ is woken and the tool call is executed again.
 - Con: tool must be idempotent (re-execution), session state must be
   restored.
 - Effort: high.
+
+
+## Implementation Status (2026-11-22)
+
+### Implemented (Phase 1 — Infrastructure)
+- **DurableApprovalSource** — token-based approval links, polling, `resolve()`, `sessionIdForToken()`
+- **EmailNotificationChannel** — SMTP email notification
+- **DB migration V5** — `token`, `channel` columns + unique index on `pending_approval`
+- **Token-based approval endpoints** — `GET/POST /api/approval/{token}` in `HttpApi`
+- **Config keys** — `engine.approval.channel`, `engine.approval.email.*`, `engine.approval.timeout-hours`, `engine.approval.token-ttl-days`
+- **DurableQuestionSource** — analogous durable question source
+
+### Implemented (Phase 2 — Suspend & Resume, partial)
+- **ToolOutcome.Paused** — `record Paused(String approvalId, String approvalUrl)`
+- **StepResult.Paused** — handled in QocEngine (returns `EngineResult.paused()`)
+- **EngineResult.paused()** — paused result propagation
+- **`/api/session/{id}/resume`** endpoint — `SessionResource.resume()`
+- **Approval reply wakes session** — `HttpApi.replyApproval` spawns thread to resume
+- **`/api/approval/{token}/reply`** — resolves approval and wakes session
+
+### Not implemented (Phase 2, partial)
+- **Session marking as `suspended`** — session is not explicitly marked suspended on ASK (the `suspended` field exists in SessionInfo but is never set to true on pause)
+- **Idempotency prerequisite** — tools do not consistently use `IdempotencyKey` for re-execution safety
+
+### Not implemented (Phase 3 — Granular approval)
+- Pre-execution approval for individual tool steps
+- Approval based on cost/sensitivity
+- Multi-instance approval coordination
+
+### Deviations
+- No `WebhookChannel` implementation (only `EmailNotificationChannel`).
+- `NotificationChannel` interface exists in `engine.core.port.human` but only email implementation exists.
 
 ## 3. Implementation Phases
 

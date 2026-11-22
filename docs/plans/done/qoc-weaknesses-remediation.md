@@ -8,7 +8,7 @@
 > - `qoc/docs/Features.md`
 > - Code under `qoc/engine/`, `qoc/workflow-runner/`, `qoc/quarkus/`, `qoc/reactflow/`
 >
-> **Status:** Plan (2026-11-18)  
+> **Status:** Implemented (2026-11-22) — P0 (P0-1..P0-4) and P1 (P1-1..P1-10) fully implemented. P2 items (P2-1 runtime adaptation spec-only, P2-2 Temporal out of scope, P2-3 MCP OAuth stubs, P2-4 A2A hardening, P2-5 Agent Store cleanup) are explicitly deferred/out of scope.
 > **Priorities:** P0 = immediate, P1 = next iteration, P2 = after stabilization
 
 ---
@@ -29,7 +29,7 @@ Already implemented:
 - P1-7 Tool outputs on filesystem (`FileSystemToolOutputStore`) instead of DB blobs for SQL/Postgres.
 - P1-9 Resilience metrics in `/api/metrics` (`resilienceMetrics()`).
 
-Still open: P1-9 metrics, P2-1 through P2-5.
+Still open: P2-1 through P2-5 (explicitly deferred/out of scope). P1-9 metrics implemented.
 
 ---
 

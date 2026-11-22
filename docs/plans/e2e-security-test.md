@@ -1,5 +1,7 @@
 # E2E Security Test Plan
 
+> **Status:** Test plan (2026-11-22) — Not an implementation plan; describes E2E verification scenarios for security paths (auth, principal propagation, OIDC, etc.).
+
 ## Goal
 End-to-end verification of all security paths of QOC:
 Authentication, Principal propagation, Trusted proxy, OIDC (optional),

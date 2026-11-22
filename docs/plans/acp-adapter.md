@@ -1,6 +1,6 @@
 # Plan: ACP (Agent Client Protocol) Adapter for QOC
 
-**Status:** Plan (2026-11-15)
+**Status:** Partially implemented (2026-11-22) — Transport (AcpTransport, AcpServer, AcpStartup), session mapping (AcpSessionManager, AcpHandler with session/new/prompt/cancel/load/list/delete/close) implemented. Missing: AcpEventTranslator, AcpPermissionBridge, AcpElicitationBridge, session/update streaming, session/requestPermission, elicitation/create, advanced features (resume, fork, set_config_option, set_mode, authenticate), MCP passthrough, tests.
 **Reference:** `oc/packages/cli/src/acp/` (OpenCode ACP reference implementation),
 `oc/services/www/src/docs/content/acp.mdx` (protocol documentation)
 
@@ -43,6 +43,28 @@ QOC's existing engine API — no new business logic.
 │  - Session, Agent, Run, Tools        │
 └─────────────────────────────────────┘
 ```
+
+
+## Implementation Status (2026-11-22)
+
+### Implemented
+- **AcpTransport** — ndjson read/write over stdin/stdout
+- **AcpServer** — JSON-RPC 2.0 dispatcher with handler registration
+- **AcpSessionManager** — ACP-Session ↔ QOC-Session mapping
+- **AcpHandler** — session/new, session/prompt, session/cancel, session/load, session/list, session/delete, session/close
+- **AcpStartup** — startup wiring
+- **AcpConfig** — configuration
+
+### Not implemented
+- **AcpEventTranslator** — QOC Live-Sink → ACP session/update notifications (streaming)
+- **AcpPermissionBridge** — QOC PendingApproval → ACP requestPermission
+- **AcpElicitationBridge** — QOC Question-Tool → ACP elicitation/create
+- **session/update streaming** — text/tool/result notifications over stdio
+- **Advanced features** — session/resume, session/fork, session/set_config_option, session/set_mode, authenticate (OIDC), MCP passthrough
+- **Tests** — no unit or integration tests for ACP
+
+### Verdict
+Core transport and session CRUD implemented (~30% of plan). Event translation, permission/elicitation bridges, advanced features, and tests are missing.
 
 ## 3. ACP method mapping (Client → Agent)
 

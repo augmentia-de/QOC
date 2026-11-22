@@ -1,6 +1,6 @@
 # Plan: Strict Structured Outputs (Phase 3 — open)
 
-**Status:** Open (not implemented) — 2026-11-16
+**Status:** Implemented (2026-11-22) — Approach B (strict on ToolSpecification) done; Approach A (response_format) not implemented (not recommended). Config via `qoc.structured-output.strict` / `QOC_STRUCTURED_OUTPUT_STRICT` (default: false). Tests and CONFIG.md docs still open.
 **References:** `docs/plans/node-data-contracts-and-context-economy.md` (Phase 3),
 `docs/plans/node-data-contracts-progress.md`
 

@@ -1,6 +1,6 @@
 # Plan: Saga Orchestration (Complete Saga)
 
-**Status:** Draft · 2026-11-21  
+**Status:** Draft (2026-11-22) — M5–M10 not implemented. Depends on saga-undo-tools (M1–M4, implemented). Requires SagaScope, durable compensation state, crash recovery.
 **Depends on:** [`saga-undo-tools.md`](saga-undo-tools.md) (M1–M4, implemented)  
 **Scope:** M5–M10 (automatic orchestration, durable compensation, coverage, API/UI)
 

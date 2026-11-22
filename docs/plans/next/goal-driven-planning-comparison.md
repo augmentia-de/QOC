@@ -1,6 +1,6 @@
 # Goal-Driven AI Planning + Deterministic Workflow Orchestration
 
-> **Status:** Concept / comparison (2026-11-18).  
+> **Status:** Concept/comparison (2026-11-22) — Not an implementation plan; compares goal-driven AI planning with deterministic workflow orchestration.
 > **Sources:** User idea (Goal-Driven AI Planning) + `docs/plans/runtime-plan-adaptation.md`.  
 > **Goal:** Merge both approaches and describe them as a unified roadmap.
 

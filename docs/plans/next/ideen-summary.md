@@ -1,7 +1,7 @@
 # Isomorphic Java Workflow and LLM System – Summary
 
 > **Source:** `docs/next/ideen.txt` (long architecture conversation).  
-> **Status:** Concept / Reference (2026-11-18).  
+> **Status:** Concept/reference (2026-11-22) — Not an implementation plan; summarizes ideas from runtime-plan-adaptation.
 > **Goal:** Compact extraction of the architectural ideas for QOC.
 
 ---

@@ -1,6 +1,6 @@
 # Dynamic State-Driven Workflow & Context Hygiene — Plan
 
-> **Status:** Plan, 2026-11-13  
+> **Status:** Implemented (2026-11-22) — ArtifactRef/ArtifactStore/InMemoryArtifactStore, ContextAssembler (FULL/FOCUSED/ARTIFACTS/CUSTOM), guard/inject nodes, nextNode dynamic jumps, postGuard in agent nodes, ContextBudgetGate, WorkflowContext extensions (contextInclude/contextExclude/lastStructuredResult/artifacts) all implemented with tests. Missing: InjectNodeTest, DynamicJumpTest, integration/E2E tests, mcp_call artifact storage.
 > **Reference:** `docs/plans/Hybrid.md`, `docs/engineering/Additional-Nodes.md`,
 > `docs/engineering/Workflow.md`, `docs/engineering/Two-Agent-Systems.md`  
 > **Goal:** Rebuild the workflow from a static, fully context-carrying graph into

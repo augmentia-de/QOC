@@ -1,6 +1,6 @@
 # Implementation Plan: Workflow Generation from Prompt (MVP)
 
-Status: Plan (2026-11-14)
+Status: Implemented (2026-11-22) — WorkflowGenerator, WorkflowPlanParser, GenerateConfig (ENGINE_WORKFLOW_GENERATE_ENABLED), POST /workflows/generate endpoint, reactflow Generate page. LLM-based generation with contract validation.
 Reference: `workflow-runner/`, `workflow-ui/src/pages/Generate.tsx`, `quad/.../generate/WorkflowPlanParser.java`
 Goal: Generate a valid `WorkflowDefinition` (Nodes/Edges/Agents) from a free-text prompt, instead of just creating an empty workflow.
 

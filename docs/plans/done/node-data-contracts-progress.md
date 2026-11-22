@@ -1,6 +1,6 @@
 # Progress: Node Data Contracts & Context Economy
 
-**Status:** 2026-11-15
+**Status:** 2026-11-22 — All 8 phases implemented. Remaining follow-ups: test classes (NodeDataContractTest done), config flags, UI polish.
 **Plan:** `docs/plans/node-data-contracts-and-context-economy.md`
 **Test spec:** Section 9 of the plan
 

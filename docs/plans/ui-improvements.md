@@ -1,6 +1,6 @@
 # UI Improvements – Plan for Further Review
 
-**Status:** Plan (2026-11-15)
+**Status:** Plan (2026-11-22) — Collection of UI improvement items and open architecture questions. Not a single implementable feature; serves as backlog. Some items may be partially addressed in reactflow.
 **Reference:** `docs/engineering/Unified-Storage.md` §8, `docs/plans/mobile-workflow-ui.md`
 
 This document collects the known UI improvement items and open architecture

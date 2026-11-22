@@ -1,6 +1,6 @@
 # Implementierungsplan: Verify-on-Stop Guards
 
-Status: Plan (2026-11-15)
+Status: Partially implemented (2026-11-22) — core data model, one loop integration, prompt injection done; 2 loop points, exporter, paramPattern matching and tests still open
 Bezug: `engine/.../QocEngine.java` (Agent-Loop, Zeilen 844-1260), Paper "Harness Engineering" §16 (Design Recommendations), Observation "Verify-on-Stop Guards"
 
 ## 1. Problem
@@ -11,6 +11,27 @@ Der Agent-Loop in `QocEngine.runPrompt` endet, sobald:
 - ein Loop erkannt wird.
 
 Es gibt **keine deterministische Pruefung**, ob der Agent die Aufgabe tatsaechlich abgeschlossen hat (z. B. ob `verify_stock` aufgerufen wurde, ob Tests gelaufen sind, ob ein `submit_result` erfolgte). Der Agent kann "fertig" melden, obwohl kritische Schritte fehlen.
+
+
+## Implementation Status (2026-11-22)
+
+### Implemented
+- **Datenmodell:** `VerifyRule`, `VerifyCondition` (sealed), `VerifyAction` — `core/eval/`
+- **QocEngine.AgentConfig** Feld `verifyOnStop` (Default `List.of()`)
+- **AgentProfile** Feld `verifyOnStop`
+- **Loop-Integration (1/3):** "keine Tool-Calls mehr"-Fall (`QocEngine.java` ~Zeile 1385) mit CONTINUE/WARN/FAIL-Logik
+- **evaluateVerifyCondition:** ToolCalled, ToolCalledWith, AnyOf, AllOf
+- **System-Prompt-Injektion:** `buildSystemPromptWithVerify`
+- **EngineConfig / AgentMarkdownLoader:** Frontmatter-Parsing für `verifyOnStop`
+- **WorkflowDefinition.NodeData:** Feld `verifyOnStop`
+- **DefaultNodeDispatcher:** Konvertierung Tool-Namen → VerifyRules
+- **Metrics:** `verifyFailures` in `resilienceMetrics()`
+
+### Still open
+- **2 von 3 Loop-Integrationen:** TurnPolicy ANSWER_NOW (geplant ~Zeile 1190) und maxSteps-Erreicht (geplant ~Zeile 899) fehlen.
+- **AgentMarkdownExporter:** Exportiert `verifyOnStop` nicht.
+- **ToolCalledWith paramPattern:** `evaluateVerifyCondition` prüft nur Tool-Namen, nicht den `paramPattern`.
+- **Tests:** Keine Tests für Verify-on-Stop vorhanden.
 
 ## 2. Zielbild
 

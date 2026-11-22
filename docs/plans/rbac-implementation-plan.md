@@ -1,5 +1,7 @@
 # RBAC + Workflow-OIDC – Detailed Implementation Plan
 
+> **Status:** Partially implemented (2026-11-22) — Steps 1, 2, 4, 5, 6, 7 done; Step 8 partial (ownerId only in WorkflowRunStarted); Steps 9–12 not done.
+
 > Location: `/home/torsten/.opencode/plan/rbac-implementation-plan.md`
 > Target location (code mode): `qoc/docs/plans/rbac-workflow-oidc-implementation.md`
 > Reference: `qoc/docs/engineering/Workflow-OIDC.md`
@@ -65,6 +67,29 @@ which are currently missing or only partially present:
 code changes, tests, commit. Tests must be green before the commit.
 
 ---
+
+
+## Implementation Status (2026-11-22)
+
+### Implemented
+- **Step 1** `Principal.system()` — `engine/core/model/Principal.java`
+- **Step 2** System-token auth (`X-System-Token` header) — `BasicAuthFilter.java` + config keys
+- **Step 4** `ownerId` in `WorkflowDefinition` (default `""`) and `rolesAllowed` in `Agent` (default `List.of()`, `"*"` = all)
+- **Step 5** `WorkflowExecutor` overloads `executeRun(def, input, String user)` and `executeRun(def, input, Principal)`; `DefaultNodeDispatcher.runAgent` threads Principal
+- **Step 6** `SessionAccessGuard` guards in `WorkflowResource`: `requireWorkflowAccess`, `isWorkflowOwner`, `X-QOC-User` header, run filtering by ownerId
+- **Step 7** `SessionAccessGuard` guards in `AgentStoreResource`: `requireAgentAccess`, ownerId filtering on list/create/save/delete
+- **Step 8 (partial)** `WorkflowRunStarted` event includes `ownerId`; `WorkflowNodeCompleted` and `WorkflowRunFinished` do **not** have `ownerId`
+
+### Not implemented
+- **Step 3** `@RolesAllowed` for `system` role — documentation only (no code change needed)
+- **Step 8 (partial)** `ownerId` missing in `WorkflowNodeCompleted` and `WorkflowRunFinished` journal events
+- **Step 9** `@RolesAllowed` annotations on `WorkflowResource` and `AgentStoreResource` endpoints — not present
+- **Step 10** System-token unit tests — not found
+- **Step 11** Ownership integration tests — not found
+- **Step 12** Documentation (`CONFIG.md` system-user keys) — not verified
+
+### Deviations
+- Agent `rolesAllowed` default is `List.of()` (nobody) instead of `List.of("*")` (all) as originally specified. Changed to least-privilege default: empty = nobody, `"*"` = all.
 
 ## Phase 1: Foundation (System User + Principal)
 

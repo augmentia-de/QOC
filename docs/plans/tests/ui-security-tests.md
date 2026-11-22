@@ -1,6 +1,6 @@
 # UI Security Tests — Test Plan
 
-**Status:** Plan (2026-11-18)
+**Status:** Test plan (2026-11-22) — Not an implementation plan; describes UI security test scenarios.
 **Reference:** OIDC, RBAC, Session-Ownership, Trusted Proxy, Egress, MCP-OAuth, Workflow/Agent-Ownership
 
 ---

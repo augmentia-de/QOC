@@ -1,5 +1,7 @@
 # Plan: Saga-Pattern Undo Tools for Tools
 
+> **Status:** Implemented (2026-11-22) — M1–M4 (contract, registry, compensator, Engine wiring, tests) fully implemented. M5 (automatic saga orchestration) deferred to saga-orchestration.md.
+
 ## 0. Goal & Scope
 
 Tools can declare an **undo pattern** (compensating action). Undo is performed

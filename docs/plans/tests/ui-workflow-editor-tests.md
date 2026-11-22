@@ -1,6 +1,6 @@
 # UI Workflow Editor Tests — User-Centered Test Plan
 
-**Status:** Plan (2026-11-18)
+**Status:** Test plan (2026-11-22) — Not an implementation plan; describes UI workflow editor test scenarios.
 **Reference:** `reactflow/src/EditorPage.tsx`, `reactflow/src/pages/Workflows.tsx`, Workflow API (`/api/workflows`), Playwright
 **Not part of this plan:** Auth/RBAC (see `ui-security-tests.md`), Chat UI, Runs/Observe pages.
 

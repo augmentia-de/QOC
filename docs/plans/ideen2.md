@@ -1,6 +1,6 @@
 # Ideas2 – Structure, Benefit and Implementation Order
 
-> **Status:** Structuring and planning document (2026-11-18).  
+> **Status:** Structuring/planning document (2026-11-22) — Bundles existing state, benefit, priorities. Not an implementation plan.
 > **Basis:** `docs/plans/next/runtime-plan-adaptation.md`, `docs/plans/next/goal-driven-planning-comparison.md`, `docs/plans/next/ideen-summary.md`, `docs/plans/next/ideen.txt`.  
 > **Goal:** Bundle existing state, benefit, priorities, order and small tests in one place.
 

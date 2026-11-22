@@ -1,6 +1,6 @@
 # Plan: Node Data Contracts & Context Economy
 
-**Status:** Plan (2026-11-15)
+**Status:** Implemented (2026-11-22) — All 8 phases (0-7) at least partially implemented. See node-data-contracts-progress.md for details. Remaining: test classes, UI Phase 5b (field selector), config flags.
 **Reference:** `docs/engineering/chats/Context_tools.txt` (LLM context, tool design, hybrid execution),
 `docs/plans/structured-output-schema-integration.md` (schema infrastructure),
 `docs/plans/WorkflowMode-ContextAgent.md` (ContextAssembler policies)

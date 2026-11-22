@@ -1,6 +1,6 @@
 # Implementation Plan: Mobile Version of workflow-ui
 
-Status: Plan (2026-11-14)
+Status: Implemented (2026-11-22) — Mobile support in reactflow: useIsMobile hook, EditorPage mobile layout (line 823), BottomNav, responsive navigation.
 Reference: `workflow-ui/src/App.tsx`, `workflow-ui/src/pages/GraphEditor.tsx`, `workflow-ui/src/components/PropertyPanel.tsx`
 
 ## 1. Challenges (verified in code)

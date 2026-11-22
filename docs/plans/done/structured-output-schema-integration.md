@@ -1,6 +1,6 @@
 # Implementation Plan: Java Records and YAML in Structured-Output Configuration
 
-**Status:** Plan (2026-11-12)
+**Status:** Implemented (2026-11-22) — Java source parsing (JavaSourceToJsonSchema), YAML parsing (YamlToJsonSchema), SchemaResource endpoints (from-java, from-yaml, from-class, from-openapi, validate), 50 KB size limit, reactflow UI with responseSchema editing, tests present.
 **Reference:** P0/P1/P2 completed (Commit `a89ea1a`), Structured-Output infrastructure present (`SchemaResource`, `JavaRecordToJsonSchema`, `OpenApiToJsonSchema`)
 
 ---

@@ -1,5 +1,7 @@
 # Tool Configuration Plan
 
+> **Status:** Partially implemented (2026-11-22) — Dynamic tool fetch, two-pane UI, permission chips, rule editor, preset integration implemented. Missing: virtualization, full accessibility, automated tests.
+
 ## Goal
 
 Make the agent editor capable of managing 60+ tools (core, MCP, A2A, email, worktree, session, agent, todo) with clear permission visibility, while keeping least-privilege as the secure default.

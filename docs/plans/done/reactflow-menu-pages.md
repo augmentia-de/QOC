@@ -1,6 +1,7 @@
 # Plan: reactflow Workflow-UI — missing menu items & pages porting
 
 ## Context
+> **Status:** Implemented (2026-11-22) — All 10+ pages ported (Workflows, Agents, MCP Servers, Generate, Runs, Observe, HITL, Testbench, Settings, Dashboard, plus A2A, Files, LlmTrace). Routing via react-router-dom, Top-Nav in place. Pages exist in reactflow/src/pages/.
 - reactflow project lives in `qoc/reactflow/` (TypeScript, Zustand, Mobile, SchemaSource, FieldTree).
 - Already implemented: Editor (core), Validate, Run, Save/Load, Undo/Redo, Output-Contract, Context-Refs, LabeledEdge, Mobile.
 - Missing: Routing + 10 pages (Workflows, Agents, MCP Servers, Generate, Runs, Observe, HITL, Testbench, Settings, Dashboard).
